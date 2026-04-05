@@ -2,8 +2,9 @@
 //   Инициализация компонентов, сборка pipeline, запуск демона.
 //
 //   ЧТО ЗДЕСЬ:
-//     - main() — загрузка конфига, инициализация логгера, [STARTUP] в консоль
-//     - Будущее (Task 1.4): запуск tail reader и pipeline
+//     - main() — загрузка конфига, инициализация логгера, запуск pipeline
+//     - Pipeline Task 1.4: TailReader → parser.Parse → [PARSER] лог в консоль
+//     - Базовый shutdown по SIGTERM/SIGINT (полный graceful shutdown — Task 7.2)
 //
 //   ЧТО НЕ ЗДЕСЬ:
 //     - Бизнес-логика (core/)
@@ -13,10 +14,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
 )
@@ -25,6 +30,7 @@ import (
 // Переопределяется через переменную окружения NGINX_SENTINEL_CONFIG.
 // hardcoded: путь привязан к структуре проекта и install-скрипту (Task 7.4).
 const configPath = "./config.yaml"
+
 
 func main() {
 	// ── Загрузка конфига ──────────────────────────────────────────────────────────────
@@ -60,8 +66,47 @@ func main() {
 		cfg.Logging.Debug,
 	), "info")
 	utils.Log("CONFIG", fmt.Sprintf("лог: %s", cfg.General.LogFile), "info")
-	utils.Log("STARTUP", "компоненты готовы (tail reader — Task 1.4)", "info")
 
-	// Заглушка Flow #1 — pipeline (tail → parser → detector → scorer) собирается в Task 1.4.
-	// После Task 1.4 здесь будут: запуск TailReader, горутин обработки, ожидание SIGTERM.
+	// ── Context + shutdown ────────────────────────────────────────────────────────────
+
+	// Полный graceful shutdown (flush буферов, drain канала) — Task 7.2.
+	// Сейчас: останавливаем горутины по сигналу через ctx.
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
+
+	// ── Pipeline: TailReader → parser ─────────────────────────────────────────────────
+
+	lines := make(chan string, cfg.General.LinesBufSize)
+	tail := utils.NewTailReader(cfg.General.LogFile, lines, time.Duration(cfg.General.TailRetryInterval))
+	go tail.Run(ctx)
+
+	utils.Log("STARTUP", fmt.Sprintf("pipeline запущен (tail → parser) | файл: %s", cfg.General.LogFile), "info")
+
+	// ── Основной цикл обработки ───────────────────────────────────────────────────────
+
+	// Обрабатываем строки из TailReader.
+	// Task 1.4: парсим и логируем в консоль — демонстрация работы pipeline.
+	// Следующие задачи (Flow #2–4): добавят detector, scorer, threat-лог.
+	for {
+		select {
+		case <-ctx.Done():
+			utils.Log("SHUTDOWN", "сигнал получен, завершение", "info")
+			return
+		case line, ok := <-lines:
+			if !ok {
+				utils.Log("SHUTDOWN", "канал закрыт, завершение", "info")
+				return
+			}
+			entry, ok := parser.Parse(line)
+			if !ok {
+				// Битые строки (бинарный мусор, нестандартный формат) — пропускаем без паники.
+				// Логируем только в debug-режиме — в продакшне таких строк мало, но они есть.
+				utils.Log("PARSER", fmt.Sprintf("пропуск битой строки: %.80s", line), "debug")
+				continue
+			}
+			utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
+				entry.RealIP, entry.Method, entry.Path, entry.Status,
+			), "debug")
+		}
+	}
 }
