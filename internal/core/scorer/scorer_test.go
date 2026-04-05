@@ -207,7 +207,7 @@ func TestEvaluateScoreAccumulation(t *testing.T) {
 
 // TestApplyDecayNoTime проверяет что при lastUpdate.IsZero() decay возвращает 0.
 func TestApplyDecayNoTime(t *testing.T) {
-	result := applyDecay(100, time.Time{}, 300*time.Second)
+	result := applyDecay(100, time.Time{}, 300*time.Second, time.Now())
 	if result != 0 {
 		t.Errorf("decay с zero time: ожидал 0, получил %d", result)
 	}
@@ -216,8 +216,8 @@ func TestApplyDecayNoTime(t *testing.T) {
 // TestApplyDecayFreshScore проверяет что score, обновлённый только что, почти не меняется.
 func TestApplyDecayFreshScore(t *testing.T) {
 	now := time.Now()
-	result := applyDecay(100, now, 300*time.Second)
-	// elapsed ≈ 0 → decay ≈ 0 → result ≈ 100
+	result := applyDecay(100, now, 300*time.Second, now)
+	// elapsed = 0 → decay = 0 → result = 100 (детерминированно)
 	if result < 99 {
 		t.Errorf("свежий score: ожидал ≥99, получил %d", result)
 	}
@@ -226,9 +226,10 @@ func TestApplyDecayFreshScore(t *testing.T) {
 // TestApplyDecayHalfWindow проверяет уменьшение score вдвое при elapsed = window/2.
 func TestApplyDecayHalfWindow(t *testing.T) {
 	window := 300 * time.Second
-	halfAgo := time.Now().Add(-window / 2)
-	result := applyDecay(100, halfAgo, window)
-	// elapsed = 150s, fraction = 0.5 → result = 100 * 0.5 = 50
+	now := time.Now()
+	halfAgo := now.Add(-window / 2)
+	result := applyDecay(100, halfAgo, window, now)
+	// elapsed = 150s точно (now детерминирован) → fraction = 0.5 → result = 50
 	if result < 45 || result > 55 {
 		t.Errorf("decay на пол-окна: ожидал ~50, получил %d", result)
 	}
@@ -237,8 +238,9 @@ func TestApplyDecayHalfWindow(t *testing.T) {
 // TestApplyDecayExpired проверяет что score полностью рассеивается по истечении окна.
 func TestApplyDecayExpired(t *testing.T) {
 	window := 300 * time.Second
-	longAgo := time.Now().Add(-window - time.Second)
-	result := applyDecay(100, longAgo, window)
+	now := time.Now()
+	longAgo := now.Add(-window - time.Second)
+	result := applyDecay(100, longAgo, window, now)
 	if result != 0 {
 		t.Errorf("истёкший score: ожидал 0, получил %d", result)
 	}
@@ -246,7 +248,7 @@ func TestApplyDecayExpired(t *testing.T) {
 
 // TestApplyDecayZeroScore проверяет что decay нулевого score возвращает 0.
 func TestApplyDecayZeroScore(t *testing.T) {
-	result := applyDecay(0, time.Now().Add(-10*time.Second), 300*time.Second)
+	result := applyDecay(0, time.Now().Add(-10*time.Second), 300*time.Second, time.Now())
 	if result != 0 {
 		t.Errorf("decay нулевого score: ожидал 0, получил %d", result)
 	}

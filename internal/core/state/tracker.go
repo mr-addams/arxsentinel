@@ -316,6 +316,15 @@ func (t *Tracker) Len() int {
 	return len(t.states)
 }
 
+// Has возвращает true если IP отслеживается (потокобезопасно).
+// Используется в тестах вместо прямого доступа к tr.states — безопасно при t.Parallel().
+func (t *Tracker) Has(ip string) bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	_, ok := t.states[ip]
+	return ok
+}
+
 // ========================== GC ======================================================
 
 // RunGC запускает фоновую горутину сборки мусора неактивных IP.
@@ -343,17 +352,19 @@ func (t *Tracker) RunGC(ctx context.Context, interval time.Duration) {
 			}
 			return
 		case <-ticker.C:
-			deleted := t.runGC()
+			deleted, remaining := t.runGC()
 			if t.logFn != nil && deleted > 0 {
-				t.logFn("GC", fmt.Sprintf("удалено %d неактивных IP, осталось %d", deleted, t.Len()), "info")
+				t.logFn("GC", fmt.Sprintf("удалено %d неактивных IP, осталось %d", deleted, remaining), "info")
 			}
 		}
 	}
 }
 
 // runGC выполняет один цикл сборки мусора.
-// Удаляет IP, неактивные дольше retention. Возвращает количество удалённых.
-func (t *Tracker) runGC() int {
+// Удаляет IP, неактивные дольше retention.
+// Возвращает (deleted, remaining) — оба числа захвачены под одним write lock,
+// поэтому лог "удалено N, осталось M" точно описывает состояние после этого цикла.
+func (t *Tracker) runGC() (int, int) {
 	threshold := time.Now().Add(-t.retention)
 
 	t.mu.Lock()
@@ -367,5 +378,5 @@ func (t *Tracker) runGC() int {
 			deleted++
 		}
 	}
-	return deleted
+	return deleted, len(t.states)
 }

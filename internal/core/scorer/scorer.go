@@ -87,9 +87,13 @@ func NewScorer(cfg config.ScoringConfig, detectors []detector.Detector, logFn fu
 // Не блокирует — все операции синхронные в одной горутине.
 func (s *Scorer) Evaluate(sv detector.ScoreAccess, entry *parser.LogEntry) (level string, score int, modules []string, reason string) {
 	// ── Шаг 1: decay накопленного score ───────────────────────────────────────────────
+	// now фиксируется один раз: decay и SetScore используют один момент времени.
+	// Два вызова time.Now() создают систематический сдвиг: decay вычислен на t0,
+	// score сохранён с t0+Δ — при следующем Evaluate elapsed занижен → score завышен.
+	now := time.Now()
 	existing := sv.GetScore()
 	lastUpdate := sv.GetScoreUpdatedAt()
-	decayed := applyDecay(existing, lastUpdate, s.window)
+	decayed := applyDecay(existing, lastUpdate, s.window, now)
 
 	// ── Шаг 2: сбор результатов от детекторов ─────────────────────────────────────────
 	var delta int
@@ -114,7 +118,7 @@ func (s *Scorer) Evaluate(sv detector.ScoreAccess, entry *parser.LogEntry) (leve
 	// ── Шаг 3: обновление score в состоянии IP ────────────────────────────────────────
 	// decayed ≥ 0 (гарантия applyDecay), delta ≥ 0 (суммируются только Score > 0)
 	newScore := decayed + delta
-	sv.SetScore(newScore, time.Now())
+	sv.SetScore(newScore, now)
 
 	// ── Шаг 4: вынесение вердикта по порогам ──────────────────────────────────────────
 	level = s.levelFor(newScore)
@@ -145,16 +149,16 @@ func (s *Scorer) levelFor(score int) string {
 // applyDecay вычисляет score после линейного decay.
 //
 // Формула: decayed = current × max(0, 1 − elapsed/window)
-//   elapsed = time.Now() − lastUpdate
+//   elapsed = now − lastUpdate  (now передаётся из Evaluate — единый момент времени)
 //   window  = scoring.observation_window из конфига
 //
 // При lastUpdate.IsZero() (первый запрос от IP) — возвращает 0.
 // При elapsed ≥ window — возвращает 0 (score полностью рассеялся).
-func applyDecay(current int, lastUpdate time.Time, window time.Duration) int {
+func applyDecay(current int, lastUpdate time.Time, window time.Duration, now time.Time) int {
 	if current <= 0 || lastUpdate.IsZero() || window <= 0 {
 		return 0
 	}
-	elapsed := time.Since(lastUpdate)
+	elapsed := now.Sub(lastUpdate)
 	if elapsed >= window {
 		return 0
 	}

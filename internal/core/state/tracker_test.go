@@ -173,13 +173,15 @@ func TestGCEviction(t *testing.T) {
 
 	// Добавляем IP с LastSeen в прошлом (старше retention)
 	tr.Update(makeEntry("old.ip", "GET", "/", 200))
-	old := tr.states["old.ip"]
-	old.LastSeen = time.Now().Add(-400 * time.Second) // старше ObservationWindow(300s)
+	// Мутация под write lock — безопасно при добавлении t.Parallel() в будущем
+	tr.mu.Lock()
+	tr.states["old.ip"].LastSeen = time.Now().Add(-400 * time.Second) // старше ObservationWindow(300s)
+	tr.mu.Unlock()
 
 	// Добавляем свежий IP
 	tr.Update(makeEntry("new.ip", "GET", "/", 200))
 
-	deleted := tr.runGC()
+	deleted, _ := tr.runGC()
 
 	if deleted != 1 {
 		t.Errorf("GC: ожидал удаление 1 записи, удалено %d", deleted)
@@ -188,10 +190,10 @@ func TestGCEviction(t *testing.T) {
 		t.Errorf("после GC Len: ожидал 1, получил %d", tr.Len())
 	}
 	// Убеждаемся что удалён именно old.ip
-	if _, exists := tr.states["old.ip"]; exists {
+	if tr.Has("old.ip") {
 		t.Error("old.ip должен быть удалён GC")
 	}
-	if _, exists := tr.states["new.ip"]; !exists {
+	if !tr.Has("new.ip") {
 		t.Error("new.ip должен остаться после GC")
 	}
 }
@@ -203,7 +205,7 @@ func TestGCNoEviction(t *testing.T) {
 	tr.Update(makeEntry("1.1.1.1", "GET", "/", 200))
 	tr.Update(makeEntry("2.2.2.2", "GET", "/", 200))
 
-	deleted := tr.runGC()
+	deleted, _ := tr.runGC()
 
 	if deleted != 0 {
 		t.Errorf("GC: ожидал 0 удалений, удалено %d", deleted)
@@ -251,7 +253,7 @@ func TestLRUEviction(t *testing.T) {
 	if tr.Len() != maxIPs {
 		t.Errorf("Len после eviction: ожидал %d, получил %d", maxIPs, tr.Len())
 	}
-	if _, exists := tr.states["a.a.a.a"]; exists {
+	if tr.Has("a.a.a.a") {
 		t.Error("a.a.a.a должен быть вытеснен как LRU")
 	}
 }
@@ -273,10 +275,10 @@ func TestLRURecentAccessProtection(t *testing.T) {
 	if tr.Len() != maxIPs {
 		t.Errorf("Len: ожидал %d, получил %d", maxIPs, tr.Len())
 	}
-	if _, exists := tr.states["b.b.b.b"]; exists {
+	if tr.Has("b.b.b.b") {
 		t.Error("b.b.b.b должен быть вытеснен как LRU")
 	}
-	if _, exists := tr.states["a.a.a.a"]; !exists {
+	if !tr.Has("a.a.a.a") {
 		t.Error("a.a.a.a должен остаться — был обновлён недавно")
 	}
 }
