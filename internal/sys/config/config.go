@@ -79,8 +79,8 @@ type LoggingConfig struct {
 // ++++++++++++++++++++++++++ Секция: parser +++++++++++++++++++++++++++++++++++++++++++++
 
 type ParserConfig struct {
-	LogFormat string `yaml:"log_format"` // YAML: parser.log_format, default "combined" — формат строки nginx. Потребитель: parser.ParseLine
-	Timezone  string `yaml:"timezone"`   // YAML: parser.timezone, default "UTC" — часовой пояс для парсинга дат. Потребитель: parser.ParseLine
+	LogFormat string `yaml:"log_format"` // YAML: parser.log_format, default "combined" — зарезервировано, поддерживается только "combined". Потребитель: не подключён
+	Timezone  string `yaml:"timezone"`   // YAML: parser.timezone, default "UTC" — зарезервировано; парсер берёт timezone из offset в строке лога (+0000). Потребитель: не подключён
 }
 
 // ++++++++++++++++++++++++++ Секция: scoring +++++++++++++++++++++++++++++++++++++++++++
