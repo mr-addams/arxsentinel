@@ -3,13 +3,24 @@
 //
 //   ЧТО ЗДЕСЬ:
 //     - main() — загрузка конфига, инициализация логгера, запуск pipeline
-//     - Pipeline Task 1.4: TailReader → parser.Parse → [PARSER] лог в консоль
+//     - Pipeline Flow #2: TailReader → parser → tracker.Update → scorer.Evaluate → logger
+//     - GC горутина: периодическая очистка неактивных IP
 //     - Базовый shutdown по SIGTERM/SIGINT (полный graceful shutdown — Task 7.2)
 //
 //   ЧТО НЕ ЗДЕСЬ:
 //     - Бизнес-логика (core/)
 //     - Конфигурационные структуры (sys/config)
 //     - Логирование (sys/utils)
+//
+//   АРХИТЕКТУРА PIPELINE:
+//     TailReader → lines chan → parser.Parse → tracker.Update(*IPState)
+//              ↓
+//     scorer.Evaluate(state, entry) → [level≠""] → threatLogger.Log
+//
+//   Изменение (Flow #2, Tasks 2.1–2.4):
+//     Добавлены tracker, scorer, threatLogger.
+//     Scorer запущен с пустым списком детекторов — всегда возвращает level="".
+//     Реальные детекторы подключатся в Flow #4.
 
 package main
 
@@ -21,7 +32,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mr-addams/nginx-sentinel/internal/core/output"
 	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
+	"github.com/mr-addams/nginx-sentinel/internal/core/scorer"
+	"github.com/mr-addams/nginx-sentinel/internal/core/state"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
 )
@@ -30,7 +44,6 @@ import (
 // Переопределяется через переменную окружения NGINX_SENTINEL_CONFIG.
 // hardcoded: путь привязан к структуре проекта и install-скрипту (Task 7.4).
 const configPath = "./config.yaml"
-
 
 func main() {
 	// ── Загрузка конфига ──────────────────────────────────────────────────────────────
@@ -67,6 +80,18 @@ func main() {
 	), "info")
 	utils.Log("CONFIG", fmt.Sprintf("лог: %s", cfg.General.LogFile), "info")
 
+	// ── Инициализация компонентов pipeline ────────────────────────────────────────────
+
+	// tracker — in-memory состояние по IP (Tasks 2.1 + 2.2)
+	tracker := state.NewTracker(cfg, utils.Log)
+
+	// scorer — агрегатор очков от детекторов (Task 2.3)
+	// Детекторы передаются nil — пустой список. Добавятся в Flow #4.
+	sc := scorer.NewScorer(cfg.Scoring, nil, utils.Log)
+
+	// threatLogger — запись WARN/THREAT в threats.log (Task 2.4)
+	threatLogger := output.NewThreatLogger(utils.LogThreat)
+
 	// ── Context + shutdown ────────────────────────────────────────────────────────────
 
 	// Полный graceful shutdown (flush буферов, drain канала) — Task 7.2.
@@ -74,19 +99,19 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
+	// ── GC горутина ───────────────────────────────────────────────────────────────────
+	go tracker.RunGC(ctx, time.Duration(cfg.State.GCInterval))
+
 	// ── Pipeline: TailReader → parser ─────────────────────────────────────────────────
 
 	lines := make(chan string, cfg.General.LinesBufSize)
 	tail := utils.NewTailReader(cfg.General.LogFile, lines, time.Duration(cfg.General.TailRetryInterval))
 	go tail.Run(ctx)
 
-	utils.Log("STARTUP", fmt.Sprintf("pipeline запущен (tail → parser) | файл: %s", cfg.General.LogFile), "info")
+	utils.Log("STARTUP", fmt.Sprintf("pipeline запущен (tail → parser → tracker → scorer) | файл: %s", cfg.General.LogFile), "info")
 
 	// ── Основной цикл обработки ───────────────────────────────────────────────────────
 
-	// Обрабатываем строки из TailReader.
-	// Task 1.4: парсим и логируем в консоль — демонстрация работы pipeline.
-	// Следующие задачи (Flow #2–4): добавят detector, scorer, threat-лог.
 	for {
 		select {
 		case <-ctx.Done():
@@ -97,16 +122,32 @@ func main() {
 				utils.Log("SHUTDOWN", "канал закрыт, завершение", "info")
 				return
 			}
-			entry, ok := parser.Parse(line)
-			if !ok {
-				// Битые строки (бинарный мусор, нестандартный формат) — пропускаем без паники.
-				// Логируем только в debug-режиме — в продакшне таких строк мало, но они есть.
-				utils.Log("PARSER", fmt.Sprintf("пропуск битой строки: %.80s", line), "debug")
-				continue
-			}
-			utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
-				entry.RealIP, entry.Method, entry.Path, entry.Status,
-			), "debug")
+			processLine(line, tracker, sc, threatLogger)
 		}
 	}
+}
+
+// processLine обрабатывает одну строку лога: парсинг → трекинг → скоринг → лог угрозы.
+//
+// Выделено из main loop для читаемости.
+// Не блокирует — все операции синхронные.
+func processLine(line string, tracker *state.Tracker, sc *scorer.Scorer, threatLogger *output.ThreatLogger) {
+	entry, ok := parser.Parse(line)
+	if !ok {
+		utils.Log("PARSER", fmt.Sprintf("пропуск битой строки: %.80s", line), "debug")
+		return
+	}
+
+	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
+		entry.RealIP, entry.Method, entry.Path, entry.Status,
+	), "debug")
+
+	// Обновляем состояние IP; возвращённый *IPState реализует detector.ScoreAccess
+	ipState := tracker.Update(entry)
+
+	// Оцениваем угрозу. Без детекторов (Flow #2) всегда level="", score=0.
+	level, score, modules, reason := sc.Evaluate(ipState, entry)
+
+	// Пишем в threat-лог только при WARN или THREAT
+	threatLogger.Log(entry.RealIP, score, level, modules, reason)
 }
