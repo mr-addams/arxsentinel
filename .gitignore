@@ -30,6 +30,12 @@ go.work.sum
 # Локальный контекст для Claude (не коммитить)
 .reference/
 
+# Dev-окружение: локальные лог-файлы (в проде — /var/log/nginx-sentinel/)
+logs/
+
+# Бинарник после go build
+nginx-sentinel
+
 # Editor/IDE
 # .idea/
 # .vscode/
