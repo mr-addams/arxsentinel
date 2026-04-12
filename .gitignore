@@ -33,8 +33,8 @@ go.work.sum
 # Dev-окружение: локальные лог-файлы (в проде — /var/log/nginx-sentinel/)
 logs/
 
-# Бинарник после go build
-nginx-sentinel
+# Бинарник после go build (/ — только в корне репо, не трогает deploy/logrotate/nginx-sentinel)
+/nginx-sentinel
 
 # Editor/IDE
 # .idea/
