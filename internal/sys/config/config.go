@@ -179,9 +179,10 @@ type OverflowConfig struct {
 // ++++++++++++++++++++++++++ Секция: whitelist ++++++++++++++++++++++++++++++++++++++++
 
 type WhitelistConfig struct {
-	Bots     []BotConfig          `yaml:"bots"`
-	Custom   CustomWhitelistConfig `yaml:"custom"`
-	DNSCache DNSCacheConfig        `yaml:"dns_cache"`
+	Bots         []BotConfig          `yaml:"bots"`
+	Custom       CustomWhitelistConfig `yaml:"custom"`
+	DNSCache     DNSCacheConfig        `yaml:"dns_cache"`
+	FakeBotScore int                  `yaml:"fake_bot_score"` // YAML: whitelist.fake_bot_score, default 35 — штраф за UA легитимного бота без подтверждения DNS. Потребитель: whitelist.Verifier
 }
 
 // BotConfig — один легитимный бот с UA-паттернами и rDNS-доменами для верификации.
@@ -201,7 +202,7 @@ type CustomWhitelistConfig struct {
 type DNSCacheConfig struct {
 	PositiveTTL   Duration `yaml:"positive_ttl"`    // YAML: whitelist.dns_cache.positive_ttl, default "24h" — TTL успешной верификации. Потребитель: whitelist.IPCache
 	NegativeTTL   Duration `yaml:"negative_ttl"`    // YAML: whitelist.dns_cache.negative_ttl, default "1h" — TTL неуспешной верификации. Потребитель: whitelist.IPCache
-	IPListRefresh Duration `yaml:"ip_list_refresh"` // YAML: whitelist.dns_cache.ip_list_refresh, default "24h" — интервал обновления IP-диапазонов ботов. Потребитель: whitelist.IPCache
+	IPListRefresh Duration `yaml:"ip_list_refresh"` // YAML: whitelist.dns_cache.ip_list_refresh, default "24h" — интервал обновления IP-диапазонов ботов. Потребитель: не подключён (v0.2+, ip_ranges refresh)
 }
 
 // ++++++++++++++++++++++++++ Секция: output ++++++++++++++++++++++++++++++++++++++++++++
@@ -347,8 +348,9 @@ func defaultConfig() Config {
 			},
 		},
 		Whitelist: WhitelistConfig{
-			Bots:   defaultBots(),
-			Custom: CustomWhitelistConfig{},
+			Bots:         defaultBots(),
+			Custom:       CustomWhitelistConfig{},
+			FakeBotScore: 35,
 			DNSCache: DNSCacheConfig{
 				PositiveTTL:   Duration(24 * time.Hour),
 				NegativeTTL:   Duration(time.Hour),
