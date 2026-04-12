@@ -3,7 +3,9 @@
 //
 //   ЧТО ЗДЕСЬ:
 //     - main() — загрузка конфига, инициализация логгера, запуск pipeline
-//     - Pipeline Flow #2: TailReader → parser → tracker.Update → scorer.Evaluate → logger
+//     - Pipeline Flow #4: TailReader → whitelist check → tracker → scorer(detectors) → logger
+//     - buildDetectors() — сборка активных детекторов из конфига
+//     - processLine() — обработка одной строки лога
 //     - GC горутина: периодическая очистка неактивных IP
 //     - Базовый shutdown по SIGTERM/SIGINT (полный graceful shutdown — Task 7.2)
 //
@@ -12,30 +14,37 @@
 //     - Конфигурационные структуры (sys/config)
 //     - Логирование (sys/utils)
 //
-//   АРХИТЕКТУРА PIPELINE:
-//     TailReader → lines chan → parser.Parse → tracker.Update(*IPState)
+//   АРХИТЕКТУРА PIPELINE (Flow #4):
+//     TailReader → lines chan → whitelist.Matcher (custom IP/UA → early return)
 //              ↓
-//     scorer.Evaluate(state, entry) → [level≠""] → threatLogger.Log
+//     whitelist.Verifier (bot UA → rDNS/fDNS → verified → return | isFakeBot → +score)
+//              ↓
+//     tracker.Update(*IPState)
+//              ↓
+//     scorer.Evaluate(state, entry, detectors=[probe, rate, ua]) → [level≠""] → threatLogger.Log
 //
-//   Изменение (Flow #2, Tasks 2.1–2.4):
-//     Добавлены tracker, scorer, threatLogger.
-//     Scorer запущен с пустым списком детекторов — всегда возвращает level="".
-//     Реальные детекторы подключатся в Flow #4.
+//   Изменение (Flow #4, Tasks 4.0–4.3):
+//     Добавлена whitelist-интеграция (Matcher, IPCache, Verifier).
+//     Подключены три детектора: probe, rate, ua.
+//     processLine расширен: early-exit по whitelist, fake bot penalty перед scorer.
 
 package main
 
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/mr-addams/nginx-sentinel/internal/core/detector"
 	"github.com/mr-addams/nginx-sentinel/internal/core/output"
 	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
 	"github.com/mr-addams/nginx-sentinel/internal/core/scorer"
 	"github.com/mr-addams/nginx-sentinel/internal/core/state"
+	"github.com/mr-addams/nginx-sentinel/internal/core/whitelist"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
 )
@@ -85,9 +94,19 @@ func main() {
 	// tracker — in-memory состояние по IP (Tasks 2.1 + 2.2)
 	tracker := state.NewTracker(cfg, utils.Log)
 
-	// scorer — агрегатор очков от детекторов (Task 2.3)
-	// Детекторы передаются nil — пустой список. Добавятся в Flow #4.
-	sc := scorer.NewScorer(cfg.Scoring, nil, utils.Log)
+	// whitelist: Matcher (UA/IP lookup), IPCache (DNS-результаты), Verifier (rDNS+fDNS)
+	// IPCache создаётся отдельно — при SIGHUP (Task 7.1) кэш переживает reload конфига.
+	ipCache := whitelist.NewIPCache(cfg.Whitelist.DNSCache)
+	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "nginx-sentinel: ошибка инициализации whitelist: %v\n", err)
+		os.Exit(1)
+	}
+	resolver := &net.Resolver{PreferGo: true}
+	verifier := whitelist.NewVerifier(ipCache, resolver, utils.Log)
+
+	// scorer — агрегатор очков от детекторов (Task 2.3 + Flow #4)
+	sc := scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log)
 
 	// threatLogger — запись WARN/THREAT в threats.log (Task 2.4)
 	threatLogger := output.NewThreatLogger(utils.LogThreat)
@@ -108,7 +127,10 @@ func main() {
 	tail := utils.NewTailReader(cfg.General.LogFile, lines, time.Duration(cfg.General.TailRetryInterval))
 	go tail.Run(ctx)
 
-	utils.Log("STARTUP", fmt.Sprintf("pipeline запущен (tail → parser → tracker → scorer) | файл: %s", cfg.General.LogFile), "info")
+	utils.Log("STARTUP", fmt.Sprintf(
+		"pipeline запущен (tail → whitelist → tracker → scorer[probe,rate,ua]) | файл: %s",
+		cfg.General.LogFile,
+	), "info")
 
 	// ── Основной цикл обработки ───────────────────────────────────────────────────────
 
@@ -122,16 +144,76 @@ func main() {
 				utils.Log("SHUTDOWN", "канал закрыт, завершение", "info")
 				return
 			}
-			processLine(line, tracker, sc, threatLogger)
+			processLine(ctx, line, tracker, sc, threatLogger, matcher, verifier, cfg.Whitelist.FakeBotScore)
 		}
 	}
 }
 
-// processLine обрабатывает одну строку лога: парсинг → трекинг → скоринг → лог угрозы.
+// buildDetectors собирает список активных детекторов из конфига.
 //
-// Выделено из main loop для читаемости.
-// Не блокирует — все операции синхронные.
-func processLine(line string, tracker *state.Tracker, sc *scorer.Scorer, threatLogger *output.ThreatLogger) {
+// Только включённые детекторы (Enabled=true) добавляются в список.
+// Flow #4 MVP: probe, rate, ua.
+// Остальные детекторы (bruteforce, crawler, noasset, overflow) — Flow #5+.
+func buildDetectors(cfg config.Config) []detector.Detector {
+	var detectors []detector.Detector
+
+	// Probe: запросы к .env, .git, wp-config и т.д. — Task 4.1
+	if cfg.Detectors.Probe.Enabled {
+		detectors = append(detectors, detector.NewProbeDetector(cfg.Detectors.Probe))
+	}
+
+	// Rate: всплеск запросов за окно — Task 4.2
+	if cfg.Detectors.Rate.Enabled {
+		detectors = append(detectors, detector.NewRateDetector(cfg.Detectors.Rate))
+	}
+
+	// UserAgent: сканеры, грабберы, автоматизация, пустой UA — Task 4.3
+	if cfg.Detectors.UserAgent.Enabled {
+		detectors = append(detectors, detector.NewUADetector(cfg.Detectors.UserAgent))
+	}
+
+	utils.Log("CONFIG", fmt.Sprintf("детекторы: %d активных (probe=%v rate=%v ua=%v)",
+		len(detectors),
+		cfg.Detectors.Probe.Enabled,
+		cfg.Detectors.Rate.Enabled,
+		cfg.Detectors.UserAgent.Enabled,
+	), "info")
+
+	return detectors
+}
+
+// verifyTimeout — максимальное время ожидания DNS при верификации бота.
+// hardcoded: DNS round-trip не должен блокировать pipeline дольше этого времени.
+// При timeout Verify возвращает verified=false, isFakeBot=true (консервативно).
+// Async DNS-верификация в отдельном пуле горутин — Task 7.x.
+const verifyTimeout = 2 * time.Second
+
+// processLine обрабатывает одну строку лога:
+//   парсинг → whitelist early-exit → трекинг → fake bot penalty → скоринг → лог угрозы.
+//
+// АРХИТЕКТУРА WHITELIST EARLY-EXIT:
+//   Шаг 1 — custom whitelist (IP/CIDR/UA)? → return (не трекать внутренний трафик)
+//   Шаг 2 — UA совпал с паттерном бота? → rDNS/fDNS верификация (кэшируется в IPCache)
+//   Шаг 3 — verified бот → return (легитимный, не трекать)
+//   Шаг 4 — fake bot → tracker.Update + добавить FakeBotScore ДО scorer.Evaluate
+//
+// KNOWN LIMITATION (Task 7.x): Verify делает DNS-запрос синхронно в pipeline-горутине.
+// При cache miss один запрос блокирует обработку канала lines на DNS round-trip (~200ms).
+// Смягчение: IPCache кэширует результат — DNS делается только при первом обращении IP.
+// При целенаправленной атаке с ботовым UA и множеством уникальных IP возможна задержка.
+// Максимальное ожидание ограничено verifyTimeout (2s). При timeout → isFakeBot=true.
+//
+// Изменение (Flow #4, Task 4.0): добавлена whitelist-интеграция и fake bot penalty.
+func processLine(
+	ctx context.Context,
+	line string,
+	tracker *state.Tracker,
+	sc *scorer.Scorer,
+	threatLogger *output.ThreatLogger,
+	matcher *whitelist.Matcher,
+	verifier *whitelist.Verifier,
+	fakeBotScore int,
+) {
 	entry, ok := parser.Parse(line)
 	if !ok {
 		utils.Log("PARSER", fmt.Sprintf("пропуск битой строки: %.80s", line), "debug")
@@ -142,10 +224,53 @@ func processLine(line string, tracker *state.Tracker, sc *scorer.Scorer, threatL
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
 	), "debug")
 
-	// Обновляем состояние IP; возвращённый *IPState реализует detector.ScoreAccess
+	// ── Шаг 1: custom whitelist early-exit ───────────────────────────────────────────
+	// Custom whitelist проверяется до tracker.Update — whitelisted трафик не попадает
+	// в state, что снижает нагрузку на GC и не искажает статистику детекторов.
+	if matcher.IsWhitelistedIP(entry.RealIP) || matcher.IsWhitelistedUA(entry.UserAgent) {
+		utils.Log("WHITELIST", "пропуск по custom whitelist: "+entry.RealIP, "debug")
+		return
+	}
+
+	// ── Шаг 2–3: детекция и верификация ботов ────────────────────────────────────────
+	// MatchBot быстрый (strings.Contains по slice). Verify кэширует результат —
+	// DNS-запрос делается только при первом обращении нового IP с bot-UA.
+	// verifyCtx с timeout: ограничиваем блокировку pipeline (см. KNOWN LIMITATION выше).
+	isFakeBot := false
+	if _, botCfg, matched := matcher.MatchBot(entry.UserAgent); matched {
+		verifyCtx, cancelVerify := context.WithTimeout(ctx, verifyTimeout)
+		verified, fake := verifier.Verify(verifyCtx, entry.RealIP, botCfg)
+		cancelVerify()
+		if verified {
+			// Легитимный бот подтверждён по rDNS/fDNS — не трекать, не скорить
+			utils.Log("WHITELIST", "пропуск: верифицированный бот "+entry.RealIP, "debug")
+			return
+		}
+		isFakeBot = fake
+	}
+
+	// ── Шаг 4: трекинг состояния IP ───────────────────────────────────────────────────
+	// Вызывается после whitelist-проверок — в state попадают только подозрительные IP.
 	ipState := tracker.Update(entry)
 
-	// Оцениваем угрозу. Без детекторов (Flow #2) всегда level="", score=0.
+	// ── Шаг 4b: штраф за фейкового бота ─────────────────────────────────────────────
+	// FakeBotScore добавляется к накопленному score ДО Evaluate.
+	//
+	// Timestamp = time.Now(): scorer.Evaluate получит elapsed≈0 → decay≈0% → штраф
+	// передаётся полностью. Погрешность: prev не decayed в этом цикле Evaluate,
+	// но elapsed между строками одного активного IP — секунды при window=300s (<1% ошибка).
+	// Следующий Evaluate корректно decays весь score от этого timestamp.
+	//
+	// Альтернатива — ручной decay prev до SetScore — дублирует логику scorer.applyDecay
+	// и требует передачи window в processLine. Отложено до Task 7.x (scorer refactor).
+	if isFakeBot {
+		ipState.SetScore(ipState.GetScore()+fakeBotScore, time.Now())
+		utils.Log("WHITELIST", fmt.Sprintf("фейковый бот %s +%d (fake bot score)", entry.RealIP, fakeBotScore), "warn")
+	}
+
+	// ── Скоринг → лог угрозы ─────────────────────────────────────────────────────────
+	// Evaluate: decay накопленного score + запуск детекторов + вынесение вердикта.
+	// Возвращённый *IPState реализует detector.ScoreAccess.
 	level, score, modules, reason := sc.Evaluate(ipState, entry)
 
 	// Пишем в threat-лог только при WARN или THREAT
