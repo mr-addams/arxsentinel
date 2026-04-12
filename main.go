@@ -6,6 +6,7 @@
 //     - Pipeline Flow #4: TailReader → whitelist check → tracker → scorer(detectors) → logger
 //     - buildDetectors() — сборка активных детекторов из конфига
 //     - processLine() — обработка одной строки лога
+//     - writePID() / removePID() — управление PID-файлом демона
 //     - GC горутина: периодическая очистка неактивных IP
 //     - Базовый shutdown по SIGTERM/SIGINT (полный graceful shutdown — Task 7.2)
 //
@@ -27,6 +28,8 @@
 //     Добавлена whitelist-интеграция (Matcher, IPCache, Verifier).
 //     Подключены три детектора: probe, rate, ua.
 //     processLine расширен: early-exit по whitelist, fake bot penalty перед scorer.
+//   Изменение (Flow #5, Task 5.3):
+//     Добавлено управление PID-файлом: writePID после utils.Init, defer removePID.
 
 package main
 
@@ -36,6 +39,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -77,6 +81,14 @@ func main() {
 		os.Exit(1)
 	}
 	defer utils.Close()
+
+	// PID-файл нужен для: kill -HUP $(cat pid) и logrotate postrotate (Task 7.1).
+	// Ошибка записи — warn, не fatal: демон работает без PID-файла, просто теряем удобство управления.
+	if err := writePID(cfg.General.PIDFile); err != nil {
+		utils.Log("STARTUP", fmt.Sprintf("не удалось записать PID-файл %s: %v", cfg.General.PIDFile, err), "warn")
+	} else {
+		defer removePID(cfg.General.PIDFile)
+	}
 
 	// ── Стартовые сообщения ───────────────────────────────────────────────────────────
 
@@ -180,6 +192,22 @@ func buildDetectors(cfg config.Config) []detector.Detector {
 	), "info")
 
 	return detectors
+}
+
+// ========================== PID file ====================================================
+
+// writePID записывает PID текущего процесса в файл.
+// Используется для: kill -HUP $(cat pid) и logrotate postrotate (Task 7.1).
+// При ошибке — вызывающий логирует warn и продолжает работу: PID не критичен.
+func writePID(path string) error {
+	return os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0644)
+}
+
+// removePID удаляет PID-файл при завершении демона.
+// Вызывается через defer — срабатывает при любом return из main, включая SIGTERM.
+// Ошибка при удалении намеренно игнорируется: файл мог быть удалён вручную оператором.
+func removePID(path string) {
+	_ = os.Remove(path)
 }
 
 // verifyTimeout — максимальное время ожидания DNS при верификации бота.

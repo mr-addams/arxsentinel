@@ -1,0 +1,23 @@
+[Unit]
+Description=nginx-sentinel — threat detector for nginx access logs
+Documentation=https://github.com/mr-addams/nginx-sentinel
+After=network.target
+
+[Service]
+# Type=simple: Go-демон не форкается, systemd отслеживает PID напрямую.
+Type=simple
+# Непривилегированный системный пользователь — доступ только к логам nginx и своим файлам.
+User=nginx-sentinel
+Group=nginx-sentinel
+# EnvironmentFile опциональный (-): отсутствие файла не ронит сервис.
+EnvironmentFile=-/etc/nginx-sentinel/env
+ExecStart=/usr/local/bin/nginx-sentinel
+# Restart=on-failure: перезапуск при краше, но не при systemctl stop (ExitCode=0).
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nginx-sentinel
+
+[Install]
+WantedBy=multi-user.target
