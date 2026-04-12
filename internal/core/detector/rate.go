@@ -83,6 +83,8 @@ func (d *RateDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 	}
 
 	rate := sv.ApproxRate(d.window)
+	// Строгое <: rate == thresholdRPS уже считается превышением — детектор срабатывает.
+	// Намеренно: rate «ровно в порог» — уже аномалия, лучше WARN чем пропустить начало атаки.
 	if rate < d.thresholdRPS {
 		return DetectResult{}
 	}

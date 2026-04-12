@@ -51,7 +51,7 @@ var scannerPatterns = []string{
 // grabberPatterns — краулеры и загрузчики контента.
 // curl/ и wget/ с "/" чтобы не блокировать UA вида "Recursive wget protection".
 var grabberPatterns = []string{
-	"wget/", "curl/", "python-requests", "libwww-perl",
+	"Wget/", "curl/", "python-requests", "libwww-perl",
 	"scrapy", "Scrapy", "HTTrack", "WebCopier",
 	"SiteSnagger", "WebReaper", "Teleport Pro",
 }
