@@ -60,6 +60,10 @@ import (
 
 // processedCount / threatCount — атомарные счётчики для горутины статистики (Task 7.3).
 // Package-level: processLine и ThreatLogger writeFn находятся в том же пакете.
+// version инъецируется goreleaser через ldflags (-X main.version={{.Version}}).
+// При сборке вручную без ldflags остаётся "dev".
+var version = "dev"
+
 var (
 	processedCount atomic.Int64
 	threatCount    atomic.Int64
@@ -105,7 +109,7 @@ func main() {
 
 	// ── Стартовые сообщения ───────────────────────────────────────────────────────────
 
-	utils.Log("STARTUP", "nginx-sentinel v0.1 запуск", "info")
+	utils.Log("STARTUP", "nginx-sentinel "+version+" запуск", "info")
 	utils.Log("CONFIG", fmt.Sprintf("alert=%d ban=%d window=%v debug=%v",
 		cfg.Scoring.AlertThreshold,
 		cfg.Scoring.BanThreshold,

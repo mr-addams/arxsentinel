@@ -18,22 +18,43 @@ nginx access.log → TailReader → whitelist → tracker → scorer → threats
 
 ## Requirements
 
-- Go 1.19+
-- Linux с systemd
-- Fail2Ban (опционально; без него бан не выполняется, но threat-лог ведётся)
+- Linux x86_64 или arm64 с systemd
+- Fail2Ban
 - nginx с директивой `$real_ip` в log_format (или стандартный combined — поле `$remote_addr`)
 
-## Quick Start
+## Installation
+
+### Debian / Ubuntu — рекомендуемый способ
+
+Скачайте `.deb` для своей архитектуры со страницы [Releases](https://github.com/mr-addams/nginx-sentinel/releases) и установите:
+
+```bash
+# amd64
+sudo apt install ./nginx-sentinel_<version>_linux_amd64.deb
+
+# arm64
+sudo apt install ./nginx-sentinel_<version>_linux_arm64.deb
+```
+
+`apt install` автоматически подтянет зависимости (`fail2ban`), установит systemd unit, Fail2Ban filter/jail, logrotate и создаст системного пользователя `nginx-sentinel`.
+
+После установки отредактируйте конфиг и запустите сервис:
+
+```bash
+sudo nano /etc/nginx-sentinel/config.yaml
+sudo systemctl enable --now nginx-sentinel
+```
+
+### Сборка из исходников
+
+Требуется Go 1.19+:
 
 ```bash
 git clone https://github.com/mr-addams/nginx-sentinel
 cd nginx-sentinel
 sudo ./scripts/install.sh
-sudo systemctl start nginx-sentinel
-sudo systemctl status nginx-sentinel
+sudo systemctl enable --now nginx-sentinel
 ```
-
-Скрипт: собирает бинарник, создаёт пользователя `nginx-sentinel`, устанавливает systemd unit, Fail2Ban filter/jail, logrotate. Запускать от root из любой директории.
 
 ## Configuration
 

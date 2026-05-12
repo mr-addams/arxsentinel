@@ -36,6 +36,9 @@ logs/
 # Бинарник после go build (/ — только в корне репо, не трогает deploy/logrotate/nginx-sentinel)
 /nginx-sentinel
 
+# Артефакты goreleaser
+/dist/
+
 # Editor/IDE
 # .idea/
 # .vscode/

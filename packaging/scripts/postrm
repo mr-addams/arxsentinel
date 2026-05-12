@@ -1,0 +1,30 @@
+#!/bin/bash
+set -euo pipefail
+
+SENTINEL_USER="nginx-sentinel"
+LOG_DIR="/var/log/nginx-sentinel"
+CFG_DIR="/etc/nginx-sentinel"
+
+case "$1" in
+    purge)
+        # Удалить системного пользователя
+        if id "${SENTINEL_USER}" &>/dev/null; then
+            userdel "${SENTINEL_USER}" || true
+        fi
+
+        # Удалить логи и конфиг (purge — явный запрос на полную очистку)
+        rm -rf "${LOG_DIR}"
+        rm -rf "${CFG_DIR}"
+
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl daemon-reload || true
+        fi
+        ;;
+
+    remove|upgrade)
+        # При upgrade: systemd должен перечитать обновлённый unit-файл
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl daemon-reload || true
+        fi
+        ;;
+esac
