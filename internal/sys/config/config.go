@@ -269,6 +269,24 @@ func validateConfig(cfg *Config) error {
 	if cfg.State.MaxTrackedIPs <= 0 {
 		return fmt.Errorf("state.max_tracked_ips должен быть > 0, got %d", cfg.State.MaxTrackedIPs)
 	}
+	// Валидация детекторов: нулевые пороги приводят к panic или silent-misconfiguration
+	// при частичном YAML (yaml.v3 partial merge обнуляет незаданные поля секции).
+	if cfg.Detectors.Crawler.Enabled && cfg.Detectors.Crawler.MinSequential <= 0 {
+		return fmt.Errorf("detectors.crawler.min_sequential должен быть > 0, got %d",
+			cfg.Detectors.Crawler.MinSequential)
+	}
+	if cfg.Detectors.Bruteforce.Enabled && cfg.Detectors.Bruteforce.MinRequests <= 0 {
+		return fmt.Errorf("detectors.bruteforce.min_requests должен быть > 0, got %d",
+			cfg.Detectors.Bruteforce.MinRequests)
+	}
+	if cfg.Detectors.NoAsset.Enabled && cfg.Detectors.NoAsset.MinPageRequests <= 0 {
+		return fmt.Errorf("detectors.noasset.min_page_requests должен быть > 0, got %d",
+			cfg.Detectors.NoAsset.MinPageRequests)
+	}
+	if cfg.Detectors.Overflow.Enabled && cfg.Detectors.Overflow.MaxURLLength <= 0 {
+		return fmt.Errorf("detectors.overflow.max_url_length должен быть > 0, got %d",
+			cfg.Detectors.Overflow.MaxURLLength)
+	}
 	return nil
 }
 

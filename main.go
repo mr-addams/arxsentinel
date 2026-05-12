@@ -15,19 +15,23 @@
 //     - Конфигурационные структуры (sys/config)
 //     - Логирование (sys/utils)
 //
-//   АРХИТЕКТУРА PIPELINE (Flow #4):
+//   АРХИТЕКТУРА PIPELINE (Flow #4–6):
 //     TailReader → lines chan → whitelist.Matcher (custom IP/UA → early return)
 //              ↓
 //     whitelist.Verifier (bot UA → rDNS/fDNS → verified → return | isFakeBot → +score)
 //              ↓
 //     tracker.Update(*IPState)
 //              ↓
-//     scorer.Evaluate(state, entry, detectors=[probe, rate, ua]) → [level≠""] → threatLogger.Log
+//     scorer.Evaluate(state, entry, detectors=[probe, rate, ua, bruteforce, crawler, noasset, overflow])
+//              ↓ [level≠""]
+//     threatLogger.Log
 //
 //   Изменение (Flow #4, Tasks 4.0–4.3):
 //     Добавлена whitelist-интеграция (Matcher, IPCache, Verifier).
 //     Подключены три детектора: probe, rate, ua.
 //     processLine расширен: early-exit по whitelist, fake bot penalty перед scorer.
+//   Изменение (Flow #6, Tasks 6.1–6.4):
+//     Подключены четыре детектора: bruteforce, crawler, noasset, overflow.
 //   Изменение (Flow #5, Task 5.3):
 //     Добавлено управление PID-файлом: writePID после utils.Init, defer removePID.
 
@@ -140,7 +144,7 @@ func main() {
 	go tail.Run(ctx)
 
 	utils.Log("STARTUP", fmt.Sprintf(
-		"pipeline запущен (tail → whitelist → tracker → scorer[probe,rate,ua]) | файл: %s",
+		"pipeline запущен (tail → whitelist → tracker → scorer[probe,rate,ua,bruteforce,crawler,noasset,overflow]) | файл: %s",
 		cfg.General.LogFile,
 	), "info")
 
@@ -165,7 +169,7 @@ func main() {
 //
 // Только включённые детекторы (Enabled=true) добавляются в список.
 // Flow #4 MVP: probe, rate, ua.
-// Остальные детекторы (bruteforce, crawler, noasset, overflow) — Flow #5+.
+// Flow #6: bruteforce, crawler, noasset, overflow.
 func buildDetectors(cfg config.Config) []detector.Detector {
 	var detectors []detector.Detector
 
@@ -184,11 +188,36 @@ func buildDetectors(cfg config.Config) []detector.Detector {
 		detectors = append(detectors, detector.NewUADetector(cfg.Detectors.UserAgent))
 	}
 
-	utils.Log("CONFIG", fmt.Sprintf("детекторы: %d активных (probe=%v rate=%v ua=%v)",
+	// Bruteforce: аномальный % 404 — Task 6.1
+	if cfg.Detectors.Bruteforce.Enabled {
+		detectors = append(detectors, detector.NewBruteforceDetector(cfg.Detectors.Bruteforce))
+	}
+
+	// Crawler: последовательный числовой обход URL — Task 6.2
+	if cfg.Detectors.Crawler.Enabled {
+		detectors = append(detectors, detector.NewCrawlerDetector(cfg.Detectors.Crawler))
+	}
+
+	// NoAsset: страницы без статики — Task 6.3
+	if cfg.Detectors.NoAsset.Enabled {
+		detectors = append(detectors, detector.NewNoAssetDetector(cfg.Detectors.NoAsset))
+	}
+
+	// Overflow: аномальная длина URL / WAF bypass — Task 6.4
+	if cfg.Detectors.Overflow.Enabled {
+		detectors = append(detectors, detector.NewOverflowDetector(cfg.Detectors.Overflow))
+	}
+
+	utils.Log("CONFIG", fmt.Sprintf(
+		"детекторы: %d активных (probe=%v rate=%v ua=%v bruteforce=%v crawler=%v noasset=%v overflow=%v)",
 		len(detectors),
 		cfg.Detectors.Probe.Enabled,
 		cfg.Detectors.Rate.Enabled,
 		cfg.Detectors.UserAgent.Enabled,
+		cfg.Detectors.Bruteforce.Enabled,
+		cfg.Detectors.Crawler.Enabled,
+		cfg.Detectors.NoAsset.Enabled,
+		cfg.Detectors.Overflow.Enabled,
 	), "info")
 
 	return detectors
