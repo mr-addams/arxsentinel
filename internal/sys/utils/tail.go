@@ -46,15 +46,16 @@ import (
 //   переоткрыт     → после CREATE нового файла
 type TailReader struct {
 	filePath      string
-	lines         chan<- string
+	lines         chan string
 	retryInterval time.Duration // интервал повтора при недоступном файле; из cfg.General.TailRetryInterval
 }
 
 // NewTailReader создаёт TailReader.
 // lines — буферизованный канал для прочитанных строк (размер: cfg.General.LinesBufSize).
 // retryInterval — интервал ожидания при недоступном файле (cfg.General.TailRetryInterval).
+// TailReader закрывает канал при завершении Run — main может дождаться !ok при drain.
 // Запуск: go t.Run(ctx).
-func NewTailReader(filePath string, lines chan<- string, retryInterval time.Duration) *TailReader {
+func NewTailReader(filePath string, lines chan string, retryInterval time.Duration) *TailReader {
 	return &TailReader{
 		filePath:      filePath,
 		lines:         lines,
@@ -68,6 +69,10 @@ func NewTailReader(filePath string, lines chan<- string, retryInterval time.Dura
 // При старте открывает файл и переходит в EOF — читаем только новые строки,
 // не весь исторический лог (может быть гигантским и уже обработанным).
 func (t *TailReader) Run(ctx context.Context) {
+	// Закрытие канала сигнализирует main что TailReader завершил запись —
+	// drain loop в main может корректно дождаться !ok вместо гонки на default.
+	defer close(t.lines)
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		Log("TAIL", fmt.Sprintf("ошибка создания watcher: %v", err), "error")

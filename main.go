@@ -8,7 +8,7 @@
 //     - processLine() — обработка одной строки лога
 //     - writePID() / removePID() — управление PID-файлом демона
 //     - GC горутина: периодическая очистка неактивных IP
-//     - Базовый shutdown по SIGTERM/SIGINT (полный graceful shutdown — Task 7.2)
+//     - Graceful shutdown: drain буфера + Sync перед Close (Task 7.2)
 //
 //   ЧТО НЕ ЗДЕСЬ:
 //     - Бизнес-логика (core/)
@@ -153,7 +153,19 @@ func main() {
 	for {
 		select {
 		case <-ctx.Done():
-			utils.Log("SHUTDOWN", "сигнал получен, завершение", "info")
+			utils.Log("SHUTDOWN", "сигнал получен, обработка буфера...", "info")
+			// TailReader завершает работу по тому же ctx и закрывает канал через defer.
+			// Ждём !ok — это гарантирует что TailReader дозаписал все строки перед выходом.
+			// TailReader использует неблокирующий select при отправке — дедлок невозможен.
+		drainLoop:
+			for {
+				line, ok := <-lines
+				if !ok {
+					break drainLoop
+				}
+				processLine(ctx, line, tracker, sc, threatLogger, matcher, verifier, cfg.Whitelist.FakeBotScore)
+			}
+			utils.Log("SHUTDOWN", "завершение", "info")
 			return
 		case line, ok := <-lines:
 			if !ok {

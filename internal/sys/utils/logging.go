@@ -167,14 +167,18 @@ func Init(debug, consoleColor bool, operationalLogPath, threatLogPath string) er
 	return nil
 }
 
-// Close закрывает файловые дескрипторы. Вызывать через defer в main.go.
+// Close сбрасывает буферы ОС и закрывает файловые дескрипторы. Вызывать через defer в main.go.
+// Sync() перед Close() гарантирует что последние записи не потеряются при SIGTERM — ядро
+// может держать данные в page cache без fsync до явного вызова.
 func Close() {
 	if operationalWriter != nil {
-		operationalWriter.Close()
+		_ = operationalWriter.Sync()
+		_ = operationalWriter.Close()
 		operationalWriter = nil
 	}
 	if threatWriter != nil {
-		threatWriter.Close()
+		_ = threatWriter.Sync()
+		_ = threatWriter.Close()
 		threatWriter = nil
 	}
 }
