@@ -59,7 +59,8 @@ func (l *ThreatLogger) Log(ip string, score int, level string, modules []string,
 
 // FormatThreatLine форматирует одну строку threat-лога.
 //
-// Публичная функция — используется в tests и в utils.LogThreat для единого формата.
+// Публичная функция — используется в тестах для проверки формата строки.
+// utils.LogThreat форматирует строку независимо (sys/ не импортирует core/).
 // Формат совместим с Fail2Ban: timestamp level ip score=N modules=... reason="..."
 //
 // Пример:

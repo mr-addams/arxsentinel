@@ -150,7 +150,10 @@ func hasConsecutiveSequence(nums []int, minLen int) bool {
 
 	// Дедупликация: одинаковые числа (повторные запросы к одному URL) не считаются
 	// отдельными шагами последовательности.
-	uniq := nums[:1]
+	// make вместо nums[:1]: изолируем срез от исходного массива — append в цикле
+	// не модифицирует nums за пределами uniq.
+	uniq := make([]int, 1, len(nums))
+	uniq[0] = nums[0]
 	for _, n := range nums[1:] {
 		if n != uniq[len(uniq)-1] {
 			uniq = append(uniq, n)

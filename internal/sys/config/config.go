@@ -233,7 +233,9 @@ func LoadConfig(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Файл не найден — дефолты достаточны для запуска
+			// Файл не найден — дефолты достаточны для запуска.
+			// Сообщаем в stderr: оператор должен знать что работает на дефолтах.
+			fmt.Fprintf(os.Stderr, "[INFO] конфиг %q не найден, используются дефолты\n", path)
 			return cfg, nil
 		}
 		return cfg, fmt.Errorf("чтение конфига %q: %w", path, err)

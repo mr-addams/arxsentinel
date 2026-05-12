@@ -294,3 +294,29 @@ func TestVerify_FakeGooglebot_CachedResult(t *testing.T) {
 		t.Error("FakeBot cached: кэш verified=false → isFakeBot=true")
 	}
 }
+
+// ========================== Тест: matchesRDNSDomain нормализация ========================
+
+func TestMatchesRDNSDomain_NormalizesLeadingDot(t *testing.T) {
+	// Суффиксы без ведущей точки должны быть нормализованы:
+	//   "googlebot.com" → ".googlebot.com"
+	// Без нормализации "evilgooglebot.com" совпадало бы с суффиксом "googlebot.com".
+
+	// Корректный hostname — должен совпасть даже если суффикс без точки
+	if !matchesRDNSDomain("crawl-66-249-66-1.googlebot.com", []string{"googlebot.com"}) {
+		t.Error("легитимный googlebot.com должен совпасть с суффиксом без ведущей точки")
+	}
+
+	// Вредоносный hostname — НЕ должен совпасть
+	if matchesRDNSDomain("crawl.evilgooglebot.com", []string{"googlebot.com"}) {
+		t.Error("evilgooglebot.com не должен совпасть с суффиксом googlebot.com")
+	}
+
+	// С ведущей точкой — исходное поведение не сломано
+	if !matchesRDNSDomain("crawl-66-249-66-1.googlebot.com", []string{".googlebot.com"}) {
+		t.Error("легитимный googlebot.com должен совпасть с суффиксом .googlebot.com")
+	}
+	if matchesRDNSDomain("crawl.evilgooglebot.com", []string{".googlebot.com"}) {
+		t.Error("evilgooglebot.com не должен совпасть с суффиксом .googlebot.com")
+	}
+}

@@ -82,8 +82,9 @@ type IPState struct {
 
 	// ── Score ─────────────────────────────────────────────────────────────────────────
 	// Накопленный score с линейным decay. Обновляется scorer'ом через SetScore.
-	Score          int
-	ScoreUpdatedAt time.Time
+	// Приватные поля: внешний доступ только через GetScore/GetScoreUpdatedAt/SetScore.
+	score          int
+	scoreUpdatedAt time.Time
 
 	// Элемент LRU-списка — только для Tracker. Не трогать вручную.
 	lruElem *list.Element
@@ -146,11 +147,11 @@ func (s *IPState) ApproxRate(window time.Duration) float64 {
 
 // ++++++++++++++++++++++++++ Реализация detector.ScoreAccess +++++++++++++++++++++++++
 
-func (s *IPState) GetScore() int               { return s.Score }
-func (s *IPState) GetScoreUpdatedAt() time.Time { return s.ScoreUpdatedAt }
+func (s *IPState) GetScore() int               { return s.score }
+func (s *IPState) GetScoreUpdatedAt() time.Time { return s.scoreUpdatedAt }
 func (s *IPState) SetScore(score int, at time.Time) {
-	s.Score = score
-	s.ScoreUpdatedAt = at
+	s.score = score
+	s.scoreUpdatedAt = at
 }
 
 // ========================== Tracker =================================================
@@ -219,16 +220,17 @@ func (t *Tracker) Update(entry *parser.LogEntry) *IPState {
 
 	st, exists := t.states[entry.RealIP]
 	if !exists {
+		// Eviction до добавления: иначе в map кратковременно maxIPs+1 записей.
+		// При maxIPs=1 предыдущий код держал в памяти 2 IP вместо 1.
+		if len(t.states) >= t.maxIPs {
+			t.evictLRULocked()
+		}
 		st = &IPState{
 			IP:        entry.RealIP,
 			FirstSeen: entry.Time,
 		}
 		t.states[entry.RealIP] = st
 		st.lruElem = t.lru.PushFront(st)
-		// LRU eviction при превышении лимита: удаляем хвост списка
-		if t.lru.Len() > t.maxIPs {
-			t.evictLRULocked()
-		}
 	} else {
 		// IP активен — перемещаем в голову LRU
 		t.lru.MoveToFront(st.lruElem)
@@ -327,7 +329,7 @@ func (t *Tracker) GetStats() Stats {
 	s.TrackedIPs = len(t.states)
 	for _, st := range t.states {
 		s.TotalRequests += int64(st.TotalRequests)
-		if st.Score > 0 {
+		if st.score > 0 {
 			s.Suspicious++
 		}
 	}

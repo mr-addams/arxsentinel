@@ -8,6 +8,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -235,6 +236,34 @@ func TestLoadConfig_DefaultBots(t *testing.T) {
 				t.Error("google.UAPatterns: want non-empty")
 			}
 		}
+	}
+}
+
+// ========================== Тест: stderr при отсутствии конфига ========================
+
+func TestLoadConfig_StderrOnMissingFile(t *testing.T) {
+	// При ENOENT LoadConfig должен выводить сообщение в stderr —
+	// оператор должен знать что демон работает на дефолтах, а не на его config.yaml.
+
+	// Перехватываем os.Stderr через pipe
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = w
+
+	LoadConfig("/nonexistent/path/nginx-sentinel-test-stderr.yaml")
+
+	w.Close()
+	os.Stderr = origStderr
+
+	buf := make([]byte, 512)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if !strings.Contains(output, "не найден, используются дефолты") {
+		t.Errorf("stderr должен содержать 'не найден, используются дефолты', получили: %q", output)
 	}
 }
 

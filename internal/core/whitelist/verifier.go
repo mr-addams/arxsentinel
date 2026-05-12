@@ -200,10 +200,17 @@ func (v *Verifier) verifyRDNS(ctx context.Context, ip string, botCfg config.BotC
 
 // matchesRDNSDomain проверяет что hostname оканчивается на один из допустимых rDNS-суффиксов.
 //
+// Нормализация суффикса: добавляем ведущую точку если отсутствует.
+// Без точки "evilgooglebot.com" совпало бы с суффиксом "googlebot.com".
+// Конфиг по умолчанию корректен (с точкой), но нормализация защищает от опечатки оператора.
+//
 // Пустой список RDNSDomains (как у ip_ranges ботов) — метод не вызывается для них,
 // но защитная проверка есть: пустой список → false (не пропускаем без проверки).
 func matchesRDNSDomain(hostname string, domains []string) bool {
 	for _, domain := range domains {
+		if !strings.HasPrefix(domain, ".") {
+			domain = "." + domain
+		}
 		if strings.HasSuffix(hostname, domain) {
 			return true
 		}
