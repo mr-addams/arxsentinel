@@ -357,8 +357,13 @@ func LogThreat(ip string, score int, threatLevel string, modules []string, reaso
 		logMu.RUnlock()
 		Log("ERROR", fmt.Sprintf("[THREAT] threatWriter=nil, threat потерян: %s score=%d modules=%s", ip, score, modulesStr), "error")
 	} else {
-		fmt.Fprintln(threatWriter, line)
+		_, err := fmt.Fprintln(threatWriter, line)
 		logMu.RUnlock()
+		// Ошибка записи (переполнение диска, инвалидация fd) логируется в stderr напрямую —
+		// рекурсия через Log/logMu невозможна, Fail2Ban должен знать о потере записи.
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[ERROR] threat запись потеряна (%s score=%d): %v\n", ip, score, err)
+		}
 	}
 
 	// Дублируем в консоль как [THREAT] для мониторинга в реальном времени

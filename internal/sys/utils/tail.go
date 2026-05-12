@@ -183,23 +183,30 @@ func (t *TailReader) Run(ctx context.Context) {
 // waitForFile ждёт появления файла и открывает его с позиции EOF.
 // Возвращает nil если ctx отменён до появления файла.
 // Seek(EOF) при старте — исторический лог может быть гигантским, не читаем его.
+//
+// time.NewTimer(0) + Reset: переиспользуем один таймер вместо time.After,
+// который создаёт новый *time.Timer на каждой итерации и не освобождает его
+// до истечения — при долгом ожидании файла таймеры накапливаются.
 func (t *TailReader) waitForFile(ctx context.Context) *os.File {
+	timer := time.NewTimer(0) // первая итерация сразу, без задержки
+	defer timer.Stop()
 	for {
-		f, err := os.Open(t.filePath)
-		if err == nil {
-			if _, seekErr := f.Seek(0, io.SeekEnd); seekErr != nil {
-				f.Close()
-				Log("TAIL", fmt.Sprintf("ошибка seek(EOF) в %s: %v", t.filePath, seekErr), "error")
-			} else {
-				return f
-			}
-		} else {
-			Log("TAIL", fmt.Sprintf("файл недоступен (%v), повтор через %v", err, t.retryInterval), "warning")
-		}
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(t.retryInterval):
+		case <-timer.C:
+			f, err := os.Open(t.filePath)
+			if err == nil {
+				if _, seekErr := f.Seek(0, io.SeekEnd); seekErr != nil {
+					f.Close()
+					Log("TAIL", fmt.Sprintf("ошибка seek(EOF) в %s: %v", t.filePath, seekErr), "error")
+				} else {
+					return f
+				}
+			} else {
+				Log("TAIL", fmt.Sprintf("файл недоступен (%v), повтор через %v", err, t.retryInterval), "warning")
+			}
+			timer.Reset(t.retryInterval)
 		}
 	}
 }

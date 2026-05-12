@@ -334,6 +334,21 @@ func (t *Tracker) GetStats() Stats {
 	return s
 }
 
+// Reconfigure применяет новые параметры конфига после SIGHUP.
+// Вызывается из main.go в блоке case <-reloadCh — между строками pipeline,
+// поэтому нет concurrent access с Update (однопоточный pipeline).
+// GC-горутина может читать retention/rateWindow → нужен write lock.
+func (t *Tracker) Reconfigure(cfg config.Config) {
+	rw := time.Duration(cfg.Detectors.Rate.Window)
+	if rw <= 0 {
+		rw = 60 * time.Second
+	}
+	t.mu.Lock()
+	t.retention = time.Duration(cfg.Scoring.ObservationWindow)
+	t.rateWindow = rw
+	t.mu.Unlock()
+}
+
 // Len возвращает количество отслеживаемых IP (потокобезопасно).
 func (t *Tracker) Len() int {
 	t.mu.RLock()
@@ -389,11 +404,14 @@ func (t *Tracker) RunGC(ctx context.Context, interval time.Duration) {
 // Удаляет IP, неактивные дольше retention.
 // Возвращает (deleted, remaining) — оба числа захвачены под одним write lock,
 // поэтому лог "удалено N, осталось M" точно описывает состояние после этого цикла.
+//
+// threshold вычисляется внутри лока: Reconfigure() может обновить t.retention
+// из main-горутины пока GC-горутина ещё не захватила мьютекс.
 func (t *Tracker) runGC() (int, int) {
-	threshold := time.Now().Add(-t.retention)
-
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	threshold := time.Now().Add(-t.retention)
 
 	deleted := 0
 	for ip, st := range t.states {

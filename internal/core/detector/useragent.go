@@ -118,9 +118,13 @@ func (d *UADetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 		}
 	}
 
+	// Нормализуем UA один раз — ловим CURL/8.7.1, WGET/1.x и любые другие варианты регистра.
+	// Reason по-прежнему использует оригинальный паттерн для читаемости в логах.
+	uaLower := strings.ToLower(ua)
+
 	// ── Сканеры ───────────────────────────────────────────────────────────────────────
 	for _, p := range scannerPatterns {
-		if strings.Contains(ua, p) {
+		if strings.Contains(uaLower, strings.ToLower(p)) {
 			return DetectResult{
 				Score:  d.scannerScore,
 				Module: "ua",
@@ -131,7 +135,7 @@ func (d *UADetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 
 	// ── Грабберы ──────────────────────────────────────────────────────────────────────
 	for _, p := range grabberPatterns {
-		if strings.Contains(ua, p) {
+		if strings.Contains(uaLower, strings.ToLower(p)) {
 			return DetectResult{
 				Score:  d.grabberScore,
 				Module: "ua",
@@ -142,7 +146,7 @@ func (d *UADetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 
 	// ── Автоматизация ─────────────────────────────────────────────────────────────────
 	for _, p := range automationPatterns {
-		if strings.Contains(ua, p) {
+		if strings.Contains(uaLower, strings.ToLower(p)) {
 			return DetectResult{
 				Score:  d.automationScore,
 				Module: "ua",

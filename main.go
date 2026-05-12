@@ -66,9 +66,10 @@ var (
 )
 
 // configPath — путь к конфигу по умолчанию.
+// Абсолютный путь: при запуске через systemd WorkingDirectory=/ относительный "./config.yaml"
+// не найдётся. Совпадает с путём из install.sh.
 // Переопределяется через переменную окружения NGINX_SENTINEL_CONFIG.
-// hardcoded: путь привязан к структуре проекта и install-скрипту (Task 7.4).
-const configPath = "./config.yaml"
+const configPath = "/etc/nginx-sentinel/config.yaml"
 
 func main() {
 	// ── Загрузка конфига ──────────────────────────────────────────────────────────────
@@ -214,13 +215,16 @@ func main() {
 			// TailReader завершает работу по тому же ctx и закрывает канал через defer.
 			// Ждём !ok — это гарантирует что TailReader дозаписал все строки перед выходом.
 			// TailReader использует неблокирующий select при отправке — дедлок невозможен.
+			// context.Background() вместо ctx: ctx уже отменён, поэтому verifyCtx
+			// (context.WithTimeout(ctx,...)) был бы немедленно отменён → все боты
+			// получали бы isFakeBot=true → ложные бан-записи в threats.log при shutdown.
 		drainLoop:
 			for {
 				line, ok := <-lines
 				if !ok {
 					break drainLoop
 				}
-				processLine(ctx, line, tracker, sc, threatLogger, matcher, verifier, cfg.Whitelist.FakeBotScore)
+				processLine(context.Background(), line, tracker, sc, threatLogger, matcher, verifier, cfg.Whitelist.FakeBotScore)
 			}
 			utils.Log("SHUTDOWN", "завершение", "info")
 			return
@@ -232,6 +236,7 @@ func main() {
 				continue
 			}
 			cfg = newCfg
+			tracker.Reconfigure(cfg)
 			sc = scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log)
 			if newMatcher, err := whitelist.NewMatcher(cfg.Whitelist); err == nil {
 				matcher = newMatcher
