@@ -129,10 +129,30 @@ func main() {
 
 	// ── Context + shutdown ────────────────────────────────────────────────────────────
 
-	// Полный graceful shutdown (flush буферов, drain канала) — Task 7.2.
-	// Сейчас: останавливаем горутины по сигналу через ctx.
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
+
+	// ── SIGHUP reload ─────────────────────────────────────────────────────────────────
+	// Горутина конвертирует os.Signal → struct{} в небуферизованный канал размером 1.
+	// Если предыдущий reload ещё не обработан — пропускаем (select default).
+	// Главный loop читает reloadCh между строками — нет concurrent access в processLine.
+	sigHUP := make(chan os.Signal, 1)
+	signal.Notify(sigHUP, syscall.SIGHUP)
+	defer signal.Stop(sigHUP)
+	reloadCh := make(chan struct{}, 1)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-sigHUP:
+				select {
+				case reloadCh <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
 
 	// ── GC горутина ───────────────────────────────────────────────────────────────────
 	go tracker.RunGC(ctx, time.Duration(cfg.State.GCInterval))
@@ -167,6 +187,26 @@ func main() {
 			}
 			utils.Log("SHUTDOWN", "завершение", "info")
 			return
+
+		case <-reloadCh:
+			newCfg, err := config.LoadConfig(path)
+			if err != nil {
+				utils.Log("CONFIG", "SIGHUP: ошибка перезагрузки конфига: "+err.Error(), "warn")
+				continue
+			}
+			cfg = newCfg
+			sc = scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log)
+			if newMatcher, err := whitelist.NewMatcher(cfg.Whitelist); err == nil {
+				matcher = newMatcher
+			} else {
+				utils.Log("CONFIG", "SIGHUP: ошибка перезагрузки whitelist: "+err.Error(), "warn")
+			}
+			if err := utils.Reload(cfg.Logging.Debug, cfg.Logging.ConsoleColor,
+				cfg.Output.OperationalLog, cfg.Output.ThreatLog); err != nil {
+				utils.Log("CONFIG", "SIGHUP: ошибка перезагрузки логгера: "+err.Error(), "warn")
+			}
+			utils.Log("CONFIG", "SIGHUP: конфиг перезагружен", "info")
+
 		case line, ok := <-lines:
 			if !ok {
 				utils.Log("SHUTDOWN", "канал закрыт, завершение", "info")

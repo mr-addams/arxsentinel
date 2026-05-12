@@ -28,6 +28,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fatih/color"
@@ -35,24 +37,18 @@ import (
 
 // ========================== Глобальное состояние =======================================
 //
-// TODO (Task 7.1 — SIGHUP reload): при реализации горячей перезагрузки конфига
-// Init будет вызываться повторно из горутины-обработчика сигнала, пока pipeline
-// активно вызывает Log/LogThreat из других горутин. Текущие глобальные переменные
-// не защищены от конкурентного доступа — data race.
-//
-// Необходимо до Task 7.1:
-//   - operationalWriter / threatWriter → sync.RWMutex (или sync/atomic.Pointer[os.File])
-//   - DebugEnabled / ColorEnabled → sync/atomic.Bool
-//   - Init при reload должен атомарно менять указатели (swap + Close старого файла)
+// logMu защищает operationalWriter и threatWriter от concurrent access при SIGHUP reload:
+// GC-горутина вызывает Log/LogThreat параллельно с Reload() в main-горутине.
+// Читатели (Log, LogThreat) берут RLock; Reload берёт Lock для swap дескрипторов.
 
 var (
-	// DebugEnabled включает debugOnlyTags в консоль.
-	// Устанавливается из main.go через cfg.Logging.Debug.
-	DebugEnabled bool
+	// debugEnabled / colorEnabled — атомики: читаются из Log без лока (fast path),
+	// обновляются в Init/Reload из main-горутины.
+	debugEnabled atomic.Bool
+	colorEnabled atomic.Bool
 
-	// ColorEnabled включает ANSI-цвета в консоли.
-	// Устанавливается из main.go через cfg.Logging.ConsoleColor.
-	ColorEnabled bool = true
+	// logMu защищает operationalWriter и threatWriter.
+	logMu sync.RWMutex
 
 	// operationalWriter — файловый дескриптор для sentinel.log.
 	// nil если файл не удалось открыть — продолжаем с консолью только.
@@ -62,6 +58,10 @@ var (
 	// nil если файл не удалось открыть — Init вернёт ошибку.
 	threatWriter *os.File
 )
+
+func init() {
+	colorEnabled.Store(true) // цвета включены по умолчанию до явного Init
+}
 
 // ========================== Инициализация цветов =======================================
 
@@ -139,8 +139,8 @@ var quietTags = map[string]bool{
 //
 // Вызывается из main.go один раз при старте.
 func Init(debug, consoleColor bool, operationalLogPath, threatLogPath string) error {
-	DebugEnabled = debug
-	ColorEnabled = consoleColor
+	debugEnabled.Store(debug)
+	colorEnabled.Store(consoleColor)
 
 	// Operational log — некритичен, только warn при недоступности
 	if err := ensureDir(operationalLogPath); err != nil {
@@ -167,19 +167,79 @@ func Init(debug, consoleColor bool, operationalLogPath, threatLogPath string) er
 	return nil
 }
 
+// Reload атомарно меняет файловые дескрипторы и флаги после SIGHUP.
+// Открывает новые файлы до захвата лока, затем атомарно меняет указатели
+// и закрывает старые дескрипторы вне лока (читатели больше не видят old).
+//
+// Семантика ошибок: operational log некритичен (warn + nil writer);
+// threat log критичен — при ошибке возвращает error и не меняет состояние.
+func Reload(debug, consoleColor bool, operationalLogPath, threatLogPath string) error {
+	// Открываем новые дескрипторы до лока — IO не держит мьютекс
+	var newOperWriter *os.File
+	if err := ensureDir(operationalLogPath); err != nil {
+		fmt.Fprintf(os.Stderr, "[WARN] Reload: не удалось создать директорию operational log: %v\n", err)
+	} else if f, err := os.OpenFile(operationalLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err == nil {
+		newOperWriter = f
+	} else {
+		fmt.Fprintf(os.Stderr, "[WARN] Reload: operational log недоступен: %v\n", err)
+	}
+
+	if err := ensureDir(threatLogPath); err != nil {
+		if newOperWriter != nil {
+			newOperWriter.Close()
+		}
+		return fmt.Errorf("Reload: директория threat log: %w", err)
+	}
+	newThreatWriter, err := os.OpenFile(threatLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		if newOperWriter != nil {
+			newOperWriter.Close()
+		}
+		return fmt.Errorf("Reload: threat log недоступен (%s): %w", threatLogPath, err)
+	}
+
+	// Флаги обновляем только после успешного открытия файлов —
+	// при ошибке выше состояние остаётся согласованным (атомики = дескрипторы = старый конфиг).
+	debugEnabled.Store(debug)
+	colorEnabled.Store(consoleColor)
+
+	// Атомарный swap под write lock — читатели блокируются на минимальное время
+	logMu.Lock()
+	oldOper, oldThreat := operationalWriter, threatWriter
+	operationalWriter = newOperWriter
+	threatWriter = newThreatWriter
+	logMu.Unlock()
+
+	// Закрываем старые дескрипторы вне лока — читатели уже видят новые
+	if oldOper != nil {
+		_ = oldOper.Sync()
+		_ = oldOper.Close()
+	}
+	if oldThreat != nil {
+		_ = oldThreat.Sync()
+		_ = oldThreat.Close()
+	}
+
+	return nil
+}
+
 // Close сбрасывает буферы ОС и закрывает файловые дескрипторы. Вызывать через defer в main.go.
 // Sync() перед Close() гарантирует что последние записи не потеряются при SIGTERM — ядро
 // может держать данные в page cache без fsync до явного вызова.
 func Close() {
-	if operationalWriter != nil {
-		_ = operationalWriter.Sync()
-		_ = operationalWriter.Close()
-		operationalWriter = nil
+	logMu.Lock()
+	ow, tw := operationalWriter, threatWriter
+	operationalWriter = nil
+	threatWriter = nil
+	logMu.Unlock()
+
+	if ow != nil {
+		_ = ow.Sync()
+		_ = ow.Close()
 	}
-	if threatWriter != nil {
-		_ = threatWriter.Sync()
-		_ = threatWriter.Close()
-		threatWriter = nil
+	if tw != nil {
+		_ = tw.Sync()
+		_ = tw.Close()
 	}
 }
 
@@ -203,11 +263,11 @@ func ensureDir(filePath string) error {
 // Если тело начинается с [TAG] — inner-тег красится отдельным цветом.
 func Log(tag, message, level string) {
 	// debugOnlyTags: только при явном включении debug-режима
-	if debugOnlyTags[tag] && !DebugEnabled {
+	if debugOnlyTags[tag] && !debugEnabled.Load() {
 		return
 	}
 	// quietTags: в продакшне показываем только важные события
-	if quietTags[tag] && !DebugEnabled {
+	if quietTags[tag] && !debugEnabled.Load() {
 		if level != "error" && level != "warning" {
 			return
 		}
@@ -217,9 +277,12 @@ func Log(tag, message, level string) {
 
 	// ── Запись в sentinel.log (plain text, без ANSI) ──────────────────────────────────
 	// Пишем в файл до форматирования с цветом — избегаем ANSI-кодов в файле.
+	// RLock защищает от swap дескриптора при SIGHUP reload.
+	logMu.RLock()
 	if operationalWriter != nil {
 		fmt.Fprintf(operationalWriter, "%s [%s] %s\n", timestamp, tag, message)
 	}
+	logMu.RUnlock()
 
 	// ── Форматирование для консоли ────────────────────────────────────────────────────
 
@@ -245,7 +308,7 @@ func Log(tag, message, level string) {
 	}
 
 	var line string
-	if ColorEnabled {
+	if colorEnabled.Load() {
 		ts := timestampColor.Sprint(timestamp)
 		t := tagColor.Sprintf("[%s]", tag)
 		if innerTagStr != "" {
@@ -286,12 +349,16 @@ func LogThreat(ip string, score int, threatLevel string, modules []string, reaso
 		timestamp, threatLevel, ip, score, modulesStr, reason)
 
 	// Пишем в threats.log — Fail2Ban читает именно этот файл.
+	// RLock защищает от swap дескриптора при SIGHUP reload.
 	// nil означает что Init не вызван или был Close() — явно сигнализируем,
 	// иначе threat теряется без следа и Fail2Ban слеп к атаке.
+	logMu.RLock()
 	if threatWriter == nil {
+		logMu.RUnlock()
 		Log("ERROR", fmt.Sprintf("[THREAT] threatWriter=nil, threat потерян: %s score=%d modules=%s", ip, score, modulesStr), "error")
 	} else {
 		fmt.Fprintln(threatWriter, line)
+		logMu.RUnlock()
 	}
 
 	// Дублируем в консоль как [THREAT] для мониторинга в реальном времени
