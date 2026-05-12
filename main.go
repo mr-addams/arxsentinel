@@ -44,6 +44,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -55,6 +56,13 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/core/whitelist"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
+)
+
+// processedCount / threatCount — атомарные счётчики для горутины статистики (Task 7.3).
+// Package-level: processLine и ThreatLogger writeFn находятся в том же пакете.
+var (
+	processedCount atomic.Int64
+	threatCount    atomic.Int64
 )
 
 // configPath — путь к конфигу по умолчанию.
@@ -124,8 +132,14 @@ func main() {
 	// scorer — агрегатор очков от детекторов (Task 2.3 + Flow #4)
 	sc := scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log)
 
-	// threatLogger — запись WARN/THREAT в threats.log (Task 2.4)
-	threatLogger := output.NewThreatLogger(utils.LogThreat)
+	// threatLogger — запись WARN/THREAT в threats.log (Task 2.4).
+	// Closure вокруг utils.LogThreat: инкрементирует threatCount для горутины статистики.
+	threatLogger := output.NewThreatLogger(func(ip string, score int, level string, modules []string, reason string) {
+		if level == "THREAT" {
+			threatCount.Add(1)
+		}
+		utils.LogThreat(ip, score, level, modules, reason)
+	})
 
 	// ── Context + shutdown ────────────────────────────────────────────────────────────
 
@@ -156,6 +170,29 @@ func main() {
 
 	// ── GC горутина ───────────────────────────────────────────────────────────────────
 	go tracker.RunGC(ctx, time.Duration(cfg.State.GCInterval))
+
+	// ── Горутина статистики (Task 7.3) ────────────────────────────────────────────────
+	// Период = general.stats_interval (дефолт 300s) — независим от scoring.observation_window.
+	// Горутина стартует один раз; изменение stats_interval через SIGHUP требует перезапуска.
+	// processedCount/threatCount — атомики, нет гонок с pipeline горутиной.
+	// tracker.GetStats() итерирует под RLock — не вызывать из hot path.
+	go func() {
+		ticker := time.NewTicker(time.Duration(cfg.General.StatsInterval))
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				st := tracker.GetStats()
+				utils.Log("STATS", fmt.Sprintf(
+					"processed=%d tracked=%d threats=%d suspicious=%d",
+					processedCount.Load(), st.TrackedIPs,
+					threatCount.Load(), st.Suspicious,
+				), "info")
+			}
+		}
+	}()
 
 	// ── Pipeline: TailReader → parser ─────────────────────────────────────────────────
 
@@ -328,6 +365,8 @@ func processLine(
 		utils.Log("PARSER", fmt.Sprintf("пропуск битой строки: %.80s", line), "debug")
 		return
 	}
+	// Считаем только успешно распарсенные строки — bitые записи не учитываются.
+	processedCount.Add(1)
 
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,

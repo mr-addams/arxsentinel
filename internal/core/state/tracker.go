@@ -309,6 +309,31 @@ func (t *Tracker) evictLRULocked() {
 	}
 }
 
+// ========================== Статистика ==================================================
+
+// Stats — снапшот состояния трекера для периодического логирования.
+type Stats struct {
+	TrackedIPs    int   // текущее число отслеживаемых IP
+	TotalRequests int64 // сумма TotalRequests по всем IP
+	Suspicious    int   // IP со Score > 0 (накопили хотя бы одно очко)
+}
+
+// GetStats возвращает снапшот статистики под read lock.
+// Не вызывать из hot path — итерация по всем IP под RLock.
+func (t *Tracker) GetStats() Stats {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	var s Stats
+	s.TrackedIPs = len(t.states)
+	for _, st := range t.states {
+		s.TotalRequests += int64(st.TotalRequests)
+		if st.Score > 0 {
+			s.Suspicious++
+		}
+	}
+	return s
+}
+
 // Len возвращает количество отслеживаемых IP (потокобезопасно).
 func (t *Tracker) Len() int {
 	t.mu.RLock()

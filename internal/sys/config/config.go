@@ -68,6 +68,7 @@ type GeneralConfig struct {
 	PIDFile           string   `yaml:"pid_file"`            // YAML: general.pid_file, default "/var/run/nginx-sentinel.pid" — PID-файл демона. Потребитель: main.go
 	LinesBufSize      int      `yaml:"lines_buf_size"`      // YAML: general.lines_buf_size, default 1000 — буфер канала между TailReader и обработчиком строк; поднять при burst >1000 строк/сек. Потребитель: main.go
 	TailRetryInterval Duration `yaml:"tail_retry_interval"` // YAML: general.tail_retry_interval, default "5s" — интервал повтора при недоступном log_file. Потребитель: utils.TailReader
+	StatsInterval     Duration `yaml:"stats_interval"`      // YAML: general.stats_interval, default "300s" — период вывода STATS в operational.log. Потребитель: main.go stats goroutine. Изменение вступает в силу только при перезапуске (горутина стартует один раз).
 	// Пути к лог-файлам демона — в секции output: (полные пути, не директория)
 }
 
@@ -302,6 +303,7 @@ func defaultConfig() Config {
 			PIDFile:           "/var/run/nginx-sentinel.pid",
 			LinesBufSize:      1000,
 			TailRetryInterval: Duration(5 * time.Second),
+			StatsInterval:     Duration(300 * time.Second),
 		},
 		Logging: LoggingConfig{
 			Debug:        false,
