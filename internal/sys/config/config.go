@@ -180,10 +180,11 @@ type OverflowConfig struct {
 // ++++++++++++++++++++++++++ Секция: whitelist ++++++++++++++++++++++++++++++++++++++++
 
 type WhitelistConfig struct {
-	Bots         []BotConfig          `yaml:"bots"`
-	Custom       CustomWhitelistConfig `yaml:"custom"`
-	DNSCache     DNSCacheConfig        `yaml:"dns_cache"`
-	FakeBotScore int                  `yaml:"fake_bot_score"` // YAML: whitelist.fake_bot_score, default 35 — штраф за UA легитимного бота без подтверждения DNS. Потребитель: whitelist.Verifier
+	Bots             []BotConfig          `yaml:"bots"`
+	Custom           CustomWhitelistConfig `yaml:"custom"`
+	DNSCache         DNSCacheConfig        `yaml:"dns_cache"`
+	FakeBotScore     int                  `yaml:"fake_bot_score"`      // YAML: whitelist.fake_bot_score, default 35 — штраф за UA легитимного бота без подтверждения DNS. Потребитель: whitelist.Verifier
+	DNSVerifyTimeout Duration             `yaml:"dns_verify_timeout"`  // YAML: whitelist.dns_verify_timeout, default "2s" — таймаут DNS-верификации бота в pipeline. Потребитель: main.go processLine
 }
 
 // BotConfig — один легитимный бот с UA-паттернами и rDNS-доменами для верификации.
@@ -370,9 +371,10 @@ func defaultConfig() Config {
 			},
 		},
 		Whitelist: WhitelistConfig{
-			Bots:         defaultBots(),
-			Custom:       CustomWhitelistConfig{},
-			FakeBotScore: 35,
+			Bots:             defaultBots(),
+			Custom:           CustomWhitelistConfig{},
+			FakeBotScore:     35,
+			DNSVerifyTimeout: Duration(2 * time.Second),
 			DNSCache: DNSCacheConfig{
 				PositiveTTL:   Duration(24 * time.Hour),
 				NegativeTTL:   Duration(time.Hour),

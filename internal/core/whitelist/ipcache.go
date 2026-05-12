@@ -82,19 +82,25 @@ func (c *IPCache) Get(ip string) (verified bool, isFakeBot bool, ok bool) {
 		return false, false, false
 	}
 
-	if time.Now().After(entry.expiresAt) {
-		// ── Slow path: запись найдена но истекла — удаляем под write lock ────────────
-		c.mu.Lock()
-		// Повторная проверка после получения write lock:
-		// другая горутина могла обновить запись между RUnlock и Lock.
-		if e, still := c.entries[ip]; still && time.Now().After(e.expiresAt) {
-			delete(c.entries, ip)
-		}
-		c.mu.Unlock()
-		return false, false, false
+	if !time.Now().After(entry.expiresAt) {
+		return entry.verified, entry.isFakeBot, true
 	}
 
-	return entry.verified, entry.isFakeBot, true
+	// ── Slow path: запись найдена но истекла — удаляем под write lock ────────────────
+	c.mu.Lock()
+	// Повторная проверка после получения write lock: между RUnlock и Lock
+	// concurrent Set мог обновить запись с новым expiresAt — не удаляем живую запись.
+	// Если запись жива — возвращаем свежее значение вместо miss (TOCTOU fix).
+	if e, still := c.entries[ip]; still {
+		if !time.Now().After(e.expiresAt) {
+			// Set успел обновить запись — возвращаем свежее значение вместо miss.
+			c.mu.Unlock()
+			return e.verified, e.isFakeBot, true
+		}
+		delete(c.entries, ip)
+	}
+	c.mu.Unlock()
+	return false, false, false
 }
 
 // ========================== Set =======================================================

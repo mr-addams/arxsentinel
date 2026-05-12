@@ -224,7 +224,7 @@ func main() {
 				if !ok {
 					break drainLoop
 				}
-				processLine(context.Background(), line, tracker, sc, threatLogger, matcher, verifier, cfg.Whitelist.FakeBotScore)
+				processLine(context.Background(), line, tracker, sc, threatLogger, matcher, verifier, cfg.Whitelist.FakeBotScore, time.Duration(cfg.Whitelist.DNSVerifyTimeout))
 			}
 			utils.Log("SHUTDOWN", "завершение", "info")
 			return
@@ -235,14 +235,22 @@ func main() {
 				utils.Log("CONFIG", "SIGHUP: ошибка перезагрузки конфига: "+err.Error(), "warn")
 				continue
 			}
+			// Подготавливаем все компоненты до применения — если один не готов, остальные не меняем.
+			// Partial apply (cfg обновлён, matcher нет) создаёт молчаливое расхождение:
+			// scorer использует пороги нового конфига, matcher — старый whitelist.
+			newMatcher, err := whitelist.NewMatcher(newCfg.Whitelist)
+			if err != nil {
+				utils.Log("CONFIG", "SIGHUP: ошибка перезагрузки whitelist, reload отменён: "+err.Error(), "warn")
+				continue
+			}
+			// Атомарное применение: все компоненты готовы.
+			// ОГРАНИЧЕНИЕ: ipCache (TTL настройки) не обновляется при SIGHUP — кэш
+			// переживает reload намеренно (сброс кэша → DNS-нагрузка на весь трафик ботов).
+			// Изменение dns_cache.positive_ttl/negative_ttl вступает в силу только при перезапуске.
 			cfg = newCfg
 			tracker.Reconfigure(cfg)
 			sc = scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log)
-			if newMatcher, err := whitelist.NewMatcher(cfg.Whitelist); err == nil {
-				matcher = newMatcher
-			} else {
-				utils.Log("CONFIG", "SIGHUP: ошибка перезагрузки whitelist: "+err.Error(), "warn")
-			}
+			matcher = newMatcher
 			if err := utils.Reload(cfg.Logging.Debug, cfg.Logging.ConsoleColor,
 				cfg.Output.OperationalLog, cfg.Output.ThreatLog); err != nil {
 				utils.Log("CONFIG", "SIGHUP: ошибка перезагрузки логгера: "+err.Error(), "warn")
@@ -254,7 +262,7 @@ func main() {
 				utils.Log("SHUTDOWN", "канал закрыт, завершение", "info")
 				return
 			}
-			processLine(ctx, line, tracker, sc, threatLogger, matcher, verifier, cfg.Whitelist.FakeBotScore)
+			processLine(ctx, line, tracker, sc, threatLogger, matcher, verifier, cfg.Whitelist.FakeBotScore, time.Duration(cfg.Whitelist.DNSVerifyTimeout))
 		}
 	}
 }
@@ -333,12 +341,6 @@ func removePID(path string) {
 	_ = os.Remove(path)
 }
 
-// verifyTimeout — максимальное время ожидания DNS при верификации бота.
-// hardcoded: DNS round-trip не должен блокировать pipeline дольше этого времени.
-// При timeout Verify возвращает verified=false, isFakeBot=true (консервативно).
-// Async DNS-верификация в отдельном пуле горутин — Task 7.x.
-const verifyTimeout = 2 * time.Second
-
 // processLine обрабатывает одну строку лога:
 //   парсинг → whitelist early-exit → трекинг → fake bot penalty → скоринг → лог угрозы.
 //
@@ -352,7 +354,7 @@ const verifyTimeout = 2 * time.Second
 // При cache miss один запрос блокирует обработку канала lines на DNS round-trip (~200ms).
 // Смягчение: IPCache кэширует результат — DNS делается только при первом обращении IP.
 // При целенаправленной атаке с ботовым UA и множеством уникальных IP возможна задержка.
-// Максимальное ожидание ограничено verifyTimeout (2s). При timeout → isFakeBot=true.
+// Максимальное ожидание ограничено dnsVerifyTimeout (конфиг whitelist.dns_verify_timeout, дефолт 2s). При timeout → isFakeBot=true.
 //
 // Изменение (Flow #4, Task 4.0): добавлена whitelist-интеграция и fake bot penalty.
 func processLine(
@@ -364,6 +366,7 @@ func processLine(
 	matcher *whitelist.Matcher,
 	verifier *whitelist.Verifier,
 	fakeBotScore int,
+	dnsVerifyTimeout time.Duration,
 ) {
 	entry, ok := parser.Parse(line)
 	if !ok {
@@ -391,7 +394,7 @@ func processLine(
 	// verifyCtx с timeout: ограничиваем блокировку pipeline (см. KNOWN LIMITATION выше).
 	isFakeBot := false
 	if _, botCfg, matched := matcher.MatchBot(entry.UserAgent); matched {
-		verifyCtx, cancelVerify := context.WithTimeout(ctx, verifyTimeout)
+		verifyCtx, cancelVerify := context.WithTimeout(ctx, dnsVerifyTimeout)
 		verified, fake := verifier.Verify(verifyCtx, entry.RealIP, botCfg)
 		cancelVerify()
 		if verified {

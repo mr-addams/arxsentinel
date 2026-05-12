@@ -107,7 +107,10 @@ func (s *Scorer) Evaluate(sv detector.ScoreAccess, entry *parser.LogEntry) (leve
 		}
 		delta += res.Score
 		modulesHit = append(modulesHit, res.Module)
-		reasons = append(reasons, fmt.Sprintf("%s:%s", res.Module, res.Reason))
+		// Пустой Reason допустим по типу DetectResult — не добавляем "module:" без тела.
+		if res.Reason != "" {
+			reasons = append(reasons, fmt.Sprintf("%s:%s", res.Module, res.Reason))
+		}
 
 		if s.logFn != nil {
 			s.logFn("DETECTOR", fmt.Sprintf("[%s] %s +%d (reason: %s)",

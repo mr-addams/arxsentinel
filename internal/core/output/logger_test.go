@@ -136,3 +136,23 @@ func TestFormatThreatLineEmptyModules(t *testing.T) {
 		t.Errorf("строка должна содержать modules=: %s", line)
 	}
 }
+
+// TestFormatThreatLineReasonWithSpecialChars проверяет что reason со спецсимволами
+// форматируется корректно и Fail2Ban failregex ("THREAT <HOST> score=\d+") всё ещё матчит.
+// reason=%q экранирует кавычки — убеждаемся что prefix "reason=" в строке есть.
+func TestFormatThreatLineReasonWithSpecialChars(t *testing.T) {
+	reason := `ua:"curl/8.7" path=/etc/passwd`
+	line := FormatThreatLine("1.2.3.4", 85, "THREAT", []string{"ua", "probe"}, reason)
+
+	// Fail2Ban failregex: "THREAT <HOST> score=\d+" — проверяем что эти части присутствуют
+	for _, required := range []string{"THREAT", "1.2.3.4", "score=85", "reason="} {
+		if !strings.Contains(line, required) {
+			t.Errorf("строка не содержит %q: %s", required, line)
+		}
+	}
+
+	// reason должен быть обёрнут в кавычки (%q) — строка должна содержать "reason=\"
+	if !strings.Contains(line, `reason="`) {
+		t.Errorf("reason должен быть в кавычках (%q формат): %s", "%q", line)
+	}
+}

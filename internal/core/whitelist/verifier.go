@@ -94,7 +94,7 @@ func NewVerifier(cache *IPCache, resolver Resolver, logFn func(tag, msg, level s
 //   isFakeBot — true если UA совпал с ботом, но DNS провалился (Task 3.5)
 //               pipeline должен добавить cfg.Whitelist.FakeBotScore к score IP
 //
-// Порядок: кэш → DNS → кэш.Set → return.
+// Порядок: кэш → DNS → кэш.Set (только для rdns/rdns_ipjson) → return.
 // Кэш-хит избегает DNS-запросов на каждую строку лога одного IP.
 func (v *Verifier) Verify(ctx context.Context, ip string, botCfg config.BotConfig) (verified bool, isFakeBot bool) {
 	// ── Кэш-хит ──────────────────────────────────────────────────────────────────────
@@ -113,6 +113,8 @@ func (v *Verifier) Verify(ctx context.Context, ip string, botCfg config.BotConfi
 		// UA совпал с паттерном бота (Verify вызывается только при matched=true),
 		// DNS провалился → это фейковый бот → начислить FakeBotScore.
 		isFakeBot = !verified
+		// Кэшируем реальный DNS-результат — повторные запросы не нужны.
+		v.cache.Set(ip, verified, isFakeBot)
 	case "ip_ranges":
 		// KNOWN LIMITATION (v0.2+): IP-диапазоны Facebook/Twitter/Telegram требуют
 		// HTTP-клиента для загрузки актуальных диапазонов.
@@ -120,10 +122,14 @@ func (v *Verifier) Verify(ctx context.Context, ip string, botCfg config.BotConfi
 		//   verified=true  было бы ложью — диапазоны не проверены.
 		//   isFakeBot=true было бы несправедливым штрафом — реальный Facebook-бот
 		//   не должен получать FakeBotScore только из-за незавершённой реализации.
+		//
+		// Не кэшируем: после реализации ip_ranges в v0.2 кэшированные (false,false)
+		// с negative TTL блокировали бы верификацию легитимных ботов до истечения TTL.
 		verified = false
 		isFakeBot = false
 	default:
 		// Неизвестный метод — не верифицируем, не штрафуем (конфиг сломан, не атака).
+		// Не кэшируем: результат бессмысленен, не стоит держать его в кэше.
 		if v.logFn != nil {
 			v.logFn("WHITELIST", "неизвестный verify_method: "+botCfg.VerifyMethod+" для бота "+botCfg.Name, "warn")
 		}
@@ -131,8 +137,6 @@ func (v *Verifier) Verify(ctx context.Context, ip string, botCfg config.BotConfi
 		isFakeBot = false
 	}
 
-	// ── Сохраняем в кэш и возвращаем ─────────────────────────────────────────────────
-	v.cache.Set(ip, verified, isFakeBot)
 	return verified, isFakeBot
 }
 

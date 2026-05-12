@@ -79,6 +79,9 @@ func (d *OverflowDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResul
 	}
 
 	// ── Buffer overflow: аномальная длина URL ─────────────────────────────────────────
+	// len() считает байты, не Unicode-символы — для ASCII URL (RFC 3986) это корректно.
+	// Percent-encoded символы (%XX) увеличивают len без декодирования — атакующий
+	// не может ужать байтовую длину через encoding.
 	if len(fullURL) > d.maxURLLength {
 		return DetectResult{
 			Score:  d.score,

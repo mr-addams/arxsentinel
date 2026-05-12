@@ -96,6 +96,7 @@ detectors:
 
 whitelist:
   fake_bot_score: 35      # штраф за UA легитимного бота без подтверждения DNS
+  dns_verify_timeout: 2s  # таймаут DNS-верификации бота в pipeline
   custom:
     ips: [127.0.0.1]
     cidrs: [10.0.0.0/8]

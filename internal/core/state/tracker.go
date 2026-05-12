@@ -329,7 +329,7 @@ func (t *Tracker) GetStats() Stats {
 	s.TrackedIPs = len(t.states)
 	for _, st := range t.states {
 		s.TotalRequests += int64(st.TotalRequests)
-		if st.score > 0 {
+		if st.GetScore() > 0 {
 			s.Suspicious++
 		}
 	}
@@ -418,7 +418,9 @@ func (t *Tracker) runGC() (int, int) {
 	deleted := 0
 	for ip, st := range t.states {
 		if st.LastSeen.Before(threshold) {
-			t.lru.Remove(st.lruElem)
+			if st.lruElem != nil {
+				t.lru.Remove(st.lruElem)
+			}
 			delete(t.states, ip)
 			deleted++
 		}
