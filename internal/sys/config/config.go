@@ -161,11 +161,14 @@ type RateConfig struct {
 // -------------------------- User-Agent Anomaly --------------------------------------
 
 type UserAgentConfig struct {
-	Enabled         bool `yaml:"enabled"`          // YAML: detectors.useragent.enabled, default true. Consumer: detector.UserAgent
-	ScannerScore    int  `yaml:"scanner_score"`    // YAML: detectors.useragent.scanner_score, default 40 — scanners (Nuclei, sqlmap). Consumer: detector.UserAgent
-	GrabberScore    int  `yaml:"grabber_score"`    // YAML: detectors.useragent.grabber_score, default 20 — grabbers/crawlers. Consumer: detector.UserAgent
-	AutomationScore int  `yaml:"automation_score"` // YAML: detectors.useragent.automation_score, default 15 — automation tools (requests, aiohttp). Consumer: detector.UserAgent
-	EmptyUAScore    int  `yaml:"empty_ua_score"`   // YAML: detectors.useragent.empty_ua_score, default 30 — empty UA. Consumer: detector.UserAgent
+	Enabled                bool     `yaml:"enabled"`                  // YAML: detectors.useragent.enabled, default true. Consumer: detector.UserAgent
+	ScannerScore           int      `yaml:"scanner_score"`            // YAML: detectors.useragent.scanner_score, default 40 — scanners (Nuclei, sqlmap). Consumer: detector.UserAgent
+	GrabberScore           int      `yaml:"grabber_score"`            // YAML: detectors.useragent.grabber_score, default 20 — grabbers/crawlers. Consumer: detector.UserAgent
+	AutomationScore        int      `yaml:"automation_score"`         // YAML: detectors.useragent.automation_score, default 15 — automation tools (requests, aiohttp). Consumer: detector.UserAgent
+	EmptyUAScore           int      `yaml:"empty_ua_score"`           // YAML: detectors.useragent.empty_ua_score, default 30 — empty UA. Consumer: detector.UserAgent
+	ExtraScannerPatterns   []string `yaml:"extra_scanner_patterns"`   // YAML: detectors.useragent.extra_scanner_patterns — additional scanner UA substrings merged with built-ins. Consumer: detector.UserAgent
+	ExtraGrabberPatterns   []string `yaml:"extra_grabber_patterns"`   // YAML: detectors.useragent.extra_grabber_patterns — additional grabber UA substrings. Consumer: detector.UserAgent
+	ExtraAutomationPatterns []string `yaml:"extra_automation_patterns"` // YAML: detectors.useragent.extra_automation_patterns — additional automation UA substrings. Consumer: detector.UserAgent
 }
 
 // -------------------------- Overflow / WAF Bypass -----------------------------------

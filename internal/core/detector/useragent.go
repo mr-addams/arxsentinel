@@ -74,22 +74,29 @@ var automationPatterns = []string{
 //   *UADetector  → after NewUADetector, used for the daemon's entire lifetime
 //   rebuild      → on SIGHUP (Task 7.1) — a new instance is created
 type UADetector struct {
-	scannerScore    int
-	grabberScore    int
-	automationScore int
-	emptyUAScore    int
-	enabled         bool
+	scannerPatterns    []string
+	grabberPatterns    []string
+	automationPatterns []string
+	scannerScore       int
+	grabberScore       int
+	automationScore    int
+	emptyUAScore       int
+	enabled            bool
 }
 
 // NewUADetector creates a UADetector from config.
+// Extra patterns from config are appended to built-in lists — built-ins cannot be removed.
 // Called from main.go on startup and SIGHUP.
 func NewUADetector(cfg config.UserAgentConfig) *UADetector {
 	return &UADetector{
-		scannerScore:    cfg.ScannerScore,
-		grabberScore:    cfg.GrabberScore,
-		automationScore: cfg.AutomationScore,
-		emptyUAScore:    cfg.EmptyUAScore,
-		enabled:         cfg.Enabled,
+		scannerPatterns:    append(scannerPatterns, cfg.ExtraScannerPatterns...),
+		grabberPatterns:    append(grabberPatterns, cfg.ExtraGrabberPatterns...),
+		automationPatterns: append(automationPatterns, cfg.ExtraAutomationPatterns...),
+		scannerScore:       cfg.ScannerScore,
+		grabberScore:       cfg.GrabberScore,
+		automationScore:    cfg.AutomationScore,
+		emptyUAScore:       cfg.EmptyUAScore,
+		enabled:            cfg.Enabled,
 	}
 }
 
@@ -123,7 +130,7 @@ func (d *UADetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 	uaLower := strings.ToLower(ua)
 
 	// ── Scanners ──────────────────────────────────────────────────────────────────────
-	for _, p := range scannerPatterns {
+	for _, p := range d.scannerPatterns {
 		if strings.Contains(uaLower, strings.ToLower(p)) {
 			return DetectResult{
 				Score:  d.scannerScore,
@@ -134,7 +141,7 @@ func (d *UADetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 	}
 
 	// ── Grabbers ──────────────────────────────────────────────────────────────────────
-	for _, p := range grabberPatterns {
+	for _, p := range d.grabberPatterns {
 		if strings.Contains(uaLower, strings.ToLower(p)) {
 			return DetectResult{
 				Score:  d.grabberScore,
@@ -145,7 +152,7 @@ func (d *UADetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 	}
 
 	// ── Automation ────────────────────────────────────────────────────────────────────
-	for _, p := range automationPatterns {
+	for _, p := range d.automationPatterns {
 		if strings.Contains(uaLower, strings.ToLower(p)) {
 			return DetectResult{
 				Score:  d.automationScore,
