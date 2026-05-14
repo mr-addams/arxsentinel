@@ -1,7 +1,14 @@
 # ========================== nginx-sentinel config.yaml ================================
 #
+#   Single source of all behavioral parameters.
 #   Единый источник всех поведенческих параметров.
+#
+#   Changes are applied on SIGHUP (Task 7.1) without restarting the daemon.
 #   Изменения применяются по SIGHUP (Task 7.1) без перезапуска демона.
+#
+#   IMPORTANT: every present section must include ALL fields —
+#   yaml.v3 does not support partial merge (unset fields are zeroed out).
+#   Absent sections are filled entirely from Go defaults.
 #
 #   ВАЖНО: каждая присутствующая секция должна содержать ВСЕ поля —
 #   yaml.v3 не поддерживает partial merge (незаданные поля обнуляются).
@@ -9,47 +16,53 @@
 #
 # ========================================================================================
 
-# ── general: пути и инфраструктура ──────────────────────────────────────────────────────
+# ── general: paths and infrastructure / пути и инфраструктура ───────────────────────────
 general:
-  log_file: /var/log/nginx/access.log    # путь к nginx access.log (источник данных)
-  pid_file: /var/run/nginx-sentinel.pid  # PID-файл демона
+  log_file: /var/log/nginx/access.log    # path to nginx access.log (data source) / путь к nginx access.log (источник данных)
+  pid_file: /var/run/nginx-sentinel.pid  # daemon PID file / PID-файл демона
+  # Output log paths are configured in the output: section.
   # Пути к лог-файлам задаются в секции output:
 
-# ── logging: поведение логгирования ────────────────────────────────────────────────────
+# ── logging: logging behavior / поведение логгирования ──────────────────────────────────
 logging:
-  debug: false          # true = показывать PARSER/TAIL/DEBUG теги в консоль
-  console_color: true   # false = plain text без ANSI (для pipe/journalctl)
+  debug: false          # true = show PARSER/TAIL/DEBUG tags in console / показывать PARSER/TAIL/DEBUG теги
+  console_color: true   # false = plain text without ANSI (for pipe/journalctl) / plain text без ANSI (для pipe/journalctl)
 
-# ── parser: формат nginx лога ──────────────────────────────────────────────────────────
+# ── parser: nginx log format / формат nginx лога ────────────────────────────────────────
 parser:
-  log_format: combined  # combined + real_ip (см. nginx.conf $real_ip)
-  timezone: UTC         # часовой пояс дат в логе
+  log_format: combined  # combined + real_ip (see nginx.conf $real_ip / см. nginx.conf $real_ip)
+  timezone: UTC         # timezone of dates in the log / часовой пояс дат в логе
 
-# ── scoring: пороги и окно накопления ──────────────────────────────────────────────────
+# ── scoring: thresholds and accumulation window / пороги и окно накопления ──────────────
 scoring:
-  alert_threshold: 50       # score >= 50 → WARN (запись в threat-лог)
-  ban_threshold: 80         # score >= 80 → THREAT (Fail2Ban банит IP)
-  observation_window: "300s" # окно накопления очков (5 мин)
-  decay: "linear"           # алгоритм затухания очков к концу окна
+  alert_threshold: 50       # score >= 50 → WARN (written to threat log / запись в threat-лог)
+  ban_threshold: 80         # score >= 80 → THREAT (Fail2Ban bans the IP / Fail2Ban банит IP)
+  observation_window: "300s" # score accumulation window (5 min) / окно накопления очков (5 мин)
+  decay: "linear"           # score decay algorithm toward end of window / алгоритм затухания очков к концу окна
 
-# ── state: in-memory хранилище IP ──────────────────────────────────────────────────────
+# ── state: in-memory IP storage / in-memory хранилище IP ────────────────────────────────
 state:
-  gc_interval: "60s"     # интервал сборки мусора (удаление неактивных IP)
-  max_tracked_ips: 100000 # лимит IP в памяти (LRU eviction при превышении)
+  gc_interval: "60s"     # garbage collection interval (removes inactive IPs) / интервал сборки мусора (удаление неактивных IP)
+  max_tracked_ips: 100000 # in-memory IP limit (LRU eviction on overflow) / лимит IP в памяти (LRU eviction при превышении)
 
-# ── detectors: модули детекции ─────────────────────────────────────────────────────────
+# ── detectors: detection modules / модули детекции ──────────────────────────────────────
 
 detectors:
 
-  # Детектор probe: запросы к чувствительным путям (.env, .git, wp-config...)
+  # Probe detector: requests to sensitive paths (.env, .git, wp-config...).
+  # Детектор probe: запросы к чувствительным путям (.env, .git, wp-config...).
+  #
+  # NOTE: the list below is abbreviated (core paths for most installations).
   # ПРИМЕЧАНИЕ: список ниже — сокращённый (основные пути для большинства инсталляций).
+  # Full default list — see config.go:defaultProbePaths().
   # Полный список дефолтов — в config.go:defaultProbePaths().
+  # If the probe: section is absent in YAML, the full Go-default list is used.
   # При отсутствии секции probe: в YAML используется полный список из Go-дефолтов.
   probe:
     enabled: true
-    score: 25   # очки за каждый probe-запрос
+    score: 25   # points per probe request / очки за каждый probe-запрос
     paths:
-      # Конфиги приложений
+      # Application configs / Конфиги приложений
       - "/.env"
       - "/.env.backup"
       - "/.env.local"
@@ -69,7 +82,7 @@ detectors:
       - "/.gitignore"
       - "/.svn/entries"
       - "/.hg/"
-      # Облачные credentials
+      # Cloud credentials / Облачные credentials
       - "/.aws/credentials"
       - "/.docker/config.json"
       - "/aws-exports.json"
@@ -79,19 +92,19 @@ detectors:
       - "/wp-login.php"
       - "/xmlrpc.php"
       - "/wp-admin/"
-      # CMS: общие
+      # CMS: generic / общие
       - "/administrator/"
       - "/admin/"
       - "/phpmyadmin/"
       - "/pma/"
-      # Backup файлы
+      # Backup files / Backup файлы
       - "/backup.zip"
       - "/backup.tar.gz"
       - "/backup.sql"
       - "/db.dump"
       - "/database.sql"
       - "/dump.sql"
-      # Инфраструктура
+      # Infrastructure / Инфраструктура
       - "/server-status"
       - "/server-info"
       - "/phpinfo.php"
@@ -108,24 +121,27 @@ detectors:
       - "/graphiql"
       - "/api/graphql"
 
-  # Детектор bruteforce: аномальная доля 404 ответов
+  # Bruteforce detector: abnormal share of 404 responses.
+  # Детектор bruteforce: аномальная доля 404 ответов.
   bruteforce:
     enabled: true
-    min_requests: 10      # минимум запросов для активации детектора
-    ratio_threshold: 0.6  # >= 60% ответов = 404 → срабатывание
+    min_requests: 10      # minimum requests to activate the detector / минимум запросов для активации детектора
+    ratio_threshold: 0.6  # >= 60% of responses are 404 → trigger / >= 60% ответов = 404 → срабатывание
     score: 30
 
-  # Детектор crawler: последовательный обход URL по паттерну
+  # Crawler detector: sequential URL traversal by pattern.
+  # Детектор crawler: последовательный обход URL по паттерну.
   crawler:
     enabled: true
-    min_sequential: 5  # минимум последовательных URL (/page/1, /page/2...)
+    min_sequential: 5  # minimum sequential URLs (/page/1, /page/2...) / минимум последовательных URL
     score: 20
 
-  # Детектор noasset: страницы без загрузки статики
+  # Noasset detector: page views with no static asset loading.
+  # Детектор noasset: страницы без загрузки статики.
   noasset:
     enabled: true
-    min_page_requests: 3      # минимум HTML-запросов для активации
-    asset_ratio_threshold: 0.1  # < 10% запросов к ассетам → бот без рендеринга
+    min_page_requests: 3       # minimum HTML requests to activate / минимум HTML-запросов для активации
+    asset_ratio_threshold: 0.1 # < 10% requests to assets → bot without rendering / < 10% запросов к ассетам → бот без рендеринга
     asset_extensions:
       - ".css"
       - ".js"
@@ -141,25 +157,28 @@ detectors:
       - ".webp"
     score: 20
 
-  # Детектор rate: всплеск запросов за окно
+  # Rate detector: request spike within a window.
+  # Детектор rate: всплеск запросов за окно.
   rate:
     enabled: true
-    window: "60s"    # окно подсчёта запросов
-    threshold: 100   # > 100 запросов за окно → срабатывание
+    window: "60s"    # request counting window / окно подсчёта запросов
+    threshold: 100   # > 100 requests per window → trigger / > 100 запросов за окно → срабатывание
     score: 25
 
-  # Детектор useragent: сигнатуры сканеров и аномалии UA
+  # Useragent detector: scanner signatures and UA anomalies.
+  # Детектор useragent: сигнатуры сканеров и аномалии UA.
   useragent:
     enabled: true
     scanner_score: 40     # Nuclei, sqlmap, Nikto, Nessus...
     grabber_score: 20     # Scrapy, HTTrack, wget, curl, Go-http-client...
     automation_score: 15  # python-requests, aiohttp, httpx...
-    empty_ua_score: 30    # пустой User-Agent
+    empty_ua_score: 30    # empty User-Agent / пустой User-Agent
 
-  # Детектор overflow: аномальная длина URL / WAF bypass
+  # Overflow detector: abnormal URL length / WAF bypass attempts.
+  # Детектор overflow: аномальная длина URL / WAF bypass.
   overflow:
     enabled: true
-    max_url_length: 2048  # URL длиннее → попытка buffer overflow
+    max_url_length: 2048  # URLs longer than this → buffer overflow attempt / URL длиннее → попытка buffer overflow
     suspicious_params:
       - "bypass"
       - "shell"
@@ -170,10 +189,11 @@ detectors:
       - "passthru"
     score: 30
 
-# ── whitelist: легитимные боты и кастомный список ──────────────────────────────────────
+# ── whitelist: legitimate bots and custom entries / легитимные боты и кастомный список ───
 whitelist:
 
-  # Легитимные поисковые боты — верифицируются через rDNS + fDNS
+  # Legitimate search bots — verified via rDNS + fDNS.
+  # Легитимные поисковые боты — верифицируются через rDNS + fDNS.
   bots:
     - name: google
       ua_patterns: ["Googlebot", "Google-InspectionTool", "GoogleOther", "AdsBot-Google"]
@@ -230,22 +250,23 @@ whitelist:
       rdns_domains: [".anthropic.com"]
       verify_method: rdns
 
-  # Кастомный whitelist: добавьте свои IP, подсети, UA-паттерны
+  # Custom whitelist: add your own IPs, subnets, UA patterns.
+  # Кастомный whitelist: добавьте свои IP, подсети, UA-паттерны.
   custom:
-    ips: []      # пример: ["10.99.99.1", "192.168.1.100"]
-    cidrs: []    # пример: ["10.99.99.0/24"]
-    ua_substrings: []  # пример: ["MyInternalMonitor"]
+    ips: []      # example: ["10.99.99.1", "192.168.1.100"] / пример: ["10.99.99.1", "192.168.1.100"]
+    cidrs: []    # example: ["10.99.99.0/24"] / пример: ["10.99.99.0/24"]
+    ua_substrings: []  # example: ["MyInternalMonitor"] / пример: ["MyInternalMonitor"]
 
-  # DNS-кэш результатов верификации
+  # DNS cache for verification results / DNS-кэш результатов верификации.
   dns_cache:
-    positive_ttl: "24h"    # кэш успешной верификации
-    negative_ttl: "1h"     # кэш неуспешной верификации
-    ip_list_refresh: "24h" # обновление IP-диапазонов (Facebook, Telegram...)
+    positive_ttl: "24h"    # cache TTL for successful verification / кэш успешной верификации
+    negative_ttl: "1h"     # cache TTL for failed verification / кэш неуспешной верификации
+    ip_list_refresh: "24h" # IP range refresh interval (Facebook, Telegram...) / обновление IP-диапазонов
 
-# ── output: пути к лог-файлам ──────────────────────────────────────────────────────────
+# ── output: log file paths / пути к лог-файлам ──────────────────────────────────────────
 output:
-  threat_log: ./logs/threats.log          # threat-лог для Fail2Ban (dev: локально)
-  operational_log: ./logs/sentinel.log    # operational-лог демона (dev: локально)
-  # Продакшн:
+  threat_log: ./logs/threats.log          # threat log for Fail2Ban (dev: local) / threat-лог для Fail2Ban (dev: локально)
+  operational_log: ./logs/sentinel.log    # daemon operational log (dev: local) / operational-лог демона (dev: локально)
+  # Production / Продакшн:
   # threat_log: /var/log/nginx-sentinel/threats.log
   # operational_log: /var/log/nginx-sentinel/sentinel.log
