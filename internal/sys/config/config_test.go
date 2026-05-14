@@ -1,8 +1,8 @@
-// ========================== Тесты модуля config ========================================
-//   Проверяет LoadConfig: дефолты, переопределение из YAML, парсинг Duration.
+// ========================== Tests for config module ========================================
+//   Verifies LoadConfig: defaults, YAML overrides, Duration parsing.
 //
-//   Тест-конфиги полные (все поля секции) — из-за ограничения yaml.v3 partial merge.
-//   Секции, отсутствующие в YAML, сохраняют Go-дефолты.
+//   Test configs are complete (all section fields) — due to yaml.v3 partial merge limitation.
+//   Sections absent from YAML retain Go defaults.
 
 package config
 
@@ -13,14 +13,14 @@ import (
 	"time"
 )
 
-// ========================== Тест: дефолты без файла ====================================
+// ========================== Test: defaults without a file ====================================
 
 func TestLoadConfig_Defaults(t *testing.T) {
-	// Несуществующий путь → LoadConfig должен вернуть дефолты без ошибки.
-	// Это позволяет демону стартовать "из коробки" без config.yaml.
+	// Non-existent path → LoadConfig must return defaults without an error.
+	// This allows the daemon to start out of the box without config.yaml.
 	cfg, err := LoadConfig("/nonexistent/path/nginx-sentinel-test-config.yaml")
 	if err != nil {
-		t.Fatalf("несуществующий конфиг должен возвращать дефолты без ошибки, получили: %v", err)
+		t.Fatalf("non-existent config must return defaults without error, got: %v", err)
 	}
 
 	// ── Scoring ───────────────────────────────────────────────────────────────────────
@@ -93,12 +93,12 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	}
 }
 
-// ========================== Тест: переопределение из YAML ==============================
+// ========================== Test: YAML overrides ==============================
 
 func TestLoadConfig_Override(t *testing.T) {
-	// YAML содержит полные секции scoring и logging — частичные секции не тестируем
-	// из-за ограничения yaml.v3 (partial section zeroes unmentioned fields).
-	// Секции state и detectors в YAML отсутствуют → должны сохранить дефолты.
+	// YAML contains full sections for scoring and logging — partial sections are not tested
+	// due to yaml.v3 limitation (partial section zeroes unmentioned fields).
+	// Sections state and detectors are absent from YAML → must retain defaults.
 	content := `
 scoring:
   alert_threshold: 60
@@ -117,7 +117,7 @@ logging:
 		t.Fatalf("LoadConfig error: %v", err)
 	}
 
-	// ── Переопределённые значения ─────────────────────────────────────────────────────
+	// ── Overridden values ─────────────────────────────────────────────────────
 
 	if cfg.Scoring.AlertThreshold != 60 {
 		t.Errorf("Scoring.AlertThreshold: want 60, got %d", cfg.Scoring.AlertThreshold)
@@ -135,7 +135,7 @@ logging:
 		t.Error("Logging.ConsoleColor: want false")
 	}
 
-	// ── Секции без YAML → сохраняют дефолты ──────────────────────────────────────────
+	// ── Sections without YAML → retain defaults ──────────────────────────────────────────
 
 	if cfg.State.MaxTrackedIPs != 100000 {
 		t.Errorf("State.MaxTrackedIPs: want 100000 (default), got %d", cfg.State.MaxTrackedIPs)
@@ -148,7 +148,7 @@ logging:
 	}
 }
 
-// ========================== Тест: Duration из YAML =====================================
+// ========================== Test: Duration from YAML =====================================
 
 func TestLoadConfig_Duration(t *testing.T) {
 	content := `
@@ -193,7 +193,7 @@ whitelist:
 	}
 }
 
-// ========================== Тест: невалидный YAML ======================================
+// ========================== Test: invalid YAML ======================================
 
 func TestLoadConfig_InvalidYAML(t *testing.T) {
 	f := writeTempYAML(t, "{ invalid yaml: [unclosed")
@@ -201,19 +201,19 @@ func TestLoadConfig_InvalidYAML(t *testing.T) {
 
 	_, err := LoadConfig(f)
 	if err == nil {
-		t.Error("невалидный YAML должен возвращать ошибку")
+		t.Error("invalid YAML must return an error")
 	}
 }
 
-// ========================== Тест: корректность дефолтов ботов ==========================
+// ========================== Test: correctness of default bots ==========================
 
 func TestLoadConfig_DefaultBots(t *testing.T) {
 	cfg, err := LoadConfig("/nonexistent")
 	if err != nil {
-		t.Fatalf("LoadConfig с несуществующим файлом должен вернуть дефолты без ошибки: %v", err)
+		t.Fatalf("LoadConfig with non-existent file must return defaults without error: %v", err)
 	}
 
-	// Проверяем что ключевые боты присутствуют
+	// Verify that the key bots are present
 	found := map[string]bool{}
 	for _, b := range cfg.Whitelist.Bots {
 		found[b.Name] = true
@@ -222,11 +222,11 @@ func TestLoadConfig_DefaultBots(t *testing.T) {
 	required := []string{"google", "bing", "yandex", "gptbot", "claudebot"}
 	for _, name := range required {
 		if !found[name] {
-			t.Errorf("Whitelist.Bots: бот %q не найден в дефолтах", name)
+			t.Errorf("Whitelist.Bots: bot %q not found in defaults", name)
 		}
 	}
 
-	// Google должен использовать rdns_ipjson верификацию
+	// Google must use rdns_ipjson verification
 	for _, b := range cfg.Whitelist.Bots {
 		if b.Name == "google" {
 			if b.VerifyMethod != "rdns_ipjson" {
@@ -239,13 +239,13 @@ func TestLoadConfig_DefaultBots(t *testing.T) {
 	}
 }
 
-// ========================== Тест: stderr при отсутствии конфига ========================
+// ========================== Test: stderr on missing config ========================
 
 func TestLoadConfig_StderrOnMissingFile(t *testing.T) {
-	// При ENOENT LoadConfig должен выводить сообщение в stderr —
-	// оператор должен знать что демон работает на дефолтах, а не на его config.yaml.
+	// On ENOENT LoadConfig must write a message to stderr —
+	// the operator must know the daemon is running on defaults, not their config.yaml.
 
-	// Перехватываем os.Stderr через pipe
+	// Capture os.Stderr via pipe
 	origStderr := os.Stderr
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -262,22 +262,22 @@ func TestLoadConfig_StderrOnMissingFile(t *testing.T) {
 	n, _ := r.Read(buf)
 	output := string(buf[:n])
 
-	if !strings.Contains(output, "не найден, используются дефолты") {
-		t.Errorf("stderr должен содержать 'не найден, используются дефолты', получили: %q", output)
+	if !strings.Contains(output, "not found, using defaults") {
+		t.Errorf("stderr must contain 'not found, using defaults', got: %q", output)
 	}
 }
 
-// ========================== Хелпер ====================================================
+// ========================== Helper ====================================================
 
-// writeTempYAML создаёт временный файл с содержимым content и возвращает его путь.
+// writeTempYAML creates a temporary file with the given content and returns its path.
 func writeTempYAML(t *testing.T, content string) string {
 	t.Helper()
 	f, err := os.CreateTemp("", "nginx-sentinel-test-*.yaml")
 	if err != nil {
-		t.Fatalf("не удалось создать temp файл: %v", err)
+		t.Fatalf("failed to create temp file: %v", err)
 	}
 	if _, err := f.WriteString(content); err != nil {
-		t.Fatalf("запись в temp файл: %v", err)
+		t.Fatalf("writing to temp file: %v", err)
 	}
 	f.Close()
 	return f.Name()

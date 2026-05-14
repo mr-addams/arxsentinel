@@ -1,23 +1,23 @@
-// ========================== Детектор probe ==============================================
-//   Детекция запросов к чувствительным путям: .env, .git, wp-config, aws-exports и т.д.
-//   Один совпавший путь = фиксированный штраф к score IP.
+// ========================== Probe detector ==============================================
+//   Detects requests to sensitive paths: .env, .git, wp-config, aws-exports, etc.
+//   A single matched path = a fixed score penalty for the IP.
 //
-//   ЧТО ЗДЕСЬ:
-//     - ProbeDetector — структура с предкомпилированным set путей
-//     - NewProbeDetector(cfg) — инициализация из конфига
+//   WHAT IS HERE:
+//     - ProbeDetector — struct with a pre-built path set
+//     - NewProbeDetector(cfg) — initialization from config
 //     - Detect() — O(1) exact-match + linear prefix-match
 //
-//   АЛГОРИТМ:
-//     1. Exact match в map[string]struct{} — O(1), покрывает статичные пути (.env, wp-config.php)
-//     2. Prefix match — ловит /wp-admin/page.php, /actuator/env и т.д.
-//     Пути с "/" на конце в конфиге → prefix-проверка.
-//     Все остальные → exact-match map.
+//   ALGORITHM:
+//     1. Exact match in map[string]struct{} — O(1), covers static paths (.env, wp-config.php)
+//     2. Prefix match — catches /wp-admin/page.php, /actuator/env, etc.
+//     Paths ending with "/" in config → prefix check.
+//     All others → exact-match map.
 //
-//   ПОЧЕМУ MAP, А НЕ SLICE:
-//     map[string]struct{} для exact-match: O(1) lookup, легко расширять —
-//     добавление нового пути в конфиг не требует правки кода.
+//   WHY MAP AND NOT SLICE:
+//     map[string]struct{} for exact-match: O(1) lookup, easy to extend —
+//     adding a new path to config requires no code changes.
 //
-//   Реализовано: Task 4.1.
+//   Implemented: Task 4.1.
 
 package detector
 
@@ -30,29 +30,29 @@ import (
 
 // ========================== ProbeDetector =============================================
 
-// ProbeDetector детектирует запросы к чувствительным путям.
+// ProbeDetector detects requests to sensitive paths.
 //
-// Жизненный цикл:
-//   nil              → до вызова NewProbeDetector
-//   *ProbeDetector   → после NewProbeDetector, используется всё время жизни демона
-//   перестройка      → при SIGHUP (Task 7.1) — создаётся новый экземпляр из нового конфига
+// Lifecycle:
+//   nil              → before NewProbeDetector is called
+//   *ProbeDetector   → after NewProbeDetector, used for the daemon's entire lifetime
+//   rebuild          → on SIGHUP (Task 7.1) — a new instance is created from the new config
 type ProbeDetector struct {
 	score    int
 	pathSet  map[string]struct{} // exact-match paths: O(1) lookup
-	prefixes []string            // prefix paths (с "/" на конце): ловит любой подпуть
+	prefixes []string            // prefix paths (ending with "/"): catches any sub-path
 	enabled  bool
 }
 
-// NewProbeDetector создаёт ProbeDetector из конфига.
-// Разбивает пути: с "/" на конце → prefixes (prefix-match), остальные → pathSet (exact-match).
-// Вызывается из main.go при старте и SIGHUP.
+// NewProbeDetector creates a ProbeDetector from config.
+// Splits paths: ending with "/" → prefixes (prefix-match), others → pathSet (exact-match).
+// Called from main.go on startup and SIGHUP.
 func NewProbeDetector(cfg config.ProbeConfig) *ProbeDetector {
 	pathSet := make(map[string]struct{}, len(cfg.Paths))
 	var prefixes []string
 
 	for _, p := range cfg.Paths {
 		if strings.HasSuffix(p, "/") {
-			// /wp-admin/, /actuator/ — prefix-проверка ловит любой подпуть
+			// /wp-admin/, /actuator/ — prefix check catches any sub-path
 			prefixes = append(prefixes, p)
 		} else {
 			pathSet[p] = struct{}{}
@@ -67,16 +67,16 @@ func NewProbeDetector(cfg config.ProbeConfig) *ProbeDetector {
 	}
 }
 
-// Name возвращает идентификатор детектора для логов и threat-записей.
+// Name returns the detector identifier for logs and threat records.
 func (d *ProbeDetector) Name() string { return "probe" }
 
-// Detect проверяет путь запроса на совпадение с чувствительными путями.
+// Detect checks the request path against sensitive paths.
 //
-// Порядок: exact match → prefix match.
-// Exact match первым: O(1) и покрывает большинство статичных чувствительных путей.
-// Prefix match вторым: O(n) по числу prefix-путей, ловит подпути (/wp-admin/login.php).
+// Order: exact match → prefix match.
+// Exact match first: O(1) and covers the majority of static sensitive paths.
+// Prefix match second: O(n) over prefix count, catches sub-paths (/wp-admin/login.php).
 //
-// entry.Path уже без query string — парсер разделил на Path + Query.
+// entry.Path is already without query string — the parser split it into Path + Query.
 func (d *ProbeDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 	if !d.enabled {
 		return DetectResult{}
@@ -94,7 +94,7 @@ func (d *ProbeDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 	}
 
 	// ── Prefix match ──────────────────────────────────────────────────────────────────
-	// /wp-admin/ в конфиге → срабатывает на /wp-admin/options-general.php, /wp-admin/ и т.д.
+	// /wp-admin/ in config → triggers on /wp-admin/options-general.php, /wp-admin/, etc.
 	for _, prefix := range d.prefixes {
 		if strings.HasPrefix(path, prefix) {
 			return DetectResult{

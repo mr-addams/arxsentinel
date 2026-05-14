@@ -1,7 +1,7 @@
-// ========================== Тесты UADetector ==========================================
-//   Табличные тесты: scanner/grabber/automation/empty UA, нормальный браузер, enabled=false.
+// ========================== UADetector tests ==========================================
+//   Table-driven tests: scanner/grabber/automation/empty UA, normal browser, enabled=false.
 //
-//   mockIPView определён в rate_test.go — общий для всех тестов пакета.
+//   mockIPView is defined in rate_test.go — shared across all package tests.
 
 package detector
 
@@ -14,7 +14,7 @@ import (
 )
 
 func TestUADetector(t *testing.T) {
-	// Базовый конфиг с ненулевыми очками для разных категорий.
+	// Base config with non-zero scores for each category.
 	baseCfg := config.UserAgentConfig{
 		Enabled:         true,
 		ScannerScore:    40,
@@ -28,10 +28,10 @@ func TestUADetector(t *testing.T) {
 		cfg           config.UserAgentConfig
 		ua            string
 		wantScore     bool
-		wantMinScore  int    // минимальный ожидаемый Score (0 если wantScore=false)
-		wantReasonPfx string // префикс Reason (если пустой — не проверяем)
+		wantMinScore  int    // minimum expected Score (0 if wantScore=false)
+		wantReasonPfx string // Reason prefix (empty = not checked)
 	}{
-		// ── Сканеры ───────────────────────────────────────────────────────────────────────
+		// ── Scanners ──────────────────────────────────────────────────────────────────────
 		{
 			name:          "scanner: Nuclei/2.9.4 → ScannerScore",
 			cfg:           baseCfg,
@@ -56,7 +56,7 @@ func TestUADetector(t *testing.T) {
 			wantMinScore:  40,
 			wantReasonPfx: "ua:scanner:",
 		},
-		// ── Грабберы ──────────────────────────────────────────────────────────────────────
+		// ── Grabbers ──────────────────────────────────────────────────────────────────────
 		{
 			name:          "grabber: python-requests/2.28 → GrabberScore",
 			cfg:           baseCfg,
@@ -81,7 +81,7 @@ func TestUADetector(t *testing.T) {
 			wantMinScore:  20,
 			wantReasonPfx: "ua:grabber:",
 		},
-		// ── Автоматизация ─────────────────────────────────────────────────────────────────
+		// ── Automation ────────────────────────────────────────────────────────────────────
 		{
 			name:          "automation: Go-http-client/1.1 → AutomationScore",
 			cfg:           baseCfg,
@@ -98,7 +98,7 @@ func TestUADetector(t *testing.T) {
 			wantMinScore:  15,
 			wantReasonPfx: "ua:automation:",
 		},
-		// ── Пустой UA ─────────────────────────────────────────────────────────────────────
+		// ── Empty UA ──────────────────────────────────────────────────────────────────────
 		{
 			name:          `empty: "" → EmptyUAScore`,
 			cfg:           baseCfg,
@@ -115,28 +115,28 @@ func TestUADetector(t *testing.T) {
 			wantMinScore:  30,
 			wantReasonPfx: "ua:empty",
 		},
-		// ── Нормальный браузер → Score=0 ─────────────────────────────────────────────────
+		// ── Normal browser → Score=0 ──────────────────────────────────────────────────────
 		{
-			name:      "браузер: Chrome не срабатывает",
+			name:      "browser: Chrome does not trigger",
 			cfg:       baseCfg,
 			ua:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 			wantScore: false,
 		},
 		{
-			name:      "браузер: Firefox не срабатывает",
+			name:      "browser: Firefox does not trigger",
 			cfg:       baseCfg,
 			ua:        "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0",
 			wantScore: false,
 		},
 		{
-			name:      "браузер: Safari не срабатывает",
+			name:      "browser: Safari does not trigger",
 			cfg:       baseCfg,
 			ua:        "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15",
 			wantScore: false,
 		},
 		// ── enabled=false ─────────────────────────────────────────────────────────────────
 		{
-			name: "disabled: Nuclei не срабатывает при enabled=false",
+			name: "disabled: Nuclei does not trigger when enabled=false",
 			cfg: config.UserAgentConfig{
 				Enabled:      false,
 				ScannerScore: 40,
@@ -145,7 +145,7 @@ func TestUADetector(t *testing.T) {
 			wantScore: false,
 		},
 		{
-			name: `disabled: "-" не срабатывает при enabled=false`,
+			name: `disabled: "-" does not trigger when enabled=false`,
 			cfg: config.UserAgentConfig{
 				Enabled:      false,
 				EmptyUAScore: 30,
@@ -164,25 +164,25 @@ func TestUADetector(t *testing.T) {
 			result := d.Detect(mv, entry)
 
 			if tt.wantScore && result.Score == 0 {
-				t.Errorf("ожидали Score > 0, получили 0 (ua=%q)", tt.ua)
+				t.Errorf("expected Score > 0, got 0 (ua=%q)", tt.ua)
 			}
 			if !tt.wantScore && result.Score != 0 {
-				t.Errorf("ожидали Score = 0, получили %d (ua=%q)", result.Score, tt.ua)
+				t.Errorf("expected Score = 0, got %d (ua=%q)", result.Score, tt.ua)
 			}
-			// Guard: wantMinScore=0 при wantScore=true — скорее всего забыли задать.
+			// Guard: wantMinScore=0 with wantScore=true — likely forgot to set it.
 			if tt.wantScore && tt.wantMinScore == 0 {
-				t.Fatalf("wantMinScore не задан для кейса %q", tt.name)
+				t.Fatalf("wantMinScore not set for case %q", tt.name)
 			}
 			if tt.wantScore && result.Score < tt.wantMinScore {
-				t.Errorf("Score = %d, ожидали >= %d (ua=%q)", result.Score, tt.wantMinScore, tt.ua)
+				t.Errorf("Score = %d, expected >= %d (ua=%q)", result.Score, tt.wantMinScore, tt.ua)
 			}
-			// Проверяем Module и Reason только при срабатывании
+			// Check Module and Reason only when triggered
 			if result.Score > 0 {
 				if result.Module != "ua" {
-					t.Errorf("Module = %q, ожидали %q", result.Module, "ua")
+					t.Errorf("Module = %q, expected %q", result.Module, "ua")
 				}
 				if tt.wantReasonPfx != "" && !strings.HasPrefix(result.Reason, tt.wantReasonPfx) {
-					t.Errorf("Reason = %q, ожидали с префиксом %q", result.Reason, tt.wantReasonPfx)
+					t.Errorf("Reason = %q, expected prefix %q", result.Reason, tt.wantReasonPfx)
 				}
 			}
 		})

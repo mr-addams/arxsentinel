@@ -9,7 +9,7 @@ CFG_FILE="${CFG_DIR}/config.yaml"
 
 case "$1" in
     configure)
-        # Создать системного пользователя если ещё нет
+        # Create system user if it does not exist yet
         if ! id "${SENTINEL_USER}" &>/dev/null; then
             useradd --system --no-create-home \
                     --shell /usr/sbin/nologin \
@@ -17,37 +17,37 @@ case "$1" in
                     "${SENTINEL_USER}"
         fi
 
-        # Создать директорию логов с правами демона
+        # Create log directory with daemon ownership
         mkdir -p "${LOG_DIR}"
         chown "${SENTINEL_USER}:${SENTINEL_USER}" "${LOG_DIR}"
         chmod 750 "${LOG_DIR}"
 
-        # Скопировать пример конфига если основной отсутствует
+        # Copy example config if the main config is missing
         if [ -f "${CFG_EXAMPLE}" ] && [ ! -f "${CFG_FILE}" ]; then
             cp "${CFG_EXAMPLE}" "${CFG_FILE}"
             chown "root:${SENTINEL_USER}" "${CFG_FILE}"
             chmod 640 "${CFG_FILE}"
         fi
 
-        # Guard: в Docker/chroot systemd может отсутствовать
+        # Guard: systemd may be absent in Docker/chroot
         if command -v systemctl >/dev/null 2>&1; then
             systemctl daemon-reload || true
         fi
 
         echo ""
-        echo "nginx-sentinel установлен."
+        echo "nginx-sentinel installed."
         echo ""
-        echo "Проверьте и при необходимости отредактируйте конфиг:"
+        echo "Review and edit the config if needed:"
         echo "  ${CFG_FILE}"
         echo ""
-        echo "Затем включите и запустите сервис:"
+        echo "Then enable and start the service:"
         echo "  systemctl enable --now nginx-sentinel"
         echo ""
         ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)
-        # Rollback-сценарии dpkg — дополнительных действий не требуется.
-        # dpkg восстанавливает предыдущее состояние самостоятельно.
+        # dpkg rollback scenarios — no additional actions required.
+        # dpkg restores the previous state on its own.
         exit 0
         ;;
 esac

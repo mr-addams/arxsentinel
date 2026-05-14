@@ -1,22 +1,22 @@
-// ========================== Модуль config ==============================================
-//   Единая точка определения всех поведенческих параметров проекта.
-//   LoadConfig() — парсит config.yaml с дефолтами, возвращает заполненный Config.
+// ========================== Module config ==============================================
+//   Single source of truth for all behavioral parameters of the project.
+//   LoadConfig() — parses config.yaml with defaults, returns a populated Config.
 //
-//   ЧТО ЗДЕСЬ:
-//     - Структура Config с вложенными секциями по модулям
-//     - LoadConfig(path string) (Config, error) — единственная публичная функция
-//     - Duration — тип-обёртка для парсинга строк вида "300s", "24h" из YAML
-//     - defaultConfig() + defaultProbePaths() + defaultBots() — внутренние дефолты
+//   WHAT IS HERE:
+//     - Config struct with nested sections per module
+//     - LoadConfig(path string) (Config, error) — the only public function
+//     - Duration — wrapper type for parsing strings like "300s", "24h" from YAML
+//     - defaultConfig() + defaultProbePaths() + defaultBots() — internal defaults
 //
-//   ЧТО НЕ ЗДЕСЬ:
-//     - Бизнес-логика (core/)
-//     - Логирование (sys/utils)
+//   WHAT IS NOT HERE:
+//     - Business logic (core/)
+//     - Logging (sys/utils)
 //
-//   ОГРАНИЧЕНИЕ yaml-парсинга:
-//     yaml.v3 накладывает значения поверх дефолтов на уровне секций целиком.
-//     Если в config.yaml указана секция scoring:, она должна содержать ВСЕ поля —
-//     иначе неуказанные поля обнулятся (yaml.v3 не поддерживает partial merge).
-//     Отсутствующие секции целиком сохраняют Go-дефолты.
+//   YAML PARSING LIMITATION:
+//     yaml.v3 overlays values on top of defaults at the section level as a whole.
+//     If config.yaml specifies a scoring: section, it must contain ALL fields —
+//     otherwise unspecified fields will be zeroed (yaml.v3 does not support partial merge).
+//     Sections absent from the file entirely retain their Go defaults.
 
 package config
 
@@ -28,11 +28,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ========================== Вспомогательный тип Duration ===============================
+// ========================== Duration helper type =======================================
 
-// Duration — обёртка над time.Duration для корректного парсинга строк из YAML.
-// yaml.v3 не умеет из коробки превращать "300s", "24h" → time.Duration.
-// Приведение к time.Duration: time.Duration(cfg.Scoring.ObservationWindow).
+// Duration — wrapper over time.Duration for correct parsing of strings from YAML.
+// yaml.v3 cannot natively convert "300s", "24h" → time.Duration.
+// Cast to time.Duration: time.Duration(cfg.Scoring.ObservationWindow).
 type Duration time.Duration
 
 func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
@@ -42,13 +42,13 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 	}
 	parsed, err := time.ParseDuration(s)
 	if err != nil {
-		return fmt.Errorf("некорректная длительность %q: %w", s, err)
+		return fmt.Errorf("invalid duration %q: %w", s, err)
 	}
 	*d = Duration(parsed)
 	return nil
 }
 
-// ========================== Корневой Config ============================================
+// ========================== Root Config ===============================================
 
 type Config struct {
 	General   GeneralConfig   `yaml:"general"`
@@ -61,48 +61,48 @@ type Config struct {
 	Output    OutputConfig    `yaml:"output"`
 }
 
-// ++++++++++++++++++++++++++ Секция: general +++++++++++++++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++ Section: general +++++++++++++++++++++++++++++++++++++++++++
 
 type GeneralConfig struct {
-	LogFile           string   `yaml:"log_file"`            // YAML: general.log_file, default "/var/log/nginx/access.log" — путь к access.log nginx. Потребитель: utils.TailReader
-	PIDFile           string   `yaml:"pid_file"`            // YAML: general.pid_file, default "/var/run/nginx-sentinel.pid" — PID-файл демона. Потребитель: main.go
-	LinesBufSize      int      `yaml:"lines_buf_size"`      // YAML: general.lines_buf_size, default 1000 — буфер канала между TailReader и обработчиком строк; поднять при burst >1000 строк/сек. Потребитель: main.go
-	TailRetryInterval Duration `yaml:"tail_retry_interval"` // YAML: general.tail_retry_interval, default "5s" — интервал повтора при недоступном log_file. Потребитель: utils.TailReader
-	StatsInterval     Duration `yaml:"stats_interval"`      // YAML: general.stats_interval, default "300s" — период вывода STATS в operational.log. Потребитель: main.go stats goroutine. Изменение вступает в силу только при перезапуске (горутина стартует один раз).
-	// Пути к лог-файлам демона — в секции output: (полные пути, не директория)
+	LogFile           string   `yaml:"log_file"`            // YAML: general.log_file, default "/var/log/nginx/access.log" — path to nginx access.log. Consumer: utils.TailReader
+	PIDFile           string   `yaml:"pid_file"`            // YAML: general.pid_file, default "/var/run/nginx-sentinel.pid" — daemon PID file. Consumer: main.go
+	LinesBufSize      int      `yaml:"lines_buf_size"`      // YAML: general.lines_buf_size, default 1000 — channel buffer between TailReader and line processor; increase for burst >1000 lines/sec. Consumer: main.go
+	TailRetryInterval Duration `yaml:"tail_retry_interval"` // YAML: general.tail_retry_interval, default "5s" — retry interval when log_file is unavailable. Consumer: utils.TailReader
+	StatsInterval     Duration `yaml:"stats_interval"`      // YAML: general.stats_interval, default "300s" — period for STATS output to operational.log. Consumer: main.go stats goroutine. Takes effect only on restart (goroutine starts once).
+	// Daemon log file paths — in section output: (full paths, not a directory)
 }
 
-// ++++++++++++++++++++++++++ Секция: logging ++++++++++++++++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++ Section: logging ++++++++++++++++++++++++++++++++++++++++++++
 
 type LoggingConfig struct {
-	Debug        bool `yaml:"debug"`         // YAML: logging.debug, default false — показывать debugOnlyTags в консоль. Потребитель: utils.DebugEnabled
-	ConsoleColor bool `yaml:"console_color"` // YAML: logging.console_color, default true — цветной вывод в консоль. Потребитель: utils.ColorEnabled
+	Debug        bool `yaml:"debug"`         // YAML: logging.debug, default false — show debugOnlyTags in console. Consumer: utils.DebugEnabled
+	ConsoleColor bool `yaml:"console_color"` // YAML: logging.console_color, default true — color output in console. Consumer: utils.ColorEnabled
 }
 
-// ++++++++++++++++++++++++++ Секция: parser +++++++++++++++++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++ Section: parser +++++++++++++++++++++++++++++++++++++++++++++
 
 type ParserConfig struct {
-	LogFormat string `yaml:"log_format"` // YAML: parser.log_format, default "combined" — зарезервировано, поддерживается только "combined". Потребитель: не подключён
-	Timezone  string `yaml:"timezone"`   // YAML: parser.timezone, default "UTC" — зарезервировано; парсер берёт timezone из offset в строке лога (+0000). Потребитель: не подключён
+	LogFormat string `yaml:"log_format"` // YAML: parser.log_format, default "combined" — reserved, only "combined" is supported. Consumer: not connected
+	Timezone  string `yaml:"timezone"`   // YAML: parser.timezone, default "UTC" — reserved; parser reads timezone from offset in log line (+0000). Consumer: not connected
 }
 
-// ++++++++++++++++++++++++++ Секция: scoring +++++++++++++++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++ Section: scoring +++++++++++++++++++++++++++++++++++++++++++
 
 type ScoringConfig struct {
-	AlertThreshold    int      `yaml:"alert_threshold"`    // YAML: scoring.alert_threshold, default 50 — порог уровня WARN, запись в threat-лог. Потребитель: scorer.Evaluate
-	BanThreshold      int      `yaml:"ban_threshold"`      // YAML: scoring.ban_threshold, default 80 — порог уровня THREAT, Fail2Ban банит IP. Потребитель: scorer.Evaluate
-	ObservationWindow Duration `yaml:"observation_window"` // YAML: scoring.observation_window, default "300s" — окно накопления очков. Потребитель: scorer.Decay, state.Tracker
-	Decay             string   `yaml:"decay"`              // YAML: scoring.decay, default "linear" — алгоритм затухания ("linear"). Потребитель: scorer.Decay
+	AlertThreshold    int      `yaml:"alert_threshold"`    // YAML: scoring.alert_threshold, default 50 — threshold for WARN level, written to threat log. Consumer: scorer.Evaluate
+	BanThreshold      int      `yaml:"ban_threshold"`      // YAML: scoring.ban_threshold, default 80 — threshold for THREAT level, Fail2Ban bans IP. Consumer: scorer.Evaluate
+	ObservationWindow Duration `yaml:"observation_window"` // YAML: scoring.observation_window, default "300s" — score accumulation window. Consumer: scorer.Decay, state.Tracker
+	Decay             string   `yaml:"decay"`              // YAML: scoring.decay, default "linear" — decay algorithm ("linear"). Consumer: scorer.Decay
 }
 
-// ++++++++++++++++++++++++++ Секция: state ++++++++++++++++++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++ Section: state ++++++++++++++++++++++++++++++++++++++++++++++
 
 type StateConfig struct {
-	GCInterval    Duration `yaml:"gc_interval"`     // YAML: state.gc_interval, default "60s" — интервал запуска сборки мусора. Потребитель: state.GC.Run
-	MaxTrackedIPs int      `yaml:"max_tracked_ips"` // YAML: state.max_tracked_ips, default 100000 — лимит IP в памяти (LRU eviction при превышении). Потребитель: state.Tracker
+	GCInterval    Duration `yaml:"gc_interval"`     // YAML: state.gc_interval, default "60s" — garbage collection run interval. Consumer: state.GC.Run
+	MaxTrackedIPs int      `yaml:"max_tracked_ips"` // YAML: state.max_tracked_ips, default 100000 — in-memory IP limit (LRU eviction on overflow). Consumer: state.Tracker
 }
 
-// ++++++++++++++++++++++++++ Секция: detectors ++++++++++++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++ Section: detectors ++++++++++++++++++++++++++++++++++++++++
 
 type DetectorsConfig struct {
 	Probe      ProbeConfig      `yaml:"probe"`
@@ -117,188 +117,188 @@ type DetectorsConfig struct {
 // -------------------------- Probe scanner --------------------------------------------
 
 type ProbeConfig struct {
-	Enabled bool     `yaml:"enabled"` // YAML: detectors.probe.enabled, default true — рубильник. Потребитель: detector.Probe
-	Score   int      `yaml:"score"`   // YAML: detectors.probe.score, default 25 — очки за каждый probe-запрос. Потребитель: detector.Probe
-	Paths   []string `yaml:"paths"`   // YAML: detectors.probe.paths — список чувствительных путей. Потребитель: detector.Probe
+	Enabled bool     `yaml:"enabled"` // YAML: detectors.probe.enabled, default true — on/off switch. Consumer: detector.Probe
+	Score   int      `yaml:"score"`   // YAML: detectors.probe.score, default 25 — points per probe request. Consumer: detector.Probe
+	Paths   []string `yaml:"paths"`   // YAML: detectors.probe.paths — list of sensitive paths. Consumer: detector.Probe
 }
 
 // -------------------------- Path Bruteforce (404 ratio) ------------------------------
 
 type BruteforceConfig struct {
-	Enabled        bool    `yaml:"enabled"`         // YAML: detectors.bruteforce.enabled, default true. Потребитель: detector.Bruteforce
-	MinRequests    int     `yaml:"min_requests"`    // YAML: detectors.bruteforce.min_requests, default 10 — минимум запросов для срабатывания. Потребитель: detector.Bruteforce
-	RatioThreshold float64 `yaml:"ratio_threshold"` // YAML: detectors.bruteforce.ratio_threshold, default 0.6 — порог доли 404. Потребитель: detector.Bruteforce
-	Score          int     `yaml:"score"`           // YAML: detectors.bruteforce.score, default 30. Потребитель: detector.Bruteforce
+	Enabled        bool    `yaml:"enabled"`         // YAML: detectors.bruteforce.enabled, default true. Consumer: detector.Bruteforce
+	MinRequests    int     `yaml:"min_requests"`    // YAML: detectors.bruteforce.min_requests, default 10 — minimum requests before triggering. Consumer: detector.Bruteforce
+	RatioThreshold float64 `yaml:"ratio_threshold"` // YAML: detectors.bruteforce.ratio_threshold, default 0.6 — 404 ratio threshold. Consumer: detector.Bruteforce
+	Score          int     `yaml:"score"`           // YAML: detectors.bruteforce.score, default 30. Consumer: detector.Bruteforce
 }
 
 // -------------------------- Sequential Crawler ---------------------------------------
 
 type CrawlerConfig struct {
-	Enabled       bool `yaml:"enabled"`        // YAML: detectors.crawler.enabled, default true. Потребитель: detector.Crawler
-	MinSequential int  `yaml:"min_sequential"` // YAML: detectors.crawler.min_sequential, default 5 — минимум последовательных URL. Потребитель: detector.Crawler
-	Score         int  `yaml:"score"`          // YAML: detectors.crawler.score, default 20. Потребитель: detector.Crawler
+	Enabled       bool `yaml:"enabled"`        // YAML: detectors.crawler.enabled, default true. Consumer: detector.Crawler
+	MinSequential int  `yaml:"min_sequential"` // YAML: detectors.crawler.min_sequential, default 5 — minimum sequential URLs. Consumer: detector.Crawler
+	Score         int  `yaml:"score"`          // YAML: detectors.crawler.score, default 20. Consumer: detector.Crawler
 }
 
 // -------------------------- No-Asset Bot --------------------------------------------
 
 type NoAssetConfig struct {
-	Enabled             bool     `yaml:"enabled"`               // YAML: detectors.noasset.enabled, default true. Потребитель: detector.NoAsset
-	MinPageRequests     int      `yaml:"min_page_requests"`     // YAML: detectors.noasset.min_page_requests, default 3. Потребитель: detector.NoAsset
-	AssetRatioThreshold float64  `yaml:"asset_ratio_threshold"` // YAML: detectors.noasset.asset_ratio_threshold, default 0.1 — менее 10% ассетов. Потребитель: detector.NoAsset
-	AssetExtensions     []string `yaml:"asset_extensions"`      // YAML: detectors.noasset.asset_extensions — расширения статических файлов. Потребитель: detector.NoAsset
-	Score               int      `yaml:"score"`                 // YAML: detectors.noasset.score, default 20. Потребитель: detector.NoAsset
+	Enabled             bool     `yaml:"enabled"`               // YAML: detectors.noasset.enabled, default true. Consumer: detector.NoAsset
+	MinPageRequests     int      `yaml:"min_page_requests"`     // YAML: detectors.noasset.min_page_requests, default 3. Consumer: detector.NoAsset
+	AssetRatioThreshold float64  `yaml:"asset_ratio_threshold"` // YAML: detectors.noasset.asset_ratio_threshold, default 0.1 — less than 10% assets. Consumer: detector.NoAsset
+	AssetExtensions     []string `yaml:"asset_extensions"`      // YAML: detectors.noasset.asset_extensions — static file extensions. Consumer: detector.NoAsset
+	Score               int      `yaml:"score"`                 // YAML: detectors.noasset.score, default 20. Consumer: detector.NoAsset
 }
 
 // -------------------------- Rate Anomaly --------------------------------------------
 
 type RateConfig struct {
-	Enabled   bool     `yaml:"enabled"`   // YAML: detectors.rate.enabled, default true. Потребитель: detector.Rate
-	Window    Duration `yaml:"window"`    // YAML: detectors.rate.window, default "60s" — окно подсчёта запросов. Потребитель: detector.Rate
-	Threshold int      `yaml:"threshold"` // YAML: detectors.rate.threshold, default 100 — запросов за окно для срабатывания. Потребитель: detector.Rate
-	Score     int      `yaml:"score"`     // YAML: detectors.rate.score, default 25. Потребитель: detector.Rate
+	Enabled   bool     `yaml:"enabled"`   // YAML: detectors.rate.enabled, default true. Consumer: detector.Rate
+	Window    Duration `yaml:"window"`    // YAML: detectors.rate.window, default "60s" — request counting window. Consumer: detector.Rate
+	Threshold int      `yaml:"threshold"` // YAML: detectors.rate.threshold, default 100 — requests per window to trigger. Consumer: detector.Rate
+	Score     int      `yaml:"score"`     // YAML: detectors.rate.score, default 25. Consumer: detector.Rate
 }
 
 // -------------------------- User-Agent Anomaly --------------------------------------
 
 type UserAgentConfig struct {
-	Enabled         bool `yaml:"enabled"`          // YAML: detectors.useragent.enabled, default true. Потребитель: detector.UserAgent
-	ScannerScore    int  `yaml:"scanner_score"`    // YAML: detectors.useragent.scanner_score, default 40 — сканеры (Nuclei, sqlmap). Потребитель: detector.UserAgent
-	GrabberScore    int  `yaml:"grabber_score"`    // YAML: detectors.useragent.grabber_score, default 20 — грабберы/краулеры. Потребитель: detector.UserAgent
-	AutomationScore int  `yaml:"automation_score"` // YAML: detectors.useragent.automation_score, default 15 — автоматизация (requests, aiohttp). Потребитель: detector.UserAgent
-	EmptyUAScore    int  `yaml:"empty_ua_score"`   // YAML: detectors.useragent.empty_ua_score, default 30 — пустой UA. Потребитель: detector.UserAgent
+	Enabled         bool `yaml:"enabled"`          // YAML: detectors.useragent.enabled, default true. Consumer: detector.UserAgent
+	ScannerScore    int  `yaml:"scanner_score"`    // YAML: detectors.useragent.scanner_score, default 40 — scanners (Nuclei, sqlmap). Consumer: detector.UserAgent
+	GrabberScore    int  `yaml:"grabber_score"`    // YAML: detectors.useragent.grabber_score, default 20 — grabbers/crawlers. Consumer: detector.UserAgent
+	AutomationScore int  `yaml:"automation_score"` // YAML: detectors.useragent.automation_score, default 15 — automation tools (requests, aiohttp). Consumer: detector.UserAgent
+	EmptyUAScore    int  `yaml:"empty_ua_score"`   // YAML: detectors.useragent.empty_ua_score, default 30 — empty UA. Consumer: detector.UserAgent
 }
 
 // -------------------------- Overflow / WAF Bypass -----------------------------------
 
 type OverflowConfig struct {
-	Enabled          bool     `yaml:"enabled"`           // YAML: detectors.overflow.enabled, default true. Потребитель: detector.Overflow
-	MaxURLLength     int      `yaml:"max_url_length"`    // YAML: detectors.overflow.max_url_length, default 2048 — порог длины URL. Потребитель: detector.Overflow
-	SuspiciousParams []string `yaml:"suspicious_params"` // YAML: detectors.overflow.suspicious_params — подозрительные query-параметры. Потребитель: detector.Overflow
-	Score            int      `yaml:"score"`             // YAML: detectors.overflow.score, default 30. Потребитель: detector.Overflow
+	Enabled          bool     `yaml:"enabled"`           // YAML: detectors.overflow.enabled, default true. Consumer: detector.Overflow
+	MaxURLLength     int      `yaml:"max_url_length"`    // YAML: detectors.overflow.max_url_length, default 2048 — URL length threshold. Consumer: detector.Overflow
+	SuspiciousParams []string `yaml:"suspicious_params"` // YAML: detectors.overflow.suspicious_params — suspicious query parameters. Consumer: detector.Overflow
+	Score            int      `yaml:"score"`             // YAML: detectors.overflow.score, default 30. Consumer: detector.Overflow
 }
 
-// ++++++++++++++++++++++++++ Секция: whitelist ++++++++++++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++ Section: whitelist ++++++++++++++++++++++++++++++++++++++++
 
 type WhitelistConfig struct {
 	Bots             []BotConfig          `yaml:"bots"`
 	Custom           CustomWhitelistConfig `yaml:"custom"`
 	DNSCache         DNSCacheConfig        `yaml:"dns_cache"`
-	FakeBotScore     int                  `yaml:"fake_bot_score"`      // YAML: whitelist.fake_bot_score, default 35 — штраф за UA легитимного бота без подтверждения DNS. Потребитель: whitelist.Verifier
-	DNSVerifyTimeout Duration             `yaml:"dns_verify_timeout"`  // YAML: whitelist.dns_verify_timeout, default "2s" — таймаут DNS-верификации бота в pipeline. Потребитель: main.go processLine
+	FakeBotScore     int                  `yaml:"fake_bot_score"`      // YAML: whitelist.fake_bot_score, default 35 — penalty for a legitimate bot UA without DNS confirmation. Consumer: whitelist.Verifier
+	DNSVerifyTimeout Duration             `yaml:"dns_verify_timeout"`  // YAML: whitelist.dns_verify_timeout, default "2s" — bot DNS verification timeout in pipeline. Consumer: main.go processLine
 }
 
-// BotConfig — один легитимный бот с UA-паттернами и rDNS-доменами для верификации.
+// BotConfig — a single legitimate bot with UA patterns and rDNS domains for verification.
 type BotConfig struct {
-	Name         string   `yaml:"name"`          // YAML: whitelist.bots[].name — идентификатор (google, bing...). Потребитель: whitelist.Matcher
-	UAPatterns   []string `yaml:"ua_patterns"`   // YAML: whitelist.bots[].ua_patterns — подстроки User-Agent. Потребитель: whitelist.Matcher
-	RDNSDomains  []string `yaml:"rdns_domains"`  // YAML: whitelist.bots[].rdns_domains — допустимые rDNS-суффиксы. Потребитель: whitelist.Verifier
-	VerifyMethod string   `yaml:"verify_method"` // YAML: whitelist.bots[].verify_method — "rdns" | "rdns_ipjson" | "ip_ranges". Потребитель: whitelist.Verifier
+	Name         string   `yaml:"name"`          // YAML: whitelist.bots[].name — identifier (google, bing...). Consumer: whitelist.Matcher
+	UAPatterns   []string `yaml:"ua_patterns"`   // YAML: whitelist.bots[].ua_patterns — User-Agent substrings. Consumer: whitelist.Matcher
+	RDNSDomains  []string `yaml:"rdns_domains"`  // YAML: whitelist.bots[].rdns_domains — allowed rDNS suffixes. Consumer: whitelist.Verifier
+	VerifyMethod string   `yaml:"verify_method"` // YAML: whitelist.bots[].verify_method — "rdns" | "rdns_ipjson" | "ip_ranges". Consumer: whitelist.Verifier
 }
 
 type CustomWhitelistConfig struct {
-	IPs          []string `yaml:"ips"`           // YAML: whitelist.custom.ips — доверенные IP. Потребитель: whitelist.Matcher
-	CIDRs        []string `yaml:"cidrs"`         // YAML: whitelist.custom.cidrs — доверенные подсети. Потребитель: whitelist.Matcher
-	UASubstrings []string `yaml:"ua_substrings"` // YAML: whitelist.custom.ua_substrings — UA-подстроки для пропуска. Потребитель: whitelist.Matcher
+	IPs          []string `yaml:"ips"`           // YAML: whitelist.custom.ips — trusted IPs. Consumer: whitelist.Matcher
+	CIDRs        []string `yaml:"cidrs"`         // YAML: whitelist.custom.cidrs — trusted subnets. Consumer: whitelist.Matcher
+	UASubstrings []string `yaml:"ua_substrings"` // YAML: whitelist.custom.ua_substrings — UA substrings to skip. Consumer: whitelist.Matcher
 }
 
 type DNSCacheConfig struct {
-	PositiveTTL   Duration `yaml:"positive_ttl"`    // YAML: whitelist.dns_cache.positive_ttl, default "24h" — TTL успешной верификации. Потребитель: whitelist.IPCache
-	NegativeTTL   Duration `yaml:"negative_ttl"`    // YAML: whitelist.dns_cache.negative_ttl, default "1h" — TTL неуспешной верификации. Потребитель: whitelist.IPCache
-	IPListRefresh Duration `yaml:"ip_list_refresh"` // YAML: whitelist.dns_cache.ip_list_refresh, default "24h" — интервал обновления IP-диапазонов ботов. Потребитель: не подключён (v0.2+, ip_ranges refresh)
+	PositiveTTL   Duration `yaml:"positive_ttl"`    // YAML: whitelist.dns_cache.positive_ttl, default "24h" — TTL for successful verification. Consumer: whitelist.IPCache
+	NegativeTTL   Duration `yaml:"negative_ttl"`    // YAML: whitelist.dns_cache.negative_ttl, default "1h" — TTL for failed verification. Consumer: whitelist.IPCache
+	IPListRefresh Duration `yaml:"ip_list_refresh"` // YAML: whitelist.dns_cache.ip_list_refresh, default "24h" — bot IP range refresh interval. Consumer: not connected (v0.2+, ip_ranges refresh)
 }
 
-// ++++++++++++++++++++++++++ Секция: output ++++++++++++++++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++ Section: output ++++++++++++++++++++++++++++++++++++++++++++
 
 type OutputConfig struct {
-	ThreatLog      string `yaml:"threat_log"`      // YAML: output.threat_log, default "/var/log/nginx-sentinel/threats.log" — threat-лог для Fail2Ban. Потребитель: output.Logger
-	OperationalLog string `yaml:"operational_log"` // YAML: output.operational_log, default "/var/log/nginx-sentinel/sentinel.log" — operational-лог демона. Потребитель: utils.Init
+	ThreatLog      string `yaml:"threat_log"`      // YAML: output.threat_log, default "/var/log/nginx-sentinel/threats.log" — threat log for Fail2Ban. Consumer: output.Logger
+	OperationalLog string `yaml:"operational_log"` // YAML: output.operational_log, default "/var/log/nginx-sentinel/sentinel.log" — daemon operational log. Consumer: utils.Init
 }
 
-// ========================== Загрузка конфига ==========================================
+// ========================== Config loading ============================================
 
-// LoadConfig читает конфиг из path и накладывает его поверх Go-дефолтов.
+// LoadConfig reads config from path and overlays it on top of Go defaults.
 //
-// Поведение при отсутствии файла:
-//   - Файл не найден (os.IsNotExist) → возвращает defaultConfig() без ошибки.
-//     Демон работает "из коробки" с разумными дефолтами.
+// Behavior when file is missing:
+//   - File not found (os.IsNotExist) → returns defaultConfig() without error.
+//     The daemon works "out of the box" with sensible defaults.
 //
-// Поведение при наличии файла:
-//   - Невалидный YAML → возвращает ошибку.
-//   - Частичная секция (например, scoring: без ban_threshold) → неуказанные поля
-//     обнулятся (ограничение yaml.v3). config.yaml должен содержать все поля секций.
+// Behavior when file exists:
+//   - Invalid YAML → returns error.
+//   - Partial section (e.g. scoring: without ban_threshold) → unspecified fields
+//     will be zeroed (yaml.v3 limitation). config.yaml must contain all fields of a section.
 //
-// Вызывается из main.go при старте; повторно при SIGHUP (Task 7.1).
+// Called from main.go at startup; repeated on SIGHUP (Task 7.1).
 func LoadConfig(path string) (Config, error) {
 	cfg := defaultConfig()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Файл не найден — дефолты достаточны для запуска.
-			// Сообщаем в stderr: оператор должен знать что работает на дефолтах.
-			fmt.Fprintf(os.Stderr, "[INFO] конфиг %q не найден, используются дефолты\n", path)
+			// File not found — defaults are sufficient to start.
+			// Print to stderr: the operator should know they are running on defaults.
+			fmt.Fprintf(os.Stderr, "[INFO] config %q not found, using defaults\n", path)
 			return cfg, nil
 		}
-		return cfg, fmt.Errorf("чтение конфига %q: %w", path, err)
+		return cfg, fmt.Errorf("reading config %q: %w", path, err)
 	}
 
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return cfg, fmt.Errorf("парсинг конфига %q: %w", path, err)
+		return cfg, fmt.Errorf("parsing config %q: %w", path, err)
 	}
 
 	if err := validateConfig(&cfg); err != nil {
-		return cfg, fmt.Errorf("невалидный конфиг %q: %w", path, err)
+		return cfg, fmt.Errorf("invalid config %q: %w", path, err)
 	}
 
 	return cfg, nil
 }
 
-// validateConfig проверяет критичные поля после yaml.Unmarshal.
-// Нулевые пороги могут возникнуть если в config.yaml указана секция scoring:
-// с неполными полями (ограничение yaml.v3 partial merge) — защита от silent-misconfiguration.
+// validateConfig checks critical fields after yaml.Unmarshal.
+// Zero thresholds can occur if config.yaml specifies a scoring: section with
+// incomplete fields (yaml.v3 partial merge limitation) — protects against silent misconfiguration.
 func validateConfig(cfg *Config) error {
 	if cfg.Scoring.AlertThreshold <= 0 {
-		return fmt.Errorf("scoring.alert_threshold должен быть > 0, got %d", cfg.Scoring.AlertThreshold)
+		return fmt.Errorf("scoring.alert_threshold must be > 0, got %d", cfg.Scoring.AlertThreshold)
 	}
 	if cfg.Scoring.BanThreshold <= 0 {
-		return fmt.Errorf("scoring.ban_threshold должен быть > 0, got %d", cfg.Scoring.BanThreshold)
+		return fmt.Errorf("scoring.ban_threshold must be > 0, got %d", cfg.Scoring.BanThreshold)
 	}
 	if cfg.Scoring.BanThreshold <= cfg.Scoring.AlertThreshold {
-		return fmt.Errorf("scoring.ban_threshold (%d) должен быть > alert_threshold (%d)",
+		return fmt.Errorf("scoring.ban_threshold (%d) must be > alert_threshold (%d)",
 			cfg.Scoring.BanThreshold, cfg.Scoring.AlertThreshold)
 	}
 	if time.Duration(cfg.Scoring.ObservationWindow) <= 0 {
-		return fmt.Errorf("scoring.observation_window должен быть > 0")
+		return fmt.Errorf("scoring.observation_window must be > 0")
 	}
 	if cfg.State.MaxTrackedIPs <= 0 {
-		return fmt.Errorf("state.max_tracked_ips должен быть > 0, got %d", cfg.State.MaxTrackedIPs)
+		return fmt.Errorf("state.max_tracked_ips must be > 0, got %d", cfg.State.MaxTrackedIPs)
 	}
-	// Валидация детекторов: нулевые пороги приводят к panic или silent-misconfiguration
-	// при частичном YAML (yaml.v3 partial merge обнуляет незаданные поля секции).
+	// Detector validation: zero thresholds cause panic or silent misconfiguration
+	// with partial YAML (yaml.v3 partial merge zeroes unset fields in a section).
 	if cfg.Detectors.Crawler.Enabled && cfg.Detectors.Crawler.MinSequential <= 0 {
-		return fmt.Errorf("detectors.crawler.min_sequential должен быть > 0, got %d",
+		return fmt.Errorf("detectors.crawler.min_sequential must be > 0, got %d",
 			cfg.Detectors.Crawler.MinSequential)
 	}
 	if cfg.Detectors.Bruteforce.Enabled && cfg.Detectors.Bruteforce.MinRequests <= 0 {
-		return fmt.Errorf("detectors.bruteforce.min_requests должен быть > 0, got %d",
+		return fmt.Errorf("detectors.bruteforce.min_requests must be > 0, got %d",
 			cfg.Detectors.Bruteforce.MinRequests)
 	}
 	if cfg.Detectors.NoAsset.Enabled && cfg.Detectors.NoAsset.MinPageRequests <= 0 {
-		return fmt.Errorf("detectors.noasset.min_page_requests должен быть > 0, got %d",
+		return fmt.Errorf("detectors.noasset.min_page_requests must be > 0, got %d",
 			cfg.Detectors.NoAsset.MinPageRequests)
 	}
 	if cfg.Detectors.Overflow.Enabled && cfg.Detectors.Overflow.MaxURLLength <= 0 {
-		return fmt.Errorf("detectors.overflow.max_url_length должен быть > 0, got %d",
+		return fmt.Errorf("detectors.overflow.max_url_length must be > 0, got %d",
 			cfg.Detectors.Overflow.MaxURLLength)
 	}
 	return nil
 }
 
-// ========================== Дефолты ==================================================
+// ========================== Defaults ==================================================
 
-// defaultConfig возвращает Config со всеми дефолтами.
-// Служит базой: yaml.Unmarshal накладывает только те секции, которые есть в файле.
-// Отсутствующие секции (например, нет `state:`) сохраняют значения из этой функции.
+// defaultConfig returns a Config with all defaults.
+// Serves as the base: yaml.Unmarshal overlays only the sections present in the file.
+// Sections absent from the file (e.g. no `state:`) retain the values from this function.
 func defaultConfig() Config {
 	return Config{
 		General: GeneralConfig{
@@ -388,12 +388,12 @@ func defaultConfig() Config {
 	}
 }
 
-// defaultProbePaths — список чувствительных путей для детектора probe.
-// Охватывает: конфиги, VCS, облачные credentials, CMS, бэкапы, инфраструктуру, debug.
-// Вынесен отдельно чтобы не загромождать defaultConfig().
+// defaultProbePaths — list of sensitive paths for the probe detector.
+// Covers: app configs, VCS, cloud credentials, CMS, backups, infrastructure, debug.
+// Extracted to avoid cluttering defaultConfig().
 func defaultProbePaths() []string {
 	return []string{
-		// Конфигурационные файлы приложений
+		// Application configuration files
 		"/.env", "/.env.backup", "/.env.local", "/.env.production", "/.env.staging",
 		"/config.yml", "/config.yaml", "/config.json", "/application.properties",
 		"/settings.py", "/local_settings.py", "/database.yml", "/database.yaml",
@@ -403,7 +403,7 @@ func defaultProbePaths() []string {
 		"/.git/config", "/.git/HEAD", "/.gitignore",
 		"/.svn/entries", "/.hg/", "/.bzr/",
 
-		// Облачные credentials
+		// Cloud credentials
 		"/.aws/credentials", "/.docker/config.json",
 		"/aws-exports.json", "/.gcloud/credentials",
 
@@ -411,15 +411,15 @@ func defaultProbePaths() []string {
 		"/wp-config.php", "/wp-config.php.bak", "/wp-config.php.old",
 		"/wp-login.php", "/xmlrpc.php", "/wp-admin/",
 
-		// CMS: общие
+		// CMS: general
 		"/administrator/", "/admin/", "/phpmyadmin/", "/pma/",
 		"/joomla/", "/drupal/", "/typo3/",
 
-		// Backup файлы
+		// Backup files
 		"/backup.zip", "/backup.tar.gz", "/backup.sql", "/backup.sql.gz",
 		"/db.dump", "/database.sql", "/dump.sql", "/site.sql",
 
-		// Инфраструктура и мониторинг
+		// Infrastructure and monitoring
 		"/server-status", "/server-info",
 		"/phpinfo.php", "/info.php", "/php.php",
 		"/actuator/", "/actuator/env", "/actuator/health", "/actuator/mappings",
@@ -431,8 +431,8 @@ func defaultProbePaths() []string {
 	}
 }
 
-// defaultBots — список легитимных поисковых ботов из spec раздел 4.2.
-// Каждый бот верифицируется по UA-паттерну + rDNS + (опционально) fDNS или IP-ranges.
+// defaultBots — list of legitimate search bots from spec section 4.2.
+// Each bot is verified by UA pattern + rDNS + (optionally) fDNS or IP ranges.
 func defaultBots() []BotConfig {
 	return []BotConfig{
 		{

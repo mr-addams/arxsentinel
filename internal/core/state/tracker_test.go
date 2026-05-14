@@ -1,4 +1,4 @@
-// ========================== Тесты state/tracker =========================================
+// ========================== Tests state/tracker =========================================
 
 package state
 
@@ -12,9 +12,9 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 )
 
-// ========================== Вспомогательные функции ===================================
+// ========================== Helper functions ===================================
 
-// makeConfig возвращает минимальный конфиг для тестов.
+// makeConfig returns a minimal config for tests.
 func makeConfig(maxIPs int) config.Config {
 	cfg := config.Config{}
 	cfg.State.MaxTrackedIPs = maxIPs
@@ -24,7 +24,7 @@ func makeConfig(maxIPs int) config.Config {
 	return cfg
 }
 
-// makeEntry создаёт LogEntry с заданным IP, методом, путём и статусом.
+// makeEntry creates a LogEntry with the given IP, method, path, and status.
 func makeEntry(ip, method, path string, status int) *parser.LogEntry {
 	return &parser.LogEntry{
 		RealIP: ip,
@@ -35,29 +35,29 @@ func makeEntry(ip, method, path string, status int) *parser.LogEntry {
 	}
 }
 
-// ========================== Тесты Update ==============================================
+// ========================== Tests Update ==============================================
 
-// TestTrackerUpdateNewIP проверяет что новый IP создаётся с корректными начальными счётчиками.
+// TestTrackerUpdateNewIP verifies that a new IP is created with correct initial counters.
 func TestTrackerUpdateNewIP(t *testing.T) {
 	tr := NewTracker(makeConfig(1000), nil)
 
 	st := tr.Update(makeEntry("1.2.3.4", "GET", "/index.html", 200))
 
 	if st == nil {
-		t.Fatal("Update вернул nil")
+		t.Fatal("Update returned nil")
 	}
 	if st.IP != "1.2.3.4" {
-		t.Errorf("IP: ожидал 1.2.3.4, получил %s", st.IP)
+		t.Errorf("IP: expected 1.2.3.4, got %s", st.IP)
 	}
 	if st.TotalRequests != 1 {
-		t.Errorf("TotalRequests: ожидал 1, получил %d", st.TotalRequests)
+		t.Errorf("TotalRequests: expected 1, got %d", st.TotalRequests)
 	}
 	if tr.Len() != 1 {
-		t.Errorf("Len: ожидал 1, получил %d", tr.Len())
+		t.Errorf("Len: expected 1, got %d", tr.Len())
 	}
 }
 
-// TestTrackerUpdateSameIP проверяет накопление счётчиков при повторных запросах.
+// TestTrackerUpdateSameIP verifies counter accumulation on repeated requests.
 func TestTrackerUpdateSameIP(t *testing.T) {
 	tr := NewTracker(makeConfig(1000), nil)
 	ip := "1.2.3.4"
@@ -69,17 +69,17 @@ func TestTrackerUpdateSameIP(t *testing.T) {
 	st := tr.Update(makeEntry(ip, "GET", "/page4", 200))
 
 	if st.TotalRequests != 4 {
-		t.Errorf("TotalRequests: ожидал 4, получил %d", st.TotalRequests)
+		t.Errorf("TotalRequests: expected 4, got %d", st.TotalRequests)
 	}
 	if st.Requests404 != 2 {
-		t.Errorf("Requests404: ожидал 2, получил %d", st.Requests404)
+		t.Errorf("Requests404: expected 2, got %d", st.Requests404)
 	}
 	if tr.Len() != 1 {
-		t.Errorf("Len: должен оставаться 1, получил %d", tr.Len())
+		t.Errorf("Len: must remain 1, got %d", tr.Len())
 	}
 }
 
-// TestTrackerMultipleIPs проверяет независимость состояний разных IP.
+// TestTrackerMultipleIPs verifies independence of states for different IPs.
 func TestTrackerMultipleIPs(t *testing.T) {
 	tr := NewTracker(makeConfig(1000), nil)
 
@@ -88,24 +88,24 @@ func TestTrackerMultipleIPs(t *testing.T) {
 	tr.Update(makeEntry("1.1.1.1", "GET", "/about", 200))
 
 	if tr.Len() != 2 {
-		t.Errorf("Len: ожидал 2, получил %d", tr.Len())
+		t.Errorf("Len: expected 2, got %d", tr.Len())
 	}
 	st1 := tr.Update(makeEntry("1.1.1.1", "GET", "/contact", 200))
 	if st1.TotalRequests != 3 {
-		t.Errorf("1.1.1.1 TotalRequests: ожидал 3, получил %d", st1.TotalRequests)
+		t.Errorf("1.1.1.1 TotalRequests: expected 3, got %d", st1.TotalRequests)
 	}
 	st2 := tr.Update(makeEntry("2.2.2.2", "GET", "/login", 200))
 	if st2.TotalRequests != 2 {
-		t.Errorf("2.2.2.2 TotalRequests: ожидал 2, получил %d", st2.TotalRequests)
+		t.Errorf("2.2.2.2 TotalRequests: expected 2, got %d", st2.TotalRequests)
 	}
 	if st2.Requests404 != 1 {
-		t.Errorf("2.2.2.2 Requests404: ожидал 1, получил %d", st2.Requests404)
+		t.Errorf("2.2.2.2 Requests404: expected 1, got %d", st2.Requests404)
 	}
 }
 
-// ========================== Тесты кольцевого буфера путей ============================
+// ========================== Ring buffer tests ============================
 
-// TestRingBufferOrder проверяет хронологический порядок путей до заполнения буфера.
+// TestRingBufferOrder verifies chronological order of paths before the buffer is full.
 func TestRingBufferOrder(t *testing.T) {
 	tr := NewTracker(makeConfig(1000), nil)
 	ip := "1.2.3.4"
@@ -118,24 +118,24 @@ func TestRingBufferOrder(t *testing.T) {
 	st := tr.Update(makeEntry(ip, "GET", "/f", 200))
 	recent := st.RecentPaths()
 
-	// Последние 6 путей должны быть в правильном порядке
+	// Last 6 paths must be in the correct order
 	expected := append(paths, "/f")
 	if len(recent) != len(expected) {
-		t.Fatalf("RecentPaths длина: ожидал %d, получил %d", len(expected), len(recent))
+		t.Fatalf("RecentPaths length: expected %d, got %d", len(expected), len(recent))
 	}
 	for i, p := range expected {
 		if recent[i] != p {
-			t.Errorf("RecentPaths[%d]: ожидал %q, получил %q", i, p, recent[i])
+			t.Errorf("RecentPaths[%d]: expected %q, got %q", i, p, recent[i])
 		}
 	}
 }
 
-// TestRingBufferWrap проверяет корректную работу кольцевого буфера после заполнения.
+// TestRingBufferWrap verifies correct ring buffer operation after it wraps around.
 func TestRingBufferWrap(t *testing.T) {
 	tr := NewTracker(makeConfig(1000), nil)
 	ip := "1.2.3.4"
 
-	// Заполняем буфер + ещё несколько путей сверху
+	// Fill the buffer + a few extra paths on top
 	overCount := 5
 	total := pathBufSize + overCount
 
@@ -146,59 +146,59 @@ func TestRingBufferWrap(t *testing.T) {
 	st := tr.Update(makeEntry(ip, "GET", "/final", 200))
 	recent := st.RecentPaths()
 
-	// Буфер должен содержать ровно pathBufSize элементов
+	// Buffer must contain exactly pathBufSize elements
 	if len(recent) != pathBufSize {
-		t.Fatalf("RecentPaths длина после wrap: ожидал %d, получил %d", pathBufSize, len(recent))
+		t.Fatalf("RecentPaths length after wrap: expected %d, got %d", pathBufSize, len(recent))
 	}
 
-	// Последний элемент — самый свежий путь
+	// Last element — most recent path
 	if recent[pathBufSize-1] != "/final" {
-		t.Errorf("последний элемент: ожидал /final, получил %q", recent[pathBufSize-1])
+		t.Errorf("last element: expected /final, got %q", recent[pathBufSize-1])
 	}
 
-	// Вытеснены первые overCount+1 путей (0..overCount); первый актуальный — /path/(overCount+1).
-	// Итого записей: pathBufSize+overCount (цикл) + 1 (/final) = pathBufSize+overCount+1.
+	// First overCount+1 paths (0..overCount) are evicted; first valid is /path/(overCount+1).
+	// Total records: pathBufSize+overCount (loop) + 1 (/final) = pathBufSize+overCount+1.
 	// pathPos = (pathBufSize+overCount+1) % pathBufSize = overCount+1.
 	expectedFirst := fmt.Sprintf("/path/%d", overCount+1)
 	if recent[0] != expectedFirst {
-		t.Errorf("первый элемент: ожидал %q, получил %q", expectedFirst, recent[0])
+		t.Errorf("first element: expected %q, got %q", expectedFirst, recent[0])
 	}
 }
 
-// ========================== Тесты GC eviction =========================================
+// ========================== GC eviction tests =========================================
 
-// TestGCEviction проверяет что GC удаляет неактивные IP по retention.
+// TestGCEviction verifies that GC removes inactive IPs past their retention window.
 func TestGCEviction(t *testing.T) {
 	tr := NewTracker(makeConfig(1000), nil)
 
-	// Добавляем IP с LastSeen в прошлом (старше retention)
+	// Add an IP with LastSeen in the past (older than retention)
 	tr.Update(makeEntry("old.ip", "GET", "/", 200))
-	// Мутация под write lock — безопасно при добавлении t.Parallel() в будущем
+	// Mutation under write lock — safe when t.Parallel() is added in the future
 	tr.mu.Lock()
-	tr.states["old.ip"].LastSeen = time.Now().Add(-400 * time.Second) // старше ObservationWindow(300s)
+	tr.states["old.ip"].LastSeen = time.Now().Add(-400 * time.Second) // older than ObservationWindow(300s)
 	tr.mu.Unlock()
 
-	// Добавляем свежий IP
+	// Add a fresh IP
 	tr.Update(makeEntry("new.ip", "GET", "/", 200))
 
 	deleted, _ := tr.runGC()
 
 	if deleted != 1 {
-		t.Errorf("GC: ожидал удаление 1 записи, удалено %d", deleted)
+		t.Errorf("GC: expected 1 deleted entry, got %d", deleted)
 	}
 	if tr.Len() != 1 {
-		t.Errorf("после GC Len: ожидал 1, получил %d", tr.Len())
+		t.Errorf("Len after GC: expected 1, got %d", tr.Len())
 	}
-	// Убеждаемся что удалён именно old.ip
+	// Verify that old.ip is the one deleted
 	if tr.Has("old.ip") {
-		t.Error("old.ip должен быть удалён GC")
+		t.Error("old.ip must be deleted by GC")
 	}
 	if !tr.Has("new.ip") {
-		t.Error("new.ip должен остаться после GC")
+		t.Error("new.ip must remain after GC")
 	}
 }
 
-// TestGCNoEviction проверяет что GC не трогает активные IP.
+// TestGCNoEviction verifies that GC does not touch active IPs.
 func TestGCNoEviction(t *testing.T) {
 	tr := NewTracker(makeConfig(1000), nil)
 
@@ -208,14 +208,14 @@ func TestGCNoEviction(t *testing.T) {
 	deleted, _ := tr.runGC()
 
 	if deleted != 0 {
-		t.Errorf("GC: ожидал 0 удалений, удалено %d", deleted)
+		t.Errorf("GC: expected 0 deletions, got %d", deleted)
 	}
 	if tr.Len() != 2 {
-		t.Errorf("Len после GC: ожидал 2, получил %d", tr.Len())
+		t.Errorf("Len after GC: expected 2, got %d", tr.Len())
 	}
 }
 
-// TestRunGCContext проверяет что RunGC корректно завершается по контексту.
+// TestRunGCContext verifies that RunGC shuts down cleanly on context cancellation.
 func TestRunGCContext(t *testing.T) {
 	tr := NewTracker(makeConfig(1000), nil)
 
@@ -231,63 +231,63 @@ func TestRunGCContext(t *testing.T) {
 
 	select {
 	case <-done:
-		// успех
+		// success
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("RunGC не завершился после отмены контекста")
+		t.Fatal("RunGC did not exit after context cancellation")
 	}
 }
 
-// ========================== Тесты LRU eviction ========================================
+// ========================== LRU eviction tests ========================================
 
-// TestLRUEviction проверяет что при превышении maxIPs удаляется наименее используемый IP.
+// TestLRUEviction verifies that when maxIPs is exceeded the least recently used IP is evicted.
 func TestLRUEviction(t *testing.T) {
 	maxIPs := 3
 	tr := NewTracker(makeConfig(maxIPs), nil)
 
-	// Добавляем maxIPs+1 различных IP
-	tr.Update(makeEntry("a.a.a.a", "GET", "/", 200)) // LRU-кандидат (самый старый)
+	// Add maxIPs+1 distinct IPs
+	tr.Update(makeEntry("a.a.a.a", "GET", "/", 200)) // LRU candidate (oldest)
 	tr.Update(makeEntry("b.b.b.b", "GET", "/", 200))
 	tr.Update(makeEntry("c.c.c.c", "GET", "/", 200))
-	tr.Update(makeEntry("d.d.d.d", "GET", "/", 200)) // 4-й — должен вытеснить a.a.a.a
+	tr.Update(makeEntry("d.d.d.d", "GET", "/", 200)) // 4th — must evict a.a.a.a
 
 	if tr.Len() != maxIPs {
-		t.Errorf("Len после eviction: ожидал %d, получил %d", maxIPs, tr.Len())
+		t.Errorf("Len after eviction: expected %d, got %d", maxIPs, tr.Len())
 	}
 	if tr.Has("a.a.a.a") {
-		t.Error("a.a.a.a должен быть вытеснен как LRU")
+		t.Error("a.a.a.a must be evicted as LRU")
 	}
 }
 
-// TestLRURecentAccessProtection проверяет что обращение к IP защищает его от вытеснения.
+// TestLRURecentAccessProtection verifies that a recent access to an IP protects it from eviction.
 func TestLRURecentAccessProtection(t *testing.T) {
 	maxIPs := 2
 	tr := NewTracker(makeConfig(maxIPs), nil)
 
-	tr.Update(makeEntry("a.a.a.a", "GET", "/", 200)) // первый
-	tr.Update(makeEntry("b.b.b.b", "GET", "/", 200)) // второй
+	tr.Update(makeEntry("a.a.a.a", "GET", "/", 200)) // first
+	tr.Update(makeEntry("b.b.b.b", "GET", "/", 200)) // second
 
-	// Обращаемся к a.a.a.a — перемещаем в голову LRU
+	// Access a.a.a.a — move it to the head of the LRU
 	tr.Update(makeEntry("a.a.a.a", "GET", "/page", 200))
 
-	// Добавляем третий — должен вытеснить b.b.b.b (LRU)
+	// Add a third — must evict b.b.b.b (LRU)
 	tr.Update(makeEntry("c.c.c.c", "GET", "/", 200))
 
 	if tr.Len() != maxIPs {
-		t.Errorf("Len: ожидал %d, получил %d", maxIPs, tr.Len())
+		t.Errorf("Len: expected %d, got %d", maxIPs, tr.Len())
 	}
 	if tr.Has("b.b.b.b") {
-		t.Error("b.b.b.b должен быть вытеснен как LRU")
+		t.Error("b.b.b.b must be evicted as LRU")
 	}
 	if !tr.Has("a.a.a.a") {
-		t.Error("a.a.a.a должен остаться — был обновлён недавно")
+		t.Error("a.a.a.a must remain — it was recently updated")
 	}
 }
 
-// ========================== Тесты sliding window rate =================================
+// ========================== Sliding window rate tests =================================
 
-// TestRateCounterGapInOneToTwoWindows проверяет корректный сдвиг окна при gap ∈ (w, 2w).
-// Это граничный случай алгоритма two-counter: prevCount переносится из предыдущего окна.
-// Тест документирует known limitation (возможный false positive при burst + тишина + burst).
+// TestRateCounterGapInOneToTwoWindows verifies correct window shift when gap ∈ (w, 2w).
+// This is the boundary case of the two-counter algorithm: prevCount is carried from the previous window.
+// The test documents a known limitation (possible false positive with burst + silence + burst).
 func TestRateCounterGapInOneToTwoWindows(t *testing.T) {
 	cfg := makeConfig(1000)
 	tr := NewTracker(cfg, nil)
@@ -295,7 +295,7 @@ func TestRateCounterGapInOneToTwoWindows(t *testing.T) {
 
 	w := time.Duration(cfg.Detectors.Rate.Window)
 
-	// Первый запрос — инициализируем окно
+	// First request — initialize the window
 	e1 := makeEntry(ip, "GET", "/", 200)
 	e1.Time = time.Now()
 	tr.mu.Lock()
@@ -306,58 +306,58 @@ func TestRateCounterGapInOneToTwoWindows(t *testing.T) {
 	tr.mu.Unlock()
 
 	if st.rateCurrCount != 1 {
-		t.Fatalf("после первого запроса currCount=%d, ожидал 1", st.rateCurrCount)
+		t.Fatalf("after first request currCount=%d, expected 1", st.rateCurrCount)
 	}
 
-	// Gap = 1.5*w — попадает в ветку elapsed ∈ (w, 2w)
+	// Gap = 1.5*w — falls into the elapsed ∈ (w, 2w) branch
 	t1 := e1.Time.Add(w + w/2)
 	tr.mu.Lock()
 	tr.updateRateLocked(st, t1)
 	tr.mu.Unlock()
 
-	// После сдвига: prevCount=1 (старый currCount), currCount=1, rateWindowStart сдвинулся
+	// After shift: prevCount=1 (old currCount), currCount=1, rateWindowStart advanced
 	if st.ratePrevCount != 1 {
-		t.Errorf("после gap=1.5w: prevCount=%d, ожидал 1", st.ratePrevCount)
+		t.Errorf("after gap=1.5w: prevCount=%d, expected 1", st.ratePrevCount)
 	}
 	if st.rateCurrCount != 1 {
-		t.Errorf("после gap=1.5w: currCount=%d, ожидал 1", st.rateCurrCount)
+		t.Errorf("after gap=1.5w: currCount=%d, expected 1", st.rateCurrCount)
 	}
 	if st.rateWindowStart.IsZero() {
-		t.Error("rateWindowStart не должен быть zero после сдвига")
+		t.Error("rateWindowStart must not be zero after shift")
 	}
 
-	// Следующий запрос сразу после — должен попасть в default (elapsed < w)
+	// Next request immediately after — must fall into default (elapsed < w)
 	t2 := t1.Add(time.Second)
 	tr.mu.Lock()
 	tr.updateRateLocked(st, t2)
 	tr.mu.Unlock()
 
 	if st.rateCurrCount != 2 {
-		t.Errorf("после запроса через 1s: currCount=%d, ожидал 2", st.rateCurrCount)
+		t.Errorf("after request 1s later: currCount=%d, expected 2", st.rateCurrCount)
 	}
 }
 
-// ========================== Тесты ScoreAccess =========================================
+// ========================== ScoreAccess tests =========================================
 
-// TestScoreAccess проверяет реализацию detector.ScoreAccess через IPState.
+// TestScoreAccess verifies the detector.ScoreAccess implementation via IPState.
 func TestScoreAccess(t *testing.T) {
 	tr := NewTracker(makeConfig(1000), nil)
 	st := tr.Update(makeEntry("1.2.3.4", "GET", "/", 200))
 
 	if st.GetScore() != 0 {
-		t.Errorf("начальный score: ожидал 0, получил %d", st.GetScore())
+		t.Errorf("initial score: expected 0, got %d", st.GetScore())
 	}
 	if !st.GetScoreUpdatedAt().IsZero() {
-		t.Error("ScoreUpdatedAt должен быть zero при инициализации")
+		t.Error("ScoreUpdatedAt must be zero on initialization")
 	}
 
 	now := time.Now()
 	st.SetScore(42, now)
 
 	if st.GetScore() != 42 {
-		t.Errorf("score после SetScore: ожидал 42, получил %d", st.GetScore())
+		t.Errorf("score after SetScore: expected 42, got %d", st.GetScore())
 	}
 	if !st.GetScoreUpdatedAt().Equal(now) {
-		t.Error("ScoreUpdatedAt не обновился")
+		t.Error("ScoreUpdatedAt was not updated")
 	}
 }

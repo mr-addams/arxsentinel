@@ -1,28 +1,28 @@
-// ========================== Детектор bruteforce =========================================
-//   Детекция аномального процента 404-ответов с одного IP (404 ratio).
-//   Симптом сканирования несуществующих путей / перебора директорий.
+// ========================== Bruteforce detector =======================================
+//   Detects anomalous 404-response ratio from a single IP (404 ratio).
+//   Symptom of scanning non-existent paths / directory brute-forcing.
 //
-//   ЧТО ЗДЕСЬ:
-//     - BruteforceDetector — структура с параметрами из конфига
-//     - NewBruteforceDetector(cfg) — инициализация
-//     - Detect() — проверяет отношение Requests404 / TotalRequests
+//   WHAT IS HERE:
+//     - BruteforceDetector — struct with parameters from config
+//     - NewBruteforceDetector(cfg) — initialization
+//     - Detect() — checks the ratio Requests404 / TotalRequests
 //
-//   АЛГОРИТМ:
+//   ALGORITHM:
 //     ratio = Requests404 / TotalRequests
-//     Если TotalRequests >= MinRequests && ratio >= RatioThreshold → score += Score.
+//     If TotalRequests >= MinRequests && ratio >= RatioThreshold → score += Score.
 //
-//     Порог MinRequests защищает от ложных срабатываний при малом числе запросов:
-//     один 404 у нового IP не означает brute-force.
+//     MinRequests threshold guards against false positives on low request counts:
+//     a single 404 from a new IP is not a brute-force indicator.
 //
-//   ПОЧЕМУ RATIO, А НЕ АБСОЛЮТНОЕ ЧИСЛО 404:
-//     Абсолютный счётчик не учитывает интенсивность трафика — IP с 60 запросами
-//     и 40 404 (67%) опаснее IP с 200 запросами и 40 404 (20%).
+//   WHY RATIO INSTEAD OF ABSOLUTE 404 COUNT:
+//     An absolute counter ignores traffic intensity — an IP with 60 requests
+//     and 40 404s (67%) is more suspicious than one with 200 requests and 40 404s (20%).
 //
-//   ДАННЫЕ ИЗ IPVIEW:
-//     GetTotalRequests() — суммарно запросов к IP, реализуется *state.IPState.TotalRequests.
-//     GetRequests404()   — счётчик 404-ответов, реализуется *state.IPState.Requests404.
+//   DATA FROM IPVIEW:
+//     GetTotalRequests() — total requests to the IP, implemented by *state.IPState.TotalRequests.
+//     GetRequests404()   — 404-response counter, implemented by *state.IPState.Requests404.
 //
-//   Реализовано: Task 6.1.
+//   Implemented: Task 6.1.
 
 package detector
 
@@ -35,7 +35,7 @@ import (
 
 // ========================== BruteforceDetector ========================================
 
-// BruteforceDetector детектирует аномальный процент 404-ответов с одного IP.
+// BruteforceDetector detects anomalous 404-response ratio from a single IP.
 type BruteforceDetector struct {
 	enabled        bool
 	minRequests    int
@@ -43,8 +43,8 @@ type BruteforceDetector struct {
 	score          int
 }
 
-// NewBruteforceDetector создаёт BruteforceDetector из конфига.
-// Вызывается из main.go при старте и SIGHUP.
+// NewBruteforceDetector creates a BruteforceDetector from config.
+// Called from main.go on startup and SIGHUP.
 func NewBruteforceDetector(cfg config.BruteforceConfig) *BruteforceDetector {
 	return &BruteforceDetector{
 		enabled:        cfg.Enabled,
@@ -54,13 +54,13 @@ func NewBruteforceDetector(cfg config.BruteforceConfig) *BruteforceDetector {
 	}
 }
 
-// Name возвращает идентификатор детектора.
+// Name returns the detector identifier.
 func (d *BruteforceDetector) Name() string { return "bruteforce" }
 
-// Detect проверяет долю 404 ответов в суммарных запросах IP.
+// Detect checks the share of 404 responses among total IP requests.
 //
-// MinRequests снижает чувствительность на начальном накоплении данных:
-// первые несколько запросов IP с 100% 404 — не аномалия, а шум.
+// MinRequests reduces sensitivity during the initial data accumulation phase:
+// the first few requests from an IP with 100% 404s are noise, not an anomaly.
 func (d *BruteforceDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 	if !d.enabled {
 		return DetectResult{}

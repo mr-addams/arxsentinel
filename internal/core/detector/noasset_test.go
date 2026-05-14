@@ -1,8 +1,8 @@
-// ========================== Тесты NoAssetDetector =====================================
-//   Табличные тесты: только страницы (нет ассетов), смесь страниц и ассетов,
-//   много ассетов (легитимный браузер), недостаточно страниц, enabled=false.
+// ========================== NoAssetDetector tests =====================================
+//   Table-driven tests: pages only (no assets), mix of pages and assets,
+//   many assets (legitimate browser), insufficient pages, enabled=false.
 //
-//   mockIPView определён в rate_test.go — общий для всех тестов пакета.
+//   mockIPView is defined in rate_test.go — shared across all package tests.
 
 package detector
 
@@ -16,7 +16,7 @@ import (
 var baseNoAssetCfg = config.NoAssetConfig{
 	Enabled:             true,
 	MinPageRequests:     3,
-	AssetRatioThreshold: 0.1, // < 10% ассетов → бот
+	AssetRatioThreshold: 0.1, // < 10% assets → bot
 	AssetExtensions:     []string{".css", ".js", ".png", ".jpg", ".ico", ".woff"},
 	Score:               20,
 }
@@ -28,9 +28,9 @@ func TestNoAssetDetector(t *testing.T) {
 		recentPaths []string
 		wantScore   bool
 	}{
-		// ── Только страницы (бот без браузерного рендеринга) ─────────────────────────────
+		// ── Pages only (bot without browser rendering) ────────────────────────────────────
 		{
-			name: "5 HTML-страниц, 0 ассетов → срабатывает",
+			name: "5 HTML pages, 0 assets → triggers",
 			cfg:  baseNoAssetCfg,
 			recentPaths: []string{
 				"/", "/about", "/products", "/faq", "/contact",
@@ -38,7 +38,7 @@ func TestNoAssetDetector(t *testing.T) {
 			wantScore: true,
 		},
 		{
-			name: "страницы с .html расширением, 0 ассетов → срабатывает",
+			name: "pages with .html extension, 0 assets → triggers",
 			cfg:  baseNoAssetCfg,
 			recentPaths: []string{
 				"/index.html", "/about.html", "/terms.html",
@@ -46,16 +46,16 @@ func TestNoAssetDetector(t *testing.T) {
 			wantScore: true,
 		},
 		{
-			name: "PHP-страницы без ассетов → срабатывает",
+			name: "PHP pages without assets → triggers",
 			cfg:  baseNoAssetCfg,
 			recentPaths: []string{
 				"/index.php", "/login.php", "/dashboard.php", "/profile.php",
 			},
 			wantScore: true,
 		},
-		// ── Легитимный браузер — есть ассеты ─────────────────────────────────────────────
+		// ── Legitimate browser — has assets ───────────────────────────────────────────────
 		{
-			name: "страницы + CSS/JS → не срабатывает (браузер загружает ресурсы)",
+			name: "pages + CSS/JS → no trigger (browser loads resources)",
 			cfg:  baseNoAssetCfg,
 			recentPaths: []string{
 				"/", "/style.css", "/app.js", "/logo.png",
@@ -64,17 +64,17 @@ func TestNoAssetDetector(t *testing.T) {
 			wantScore: false,
 		},
 		{
-			name: "ровно на пороге 10% ассетов → не срабатывает (>= threshold)",
+			name: "exactly at 10% asset threshold → no trigger (>= threshold)",
 			cfg:  baseNoAssetCfg,
 			recentPaths: []string{
-				// 9 страниц + 1 ассет = 10% ассетов = порог, не срабатывает
+				// 9 pages + 1 asset = 10% assets = threshold, no trigger
 				"/", "/a", "/b", "/c", "/d", "/e", "/f", "/g", "/h", "/style.css",
 			},
 			wantScore: false,
 		},
-		// ── Недостаточно страниц ─────────────────────────────────────────────────────────
+		// ── Insufficient pages ────────────────────────────────────────────────────────────
 		{
-			name: "только 2 страницы (< min=3) → не срабатывает",
+			name: "only 2 pages (< min=3) → no trigger",
 			cfg:  baseNoAssetCfg,
 			recentPaths: []string{
 				"/", "/about",
@@ -82,14 +82,14 @@ func TestNoAssetDetector(t *testing.T) {
 			wantScore: false,
 		},
 		{
-			name:        "пустой список → не срабатывает",
+			name:        "empty list → no trigger",
 			cfg:         baseNoAssetCfg,
 			recentPaths: []string{},
 			wantScore:   false,
 		},
 		// ── enabled=false ─────────────────────────────────────────────────────────────────
 		{
-			name: "disabled: только страницы не срабатывают при enabled=false",
+			name: "disabled: pages only do not trigger when enabled=false",
 			cfg: config.NoAssetConfig{
 				Enabled:             false,
 				MinPageRequests:     3,
@@ -109,24 +109,24 @@ func TestNoAssetDetector(t *testing.T) {
 			result := d.Detect(mv, &parser.LogEntry{})
 
 			if tt.wantScore && result.Score == 0 {
-				t.Errorf("ожидали Score > 0, получили 0 (paths=%v)", tt.recentPaths)
+				t.Errorf("expected Score > 0, got 0 (paths=%v)", tt.recentPaths)
 			}
 			if !tt.wantScore && result.Score != 0 {
-				t.Errorf("ожидали Score = 0, получили %d (paths=%v)", result.Score, tt.recentPaths)
+				t.Errorf("expected Score = 0, got %d (paths=%v)", result.Score, tt.recentPaths)
 			}
 			if result.Score > 0 {
 				if result.Module != "noasset" {
-					t.Errorf("Module = %q, ожидали %q", result.Module, "noasset")
+					t.Errorf("Module = %q, expected %q", result.Module, "noasset")
 				}
 				if result.Reason == "" {
-					t.Error("Reason пустой при Score > 0")
+					t.Error("Reason is empty when Score > 0")
 				}
 			}
 		})
 	}
 }
 
-// ========================== Тесты isAsset =============================================
+// ========================== isAsset tests =============================================
 
 func TestIsAsset(t *testing.T) {
 	d := NewNoAssetDetector(baseNoAssetCfg)
@@ -145,14 +145,14 @@ func TestIsAsset(t *testing.T) {
 		{"/about", false},
 		{"/index.html", false},
 		{"/login.php", false},
-		{"/api/data.json", false}, // .json не в AssetExtensions
+		{"/api/data.json", false}, // .json is not in AssetExtensions
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			got := d.isAsset(tt.path)
 			if got != tt.want {
-				t.Errorf("isAsset(%q) = %v, ожидали %v", tt.path, got, tt.want)
+				t.Errorf("isAsset(%q) = %v, expected %v", tt.path, got, tt.want)
 			}
 		})
 	}

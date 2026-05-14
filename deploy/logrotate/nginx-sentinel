@@ -6,8 +6,8 @@
     delaycompress
     missingok
     notifempty
-    # copytruncate: MVP — не требует SIGHUP-reload файловых дескрипторов.
-    # Известное ограничение: race window ~1ms между copy и truncate (допустимо для security-лога).
-    # Правильный postrotate: kill -HUP $(cat /var/run/nginx-sentinel.pid) — Task 7.1.
+    # copytruncate: MVP — does not require SIGHUP-reload of file descriptors.
+    # Known limitation: race window ~1ms between copy and truncate (acceptable for a security log).
+    # Proper postrotate: kill -HUP $(cat /var/run/nginx-sentinel.pid) — Task 7.1.
     copytruncate
 }

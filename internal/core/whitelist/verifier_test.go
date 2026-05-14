@@ -1,7 +1,7 @@
-// ========================== Тесты whitelist/verifier ===================================
-//   Покрывает Task 3.2 (Verify, rDNS верификация) и Task 3.5 (isFakeBot).
+// ========================== Tests whitelist/verifier ===================================
+//   Covers Task 3.2 (Verify, rDNS verification) and Task 3.5 (isFakeBot).
 //
-//   Все DNS-запросы идут через mockResolver — тесты детерминированы, сети не требуют.
+//   All DNS queries go through mockResolver — tests are deterministic, no network required.
 
 package whitelist
 
@@ -16,10 +16,10 @@ import (
 
 // ========================== Mock Resolver =============================================
 
-// mockResolver реализует Resolver с предзаданными ответами.
-// addrs: ip → список PTR hostname (rDNS)
-// hosts: hostname → список IP (fDNS)
-// Отсутствующий ключ → ошибка "не найдено".
+// mockResolver implements Resolver with pre-defined responses.
+// addrs: ip → list of PTR hostnames (rDNS)
+// hosts: hostname → list of IPs (fDNS)
+// Missing key → "not found" error.
 type mockResolver struct {
 	addrs map[string][]string
 	hosts map[string][]string
@@ -39,9 +39,9 @@ func (m *mockResolver) LookupHost(_ context.Context, host string) ([]string, err
 	return nil, errors.New("no A record for " + host)
 }
 
-// ========================== Фикстуры ==================================================
+// ========================== Fixtures ==================================================
 
-// googleBotCfg — конфиг-запись Googlebot для тестов.
+// googleBotCfg — Googlebot config entry for tests.
 var googleBotCfg = config.BotConfig{
 	Name:         "google",
 	UAPatterns:   []string{"Googlebot"},
@@ -49,7 +49,7 @@ var googleBotCfg = config.BotConfig{
 	VerifyMethod: "rdns",
 }
 
-// ipRangesBotCfg — бот с method=ip_ranges (Facebook/Twitter).
+// ipRangesBotCfg — bot with method=ip_ranges (Facebook/Twitter).
 var ipRangesBotCfg = config.BotConfig{
 	Name:         "facebook",
 	UAPatterns:   []string{"facebookexternalhit"},
@@ -57,7 +57,7 @@ var ipRangesBotCfg = config.BotConfig{
 	VerifyMethod: "ip_ranges",
 }
 
-// testIPCacheForVerifier создаёт кэш с большим TTL — не должен протухать в ходе теста.
+// testIPCacheForVerifier creates a cache with long TTL — must not expire during the test.
 func testIPCacheForVerifier() *IPCache {
 	return NewIPCache(config.DNSCacheConfig{
 		PositiveTTL:   config.Duration(time.Hour),
@@ -69,8 +69,8 @@ func testIPCacheForVerifier() *IPCache {
 // ========================== Task 3.2 — Verify rDNS ====================================
 
 func TestVerify_LegitimateGooglebot(t *testing.T) {
-	// Сценарий: настоящий Googlebot — PTR → "crawl-66-249-66-1.googlebot.com.",
-	// fDNS подтверждает IP.
+	// Scenario: genuine Googlebot — PTR → "crawl-66-249-66-1.googlebot.com.",
+	// fDNS confirms the IP.
 	resolver := &mockResolver{
 		addrs: map[string][]string{
 			"66.249.66.1": {"crawl-66-249-66-1.googlebot.com."},
@@ -84,15 +84,15 @@ func TestVerify_LegitimateGooglebot(t *testing.T) {
 	verified, isFakeBot := v.Verify(context.Background(), "66.249.66.1", googleBotCfg)
 
 	if !verified {
-		t.Error("Verify: легитимный Googlebot должен быть verified=true")
+		t.Error("Verify: legitimate Googlebot must be verified=true")
 	}
 	if isFakeBot {
-		t.Error("Verify: легитимный Googlebot не должен быть isFakeBot=true")
+		t.Error("Verify: legitimate Googlebot must not be isFakeBot=true")
 	}
 }
 
 func TestVerify_NoPTRRecord(t *testing.T) {
-	// Сценарий: произвольный IP без PTR записи — не бот.
+	// Scenario: arbitrary IP without a PTR record — not a bot.
 	resolver := &mockResolver{
 		addrs: map[string][]string{},
 		hosts: map[string][]string{},
@@ -102,15 +102,15 @@ func TestVerify_NoPTRRecord(t *testing.T) {
 	verified, isFakeBot := v.Verify(context.Background(), "1.2.3.4", googleBotCfg)
 
 	if verified {
-		t.Error("Verify: IP без PTR не должен быть verified")
+		t.Error("Verify: IP without PTR must not be verified")
 	}
 	if !isFakeBot {
-		t.Error("Verify: UA совпал но DNS провалился → isFakeBot=true (Task 3.5)")
+		t.Error("Verify: UA matched but DNS failed → isFakeBot=true (Task 3.5)")
 	}
 }
 
 func TestVerify_PTRWrongDomain(t *testing.T) {
-	// Сценарий: PTR есть, но hostname не в googlebot.com / google.com
+	// Scenario: PTR exists but hostname is not in googlebot.com / google.com
 	resolver := &mockResolver{
 		addrs: map[string][]string{
 			"1.2.3.4": {"host.evil.com."},
@@ -124,7 +124,7 @@ func TestVerify_PTRWrongDomain(t *testing.T) {
 	verified, isFakeBot := v.Verify(context.Background(), "1.2.3.4", googleBotCfg)
 
 	if verified {
-		t.Error("Verify: hostname вне rdns_domains не должен верифицироваться")
+		t.Error("Verify: hostname outside rdns_domains must not be verified")
 	}
 	if !isFakeBot {
 		t.Error("Verify: DNS fail → isFakeBot=true")
@@ -132,15 +132,15 @@ func TestVerify_PTRWrongDomain(t *testing.T) {
 }
 
 func TestVerify_PTRCorrectDomainButFDNSMismatch(t *testing.T) {
-	// Сценарий: PTR указывает на googlebot.com, но fDNS возвращает другой IP.
-	// Классическая атака: выставить PTR на googlebot.com для своего IP,
-	// но fDNS хоста не содержит атакующий IP.
+	// Scenario: PTR points to googlebot.com but fDNS returns a different IP.
+	// Classic attack: set PTR to googlebot.com for an attacker's IP,
+	// but the fDNS of the host does not contain the attacker's IP.
 	resolver := &mockResolver{
 		addrs: map[string][]string{
 			"1.2.3.4": {"crawl-66-249-66-1.googlebot.com."},
 		},
 		hosts: map[string][]string{
-			"crawl-66-249-66-1.googlebot.com": {"66.249.66.1"}, // другой IP!
+			"crawl-66-249-66-1.googlebot.com": {"66.249.66.1"}, // different IP!
 		},
 	}
 	v := NewVerifier(testIPCacheForVerifier(), resolver, nil)
@@ -148,21 +148,21 @@ func TestVerify_PTRCorrectDomainButFDNSMismatch(t *testing.T) {
 	verified, isFakeBot := v.Verify(context.Background(), "1.2.3.4", googleBotCfg)
 
 	if verified {
-		t.Error("Verify: fDNS mismatch — IP не должен верифицироваться")
+		t.Error("Verify: fDNS mismatch — IP must not be verified")
 	}
 	if !isFakeBot {
-		t.Error("Verify: isFakeBot=true при fDNS mismatch")
+		t.Error("Verify: isFakeBot=true on fDNS mismatch")
 	}
 }
 
 func TestVerify_MultiplePTR_OneValid(t *testing.T) {
-	// Сценарий: несколько PTR-записей, одна из них валидная.
-	// Достаточно одной валидной чтобы верификация прошла.
+	// Scenario: multiple PTR records, one of them valid.
+	// One valid record is sufficient for verification to pass.
 	resolver := &mockResolver{
 		addrs: map[string][]string{
 			"66.249.66.1": {
 				"host.evil.com.",
-				"crawl-66-249-66-1.googlebot.com.", // валидная
+				"crawl-66-249-66-1.googlebot.com.", // valid
 			},
 		},
 		hosts: map[string][]string{
@@ -174,7 +174,7 @@ func TestVerify_MultiplePTR_OneValid(t *testing.T) {
 	verified, isFakeBot := v.Verify(context.Background(), "66.249.66.1", googleBotCfg)
 
 	if !verified {
-		t.Error("Verify: при наличии хотя бы одной валидной PTR — должен верифицироваться")
+		t.Error("Verify: with at least one valid PTR record — must be verified")
 	}
 	if isFakeBot {
 		t.Error("Verify: verified=true → isFakeBot=false")
@@ -184,23 +184,23 @@ func TestVerify_MultiplePTR_OneValid(t *testing.T) {
 // ========================== Task 3.2 — ip_ranges method ================================
 
 func TestVerify_IPRangesMethod(t *testing.T) {
-	// Заглушка ip_ranges: verified=false, isFakeBot=false ("неизвестно").
-	// Не штрафуем реального Facebook-бота до реализации HTTP-клиента (v0.2+).
-	resolver := &mockResolver{} // DNS не должен вызываться
+	// ip_ranges stub: verified=false, isFakeBot=false ("unknown").
+	// Do not penalize a real Facebook bot until HTTP client is implemented (v0.2+).
+	resolver := &mockResolver{} // DNS must not be called
 	v := NewVerifier(testIPCacheForVerifier(), resolver, nil)
 
 	verified, isFakeBot := v.Verify(context.Background(), "69.63.176.1", ipRangesBotCfg)
 
 	if verified {
-		t.Error("Verify: ip_ranges заглушка должна возвращать verified=false (не проверяли)")
+		t.Error("Verify: ip_ranges stub must return verified=false (not checked)")
 	}
 	if isFakeBot {
-		t.Error("Verify: ip_ranges заглушка должна возвращать isFakeBot=false (не штрафовать)")
+		t.Error("Verify: ip_ranges stub must return isFakeBot=false (do not penalize)")
 	}
 }
 
 func TestVerify_UnknownMethod(t *testing.T) {
-	// Неизвестный метод — конфиг сломан, не атака → verified=false, isFakeBot=false.
+	// Unknown method — broken config, not an attack → verified=false, isFakeBot=false.
 	cfg := config.BotConfig{
 		Name:         "unknown",
 		VerifyMethod: "magic",
@@ -211,18 +211,18 @@ func TestVerify_UnknownMethod(t *testing.T) {
 	verified, isFakeBot := v.Verify(context.Background(), "1.2.3.4", cfg)
 
 	if verified {
-		t.Error("Verify: неизвестный метод → verified=false")
+		t.Error("Verify: unknown method → verified=false")
 	}
 	if isFakeBot {
-		t.Error("Verify: неизвестный метод — конфиг сломан, не атака → isFakeBot=false")
+		t.Error("Verify: unknown method — broken config, not an attack → isFakeBot=false")
 	}
 }
 
-// ========================== Task 3.2 — кэш ============================================
+// ========================== Task 3.2 — cache ============================================
 
 func TestVerify_CacheHit_NoSecondDNS(t *testing.T) {
-	// После первого Verify кэш должен содержать результат.
-	// Второй вызов не должен трогать resolver (DNS не вызывается повторно).
+	// After the first Verify the cache must contain the result.
+	// The second call must not touch the resolver (DNS is not called again).
 	callCount := 0
 	resolver := &mockResolver{
 		addrs: map[string][]string{
@@ -233,19 +233,19 @@ func TestVerify_CacheHit_NoSecondDNS(t *testing.T) {
 		},
 	}
 
-	// Обёртка для подсчёта вызовов LookupAddr
+	// Wrapper for counting LookupAddr calls
 	counting := &countingResolver{inner: resolver, count: &callCount}
 	v := NewVerifier(testIPCacheForVerifier(), counting, nil)
 
-	v.Verify(context.Background(), "66.249.66.1", googleBotCfg) // первый — DNS
-	v.Verify(context.Background(), "66.249.66.1", googleBotCfg) // второй — кэш
+	v.Verify(context.Background(), "66.249.66.1", googleBotCfg) // first — DNS
+	v.Verify(context.Background(), "66.249.66.1", googleBotCfg) // second — cache
 
 	if callCount != 1 {
-		t.Errorf("Verify: LookupAddr должен вызваться 1 раз, вызван %d раз", callCount)
+		t.Errorf("Verify: LookupAddr must be called 1 time, called %d times", callCount)
 	}
 }
 
-// countingResolver оборачивает mockResolver и считает вызовы LookupAddr.
+// countingResolver wraps mockResolver and counts LookupAddr calls.
 type countingResolver struct {
 	inner *mockResolver
 	count *int
@@ -263,15 +263,15 @@ func (c *countingResolver) LookupHost(ctx context.Context, host string) ([]strin
 // ========================== Task 3.5 — Fake Bot ========================================
 
 func TestVerify_FakeGooglebot_NoPTR(t *testing.T) {
-	// Главный сценарий Task 3.5: UA = "Googlebot" но IP не верифицируется.
-	// isFakeBot=true — pipeline должен добавить FakeBotScore.
-	resolver := &mockResolver{} // нет PTR ни для одного IP
+	// Main scenario for Task 3.5: UA = "Googlebot" but IP does not verify.
+	// isFakeBot=true — pipeline must add FakeBotScore.
+	resolver := &mockResolver{} // no PTR for any IP
 	v := NewVerifier(testIPCacheForVerifier(), resolver, nil)
 
 	verified, isFakeBot := v.Verify(context.Background(), "185.177.72.23", googleBotCfg)
 
 	if verified {
-		t.Error("FakeBot: произвольный IP не должен верифицироваться как Googlebot")
+		t.Error("FakeBot: arbitrary IP must not be verified as Googlebot")
 	}
 	if !isFakeBot {
 		t.Error("FakeBot: UA=Googlebot + DNS fail → isFakeBot=true")
@@ -279,44 +279,44 @@ func TestVerify_FakeGooglebot_NoPTR(t *testing.T) {
 }
 
 func TestVerify_FakeGooglebot_CachedResult(t *testing.T) {
-	// После первого Verify(false) → кэш хранит verified=false.
-	// Второй Verify должен вернуть из кэша verified=false, isFakeBot=true.
+	// After the first Verify(false) → cache stores verified=false.
+	// Second Verify must return from cache verified=false, isFakeBot=true.
 	resolver := &mockResolver{}
 	v := NewVerifier(testIPCacheForVerifier(), resolver, nil)
 
-	v.Verify(context.Background(), "185.177.72.23", googleBotCfg) // записывает в кэш
+	v.Verify(context.Background(), "185.177.72.23", googleBotCfg) // populates the cache
 	verified, isFakeBot := v.Verify(context.Background(), "185.177.72.23", googleBotCfg)
 
 	if verified {
-		t.Error("FakeBot cached: должен вернуть verified=false")
+		t.Error("FakeBot cached: must return verified=false")
 	}
 	if !isFakeBot {
-		t.Error("FakeBot cached: кэш verified=false → isFakeBot=true")
+		t.Error("FakeBot cached: cache verified=false → isFakeBot=true")
 	}
 }
 
-// ========================== Тест: matchesRDNSDomain нормализация ========================
+// ========================== Test: matchesRDNSDomain normalization ========================
 
 func TestMatchesRDNSDomain_NormalizesLeadingDot(t *testing.T) {
-	// Суффиксы без ведущей точки должны быть нормализованы:
+	// Suffixes without a leading dot must be normalized:
 	//   "googlebot.com" → ".googlebot.com"
-	// Без нормализации "evilgooglebot.com" совпадало бы с суффиксом "googlebot.com".
+	// Without normalization "evilgooglebot.com" would match the suffix "googlebot.com".
 
-	// Корректный hostname — должен совпасть даже если суффикс без точки
+	// Legitimate hostname — must match even if the suffix has no leading dot
 	if !matchesRDNSDomain("crawl-66-249-66-1.googlebot.com", []string{"googlebot.com"}) {
-		t.Error("легитимный googlebot.com должен совпасть с суффиксом без ведущей точки")
+		t.Error("legitimate googlebot.com must match suffix without leading dot")
 	}
 
-	// Вредоносный hostname — НЕ должен совпасть
+	// Malicious hostname — must NOT match
 	if matchesRDNSDomain("crawl.evilgooglebot.com", []string{"googlebot.com"}) {
-		t.Error("evilgooglebot.com не должен совпасть с суффиксом googlebot.com")
+		t.Error("evilgooglebot.com must not match suffix googlebot.com")
 	}
 
-	// С ведущей точкой — исходное поведение не сломано
+	// With leading dot — original behaviour is preserved
 	if !matchesRDNSDomain("crawl-66-249-66-1.googlebot.com", []string{".googlebot.com"}) {
-		t.Error("легитимный googlebot.com должен совпасть с суффиксом .googlebot.com")
+		t.Error("legitimate googlebot.com must match suffix .googlebot.com")
 	}
 	if matchesRDNSDomain("crawl.evilgooglebot.com", []string{".googlebot.com"}) {
-		t.Error("evilgooglebot.com не должен совпасть с суффиксом .googlebot.com")
+		t.Error("evilgooglebot.com must not match suffix .googlebot.com")
 	}
 }

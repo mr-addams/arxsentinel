@@ -1,8 +1,8 @@
-// ========================== Тесты RateDetector ========================================
-//   Табличные тесты: выше/ниже порога, window=0, enabled=false.
+// ========================== RateDetector tests ========================================
+//   Table-driven tests: above/below threshold, window=0, enabled=false.
 //
-//   mockIPView — локальный мок IPView для всех тестов пакета detector.
-//   Реализует интерфейс IPView через набор полей — без сложных зависимостей от state/.
+//   mockIPView — local mock IPView for all tests in the detector package.
+//   Implements the IPView interface via plain fields — no complex dependencies on state/.
 
 package detector
 
@@ -16,14 +16,14 @@ import (
 
 // ========================== Mock IPView ===============================================
 
-// mockIPView реализует IPView для тестов детекторов.
-// Поля напрямую управляют возвращаемыми значениями — без логики state.
+// mockIPView implements IPView for detector tests.
+// Fields directly control returned values — no state logic.
 type mockIPView struct {
 	ip            string
 	totalRequests int
 	requests404   int
 	recentPaths   []string
-	approxRate    float64 // значение, которое вернёт ApproxRate при любом window
+	approxRate    float64 // value returned by ApproxRate for any window
 }
 
 func (m *mockIPView) GetIP() string               { return m.ip }
@@ -35,7 +35,7 @@ func (m *mockIPView) ApproxRate(_ time.Duration) float64 { return m.approxRate }
 // ========================== TestRateDetector ==========================================
 
 func TestRateDetector(t *testing.T) {
-	// Базовый конфиг: окно 60s, порог 100 req → thresholdRPS = 100/60 ≈ 1.67 rps
+	// Base config: 60s window, threshold 100 req → thresholdRPS = 100/60 ≈ 1.67 rps
 	baseCfg := config.RateConfig{
 		Enabled:   true,
 		Window:    config.Duration(60 * time.Second),
@@ -49,48 +49,48 @@ func TestRateDetector(t *testing.T) {
 		rate      float64 // mockIPView.approxRate
 		wantScore bool
 	}{
-		// ── Выше порога ───────────────────────────────────────────────────────────────────
+		// ── Above threshold ───────────────────────────────────────────────────────────────
 		{
-			name:      "rate выше порога: срабатывает",
+			name:      "rate above threshold: triggers",
 			cfg:       baseCfg,
-			rate:      3.0, // 3 rps > 1.67 rps (порог 100 req/60s)
+			rate:      3.0, // 3 rps > 1.67 rps (threshold 100 req/60s)
 			wantScore: true,
 		},
 		{
-			name:      "rate равен порогу: срабатывает (≥ threshold)",
+			name:      "rate equals threshold: triggers (>= threshold)",
 			cfg:       baseCfg,
-			rate:      100.0 / 60.0, // ровно порог
+			rate:      100.0 / 60.0, // exactly the threshold
 			wantScore: true,
 		},
-		// ── Ниже порога ───────────────────────────────────────────────────────────────────
+		// ── Below threshold ───────────────────────────────────────────────────────────────
 		{
-			name:      "rate ниже порога: не срабатывает",
+			name:      "rate below threshold: no trigger",
 			cfg:       baseCfg,
 			rate:      1.0, // 1 rps < 1.67 rps
 			wantScore: false,
 		},
 		{
-			name:      "rate=0: не срабатывает",
+			name:      "rate=0: no trigger",
 			cfg:       baseCfg,
 			rate:      0,
 			wantScore: false,
 		},
-		// ── window=0 → детектор отключён ──────────────────────────────────────────────────
-		// Guard в NewRateDetector: нулевое окно → enabled=false, избегаем деления на 0.
+		// ── window=0 → detector disabled ──────────────────────────────────────────────────
+		// Guard in NewRateDetector: zero window → enabled=false, avoids division by zero.
 		{
-			name: "window=0: всегда Score=0",
+			name: "window=0: always Score=0",
 			cfg: config.RateConfig{
 				Enabled:   true,
 				Window:    config.Duration(0),
 				Threshold: 100,
 				Score:     25,
 			},
-			rate:      1000.0, // высокий rate — но детектор должен быть отключён
+			rate:      1000.0, // high rate — but detector must be disabled
 			wantScore: false,
 		},
 		// ── enabled=false ─────────────────────────────────────────────────────────────────
 		{
-			name: "disabled: высокий rate не срабатывает при enabled=false",
+			name: "disabled: high rate does not trigger when enabled=false",
 			cfg: config.RateConfig{
 				Enabled:   false,
 				Window:    config.Duration(60 * time.Second),
@@ -111,18 +111,18 @@ func TestRateDetector(t *testing.T) {
 			result := d.Detect(mv, entry)
 
 			if tt.wantScore && result.Score == 0 {
-				t.Errorf("ожидали Score > 0, получили 0 (rate=%.2f)", tt.rate)
+				t.Errorf("expected Score > 0, got 0 (rate=%.2f)", tt.rate)
 			}
 			if !tt.wantScore && result.Score != 0 {
-				t.Errorf("ожидали Score = 0, получили %d (rate=%.2f)", result.Score, tt.rate)
+				t.Errorf("expected Score = 0, got %d (rate=%.2f)", result.Score, tt.rate)
 			}
-			// При срабатывании Module и Reason должны быть заполнены
+			// When triggered, Module and Reason must be populated
 			if result.Score > 0 {
 				if result.Module != "rate" {
-					t.Errorf("Module = %q, ожидали %q", result.Module, "rate")
+					t.Errorf("Module = %q, expected %q", result.Module, "rate")
 				}
 				if result.Reason == "" {
-					t.Error("Reason пустой при Score > 0")
+					t.Error("Reason is empty when Score > 0")
 				}
 			}
 		})

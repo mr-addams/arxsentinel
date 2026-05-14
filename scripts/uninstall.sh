@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# uninstall.sh — удаление nginx-sentinel с системы.
-# Логи НЕ удаляются: /var/log/nginx-sentinel/ сохраняется для аудита.
-# Требует: root.
+# uninstall.sh — removes nginx-sentinel from the system.
+# Logs are NOT deleted: /var/log/nginx-sentinel/ is preserved for audit.
+# Requires: root.
 set -euo pipefail
 
-# ── 1. Остановка сервиса ──────────────────────────────────────────────────────────────
-echo "[1/6] Остановка сервиса..."
+# ── 1. Stop service ───────────────────────────────────────────────────────────────────
+echo "[1/6] Stopping service..."
 systemctl stop    nginx-sentinel 2>/dev/null || true
 systemctl disable nginx-sentinel 2>/dev/null || true
 
@@ -24,15 +24,15 @@ systemctl reload fail2ban 2>/dev/null || true
 echo "[4/6] Logrotate..."
 rm -f /etc/logrotate.d/nginx-sentinel
 
-# ── 5. Конфиг ─────────────────────────────────────────────────────────────────────────
-echo "[5/6] Конфиг..."
+# ── 5. Config ─────────────────────────────────────────────────────────────────────────
+echo "[5/6] Config..."
 rm -rf /etc/nginx-sentinel
 
-# ── 6. Бинарник и пользователь ───────────────────────────────────────────────────────
-echo "[6/6] Бинарник и пользователь..."
+# ── 6. Binary and user ────────────────────────────────────────────────────────────────
+echo "[6/6] Binary and user..."
 rm -f /usr/local/bin/nginx-sentinel
-# || true: пользователь может уже быть удалён.
+# || true: user may have already been deleted.
 userdel nginx-sentinel 2>/dev/null || true
 
 echo ""
-echo "Удаление завершено. Логи сохранены в /var/log/nginx-sentinel/"
+echo "Uninstall complete. Logs preserved at /var/log/nginx-sentinel/"

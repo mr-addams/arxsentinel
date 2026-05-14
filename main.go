@@ -1,21 +1,21 @@
-// ========================== Точка входа — nginx-sentinel ================================
-//   Инициализация компонентов, сборка pipeline, запуск демона.
+// ========================== Entry point — nginx-sentinel =================================
+//   Component initialization, pipeline assembly, daemon startup.
 //
-//   ЧТО ЗДЕСЬ:
-//     - main() — загрузка конфига, инициализация логгера, запуск pipeline
+//   WHAT IS HERE:
+//     - main() — config loading, logger initialization, pipeline startup
 //     - Pipeline Flow #4: TailReader → whitelist check → tracker → scorer(detectors) → logger
-//     - buildDetectors() — сборка активных детекторов из конфига
-//     - processLine() — обработка одной строки лога
-//     - writePID() / removePID() — управление PID-файлом демона
-//     - GC горутина: периодическая очистка неактивных IP
-//     - Graceful shutdown: drain буфера + Sync перед Close (Task 7.2)
+//     - buildDetectors() — assembles active detectors from config
+//     - processLine() — processes a single log line
+//     - writePID() / removePID() — daemon PID file management
+//     - GC goroutine: periodic cleanup of inactive IPs
+//     - Graceful shutdown: drain buffer + Sync before Close (Task 7.2)
 //
-//   ЧТО НЕ ЗДЕСЬ:
-//     - Бизнес-логика (core/)
-//     - Конфигурационные структуры (sys/config)
-//     - Логирование (sys/utils)
+//   WHAT IS NOT HERE:
+//     - Business logic (core/)
+//     - Configuration structures (sys/config)
+//     - Logging (sys/utils)
 //
-//   АРХИТЕКТУРА PIPELINE (Flow #4–6):
+//   PIPELINE ARCHITECTURE (Flow #4–6):
 //     TailReader → lines chan → whitelist.Matcher (custom IP/UA → early return)
 //              ↓
 //     whitelist.Verifier (bot UA → rDNS/fDNS → verified → return | isFakeBot → +score)
@@ -26,14 +26,14 @@
 //              ↓ [level≠""]
 //     threatLogger.Log
 //
-//   Изменение (Flow #4, Tasks 4.0–4.3):
-//     Добавлена whitelist-интеграция (Matcher, IPCache, Verifier).
-//     Подключены три детектора: probe, rate, ua.
-//     processLine расширен: early-exit по whitelist, fake bot penalty перед scorer.
-//   Изменение (Flow #6, Tasks 6.1–6.4):
-//     Подключены четыре детектора: bruteforce, crawler, noasset, overflow.
-//   Изменение (Flow #5, Task 5.3):
-//     Добавлено управление PID-файлом: writePID после utils.Init, defer removePID.
+//   Change (Flow #4, Tasks 4.0–4.3):
+//     Added whitelist integration (Matcher, IPCache, Verifier).
+//     Three detectors connected: probe, rate, ua.
+//     processLine extended: early-exit on whitelist, fake bot penalty before scorer.
+//   Change (Flow #6, Tasks 6.1–6.4):
+//     Four detectors connected: bruteforce, crawler, noasset, overflow.
+//   Change (Flow #5, Task 5.3):
+//     Added PID file management: writePID after utils.Init, defer removePID.
 
 package main
 
@@ -58,10 +58,10 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
 )
 
-// processedCount / threatCount — атомарные счётчики для горутины статистики (Task 7.3).
-// Package-level: processLine и ThreatLogger writeFn находятся в том же пакете.
-// version инъецируется goreleaser через ldflags (-X main.version={{.Version}}).
-// При сборке вручную без ldflags остаётся "dev".
+// processedCount / threatCount — atomic counters for the stats goroutine (Task 7.3).
+// Package-level: processLine and ThreatLogger writeFn are in the same package.
+// version is injected by goreleaser via ldflags (-X main.version={{.Version}}).
+// Remains "dev" when built manually without ldflags.
 var version = "dev"
 
 var (
@@ -69,14 +69,14 @@ var (
 	threatCount    atomic.Int64
 )
 
-// configPath — путь к конфигу по умолчанию.
-// Абсолютный путь: при запуске через systemd WorkingDirectory=/ относительный "./config.yaml"
-// не найдётся. Совпадает с путём из install.sh.
-// Переопределяется через переменную окружения NGINX_SENTINEL_CONFIG.
+// configPath — default path to the config file.
+// Absolute path: when launched via systemd with WorkingDirectory=/, a relative "./config.yaml"
+// would not be found. Matches the path used in install.sh.
+// Can be overridden via the NGINX_SENTINEL_CONFIG environment variable.
 const configPath = "/etc/nginx-sentinel/config.yaml"
 
 func main() {
-	// ── Загрузка конфига ──────────────────────────────────────────────────────────────
+	// ── Config loading ────────────────────────────────────────────────────────────────
 
 	path := configPath
 	if env := os.Getenv("NGINX_SENTINEL_CONFIG"); env != "" {
@@ -85,60 +85,60 @@ func main() {
 
 	cfg, err := config.LoadConfig(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "nginx-sentinel: ошибка конфига: %v\n", err)
+		fmt.Fprintf(os.Stderr, "nginx-sentinel: config error: %v\n", err)
 		os.Exit(1)
 	}
 
-	// ── Инициализация логгера ─────────────────────────────────────────────────────────
+	// ── Logger initialization ─────────────────────────────────────────────────────────
 
 	if err := utils.Init(cfg.Logging.Debug, cfg.Logging.ConsoleColor,
 		cfg.Output.OperationalLog, cfg.Output.ThreatLog); err != nil {
-		// Threat log недоступен — без него Fail2Ban не работает, стартовать нельзя
-		fmt.Fprintf(os.Stderr, "nginx-sentinel: ошибка инициализации логгера: %v\n", err)
+		// Threat log unavailable — Fail2Ban cannot work without it, startup is not possible
+		fmt.Fprintf(os.Stderr, "nginx-sentinel: logger initialization error: %v\n", err)
 		os.Exit(1)
 	}
 	defer utils.Close()
 
-	// PID-файл нужен для: kill -HUP $(cat pid) и logrotate postrotate (Task 7.1).
-	// Ошибка записи — warn, не fatal: демон работает без PID-файла, просто теряем удобство управления.
+	// PID file is needed for: kill -HUP $(cat pid) and logrotate postrotate (Task 7.1).
+	// Write error — warn, not fatal: the daemon works without a PID file, we just lose management convenience.
 	if err := writePID(cfg.General.PIDFile); err != nil {
-		utils.Log("STARTUP", fmt.Sprintf("не удалось записать PID-файл %s: %v", cfg.General.PIDFile, err), "warn")
+		utils.Log("STARTUP", fmt.Sprintf("failed to write PID file %s: %v", cfg.General.PIDFile, err), "warn")
 	} else {
 		defer removePID(cfg.General.PIDFile)
 	}
 
-	// ── Стартовые сообщения ───────────────────────────────────────────────────────────
+	// ── Startup messages ──────────────────────────────────────────────────────────────
 
-	utils.Log("STARTUP", "nginx-sentinel "+version+" запуск", "info")
+	utils.Log("STARTUP", "nginx-sentinel "+version+" starting", "info")
 	utils.Log("CONFIG", fmt.Sprintf("alert=%d ban=%d window=%v debug=%v",
 		cfg.Scoring.AlertThreshold,
 		cfg.Scoring.BanThreshold,
 		time.Duration(cfg.Scoring.ObservationWindow),
 		cfg.Logging.Debug,
 	), "info")
-	utils.Log("CONFIG", fmt.Sprintf("лог: %s", cfg.General.LogFile), "info")
+	utils.Log("CONFIG", fmt.Sprintf("log: %s", cfg.General.LogFile), "info")
 
-	// ── Инициализация компонентов pipeline ────────────────────────────────────────────
+	// ── Pipeline component initialization ────────────────────────────────────────────
 
-	// tracker — in-memory состояние по IP (Tasks 2.1 + 2.2)
+	// tracker — in-memory state per IP (Tasks 2.1 + 2.2)
 	tracker := state.NewTracker(cfg, utils.Log)
 
-	// whitelist: Matcher (UA/IP lookup), IPCache (DNS-результаты), Verifier (rDNS+fDNS)
-	// IPCache создаётся отдельно — при SIGHUP (Task 7.1) кэш переживает reload конфига.
+	// whitelist: Matcher (UA/IP lookup), IPCache (DNS results), Verifier (rDNS+fDNS)
+	// IPCache is created separately — on SIGHUP (Task 7.1) the cache survives config reload.
 	ipCache := whitelist.NewIPCache(cfg.Whitelist.DNSCache)
 	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "nginx-sentinel: ошибка инициализации whitelist: %v\n", err)
+		fmt.Fprintf(os.Stderr, "nginx-sentinel: whitelist initialization error: %v\n", err)
 		os.Exit(1)
 	}
 	resolver := &net.Resolver{PreferGo: true}
 	verifier := whitelist.NewVerifier(ipCache, resolver, utils.Log)
 
-	// scorer — агрегатор очков от детекторов (Task 2.3 + Flow #4)
+	// scorer — score aggregator from detectors (Task 2.3 + Flow #4)
 	sc := scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log)
 
-	// threatLogger — запись WARN/THREAT в threats.log (Task 2.4).
-	// Closure вокруг utils.LogThreat: инкрементирует threatCount для горутины статистики.
+	// threatLogger — writes WARN/THREAT to threats.log (Task 2.4).
+	// Closure around utils.LogThreat: increments threatCount for the stats goroutine.
 	threatLogger := output.NewThreatLogger(func(ip string, score int, level string, modules []string, reason string) {
 		if level == "THREAT" {
 			threatCount.Add(1)
@@ -152,9 +152,9 @@ func main() {
 	defer cancel()
 
 	// ── SIGHUP reload ─────────────────────────────────────────────────────────────────
-	// Горутина конвертирует os.Signal → struct{} в небуферизованный канал размером 1.
-	// Если предыдущий reload ещё не обработан — пропускаем (select default).
-	// Главный loop читает reloadCh между строками — нет concurrent access в processLine.
+	// Goroutine converts os.Signal → struct{} into a buffered channel of size 1.
+	// If the previous reload has not been processed yet — skip (select default).
+	// Main loop reads reloadCh between lines — no concurrent access in processLine.
 	sigHUP := make(chan os.Signal, 1)
 	signal.Notify(sigHUP, syscall.SIGHUP)
 	defer signal.Stop(sigHUP)
@@ -173,14 +173,14 @@ func main() {
 		}
 	}()
 
-	// ── GC горутина ───────────────────────────────────────────────────────────────────
+	// ── GC goroutine ──────────────────────────────────────────────────────────────────
 	go tracker.RunGC(ctx, time.Duration(cfg.State.GCInterval))
 
-	// ── Горутина статистики (Task 7.3) ────────────────────────────────────────────────
-	// Период = general.stats_interval (дефолт 300s) — независим от scoring.observation_window.
-	// Горутина стартует один раз; изменение stats_interval через SIGHUP требует перезапуска.
-	// processedCount/threatCount — атомики, нет гонок с pipeline горутиной.
-	// tracker.GetStats() итерирует под RLock — не вызывать из hot path.
+	// ── Stats goroutine (Task 7.3) ────────────────────────────────────────────────────
+	// Period = general.stats_interval (default 300s) — independent of scoring.observation_window.
+	// Goroutine starts once; changing stats_interval via SIGHUP requires restart.
+	// processedCount/threatCount — atomics, no races with the pipeline goroutine.
+	// tracker.GetStats() iterates under RLock — do not call from hot path.
 	go func() {
 		ticker := time.NewTicker(time.Duration(cfg.General.StatsInterval))
 		defer ticker.Stop()
@@ -206,22 +206,22 @@ func main() {
 	go tail.Run(ctx)
 
 	utils.Log("STARTUP", fmt.Sprintf(
-		"pipeline запущен (tail → whitelist → tracker → scorer[probe,rate,ua,bruteforce,crawler,noasset,overflow]) | файл: %s",
+		"pipeline started (tail → whitelist → tracker → scorer[probe,rate,ua,bruteforce,crawler,noasset,overflow]) | file: %s",
 		cfg.General.LogFile,
 	), "info")
 
-	// ── Основной цикл обработки ───────────────────────────────────────────────────────
+	// ── Main processing loop ──────────────────────────────────────────────────────────
 
 	for {
 		select {
 		case <-ctx.Done():
-			utils.Log("SHUTDOWN", "сигнал получен, обработка буфера...", "info")
-			// TailReader завершает работу по тому же ctx и закрывает канал через defer.
-			// Ждём !ok — это гарантирует что TailReader дозаписал все строки перед выходом.
-			// TailReader использует неблокирующий select при отправке — дедлок невозможен.
-			// context.Background() вместо ctx: ctx уже отменён, поэтому verifyCtx
-			// (context.WithTimeout(ctx,...)) был бы немедленно отменён → все боты
-			// получали бы isFakeBot=true → ложные бан-записи в threats.log при shutdown.
+			utils.Log("SHUTDOWN", "signal received, draining buffer...", "info")
+			// TailReader shuts down on the same ctx and closes the channel via defer.
+			// We wait for !ok — this guarantees TailReader has flushed all lines before exit.
+			// TailReader uses a non-blocking select on send — deadlock is impossible.
+			// context.Background() instead of ctx: ctx is already cancelled, so verifyCtx
+			// (context.WithTimeout(ctx,...)) would be immediately cancelled → all bots
+			// would get isFakeBot=true → false ban entries in threats.log on shutdown.
 		drainLoop:
 			for {
 				line, ok := <-lines
@@ -230,40 +230,40 @@ func main() {
 				}
 				processLine(context.Background(), line, tracker, sc, threatLogger, matcher, verifier, cfg.Whitelist.FakeBotScore, time.Duration(cfg.Whitelist.DNSVerifyTimeout))
 			}
-			utils.Log("SHUTDOWN", "завершение", "info")
+			utils.Log("SHUTDOWN", "done", "info")
 			return
 
 		case <-reloadCh:
 			newCfg, err := config.LoadConfig(path)
 			if err != nil {
-				utils.Log("CONFIG", "SIGHUP: ошибка перезагрузки конфига: "+err.Error(), "warn")
+				utils.Log("CONFIG", "SIGHUP: config reload error: "+err.Error(), "warn")
 				continue
 			}
-			// Подготавливаем все компоненты до применения — если один не готов, остальные не меняем.
-			// Partial apply (cfg обновлён, matcher нет) создаёт молчаливое расхождение:
-			// scorer использует пороги нового конфига, matcher — старый whitelist.
+			// Prepare all components before applying — if one fails, the others are not changed.
+			// Partial apply (cfg updated, matcher not) creates a silent mismatch:
+			// scorer uses new config thresholds, matcher uses old whitelist.
 			newMatcher, err := whitelist.NewMatcher(newCfg.Whitelist)
 			if err != nil {
-				utils.Log("CONFIG", "SIGHUP: ошибка перезагрузки whitelist, reload отменён: "+err.Error(), "warn")
+				utils.Log("CONFIG", "SIGHUP: whitelist reload error, reload cancelled: "+err.Error(), "warn")
 				continue
 			}
-			// Атомарное применение: все компоненты готовы.
-			// ОГРАНИЧЕНИЕ: ipCache (TTL настройки) не обновляется при SIGHUP — кэш
-			// переживает reload намеренно (сброс кэша → DNS-нагрузка на весь трафик ботов).
-			// Изменение dns_cache.positive_ttl/negative_ttl вступает в силу только при перезапуске.
+			// Atomic apply: all components are ready.
+			// LIMITATION: ipCache (TTL settings) is not updated on SIGHUP — the cache
+			// survives reload intentionally (cache reset → DNS load on all bot traffic).
+			// Changes to dns_cache.positive_ttl/negative_ttl take effect only on restart.
 			cfg = newCfg
 			tracker.Reconfigure(cfg)
 			sc = scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log)
 			matcher = newMatcher
 			if err := utils.Reload(cfg.Logging.Debug, cfg.Logging.ConsoleColor,
 				cfg.Output.OperationalLog, cfg.Output.ThreatLog); err != nil {
-				utils.Log("CONFIG", "SIGHUP: ошибка перезагрузки логгера: "+err.Error(), "warn")
+				utils.Log("CONFIG", "SIGHUP: logger reload error: "+err.Error(), "warn")
 			}
-			utils.Log("CONFIG", "SIGHUP: конфиг перезагружен", "info")
+			utils.Log("CONFIG", "SIGHUP: config reloaded", "info")
 
 		case line, ok := <-lines:
 			if !ok {
-				utils.Log("SHUTDOWN", "канал закрыт, завершение", "info")
+				utils.Log("SHUTDOWN", "channel closed, exiting", "info")
 				return
 			}
 			processLine(ctx, line, tracker, sc, threatLogger, matcher, verifier, cfg.Whitelist.FakeBotScore, time.Duration(cfg.Whitelist.DNSVerifyTimeout))
@@ -271,51 +271,51 @@ func main() {
 	}
 }
 
-// buildDetectors собирает список активных детекторов из конфига.
+// buildDetectors assembles the list of active detectors from config.
 //
-// Только включённые детекторы (Enabled=true) добавляются в список.
+// Only enabled detectors (Enabled=true) are added to the list.
 // Flow #4 MVP: probe, rate, ua.
 // Flow #6: bruteforce, crawler, noasset, overflow.
 func buildDetectors(cfg config.Config) []detector.Detector {
 	var detectors []detector.Detector
 
-	// Probe: запросы к .env, .git, wp-config и т.д. — Task 4.1
+	// Probe: requests to .env, .git, wp-config, etc. — Task 4.1
 	if cfg.Detectors.Probe.Enabled {
 		detectors = append(detectors, detector.NewProbeDetector(cfg.Detectors.Probe))
 	}
 
-	// Rate: всплеск запросов за окно — Task 4.2
+	// Rate: request spike within a window — Task 4.2
 	if cfg.Detectors.Rate.Enabled {
 		detectors = append(detectors, detector.NewRateDetector(cfg.Detectors.Rate))
 	}
 
-	// UserAgent: сканеры, грабберы, автоматизация, пустой UA — Task 4.3
+	// UserAgent: scanners, grabbers, automation, empty UA — Task 4.3
 	if cfg.Detectors.UserAgent.Enabled {
 		detectors = append(detectors, detector.NewUADetector(cfg.Detectors.UserAgent))
 	}
 
-	// Bruteforce: аномальный % 404 — Task 6.1
+	// Bruteforce: abnormal % of 404s — Task 6.1
 	if cfg.Detectors.Bruteforce.Enabled {
 		detectors = append(detectors, detector.NewBruteforceDetector(cfg.Detectors.Bruteforce))
 	}
 
-	// Crawler: последовательный числовой обход URL — Task 6.2
+	// Crawler: sequential numeric URL enumeration — Task 6.2
 	if cfg.Detectors.Crawler.Enabled {
 		detectors = append(detectors, detector.NewCrawlerDetector(cfg.Detectors.Crawler))
 	}
 
-	// NoAsset: страницы без статики — Task 6.3
+	// NoAsset: pages with no static assets — Task 6.3
 	if cfg.Detectors.NoAsset.Enabled {
 		detectors = append(detectors, detector.NewNoAssetDetector(cfg.Detectors.NoAsset))
 	}
 
-	// Overflow: аномальная длина URL / WAF bypass — Task 6.4
+	// Overflow: abnormal URL length / WAF bypass — Task 6.4
 	if cfg.Detectors.Overflow.Enabled {
 		detectors = append(detectors, detector.NewOverflowDetector(cfg.Detectors.Overflow))
 	}
 
 	utils.Log("CONFIG", fmt.Sprintf(
-		"детекторы: %d активных (probe=%v rate=%v ua=%v bruteforce=%v crawler=%v noasset=%v overflow=%v)",
+		"detectors: %d active (probe=%v rate=%v ua=%v bruteforce=%v crawler=%v noasset=%v overflow=%v)",
 		len(detectors),
 		cfg.Detectors.Probe.Enabled,
 		cfg.Detectors.Rate.Enabled,
@@ -331,36 +331,38 @@ func buildDetectors(cfg config.Config) []detector.Detector {
 
 // ========================== PID file ====================================================
 
-// writePID записывает PID текущего процесса в файл.
-// Используется для: kill -HUP $(cat pid) и logrotate postrotate (Task 7.1).
-// При ошибке — вызывающий логирует warn и продолжает работу: PID не критичен.
+// writePID writes the current process PID to a file.
+// Used for: kill -HUP $(cat pid) and logrotate postrotate (Task 7.1).
+// On error — the caller logs a warn and continues: PID is not critical.
 func writePID(path string) error {
 	return os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0644)
 }
 
-// removePID удаляет PID-файл при завершении демона.
-// Вызывается через defer — срабатывает при любом return из main, включая SIGTERM.
-// Ошибка при удалении намеренно игнорируется: файл мог быть удалён вручную оператором.
+// removePID removes the PID file when the daemon exits.
+// Called via defer — fires on any return from main, including SIGTERM.
+// Error on removal is intentionally ignored: the file may have been deleted manually by an operator.
 func removePID(path string) {
 	_ = os.Remove(path)
 }
 
-// processLine обрабатывает одну строку лога:
-//   парсинг → whitelist early-exit → трекинг → fake bot penalty → скоринг → лог угрозы.
+// processLine processes a single log line:
 //
-// АРХИТЕКТУРА WHITELIST EARLY-EXIT:
-//   Шаг 1 — custom whitelist (IP/CIDR/UA)? → return (не трекать внутренний трафик)
-//   Шаг 2 — UA совпал с паттерном бота? → rDNS/fDNS верификация (кэшируется в IPCache)
-//   Шаг 3 — verified бот → return (легитимный, не трекать)
-//   Шаг 4 — fake bot → tracker.Update + добавить FakeBotScore ДО scorer.Evaluate
+//	parse → whitelist early-exit → tracking → fake bot penalty → scoring → threat log.
 //
-// KNOWN LIMITATION (Task 7.x): Verify делает DNS-запрос синхронно в pipeline-горутине.
-// При cache miss один запрос блокирует обработку канала lines на DNS round-trip (~200ms).
-// Смягчение: IPCache кэширует результат — DNS делается только при первом обращении IP.
-// При целенаправленной атаке с ботовым UA и множеством уникальных IP возможна задержка.
-// Максимальное ожидание ограничено dnsVerifyTimeout (конфиг whitelist.dns_verify_timeout, дефолт 2s). При timeout → isFakeBot=true.
+// WHITELIST EARLY-EXIT ARCHITECTURE:
 //
-// Изменение (Flow #4, Task 4.0): добавлена whitelist-интеграция и fake bot penalty.
+//	Step 1 — custom whitelist (IP/CIDR/UA)? → return (do not track internal traffic)
+//	Step 2 — UA matches bot pattern? → rDNS/fDNS verification (cached in IPCache)
+//	Step 3 — verified bot → return (legitimate, do not track)
+//	Step 4 — fake bot → tracker.Update + add FakeBotScore BEFORE scorer.Evaluate
+//
+// KNOWN LIMITATION (Task 7.x): Verify makes a DNS request synchronously in the pipeline goroutine.
+// On cache miss a single request blocks the lines channel processing for a DNS round-trip (~200ms).
+// Mitigation: IPCache caches the result — DNS is only done on the first request for a new IP.
+// With a targeted attack using bot UA and many unique IPs, delay is possible.
+// Maximum wait is bounded by dnsVerifyTimeout (config whitelist.dns_verify_timeout, default 2s). On timeout → isFakeBot=true.
+//
+// Change (Flow #4, Task 4.0): added whitelist integration and fake bot penalty.
 func processLine(
 	ctx context.Context,
 	line string,
@@ -374,65 +376,65 @@ func processLine(
 ) {
 	entry, ok := parser.Parse(line)
 	if !ok {
-		utils.Log("PARSER", fmt.Sprintf("пропуск битой строки: %.80s", line), "debug")
+		utils.Log("PARSER", fmt.Sprintf("skipping malformed line: %.80s", line), "debug")
 		return
 	}
-	// Считаем только успешно распарсенные строки — bitые записи не учитываются.
+	// Only successfully parsed lines are counted — malformed entries are excluded.
 	processedCount.Add(1)
 
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
 	), "debug")
 
-	// ── Шаг 1: custom whitelist early-exit ───────────────────────────────────────────
-	// Custom whitelist проверяется до tracker.Update — whitelisted трафик не попадает
-	// в state, что снижает нагрузку на GC и не искажает статистику детекторов.
+	// ── Step 1: custom whitelist early-exit ──────────────────────────────────────────
+	// Custom whitelist is checked before tracker.Update — whitelisted traffic does not
+	// enter state, reducing GC load and not skewing detector statistics.
 	if matcher.IsWhitelistedIP(entry.RealIP) || matcher.IsWhitelistedUA(entry.UserAgent) {
-		utils.Log("WHITELIST", "пропуск по custom whitelist: "+entry.RealIP, "debug")
+		utils.Log("WHITELIST", "skipping via custom whitelist: "+entry.RealIP, "debug")
 		return
 	}
 
-	// ── Шаг 2–3: детекция и верификация ботов ────────────────────────────────────────
-	// MatchBot быстрый (strings.Contains по slice). Verify кэширует результат —
-	// DNS-запрос делается только при первом обращении нового IP с bot-UA.
-	// verifyCtx с timeout: ограничиваем блокировку pipeline (см. KNOWN LIMITATION выше).
+	// ── Steps 2–3: bot detection and verification ────────────────────────────────────
+	// MatchBot is fast (strings.Contains over slice). Verify caches the result —
+	// DNS request is only made on the first occurrence of a new IP with a bot UA.
+	// verifyCtx with timeout: limits pipeline blocking (see KNOWN LIMITATION above).
 	isFakeBot := false
 	if _, botCfg, matched := matcher.MatchBot(entry.UserAgent); matched {
 		verifyCtx, cancelVerify := context.WithTimeout(ctx, dnsVerifyTimeout)
 		verified, fake := verifier.Verify(verifyCtx, entry.RealIP, botCfg)
 		cancelVerify()
 		if verified {
-			// Легитимный бот подтверждён по rDNS/fDNS — не трекать, не скорить
-			utils.Log("WHITELIST", "пропуск: верифицированный бот "+entry.RealIP, "debug")
+			// Legitimate bot confirmed via rDNS/fDNS — do not track, do not score
+			utils.Log("WHITELIST", "skipping: verified bot "+entry.RealIP, "debug")
 			return
 		}
 		isFakeBot = fake
 	}
 
-	// ── Шаг 4: трекинг состояния IP ───────────────────────────────────────────────────
-	// Вызывается после whitelist-проверок — в state попадают только подозрительные IP.
+	// ── Step 4: IP state tracking ─────────────────────────────────────────────────────
+	// Called after whitelist checks — only suspicious IPs enter state.
 	ipState := tracker.Update(entry)
 
-	// ── Шаг 4b: штраф за фейкового бота ─────────────────────────────────────────────
-	// FakeBotScore добавляется к накопленному score ДО Evaluate.
+	// ── Step 4b: fake bot penalty ─────────────────────────────────────────────────────
+	// FakeBotScore is added to the accumulated score BEFORE Evaluate.
 	//
-	// Timestamp = time.Now(): scorer.Evaluate получит elapsed≈0 → decay≈0% → штраф
-	// передаётся полностью. Погрешность: prev не decayed в этом цикле Evaluate,
-	// но elapsed между строками одного активного IP — секунды при window=300s (<1% ошибка).
-	// Следующий Evaluate корректно decays весь score от этого timestamp.
+	// Timestamp = time.Now(): scorer.Evaluate will receive elapsed≈0 → decay≈0% → penalty
+	// passes through in full. Inaccuracy: prev is not decayed in this Evaluate cycle,
+	// but elapsed between lines of one active IP — seconds within window=300s (<1% error).
+	// The next Evaluate correctly decays the entire score from this timestamp.
 	//
-	// Альтернатива — ручной decay prev до SetScore — дублирует логику scorer.applyDecay
-	// и требует передачи window в processLine. Отложено до Task 7.x (scorer refactor).
+	// Alternative — manually decay prev before SetScore — duplicates scorer.applyDecay logic
+	// and requires passing window into processLine. Deferred to Task 7.x (scorer refactor).
 	if isFakeBot {
 		ipState.SetScore(ipState.GetScore()+fakeBotScore, time.Now())
-		utils.Log("WHITELIST", fmt.Sprintf("фейковый бот %s +%d (fake bot score)", entry.RealIP, fakeBotScore), "warn")
+		utils.Log("WHITELIST", fmt.Sprintf("fake bot %s +%d (fake bot score)", entry.RealIP, fakeBotScore), "warn")
 	}
 
-	// ── Скоринг → лог угрозы ─────────────────────────────────────────────────────────
-	// Evaluate: decay накопленного score + запуск детекторов + вынесение вердикта.
-	// Возвращённый *IPState реализует detector.ScoreAccess.
+	// ── Scoring → threat log ──────────────────────────────────────────────────────────
+	// Evaluate: decay accumulated score + run detectors + issue verdict.
+	// Returned *IPState implements detector.ScoreAccess.
 	level, score, modules, reason := sc.Evaluate(ipState, entry)
 
-	// Пишем в threat-лог только при WARN или THREAT
+	// Write to threat log only on WARN or THREAT
 	threatLogger.Log(entry.RealIP, score, level, modules, reason)
 }

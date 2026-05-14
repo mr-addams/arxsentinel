@@ -14,7 +14,7 @@ case "$1" in
         ;;
 
     failed-upgrade)
-        # dpkg вызывает этот вариант когда новый postinst провалился.
-        # Восстановление выполняется dpkg автоматически — дополнительных действий нет.
+        # dpkg calls this variant when the new postinst failed.
+        # Recovery is performed by dpkg automatically — no additional actions needed.
         ;;
 esac

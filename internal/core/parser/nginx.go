@@ -1,22 +1,22 @@
-// ========================== Модуль parser/nginx =========================================
-//   Парсер combined log format + поле real_ip.
-//   Извлекает структурированный LogEntry из строки лога Nginx.
+// ========================== Module parser/nginx =========================================
+//   Parser for combined log format + real_ip field.
+//   Extracts a structured LogEntry from an Nginx log line.
 //
-//   ЧТО ЗДЕСЬ:
-//     - LogEntry — все поля строки лога + производные (Path, Query, RealIP)
-//     - Parse(line) — парсинг одной строки, graceful skip при битой строке
-//     - extractRealIP() — последний IP из цепочки X-Forwarded-For в поле real_ip
+//   WHAT IS HERE:
+//     - LogEntry — all log line fields + derived fields (Path, Query, RealIP)
+//     - Parse(line) — parses a single line, graceful skip on broken line
+//     - extractRealIP() — last IP from the X-Forwarded-For chain in the real_ip field
 //
-//   Формат лога (combined + real_ip):
+//   Log format (combined + real_ip):
 //     $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent
 //     "$http_referer" "$http_user_agent" "$real_ip"
 //
-//   Пример строки:
+//   Example line:
 //     20.48.232.178 - - [02/Apr/2026:00:26:49 +0000] "GET / HTTP/2.0" 200 66088 "-" "-" "20.48.232.178"
 //
-//   ЧТО НЕ ЗДЕСЬ:
-//     - Логирование (sys/utils) — вызывающая сторона решает, как логировать пропуски
-//     - Агрегация состояния (core/state)
+//   WHAT IS NOT HERE:
+//     - Logging (sys/utils) — the caller decides how to log skips
+//     - State aggregation (core/state)
 
 package parser
 
@@ -27,14 +27,14 @@ import (
 	"time"
 )
 
-// ========================== Вспомогательные константы ===================================
+// ========================== Helper constants ===================================
 
-// logLineRe — регулярное выражение для nginx combined log format + поле real_ip.
+// logLineRe — regular expression for nginx combined log format + real_ip field.
 //
-// Используем [^"]* вместо .* внутри кавычек и [^\]]* для времени — гарантирует O(n)
-// без катастрофического backtracking на аномально длинных строках (overflow атаки).
+// Using [^"]* instead of .* inside quotes and [^\]]* for time — guarantees O(n)
+// without catastrophic backtracking on abnormally long lines (overflow attacks).
 //
-// Группы захвата:
+// Capture groups:
 //
 //	[1] remote_addr   [2] remote_user  [3] time_local    [4] request
 //	[5] status        [6] bytes_sent   [7] http_referer  [8] http_user_agent  [9] real_ip
@@ -42,41 +42,41 @@ var logLineRe = regexp.MustCompile(
 	`^(\S+) - (\S+) \[([^\]]+)\] "([^"]*)" (\d+) (\d+) "([^"]*)" "([^"]*)" "([^"]*)"$`,
 )
 
-// nginxTimeLayout — формат времени nginx (time_local) для time.Parse.
-// Пример: 02/Apr/2026:00:26:49 +0000
+// nginxTimeLayout — nginx time format (time_local) for time.Parse.
+// Example: 02/Apr/2026:00:26:49 +0000
 const nginxTimeLayout = "02/Jan/2006:15:04:05 -0700"
 
-// ========================== Структура LogEntry ==========================================
+// ========================== LogEntry struct ==========================================
 
-// LogEntry — структурированная запись одной строки nginx access.log.
+// LogEntry — structured record of a single nginx access.log line.
 //
-// RealIP — предпочтительный IP клиента: либо из поля $real_ip (последний в цепочке),
-// либо RemoteAddr если $real_ip не установлен. Используется всеми детекторами.
-// RemoteAddr остаётся для аудита (может быть адресом балансировщика).
+// RealIP — the preferred client IP: either from the $real_ip field (last in the chain),
+// or RemoteAddr if $real_ip is not set. Used by all detectors.
+// RemoteAddr is kept for audit purposes (may be a load balancer address).
 type LogEntry struct {
-	RemoteAddr string    // $remote_addr — адрес TCP-соединения (может быть nginx-proxy или балансировщик)
-	RemoteUser string    // $remote_user — Basic Auth user; "-" если анонимный запрос
-	Time       time.Time // $time_local — время начала обработки запроса на сервере
-	Method     string    // из $request — HTTP-метод (GET, POST, HEAD, ...)
-	RawURI     string    // из $request — полный URI включая query string; используется overflow-детектором для замера длины
-	Path       string    // из $request — путь без query string; используется probe-детектором и state-трекером
-	Query      string    // из $request — query string без "?"; используется overflow-детектором для анализа параметров
-	Protocol   string    // из $request — версия HTTP (HTTP/1.1, HTTP/2.0, HTTP/3.0)
-	Status     int       // $status — HTTP-код ответа
-	BytesSent  int64     // $body_bytes_sent — байт тела ответа (0 для HEAD и 304)
-	Referer    string    // $http_referer — строка как есть; "-" если отсутствует
-	UserAgent  string    // $http_user_agent — строка как есть; "-" если отсутствует
-	RealIP     string    // последний IP из $real_ip; == RemoteAddr если поле real_ip == "-"
+	RemoteAddr string    // $remote_addr — TCP connection address (may be nginx-proxy or load balancer)
+	RemoteUser string    // $remote_user — Basic Auth user; "-" for anonymous requests
+	Time       time.Time // $time_local — time the request started processing on the server
+	Method     string    // from $request — HTTP method (GET, POST, HEAD, ...)
+	RawURI     string    // from $request — full URI including query string; used by overflow detector to measure length
+	Path       string    // from $request — path without query string; used by probe detector and state tracker
+	Query      string    // from $request — query string without "?"; used by overflow detector for parameter analysis
+	Protocol   string    // from $request — HTTP version (HTTP/1.1, HTTP/2.0, HTTP/3.0)
+	Status     int       // $status — HTTP response code
+	BytesSent  int64     // $body_bytes_sent — response body bytes (0 for HEAD and 304)
+	Referer    string    // $http_referer — string as-is; "-" if absent
+	UserAgent  string    // $http_user_agent — string as-is; "-" if absent
+	RealIP     string    // last IP from $real_ip; == RemoteAddr if real_ip field == "-"
 }
 
-// ========================== Публичный API ===============================================
+// ========================== Public API ===============================================
 
-// Parse парсит одну строку nginx combined log format + real_ip.
-// Возвращает (entry, true) при успехе, (nil, false) при невалидной строке.
+// Parse parses a single nginx combined log format + real_ip line.
+// Returns (entry, true) on success, (nil, false) for an invalid line.
 //
-// Вызывается pipeline'ом для каждой строки из tail-reader'а.
-// Bitые строки (бинарный мусор, обрезанные строки, нестандартный формат) пропускаются
-// без паники — логирование пропуска остаётся на усмотрение вызывающей стороны.
+// Called by the pipeline for each line from the tail-reader.
+// Broken lines (binary garbage, truncated lines, non-standard format) are skipped
+// without panic — logging the skip is left to the caller's discretion.
 func Parse(line string) (*LogEntry, bool) {
 	m := logLineRe.FindStringSubmatch(line)
 	if m == nil {
@@ -86,14 +86,14 @@ func Parse(line string) (*LogEntry, bool) {
 	// m[1]=remote_addr, m[2]=remote_user, m[3]=time_local, m[4]=request,
 	// m[5]=status, m[6]=bytes_sent, m[7]=referer, m[8]=user_agent, m[9]=real_ip
 
-	// ── Парсинг времени ────────────────────────────────────────────────────────────────
+	// ── Time parsing ────────────────────────────────────────────────────────────────
 	t, err := time.Parse(nginxTimeLayout, m[3])
 	if err != nil {
-		// Невалидная дата означает битую строку — не просто неожиданный формат
+		// Invalid date means a broken line — not just an unexpected format
 		return nil, false
 	}
 
-	// ── Числовые поля ─────────────────────────────────────────────────────────────────
+	// ── Numeric fields ─────────────────────────────────────────────────────────────────
 	status, err := strconv.Atoi(m[5])
 	if err != nil {
 		return nil, false
@@ -104,12 +104,12 @@ func Parse(line string) (*LogEntry, bool) {
 		return nil, false
 	}
 
-	// ── Request: метод + URI + протокол ───────────────────────────────────────────────
+	// ── Request: method + URI + protocol ───────────────────────────────────────────────
 	method, rawURI, proto := splitRequest(m[4])
 
 	path, query := splitURI(rawURI)
 
-	// ── RealIP: последний IP в цепочке X-Forwarded-For ────────────────────────────────
+	// ── RealIP: last IP in the X-Forwarded-For chain ────────────────────────────────────
 	realIP := extractRealIP(m[9], m[1])
 
 	return &LogEntry{
@@ -129,15 +129,15 @@ func Parse(line string) (*LogEntry, bool) {
 	}, true
 }
 
-// ========================== Вспомогательные функции =====================================
+// ========================== Helper functions =====================================
 
-// splitRequest разбивает строку $request на метод, полный URI и протокол.
-// Стандартный формат: "METHOD /path?query HTTP/x.y"
+// splitRequest splits the $request string into method, full URI, and protocol.
+// Standard format: "METHOD /path?query HTTP/x.y"
 //
-// URI намеренно берётся как parts[1] (не всё между методом и протоколом),
-// т.к. nginx логирует URI без пробелов — space-in-URI крайне редки и не поддерживаются.
-// При нестандартном формате (менее 3 частей) возвращаем весь request как метод,
-// чтобы entry был видим в логах для ручного разбора.
+// URI is intentionally taken as parts[1] (not everything between method and protocol),
+// because nginx logs URIs without spaces — space-in-URI is extremely rare and not supported.
+// For non-standard format (fewer than 3 parts) we return the whole request as the method,
+// so the entry is visible in logs for manual inspection.
 func splitRequest(req string) (method, uri, proto string) {
 	parts := strings.SplitN(req, " ", 3)
 	if len(parts) != 3 {
@@ -146,7 +146,7 @@ func splitRequest(req string) (method, uri, proto string) {
 	return parts[0], parts[1], parts[2]
 }
 
-// splitURI разделяет URI на path и query string.
+// splitURI splits a URI into path and query string.
 // "/path?key=val&foo=bar" → ("/path", "key=val&foo=bar")
 // "/path"                 → ("/path", "")
 func splitURI(uri string) (path, query string) {
@@ -157,20 +157,20 @@ func splitURI(uri string) (path, query string) {
 	return uri[:idx], uri[idx+1:]
 }
 
-// extractRealIP извлекает реальный IP клиента из поля $real_ip.
+// extractRealIP extracts the real client IP from the $real_ip field.
 //
-// Поле может содержать цепочку X-Forwarded-For вида "127.0.0.1, 185.177.72.23":
-// первый IP — от клиента (может быть spoofed), последний — добавлен доверенным proxy.
-// Берём последний элемент как наиболее достоверный источник.
+// The field may contain an X-Forwarded-For chain like "127.0.0.1, 185.177.72.23":
+// the first IP is from the client (may be spoofed), the last is added by a trusted proxy.
+// We take the last element as the most reliable source.
 //
-// При $real_ip == "-" (модуль ngx_realip не настроен) — используем RemoteAddr напрямую.
+// When $real_ip == "-" (ngx_realip module is not configured) — we use RemoteAddr directly.
 func extractRealIP(realIP, remoteAddr string) string {
 	if realIP == "" || realIP == "-" {
-		// Модуль real_ip не установлен или не настроен — fallback на TCP-адрес
+		// real_ip module is not installed or not configured — fallback to TCP address
 		return remoteAddr
 	}
 	if idx := strings.LastIndexByte(realIP, ','); idx >= 0 {
-		// Цепочка: "ip1, ip2, ip3" → берём ip3 и убираем пробелы
+		// Chain: "ip1, ip2, ip3" → take ip3 and trim spaces
 		return strings.TrimSpace(realIP[idx+1:])
 	}
 	return realIP

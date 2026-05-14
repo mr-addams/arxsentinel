@@ -1,20 +1,20 @@
-// ========================== Модуль utils/tail ==========================================
-//   Tail-reader для чтения access.log в режиме tail -f с поддержкой logrotate.
-//   Использует fsnotify (inotify) для отслеживания ротации файла.
+// ========================== Module utils/tail ==========================================
+//   Tail-reader for reading access.log in tail -f mode with logrotate support.
+//   Uses fsnotify (inotify) to detect file rotation.
 //
-//   ЧТО ЗДЕСЬ:
-//     - TailReader — чтение с позиции EOF, выдача новых строк через канал
-//     - Обработка logrotate mv-метода: RENAME → ожидание CREATE → переоткрытие
-//     - Обработка copytruncate: детекция pos > size → seek(0)
+//   WHAT IS HERE:
+//     - TailReader — reads from EOF position, delivers new lines through a channel
+//     - Handling logrotate mv method: RENAME → wait for CREATE → reopen
+//     - Handling copytruncate: detect pos > size → seek(0)
 //
-//   ЧТО НЕ ЗДЕСЬ:
-//     - Парсинг строк (core/parser)
-//     - Бизнес-логика (core/)
+//   WHAT IS NOT HERE:
+//     - Line parsing (core/parser)
+//     - Business logic (core/)
 //
-//   АРХИТЕКТУРА (Run):
-//     Старт      → waitForFile (seek EOF) → watcher(dir + file)
+//   ARCHITECTURE (Run):
+//     Start      → waitForFile (seek EOF) → watcher(dir + file)
 //     WRITE      → [copytruncate?] → readAvailableLines
-//     RENAME/RM  → дочитать хвост → close → f = nil
+//     RENAME/RM  → drain tail → close → f = nil
 //     CREATE     → open new file → read from start
 //     ctx.Done() → close fd → return
 
@@ -35,26 +35,26 @@ import (
 
 // ========================== TailReader ================================================
 
-// TailReader читает файл в режиме tail -f, отправляет новые строки в канал lines.
-// Поддерживает два метода logrotate:
-//   - mv + postrotate (RENAME): файл переименовывается, nginx создаёт новый
-//   - copytruncate: файл усекается на месте, позиция уходит за новый EOF
+// TailReader reads a file in tail -f mode, sending new lines to the lines channel.
+// Supports two logrotate methods:
+//   - mv + postrotate (RENAME): file is renamed, nginx creates a new one
+//   - copytruncate: file is truncated in place, position moves past the new EOF
 //
-// Жизненный цикл переменной f внутри Run:
-//   открыт на EOF  → читает WRITE-события  → закрыт при RENAME
-//   nil            → ожидание нового файла после ротации (f == nil — нормально)
-//   переоткрыт     → после CREATE нового файла
+// Lifecycle of the variable f inside Run:
+//   opened at EOF  → reads WRITE events  → closed on RENAME
+//   nil            → waiting for new file after rotation (f == nil is normal)
+//   reopened       → after CREATE of the new file
 type TailReader struct {
 	filePath      string
 	lines         chan string
-	retryInterval time.Duration // интервал повтора при недоступном файле; из cfg.General.TailRetryInterval
+	retryInterval time.Duration // retry interval when file is unavailable; from cfg.General.TailRetryInterval
 }
 
-// NewTailReader создаёт TailReader.
-// lines — буферизованный канал для прочитанных строк (размер: cfg.General.LinesBufSize).
-// retryInterval — интервал ожидания при недоступном файле (cfg.General.TailRetryInterval).
-// TailReader закрывает канал при завершении Run — main может дождаться !ok при drain.
-// Запуск: go t.Run(ctx).
+// NewTailReader creates a TailReader.
+// lines — buffered channel for read lines (size: cfg.General.LinesBufSize).
+// retryInterval — wait interval when file is unavailable (cfg.General.TailRetryInterval).
+// TailReader closes the channel when Run completes — main can wait for !ok during drain.
+// Start with: go t.Run(ctx).
 func NewTailReader(filePath string, lines chan string, retryInterval time.Duration) *TailReader {
 	return &TailReader{
 		filePath:      filePath,
@@ -63,52 +63,52 @@ func NewTailReader(filePath string, lines chan string, retryInterval time.Durati
 	}
 }
 
-// Run — блокирующий цикл чтения. Вызывать: go t.Run(ctx).
-// Останавливается по ctx.Done().
+// Run — blocking read loop. Call with: go t.Run(ctx).
+// Stops on ctx.Done().
 //
-// При старте открывает файл и переходит в EOF — читаем только новые строки,
-// не весь исторический лог (может быть гигантским и уже обработанным).
+// At startup opens the file and seeks to EOF — we only read new lines,
+// not the entire historical log (which may be huge and already processed).
 func (t *TailReader) Run(ctx context.Context) {
-	// Закрытие канала сигнализирует main что TailReader завершил запись —
-	// drain loop в main может корректно дождаться !ok вместо гонки на default.
+	// Closing the channel signals main that TailReader has finished writing —
+	// the drain loop in main can correctly wait for !ok instead of racing on default.
 	defer close(t.lines)
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		Log("TAIL", fmt.Sprintf("ошибка создания watcher: %v", err), "error")
+		Log("TAIL", fmt.Sprintf("failed to create watcher: %v", err), "error")
 		return
 	}
 	defer watcher.Close()
 
-	// Следим за директорией для детекции CREATE (новый файл после mv-ротации).
-	// Только директория гарантирует получение CREATE после того как старый inode исчез.
+	// Watch the directory to detect CREATE (new file after mv rotation).
+	// Only the directory guarantees receiving CREATE after the old inode disappears.
 	dir := filepath.Dir(t.filePath)
 	if err := watcher.Add(dir); err != nil {
-		Log("TAIL", fmt.Sprintf("ошибка наблюдения директории %s: %v", dir, err), "error")
+		Log("TAIL", fmt.Sprintf("failed to watch directory %s: %v", dir, err), "error")
 		return
 	}
 
-	// Открываем файл; если ещё не существует — ждём появления
+	// Open the file; if it does not exist yet — wait for it to appear
 	f := t.waitForFile(ctx)
 	if f == nil {
-		// ctx отменён пока ждали файл
+		// ctx was cancelled while waiting for the file
 		return
 	}
 
-	// Следим за самим файлом для WRITE/RENAME/REMOVE событий.
-	// Не фатально если Add провалится — WRITE события всё равно придут через директорный watch.
+	// Watch the file itself for WRITE/RENAME/REMOVE events.
+	// Not fatal if Add fails — WRITE events will still arrive via directory watch.
 	if err := watcher.Add(t.filePath); err != nil {
-		Log("TAIL", fmt.Sprintf("ошибка наблюдения файла %s: %v", t.filePath, err), "error")
+		Log("TAIL", fmt.Sprintf("failed to watch file %s: %v", t.filePath, err), "error")
 	}
 
 	reader := bufio.NewReader(f)
 
-	Log("TAIL", fmt.Sprintf("слежение запущено: %s", t.filePath), "info")
+	Log("TAIL", fmt.Sprintf("watching started: %s", t.filePath), "info")
 
 	for {
 		select {
 		case <-ctx.Done():
-			Log("TAIL", "слежение остановлено", "info")
+			Log("TAIL", "watching stopped", "info")
 			if f != nil {
 				f.Close()
 			}
@@ -125,44 +125,44 @@ func (t *TailReader) Run(ctx context.Context) {
 
 			switch {
 			case t.isTargetFile(event) && event.Has(fsnotify.Write):
-				// Новые данные — сначала проверяем усечение (copytruncate logrotate),
-				// потом читаем строки.
+				// New data — first check for truncation (copytruncate logrotate),
+				// then read lines.
 				if f != nil && t.handleTruncation(f, reader) {
-					Log("TAIL", "copytruncate: файл усечён, читаю с начала", "info")
+					Log("TAIL", "copytruncate: file truncated, reading from start", "info")
 				}
 				if f != nil {
 					t.readAvailableLines(reader)
 				}
 
 			case t.isTargetFile(event) && (event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove)):
-				// Файл переименован/удалён (mv-метод logrotate).
-				// Дочитываем хвост из старого fd — nginx мог записать строки между
-				// последним WRITE-событием и переименованием.
+				// File renamed/removed (mv logrotate method).
+				// Drain the tail from the old fd — nginx may have written lines between
+				// the last WRITE event and the rename.
 				if f != nil {
 					t.readAvailableLines(reader)
 					f.Close()
 					f = nil
 				}
-				_ = watcher.Remove(t.filePath) // inode исчез — снимаем watch
-				Log("TAIL", "файл ротирован (mv), ожидаю новый", "info")
+				_ = watcher.Remove(t.filePath) // inode gone — remove watch
+				Log("TAIL", "file rotated (mv), waiting for new file", "info")
 
 			case t.isTargetFile(event) && event.Has(fsnotify.Create):
-				// Новый файл создан (после mv-ротации или пересоздания nginx).
-				// f == nil при нормальной mv-ротации (RENAME закрыл его выше) — это ожидаемо.
-				// Открываем с начала файла — это первые записи нового лога.
+				// New file created (after mv rotation or nginx recreation).
+				// f == nil during normal mv rotation (RENAME closed it above) — this is expected.
+				// Open from the start of the file — these are the first records of the new log.
 				if f != nil {
 					f.Close()
 				}
 				newF, err := os.Open(t.filePath)
 				if err != nil {
-					Log("TAIL", fmt.Sprintf("ошибка открытия нового файла: %v", err), "error")
+					Log("TAIL", fmt.Sprintf("failed to open new file: %v", err), "error")
 					f = nil
 					continue
 				}
 				f = newF
 				reader.Reset(f)
 				_ = watcher.Add(t.filePath)
-				Log("TAIL", "новый файл открыт после ротации", "info")
+				Log("TAIL", "new file opened after rotation", "info")
 				t.readAvailableLines(reader)
 			}
 
@@ -173,22 +173,22 @@ func (t *TailReader) Run(ctx context.Context) {
 				}
 				return
 			}
-			Log("TAIL", fmt.Sprintf("ошибка watcher: %v", err), "error")
+			Log("TAIL", fmt.Sprintf("watcher error: %v", err), "error")
 		}
 	}
 }
 
-// ========================== Вспомогательные методы ====================================
+// ========================== Helper methods ============================================
 
-// waitForFile ждёт появления файла и открывает его с позиции EOF.
-// Возвращает nil если ctx отменён до появления файла.
-// Seek(EOF) при старте — исторический лог может быть гигантским, не читаем его.
+// waitForFile waits for the file to appear and opens it at EOF position.
+// Returns nil if ctx is cancelled before the file appears.
+// Seek(EOF) at startup — the historical log may be huge; we don't read it.
 //
-// time.NewTimer(0) + Reset: переиспользуем один таймер вместо time.After,
-// который создаёт новый *time.Timer на каждой итерации и не освобождает его
-// до истечения — при долгом ожидании файла таймеры накапливаются.
+// time.NewTimer(0) + Reset: reuses one timer instead of time.After,
+// which creates a new *time.Timer on each iteration and does not release it
+// until it fires — on a long wait for the file, timers accumulate.
 func (t *TailReader) waitForFile(ctx context.Context) *os.File {
-	timer := time.NewTimer(0) // первая итерация сразу, без задержки
+	timer := time.NewTimer(0) // first iteration fires immediately, no delay
 	defer timer.Stop()
 	for {
 		select {
@@ -199,21 +199,21 @@ func (t *TailReader) waitForFile(ctx context.Context) *os.File {
 			if err == nil {
 				if _, seekErr := f.Seek(0, io.SeekEnd); seekErr != nil {
 					f.Close()
-					Log("TAIL", fmt.Sprintf("ошибка seek(EOF) в %s: %v", t.filePath, seekErr), "error")
+					Log("TAIL", fmt.Sprintf("seek(EOF) error in %s: %v", t.filePath, seekErr), "error")
 				} else {
 					return f
 				}
 			} else {
-				Log("TAIL", fmt.Sprintf("файл недоступен (%v), повтор через %v", err, t.retryInterval), "warning")
+				Log("TAIL", fmt.Sprintf("file unavailable (%v), retrying in %v", err, t.retryInterval), "warning")
 			}
 			timer.Reset(t.retryInterval)
 		}
 	}
 }
 
-// handleTruncation обнаруживает усечение файла (logrotate copytruncate) и
-// сбрасывает позицию чтения в начало файла.
-// Возвращает true если усечение обнаружено и seek(0) выполнен.
+// handleTruncation detects file truncation (logrotate copytruncate) and
+// resets the read position to the beginning of the file.
+// Returns true if truncation was detected and seek(0) was performed.
 func (t *TailReader) handleTruncation(f *os.File, reader *bufio.Reader) bool {
 	pos, err := f.Seek(0, io.SeekCurrent)
 	if err != nil {
@@ -224,7 +224,7 @@ func (t *TailReader) handleTruncation(f *os.File, reader *bufio.Reader) bool {
 		return false
 	}
 	if pos > info.Size() {
-		// Текущая позиция за пределами нового размера — файл был усечён на месте
+		// Current position is past the new file size — file was truncated in place
 		_, _ = f.Seek(0, io.SeekStart)
 		reader.Reset(f)
 		return true
@@ -232,10 +232,10 @@ func (t *TailReader) handleTruncation(f *os.File, reader *bufio.Reader) bool {
 	return false
 }
 
-// readAvailableLines читает все доступные строки до io.EOF и отправляет в канал.
-// Не блокирует — останавливается при io.EOF (данных больше нет в данный момент).
-// При переполнении канала строка пропускается — лучше потерять строку чем
-// заблокировать watcher-цикл и пропустить события ротации.
+// readAvailableLines reads all available lines up to io.EOF and sends them to the channel.
+// Non-blocking — stops at io.EOF (no more data at this moment).
+// On channel overflow the line is dropped — better to lose a line than to
+// block the watcher loop and miss rotation events.
 func (t *TailReader) readAvailableLines(reader *bufio.Reader) {
 	for {
 		line, err := reader.ReadString('\n')
@@ -245,21 +245,21 @@ func (t *TailReader) readAvailableLines(reader *bufio.Reader) {
 				select {
 				case t.lines <- line:
 				default:
-					// Downstream (parser/processor) не успевает — строка потеряна
-					Log("TAIL", "канал переполнен, строка пропущена", "warning")
+					// Downstream (parser/processor) is too slow — line dropped
+					Log("TAIL", "channel full, line dropped", "warning")
 				}
 			}
 		}
 		if err != nil {
-			// io.EOF — нормально, ждём следующего WRITE-события
+			// io.EOF — normal, waiting for the next WRITE event
 			return
 		}
 	}
 }
 
-// isTargetFile проверяет что fsnotify-событие касается отслеживаемого файла.
-// fsnotify может вернуть абсолютный путь даже если Add получил относительный —
-// filepath.Clean нормализует оба пути перед сравнением.
+// isTargetFile checks that the fsnotify event concerns the watched file.
+// fsnotify may return an absolute path even if Add received a relative one —
+// filepath.Clean normalizes both paths before comparison.
 func (t *TailReader) isTargetFile(event fsnotify.Event) bool {
 	return filepath.Clean(event.Name) == filepath.Clean(t.filePath)
 }

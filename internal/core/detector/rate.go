@@ -1,23 +1,23 @@
-// ========================== Детектор rate ===============================================
-//   Детекция аномального всплеска запросов: N запросов за скользящее окно.
-//   Алгоритм ApproxRate (two-counter sliding window) реализован в state.IPState.
+// ========================== Rate detector ===============================================
+//   Detects anomalous request rate spikes: N requests over a sliding window.
+//   The ApproxRate algorithm (two-counter sliding window) is implemented in state.IPState.
 //
-//   ЧТО ЗДЕСЬ:
-//     - RateDetector — структура с порогами из конфига
-//     - NewRateDetector(cfg) — инициализация, преобразование порога
-//     - Detect() — сравнивает sv.ApproxRate(window) с thresholdRPS
+//   WHAT IS HERE:
+//     - RateDetector — struct with thresholds from config
+//     - NewRateDetector(cfg) — initialization, threshold conversion
+//     - Detect() — compares sv.ApproxRate(window) with thresholdRPS
 //
-//   ПОРОГ В RPS:
-//     cfg.Threshold задан в запросах за окно (например: 100 req / 60s).
-//     ApproxRate возвращает запросов/сек за окно.
-//     Преобразование: thresholdRPS = Threshold / window.Seconds() — один раз в NewRateDetector.
-//     На hot path — только float64 сравнение.
+//   THRESHOLD IN RPS:
+//     cfg.Threshold is given in requests per window (e.g. 100 req / 60s).
+//     ApproxRate returns requests/sec over the window.
+//     Conversion: thresholdRPS = Threshold / window.Seconds() — done once in NewRateDetector.
+//     On the hot path — only a float64 comparison.
 //
-//   СОГЛАСОВАННОСТЬ С TRACKER:
-//     window должен совпадать с detectors.rate.window из конфига —
-//     оба (Tracker.rateWindow и RateDetector.window) читают из cfg.Detectors.Rate.Window.
+//   CONSISTENCY WITH TRACKER:
+//     window must match detectors.rate.window from config —
+//     both (Tracker.rateWindow and RateDetector.window) read from cfg.Detectors.Rate.Window.
 //
-//   Реализовано: Task 4.2.
+//   Implemented: Task 4.2.
 
 package detector
 
@@ -31,35 +31,35 @@ import (
 
 // ========================== RateDetector ==============================================
 
-// RateDetector детектирует аномальный rate запросов за скользящее окно.
+// RateDetector detects anomalous request rate over a sliding window.
 //
-// Жизненный цикл:
-//   nil            → до вызова NewRateDetector
-//   *RateDetector  → после NewRateDetector, используется всё время жизни демона
-//   перестройка    → при SIGHUP (Task 7.1) — создаётся новый экземпляр
+// Lifecycle:
+//   nil            → before NewRateDetector is called
+//   *RateDetector  → after NewRateDetector, used for the daemon's entire lifetime
+//   rebuild        → on SIGHUP (Task 7.1) — a new instance is created
 type RateDetector struct {
-	thresholdRPS float64       // порог в req/s: cfg.Threshold / window.Seconds()
-	window       time.Duration // окно ApproxRate — должно совпадать с state.Tracker.rateWindow
+	thresholdRPS float64       // threshold in req/s: cfg.Threshold / window.Seconds()
+	window       time.Duration // ApproxRate window — must match state.Tracker.rateWindow
 	score        int
 	enabled      bool
 }
 
-// NewRateDetector создаёт RateDetector из конфига.
-// Преобразует Threshold (req/window) → thresholdRPS (req/s) один раз при старте.
-// При нулевом или отрицательном window — отключает детектор: деление на 0 даёт +Inf/NaN,
-// что приводит к тому что детектор либо никогда не срабатывает, либо срабатывает всегда.
-// Вызывается из main.go при старте и SIGHUP.
+// NewRateDetector creates a RateDetector from config.
+// Converts Threshold (req/window) → thresholdRPS (req/s) once at startup.
+// On zero or negative window — disables the detector: dividing by 0 yields +Inf/NaN,
+// causing the detector to either never fire or always fire.
+// Called from main.go on startup and SIGHUP.
 func NewRateDetector(cfg config.RateConfig) *RateDetector {
 	window := time.Duration(cfg.Window)
 
-	// Guard: нулевое окно делает thresholdRPS = +Inf (Threshold>0) или NaN (Threshold=0).
-	// Оба варианта — silent misconfiguration: детектор или не срабатывает никогда,
-	// или срабатывает всегда. Отключаем явно, чтобы не пропустить атаку без предупреждения.
+	// Guard: zero window makes thresholdRPS = +Inf (Threshold>0) or NaN (Threshold=0).
+	// Both are silent misconfiguration: the detector either never fires
+	// or always fires. Disable explicitly to avoid silently missing an attack.
 	if window <= 0 {
 		return &RateDetector{enabled: false}
 	}
 
-	// Порог в req/s: выносим деление из hot path — Detect вызывается на каждой строке лога
+	// Threshold in req/s: move the division off the hot path — Detect is called on every log line
 	thresholdRPS := float64(cfg.Threshold) / window.Seconds()
 	return &RateDetector{
 		thresholdRPS: thresholdRPS,
@@ -69,22 +69,22 @@ func NewRateDetector(cfg config.RateConfig) *RateDetector {
 	}
 }
 
-// Name возвращает идентификатор детектора.
+// Name returns the detector identifier.
 func (d *RateDetector) Name() string { return "rate" }
 
-// Detect сравнивает ApproxRate IP с порогом.
+// Detect compares the IP's ApproxRate with the threshold.
 //
-// ApproxRate(window) — приближённый rate за последнее window (±10% относительно точного).
-// Погрешность приемлема: лучше редкий ложный WARN чем пропущенная DDoS-атака.
-// Reason содержит фактический rate для диагностики в threat-логе.
+// ApproxRate(window) — approximate rate over the last window (±10% relative to exact).
+// The margin is acceptable: a rare false WARN is better than a missed DDoS attack.
+// Reason includes the actual rate for diagnostics in the threat log.
 func (d *RateDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 	if !d.enabled {
 		return DetectResult{}
 	}
 
 	rate := sv.ApproxRate(d.window)
-	// Строгое <: rate == thresholdRPS уже считается превышением — детектор срабатывает.
-	// Намеренно: rate «ровно в порог» — уже аномалия, лучше WARN чем пропустить начало атаки.
+	// Strict <: rate == thresholdRPS is already considered exceeded — detector fires.
+	// Intentional: rate "exactly at threshold" is already an anomaly; better WARN than miss the start of an attack.
 	if rate < d.thresholdRPS {
 		return DetectResult{}
 	}

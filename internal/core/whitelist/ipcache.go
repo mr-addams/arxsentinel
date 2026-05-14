@@ -1,22 +1,22 @@
-// ========================== Модуль whitelist/ipcache ====================================
-//   Кэш результатов DNS-верификации с раздельными TTL для positive/negative результатов.
-//   Предотвращает повторные DNS-запросы для уже проверенных IP.
+// ========================== Module whitelist/ipcache ====================================
+//   Cache of DNS verification results with separate TTLs for positive/negative results.
+//   Prevents repeated DNS lookups for already-verified IPs.
 //
-//   ЧТО ЗДЕСЬ:
-//     - IPCache — in-memory кэш с TTL expiry
+//   WHAT IS HERE:
+//     - IPCache — in-memory cache with TTL expiry
 //     - Positive TTL (verified=true) >> Negative TTL (verified=false)
-//     - Lazy expiry: истёкшие записи удаляются при Get, не фоновой горутиной
+//     - Lazy expiry: expired entries are removed on Get, not by a background goroutine
 //
-//   ЧТО НЕ ЗДЕСЬ:
-//     - DNS-запросы → verifier.go
-//     - Сопоставление UA/IP → matcher.go
+//   WHAT IS NOT HERE:
+//     - DNS lookups → verifier.go
+//     - UA/IP matching → matcher.go
 //
-//   LAZY EXPIRY vs фоновый GC:
-//     IPCache хранит только боты — сотни IP, не тысячи.
-//     Фоновая горутина добавляет сложность (shutdown, sync) без ощутимой пользы.
-//     Expired записи вытесняются при следующем Get — достаточно для этого масштаба.
+//   LAZY EXPIRY vs background GC:
+//     IPCache stores only bots — hundreds of IPs, not thousands.
+//     A background goroutine adds complexity (shutdown, sync) without meaningful benefit.
+//     Expired entries are evicted on the next Get — sufficient at this scale.
 //
-//   Реализуется: Task 3.3.
+//   Implements: Task 3.3.
 
 package whitelist
 
@@ -29,30 +29,30 @@ import (
 
 // ========================== IPCache ===================================================
 
-// cacheEntry — одна запись кэша: результат верификации + срок действия.
-// isFakeBot хранится явно — нельзя выводить из !verified:
-// для ip_ranges ботов verified=false означает "не проверялся", а не "провалил DNS".
+// cacheEntry — a single cache record: verification result + expiry time.
+// isFakeBot is stored explicitly — cannot be inferred from !verified:
+// for ip_ranges bots verified=false means "not checked", not "DNS failed".
 type cacheEntry struct {
 	verified  bool
 	isFakeBot bool
 	expiresAt time.Time
 }
 
-// IPCache кэширует результаты DNS-верификации IP-адресов ботов.
+// IPCache caches DNS verification results for bot IP addresses.
 //
-// Жизненный цикл записи:
-//   miss      → Get возвращает ok=false → Verifier делает DNS-запрос → Set
-//   hit       → Get возвращает verified, ok=true
-//   expired   → Get удаляет запись, возвращает ok=false → повторная верификация
+// Entry lifecycle:
+//   miss      → Get returns ok=false → Verifier performs DNS lookup → Set
+//   hit       → Get returns verified, ok=true
+//   expired   → Get removes the entry, returns ok=false → re-verification
 type IPCache struct {
 	mu          sync.RWMutex
 	entries     map[string]cacheEntry
-	positiveTTL time.Duration // TTL для verified=true (легитимный бот)
-	negativeTTL time.Duration // TTL для verified=false (фейк или неизвестно)
+	positiveTTL time.Duration // TTL for verified=true (legitimate bot)
+	negativeTTL time.Duration // TTL for verified=false (fake or unknown)
 }
 
-// NewIPCache создаёт IPCache из конфига.
-// Вызывается из main.go при старте и при SIGHUP (Task 7.1).
+// NewIPCache creates an IPCache from config.
+// Called from main.go at startup and on SIGHUP (Task 7.1).
 func NewIPCache(cfg config.DNSCacheConfig) *IPCache {
 	return &IPCache{
 		entries:     make(map[string]cacheEntry),
@@ -63,17 +63,17 @@ func NewIPCache(cfg config.DNSCacheConfig) *IPCache {
 
 // ========================== Get =======================================================
 
-// Get возвращает результат верификации из кэша.
+// Get returns the verification result from cache.
 //
-// ok=false означает кэш-промах: запись отсутствует или истекла.
-// При истёкшей записи — удаляем её под write-lock, чтобы следующий запрос
-// не нашёл её снова (lazy expiry).
+// ok=false means a cache miss: entry is absent or expired.
+// On an expired entry — delete it under write lock so the next request
+// does not find it again (lazy expiry).
 //
-// Двухфазный lock (RLock → Lock при expiry):
-//   Большинство вызовов — hit по живой записи → только RLock.
-//   Только при expiry переходим к write lock — редкий случай.
+// Two-phase lock (RLock → Lock on expiry):
+//   Most calls — hit on a live entry → only RLock.
+//   Only on expiry do we upgrade to write lock — a rare case.
 func (c *IPCache) Get(ip string) (verified bool, isFakeBot bool, ok bool) {
-	// ── Быстрый путь: read lock ────────────────────────────────────────────────────────
+	// ── Fast path: read lock ───────────────────────────────────────────────────────────
 	c.mu.RLock()
 	entry, found := c.entries[ip]
 	c.mu.RUnlock()
@@ -86,14 +86,14 @@ func (c *IPCache) Get(ip string) (verified bool, isFakeBot bool, ok bool) {
 		return entry.verified, entry.isFakeBot, true
 	}
 
-	// ── Slow path: запись найдена но истекла — удаляем под write lock ────────────────
+	// ── Slow path: entry found but expired — delete under write lock ──────────────────
 	c.mu.Lock()
-	// Повторная проверка после получения write lock: между RUnlock и Lock
-	// concurrent Set мог обновить запись с новым expiresAt — не удаляем живую запись.
-	// Если запись жива — возвращаем свежее значение вместо miss (TOCTOU fix).
+	// Re-check after acquiring write lock: between RUnlock and Lock
+	// a concurrent Set may have updated the entry with a new expiresAt — don't delete a live entry.
+	// If the entry is live — return the fresh value instead of a miss (TOCTOU fix).
 	if e, still := c.entries[ip]; still {
 		if !time.Now().After(e.expiresAt) {
-			// Set успел обновить запись — возвращаем свежее значение вместо miss.
+			// Set managed to update the entry — return the fresh value instead of miss.
 			c.mu.Unlock()
 			return e.verified, e.isFakeBot, true
 		}
@@ -105,16 +105,16 @@ func (c *IPCache) Get(ip string) (verified bool, isFakeBot bool, ok bool) {
 
 // ========================== Set =======================================================
 
-// Set сохраняет результат верификации в кэш с TTL в зависимости от verified.
+// Set stores the verification result in cache with a TTL depending on verified.
 //
-// Positive TTL (verified=true) больше negative (verified=false):
-//   - Легитимный бот меняет IP редко → долгий кэш снижает DNS-нагрузку.
-//   - Фейк или неизвестный IP → короткий кэш, чтобы повторная попытка
-//     верифицировалась заново (IP мог переехать к боту).
+// Positive TTL (verified=true) is larger than negative (verified=false):
+//   - A legitimate bot rarely changes IP → long cache reduces DNS load.
+//   - Fake or unknown IP → short cache, so a retry re-verifies
+//     (the IP may have moved to a legitimate bot).
 //
-// isFakeBot хранится явно — не выводится из !verified при Get.
-// Это важно для ip_ranges ботов: verified=false там означает "не проверялся",
-// а не "провалил DNS", поэтому isFakeBot для них должен быть false.
+// isFakeBot is stored explicitly — not derived from !verified on Get.
+// This matters for ip_ranges bots: verified=false there means "not checked",
+// not "DNS failed", so isFakeBot must be false for them.
 func (c *IPCache) Set(ip string, verified bool, isFakeBot bool) {
 	ttl := c.negativeTTL
 	if verified {

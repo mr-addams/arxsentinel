@@ -1,31 +1,31 @@
-// ========================== Модуль state/tracker ========================================
-//   In-memory хранилище состояния по IP-адресам.
-//   Основа для всех детекторов — они читают состояние через интерфейс detector.IPView.
+// ========================== Module state/tracker ========================================
+//   In-memory storage of state per IP address.
+//   Foundation for all detectors — they read state through the detector.IPView interface.
 //
-//   ЧТО ЗДЕСЬ:
-//     - IPState — состояние одного IP: счётчики, кольцевой буфер путей,
-//       sliding-window rate, накопленный score
-//     - Tracker — потокобезопасное хранилище с LRU eviction при max_tracked_ips
-//     - GC — фоновая горутина очистки неактивных IP по таймеру (Task 2.2)
+//   WHAT IS HERE:
+//     - IPState — state of a single IP: counters, ring buffer of paths,
+//       sliding-window rate, accumulated score
+//     - Tracker — thread-safe storage with LRU eviction at max_tracked_ips
+//     - GC — background goroutine cleaning up inactive IPs on a timer (Task 2.2)
 //
-//   ЧТО НЕ ЗДЕСЬ:
-//     - Классификация путей (page/asset) — делают детекторы сами (Flow #4)
-//     - Логика детекции и scoring — core/detector, core/scorer
+//   WHAT IS NOT HERE:
+//     - Path classification (page/asset) — done by detectors themselves (Flow #4)
+//     - Detection logic and scoring — core/detector, core/scorer
 //
-//   РЕАЛИЗУЕТ ИНТЕРФЕЙСЫ:
-//     *IPState → detector.IPView (чтение состояния детекторами)
-//     *IPState → detector.ScoreAccess (чтение/запись score scorer'ом)
-//     Явный импорт detector/ не нужен — Go duck typing.
+//   IMPLEMENTS INTERFACES:
+//     *IPState → detector.IPView (state read by detectors)
+//     *IPState → detector.ScoreAccess (score read/write by scorer)
+//     Explicit import of detector/ is not needed — Go duck typing.
 //
-//   ПОТОКОБЕЗОПАСНОСТЬ:
-//     Update() и gc() защищены write lock.
-//     RunGC() запускается в отдельной горутине, работает через ticker.
-//     Caller после Update() держит *IPState — GC не удалит активный IP
-//     (LastSeen обновлён, порог не пройден).
+//   THREAD SAFETY:
+//     Update() and gc() are protected by write lock.
+//     RunGC() runs in a separate goroutine, operates via ticker.
+//     Caller after Update() holds *IPState — GC will not delete an active IP
+//     (LastSeen is updated, retention threshold not crossed).
 //
-//   ПАМЯТЬ (оценка для max_tracked_ips=100k):
-//     IPState ≈ 1.2 KB (struct) + пути ≈ 64×20B = 1.3 KB → ~260 MB на 100k IP.
-//     Приемлемо для security-демона. При нехватке — уменьшить pathBufSize.
+//   MEMORY (estimate for max_tracked_ips=100k):
+//     IPState ≈ 1.2 KB (struct) + paths ≈ 64×20B = 1.3 KB → ~260 MB for 100k IPs.
+//     Acceptable for a security daemon. If memory is tight — reduce pathBufSize.
 
 package state
 
@@ -40,86 +40,86 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 )
 
-// pathBufSize — глубина кольцевого буфера путей на один IP.
-// hardcoded: внутреннее ограничение памяти, не поведенческий параметр.
-// 64 путей достаточно для probe-детектора (срабатывает сразу) и
-// crawler-детектора (паттерн виден за 5–10 запросов).
+// pathBufSize — depth of the path ring buffer per IP.
+// hardcoded: internal memory constraint, not a behavioral parameter.
+// 64 paths is enough for the probe detector (triggers immediately) and
+// the crawler detector (pattern visible within 5–10 requests).
 const pathBufSize = 64
 
 // ========================== IPState =================================================
 
-// IPState — состояние одного IP-адреса.
+// IPState — state of a single IP address.
 //
-// Поля читаются детекторами через detector.IPView / detector.ScoreAccess —
-// оба интерфейса реализованы методами ниже без явного импорта пакета detector.
+// Fields are read by detectors via detector.IPView / detector.ScoreAccess —
+// both interfaces are implemented by the methods below without explicit import of the detector package.
 //
-// Жизненный цикл:
-//   создан  → первый Update(entry) для этого IP
-//   активен → LastSeen обновляется при каждом Update
-//   удалён  → GC при LastSeen < now-retention ИЛИ LRU eviction при max_tracked_ips
+// Lifecycle:
+//   created → first Update(entry) for this IP
+//   active  → LastSeen is updated on every Update
+//   deleted → GC when LastSeen < now-retention OR LRU eviction at max_tracked_ips
 type IPState struct {
 	IP        string
 	FirstSeen time.Time
 	LastSeen  time.Time
 
 	TotalRequests int
-	Requests404   int // для bruteforce ratio (Flow #6.1)
+	Requests404   int // for bruteforce ratio (Flow #6.1)
 
-	// ── Кольцевой буфер путей ──────────────────────────────────────────────────────────
-	// Хранит последние pathBufSize путей запросов в хронологическом порядке.
-	// pathPos = следующая позиция записи; pathFull = буфер заполнен хотя бы раз.
+	// ── Path ring buffer ──────────────────────────────────────────────────────────
+	// Stores the last pathBufSize request paths in chronological order.
+	// pathPos = next write position; pathFull = buffer filled at least once.
 	pathBuf  [pathBufSize]string
 	pathPos  int
 	pathFull bool
 
 	// ── Sliding window rate counters ──────────────────────────────────────────────────
-	// Два счётчика для скользящего окна: избегает хранения N тысяч временных меток.
-	// Формула: approxRate = (prevCount*(1-elapsed/window) + currCount) / window.
-	// Источник: standard sliding window log counter algorithm.
+	// Two counters for the sliding window: avoids storing N thousands of timestamps.
+	// Formula: approxRate = (prevCount*(1-elapsed/window) + currCount) / window.
+	// Source: standard sliding window log counter algorithm.
 	rateWindowStart time.Time
 	rateCurrCount   int
 	ratePrevCount   int
 
 	// ── Score ─────────────────────────────────────────────────────────────────────────
-	// Накопленный score с линейным decay. Обновляется scorer'ом через SetScore.
-	// Приватные поля: внешний доступ только через GetScore/GetScoreUpdatedAt/SetScore.
+	// Accumulated score with linear decay. Updated by scorer via SetScore.
+	// Private fields: external access only through GetScore/GetScoreUpdatedAt/SetScore.
 	score          int
 	scoreUpdatedAt time.Time
 
-	// Элемент LRU-списка — только для Tracker. Не трогать вручную.
+	// LRU list element — for Tracker use only. Do not modify manually.
 	lruElem *list.Element
 }
 
-// ++++++++++++++++++++++++++ Реализация detector.IPView ++++++++++++++++++++++++++++++
+// ++++++++++++++++++++++++++ Implementation of detector.IPView +++++++++++++++++++++++++++
 
 func (s *IPState) GetIP() string           { return s.IP }
 func (s *IPState) GetTotalRequests() int   { return s.TotalRequests }
 func (s *IPState) GetRequests404() int     { return s.Requests404 }
 
-// RecentPaths возвращает последние пути в хронологическом порядке (старые → новые).
-// Возвращает копию — безопасно читать после получения из Tracker без блокировки.
+// RecentPaths returns the most recent paths in chronological order (oldest → newest).
+// Returns a copy — safe to read after receiving from Tracker without locking.
 func (s *IPState) RecentPaths() []string {
 	if !s.pathFull {
-		// Буфер не заполнен — только первые pathPos элементов актуальны
+		// Buffer not full — only the first pathPos elements are valid
 		result := make([]string, s.pathPos)
 		copy(result, s.pathBuf[:s.pathPos])
 		return result
 	}
-	// Буфер заполнен: pathPos указывает на самый старый элемент (след. для перезаписи)
+	// Buffer full: pathPos points to the oldest element (next to be overwritten)
 	result := make([]string, pathBufSize)
 	n := copy(result, s.pathBuf[s.pathPos:])
 	copy(result[n:], s.pathBuf[:s.pathPos])
 	return result
 }
 
-// ApproxRate возвращает приближённый rate запросов в секунду за окно window.
+// ApproxRate returns the approximate request rate per second over the given window.
 //
-// Алгоритм скользящего окна через два счётчика:
+// Two-counter sliding window algorithm:
 //   approx = prevCount*(1-elapsed/window) + currCount
 //   rate = approx / window.Seconds()
 //
-// Точность ±10% по сравнению с точным sliding window log.
-// Не блокирует — вызывается из scoring pipeline без захвата мьютекса.
+// Accuracy ±10% compared to exact sliding window log.
+// Non-blocking — called from scoring pipeline without acquiring the mutex.
 func (s *IPState) ApproxRate(window time.Duration) float64 {
 	if window <= 0 || s.rateWindowStart.IsZero() {
 		return 0
@@ -129,23 +129,23 @@ func (s *IPState) ApproxRate(window time.Duration) float64 {
 	windowSec := window.Seconds()
 
 	if elapsed >= 2*window {
-		// Оба счётных окна полностью устарели
+		// Both counting windows are fully stale
 		return 0
 	}
 	if elapsed >= window {
-		// Текущее окно завершилось; prevCount — данные прошлого окна
+		// Current window ended; prevCount — data from the previous window
 		overshot := elapsed - window
 		fraction := float64(overshot) / float64(window)
 		approx := float64(s.rateCurrCount) * (1 - fraction)
 		return approx / windowSec
 	}
-	// Стандартный случай: внутри текущего окна
+	// Standard case: within the current window
 	fraction := float64(elapsed) / float64(window)
 	approx := float64(s.ratePrevCount)*(1-fraction) + float64(s.rateCurrCount)
 	return approx / windowSec
 }
 
-// ++++++++++++++++++++++++++ Реализация detector.ScoreAccess +++++++++++++++++++++++++
+// ++++++++++++++++++++++++++ Implementation of detector.ScoreAccess +++++++++++++++++++++
 
 func (s *IPState) GetScore() int               { return s.score }
 func (s *IPState) GetScoreUpdatedAt() time.Time { return s.scoreUpdatedAt }
@@ -156,33 +156,33 @@ func (s *IPState) SetScore(score int, at time.Time) {
 
 // ========================== Tracker =================================================
 
-// Tracker — потокобезопасное хранилище состояний по IP.
+// Tracker — thread-safe storage of IP states.
 //
-// LRU eviction: при превышении maxIPs удаляем наименее используемый IP.
-// GC eviction: по таймеру удаляем IP с LastSeen > retention.
+// LRU eviction: when maxIPs is exceeded, remove the least recently used IP.
+// GC eviction: on a timer, remove IPs with LastSeen older than retention.
 //
-// Конкурентный доступ:
-//   - Основной pipeline: Update + scorer.Evaluate в одной горутине
-//   - GC горутина: RunGC в отдельной горутине
-//   - Оба пути захватывают write lock → сериализованы
+// Concurrent access:
+//   - Main pipeline: Update + scorer.Evaluate in a single goroutine
+//   - GC goroutine: RunGC in a separate goroutine
+//   - Both paths acquire write lock → serialized
 type Tracker struct {
 	mu     sync.RWMutex
 	states map[string]*IPState
 	lru    *list.List // Front = most recently used, Back = LRU candidate
 
 	maxIPs     int
-	rateWindow time.Duration // из config.Detectors.Rate.Window — для sliding window
-	retention  time.Duration // из config.Scoring.ObservationWindow — для GC
+	rateWindow time.Duration // from config.Detectors.Rate.Window — for sliding window
+	retention  time.Duration // from config.Scoring.ObservationWindow — for GC
 
-	logFn func(tag, msg, level string) // инъекция из main.go
+	logFn func(tag, msg, level string) // injected from main.go
 }
 
-// NewTracker создаёт Tracker из конфига.
-// logFn передаётся из main.go — core/ не импортирует sys/utils напрямую.
+// NewTracker creates a Tracker from config.
+// logFn is passed from main.go — core/ does not import sys/utils directly.
 func NewTracker(cfg config.Config, logFn func(tag, msg, level string)) *Tracker {
 	rw := time.Duration(cfg.Detectors.Rate.Window)
 	if rw <= 0 {
-		// Fallback здесь, а не в updateRateLocked — не засорять hot path под write lock
+		// Fallback here, not in updateRateLocked — avoid polluting hot path under write lock
 		rw = 60 * time.Second
 	}
 	return &Tracker{
@@ -195,33 +195,32 @@ func NewTracker(cfg config.Config, logFn func(tag, msg, level string)) *Tracker 
 	}
 }
 
-// Update обновляет состояние IP из записи лога и возвращает указатель на IPState.
+// Update updates the IP state from a log entry and returns a pointer to IPState.
 //
-// Потокобезопасно. Вызывается из main pipeline для каждой строки.
-// Возвращаемый *IPState реализует detector.IPView и detector.ScoreAccess —
-// можно передавать напрямую в scorer.Evaluate без приведения типа в main.go.
+// Thread-safe. Called from the main pipeline for each line.
+// The returned *IPState implements detector.IPView and detector.ScoreAccess —
+// can be passed directly to scorer.Evaluate without type assertion in main.go.
 //
-// ПОТОКОБЕЗОПАСНОСТЬ ВОЗВРАЩАЕМОГО *IPState:
-//   Методы IPState (GetScore, SetScore, RecentPaths и т.д.) вызываются caller'ом
-//   БЕЗ захвата мьютекса Tracker — это безопасно, поскольку:
-//     1. Pipeline однопоточный: Update + scorer.Evaluate выполняются последовательно
-//        в одной горутине main.
-//     2. GC (RunGC) удаляет записи из map, но не модифицирует поля *IPState —
-//        локальный указатель caller'а остаётся валидным (Go GC не соберёт объект,
-//        пока есть живая ссылка).
-//     3. GC не удалит активный IP: LastSeen обновлён в Update, порог retention
-//        ещё не пройден.
-//   Это допущение должно оставаться верным в Flow #4 когда детекторы начнут
-//   активно читать *IPState. Если понадобится запись из нескольких горутин —
-//   добавить отдельный мьютекс в IPState.
+// THREAD SAFETY OF THE RETURNED *IPState:
+//   IPState methods (GetScore, SetScore, RecentPaths, etc.) are called by the caller
+//   WITHOUT acquiring the Tracker mutex — this is safe because:
+//     1. Pipeline is single-threaded: Update + scorer.Evaluate execute sequentially
+//        in a single main goroutine.
+//     2. GC (RunGC) removes entries from the map but does not modify *IPState fields —
+//        the caller's local pointer remains valid (Go GC won't collect the object
+//        while there is a live reference).
+//     3. GC will not delete an active IP: LastSeen is updated in Update, the retention
+//        threshold has not been crossed yet.
+//   This assumption must remain valid in Flow #4 when detectors start actively reading
+//   *IPState. If writes from multiple goroutines are needed — add a separate mutex to IPState.
 func (t *Tracker) Update(entry *parser.LogEntry) *IPState {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	st, exists := t.states[entry.RealIP]
 	if !exists {
-		// Eviction до добавления: иначе в map кратковременно maxIPs+1 записей.
-		// При maxIPs=1 предыдущий код держал в памяти 2 IP вместо 1.
+		// Eviction before adding: otherwise the map momentarily holds maxIPs+1 entries.
+		// With maxIPs=1 the previous code kept 2 IPs in memory instead of 1.
 		if len(t.states) >= t.maxIPs {
 			t.evictLRULocked()
 		}
@@ -232,11 +231,11 @@ func (t *Tracker) Update(entry *parser.LogEntry) *IPState {
 		t.states[entry.RealIP] = st
 		st.lruElem = t.lru.PushFront(st)
 	} else {
-		// IP активен — перемещаем в голову LRU
+		// IP is active — move to the front of LRU
 		t.lru.MoveToFront(st.lruElem)
 	}
 
-	// ── Обновление счётчиков ───────────────────────────────────────────────────────────
+	// ── Update counters ───────────────────────────────────────────────────────────
 	st.LastSeen = entry.Time
 	st.TotalRequests++
 
@@ -244,11 +243,11 @@ func (t *Tracker) Update(entry *parser.LogEntry) *IPState {
 		st.Requests404++
 	}
 
-	// ── Кольцевой буфер путей ─────────────────────────────────────────────────────────
+	// ── Path ring buffer ─────────────────────────────────────────────────────────
 	st.pathBuf[st.pathPos] = entry.Path
 	st.pathPos = (st.pathPos + 1) % pathBufSize
 	if !st.pathFull && st.pathPos == 0 {
-		// pathPos обернулся на 0 — буфер заполнен первый раз
+		// pathPos wrapped to 0 — buffer filled for the first time
 		st.pathFull = true
 	}
 
@@ -258,20 +257,20 @@ func (t *Tracker) Update(entry *parser.LogEntry) *IPState {
 	return st
 }
 
-// updateRateLocked обновляет sliding window rate counters.
-// Вызывается только под write lock из Update.
+// updateRateLocked updates sliding window rate counters.
+// Called only under write lock from Update.
 //
-// Алгоритм: two-counter sliding window.
-// ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ: при gap ∈ (w, 2w) prevCount содержит данные из
-// предыдущего окна (до gap). ApproxRate предполагает их равномерное
-// распределение — при бурстовом трафике возможен false positive (~1–1.5x).
-// Это приемлемо для rate-детектора: лучше ложный WARN чем пропущенная атака.
-// Алгоритм применяется в production rate limiters (Cloudflare, nginx).
+// Algorithm: two-counter sliding window.
+// KNOWN LIMITATION: when gap ∈ (w, 2w) prevCount holds data from
+// the previous window (before gap). ApproxRate assumes uniform distribution —
+// bursty traffic may cause false positives (~1–1.5x).
+// Acceptable for the rate detector: a false WARN is better than a missed attack.
+// Algorithm is used in production rate limiters (Cloudflare, nginx).
 func (t *Tracker) updateRateLocked(st *IPState, reqTime time.Time) {
-	w := t.rateWindow // всегда > 0 — fallback установлен в NewTracker
+	w := t.rateWindow // always > 0 — fallback set in NewTracker
 
 	if st.rateWindowStart.IsZero() {
-		// Первый запрос от этого IP — инициализируем окно
+		// First request from this IP — initialize window
 		st.rateWindowStart = reqTime
 		st.rateCurrCount = 1
 		return
@@ -280,14 +279,14 @@ func (t *Tracker) updateRateLocked(st *IPState, reqTime time.Time) {
 	elapsed := reqTime.Sub(st.rateWindowStart)
 	switch {
 	case elapsed >= 2*w:
-		// Оба окна устарели — начинаем с чистого листа
+		// Both windows stale — start fresh
 		st.rateWindowStart = reqTime
 		st.rateCurrCount = 1
 		st.ratePrevCount = 0
 	case elapsed >= w:
-		// Текущее окно завершилось — сдвигаем.
-		// rateWindowStart.Add(w): новое окно начинается ровно через w от предыдущего,
-		// не от reqTime — иначе потеряем часть elapsed для следующего запроса.
+		// Current window ended — shift.
+		// rateWindowStart.Add(w): new window starts exactly w after the previous one,
+		// not from reqTime — otherwise we lose part of elapsed for the next request.
 		st.ratePrevCount = st.rateCurrCount
 		st.rateCurrCount = 1
 		st.rateWindowStart = st.rateWindowStart.Add(w)
@@ -296,8 +295,8 @@ func (t *Tracker) updateRateLocked(st *IPState, reqTime time.Time) {
 	}
 }
 
-// evictLRULocked удаляет наименее используемый IP (хвост LRU-списка).
-// Вызывается только под write lock из Update.
+// evictLRULocked removes the least recently used IP (tail of the LRU list).
+// Called only under write lock from Update.
 func (t *Tracker) evictLRULocked() {
 	oldest := t.lru.Back()
 	if oldest == nil {
@@ -311,17 +310,17 @@ func (t *Tracker) evictLRULocked() {
 	}
 }
 
-// ========================== Статистика ==================================================
+// ========================== Statistics ==================================================
 
-// Stats — снапшот состояния трекера для периодического логирования.
+// Stats — snapshot of tracker state for periodic logging.
 type Stats struct {
-	TrackedIPs    int   // текущее число отслеживаемых IP
-	TotalRequests int64 // сумма TotalRequests по всем IP
-	Suspicious    int   // IP со Score > 0 (накопили хотя бы одно очко)
+	TrackedIPs    int   // current number of tracked IPs
+	TotalRequests int64 // sum of TotalRequests across all IPs
+	Suspicious    int   // IPs with Score > 0 (accumulated at least one point)
 }
 
-// GetStats возвращает снапшот статистики под read lock.
-// Не вызывать из hot path — итерация по всем IP под RLock.
+// GetStats returns a statistics snapshot under read lock.
+// Do not call from the hot path — iterates over all IPs under RLock.
 func (t *Tracker) GetStats() Stats {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -336,10 +335,10 @@ func (t *Tracker) GetStats() Stats {
 	return s
 }
 
-// Reconfigure применяет новые параметры конфига после SIGHUP.
-// Вызывается из main.go в блоке case <-reloadCh — между строками pipeline,
-// поэтому нет concurrent access с Update (однопоточный pipeline).
-// GC-горутина может читать retention/rateWindow → нужен write lock.
+// Reconfigure applies new config parameters after SIGHUP.
+// Called from main.go in the case <-reloadCh block — between pipeline lines,
+// so there is no concurrent access with Update (single-threaded pipeline).
+// GC goroutine may read retention/rateWindow → write lock is required.
 func (t *Tracker) Reconfigure(cfg config.Config) {
 	rw := time.Duration(cfg.Detectors.Rate.Window)
 	if rw <= 0 {
@@ -351,15 +350,15 @@ func (t *Tracker) Reconfigure(cfg config.Config) {
 	t.mu.Unlock()
 }
 
-// Len возвращает количество отслеживаемых IP (потокобезопасно).
+// Len returns the number of tracked IPs (thread-safe).
 func (t *Tracker) Len() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return len(t.states)
 }
 
-// Has возвращает true если IP отслеживается (потокобезопасно).
-// Используется в тестах вместо прямого доступа к tr.states — безопасно при t.Parallel().
+// Has returns true if the IP is tracked (thread-safe).
+// Used in tests instead of direct access to tr.states — safe with t.Parallel().
 func (t *Tracker) Has(ip string) bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -369,46 +368,46 @@ func (t *Tracker) Has(ip string) bool {
 
 // ========================== GC ======================================================
 
-// RunGC запускает фоновую горутину сборки мусора неактивных IP.
+// RunGC starts the background goroutine for garbage collecting inactive IPs.
 //
-// Удаляет IP с LastSeen старше retention (= scoring.observation_window).
-// interval из config.State.GCInterval — передаётся из main.go.
+// Removes IPs with LastSeen older than retention (= scoring.observation_window).
+// interval comes from config.State.GCInterval — passed from main.go.
 //
-// Паттерн из telegram-бота (patterns.md §2 GC):
-//   ticker + ctx.Done() + логгер через колбэк.
+// Pattern from telegram-bot (patterns.md §2 GC):
+//   ticker + ctx.Done() + logger via callback.
 //
-// Вызывать: go tracker.RunGC(ctx, time.Duration(cfg.State.GCInterval))
+// Usage: go tracker.RunGC(ctx, time.Duration(cfg.State.GCInterval))
 func (t *Tracker) RunGC(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	if t.logFn != nil {
-		t.logFn("GC", fmt.Sprintf("сборщик мусора запущен (интервал=%v, retention=%v)", interval, t.retention), "info")
+		t.logFn("GC", fmt.Sprintf("garbage collector started (interval=%v, retention=%v)", interval, t.retention), "info")
 	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			if t.logFn != nil {
-				t.logFn("GC", "сборщик мусора остановлен", "info")
+				t.logFn("GC", "garbage collector stopped", "info")
 			}
 			return
 		case <-ticker.C:
 			deleted, remaining := t.runGC()
 			if t.logFn != nil && deleted > 0 {
-				t.logFn("GC", fmt.Sprintf("удалено %d неактивных IP, осталось %d", deleted, remaining), "info")
+				t.logFn("GC", fmt.Sprintf("deleted %d inactive IPs, remaining %d", deleted, remaining), "info")
 			}
 		}
 	}
 }
 
-// runGC выполняет один цикл сборки мусора.
-// Удаляет IP, неактивные дольше retention.
-// Возвращает (deleted, remaining) — оба числа захвачены под одним write lock,
-// поэтому лог "удалено N, осталось M" точно описывает состояние после этого цикла.
+// runGC executes a single garbage collection cycle.
+// Removes IPs that have been inactive longer than retention.
+// Returns (deleted, remaining) — both numbers captured under a single write lock,
+// so the log "deleted N, remaining M" accurately describes the state after this cycle.
 //
-// threshold вычисляется внутри лока: Reconfigure() может обновить t.retention
-// из main-горутины пока GC-горутина ещё не захватила мьютекс.
+// threshold is computed inside the lock: Reconfigure() may update t.retention
+// from the main goroutine while the GC goroutine has not yet acquired the mutex.
 func (t *Tracker) runGC() (int, int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

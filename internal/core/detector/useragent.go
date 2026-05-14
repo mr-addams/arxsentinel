@@ -1,29 +1,29 @@
-// ========================== Детектор useragent ==========================================
-//   Детекция подозрительных User-Agent: сканеры (Nuclei, sqlmap), грабберы (wget, scrapy),
-//   автоматизация (python-requests, aiohttp), пустой UA.
+// ========================== UserAgent detector ==========================================
+//   Detects suspicious User-Agent strings: scanners (Nuclei, sqlmap), grabbers (wget, scrapy),
+//   automation (python-requests, aiohttp), empty UA.
 //
-//   ЧТО ЗДЕСЬ:
-//     - UADetector — структура с очками из конфига
-//     - Предкомпилированные паттерны в package-level vars (три категории)
-//     - Detect() — проверка по категориям от наибольшего штрафа к наименьшему
+//   WHAT IS HERE:
+//     - UADetector — struct with scores from config
+//     - Package-level pre-compiled patterns in three categories
+//     - Detect() — category checks from highest penalty to lowest
 //
-//   КАТЕГОРИИ (порядок проверки):
-//     empty UA     → "" или "-"                                    (EmptyUAScore, default 30)
-//     scanner      → Nuclei, sqlmap, nikto, nmap, masscan, ...     (ScannerScore, default 40)
-//     grabber      → wget, scrapy, python-requests, libwww, ...    (GrabberScore, default 20)
-//     automation   → aiohttp, Go-http-client, okhttp, ...          (AutomationScore, default 15)
+//   CATEGORIES (check order):
+//     empty UA     → "" or "-"                                    (EmptyUAScore, default 30)
+//     scanner      → Nuclei, sqlmap, nikto, nmap, masscan, ...   (ScannerScore, default 40)
+//     grabber      → wget, scrapy, python-requests, libwww, ...  (GrabberScore, default 20)
+//     automation   → aiohttp, Go-http-client, okhttp, ...        (AutomationScore, default 15)
 //
-//   ПЕРВОЕ СОВПАДЕНИЕ ПОБЕЖДАЕТ:
-//     Detect возвращает при первом match — двойного начисления нет.
-//     Порядок категорий: более опасные проверяются первыми.
+//   FIRST MATCH WINS:
+//     Detect returns on the first match — no double scoring.
+//     Category order: more dangerous categories are checked first.
 //
-//   ПОЧЕМУ ПАТТЕРНЫ HARDCODED, А НЕ В КОНФИГЕ:
-//     Список инструментов-сканеров стабилен и специфичен — выносить в YAML создаёт
-//     риск неполного списка (оператор может случайно удалить критичные паттерны).
-//     При появлении нового инструмента — правим код, а не конфиг (SRE workflow).
-//     Очки (ScannerScore и т.д.) остаются в конфиге — поведение тюнингуется без деплоя.
+//   WHY PATTERNS ARE HARDCODED AND NOT IN CONFIG:
+//     The scanner tool list is stable and specific — externalizing to YAML creates
+//     a risk of an incomplete list (an operator may accidentally remove critical patterns).
+//     When a new tool appears — change code, not config (SRE workflow).
+//     Scores (ScannerScore etc.) remain in config — behavior is tunable without deploy.
 //
-//   Реализовано: Task 4.3.
+//   Implemented: Task 4.3.
 
 package detector
 
@@ -34,10 +34,10 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 )
 
-// ========================== UA паттерны ==============================================
+// ========================== UA patterns ===============================================
 
-// scannerPatterns — инструменты активного сканирования и эксплуатации.
-// strings.Contains: UA часто содержит версию ("Nuclei/2.9.4") — точное совпадение не подходит.
+// scannerPatterns — active scanning and exploitation tools.
+// strings.Contains: UA often includes version ("Nuclei/2.9.4") — exact match is insufficient.
 var scannerPatterns = []string{
 	"Nuclei", "sqlmap", "nikto", "Nikto",
 	"nmap", "masscan", "zgrab", "ZGrab",
@@ -48,17 +48,17 @@ var scannerPatterns = []string{
 	"havij", "burpsuite", "BurpSuite",
 }
 
-// grabberPatterns — краулеры и загрузчики контента.
-// curl/ и wget/ с "/" чтобы не блокировать UA вида "Recursive wget protection".
+// grabberPatterns — content crawlers and downloaders.
+// curl/ and wget/ with "/" to avoid blocking UAs like "Recursive wget protection".
 var grabberPatterns = []string{
 	"Wget/", "curl/", "python-requests", "libwww-perl",
 	"scrapy", "Scrapy", "HTTrack", "WebCopier",
 	"SiteSnagger", "WebReaper", "Teleport Pro",
 }
 
-// automationPatterns — HTTP-клиенты и фреймворки автоматизации.
-// "Go-http-client" специфично: не блокирует браузерные расширения со словом "Go".
-// "Java/" с "/" чтобы не блокировать UA вида "JavaScript/...".
+// automationPatterns — HTTP clients and automation frameworks.
+// "Go-http-client" is specific: does not block browser extensions containing "Go".
+// "Java/" with "/" to avoid blocking UAs like "JavaScript/...".
 var automationPatterns = []string{
 	"python-urllib", "aiohttp", "Go-http-client",
 	"Java/", "okhttp", "axios/", "node-fetch",
@@ -67,12 +67,12 @@ var automationPatterns = []string{
 
 // ========================== UADetector ===============================================
 
-// UADetector детектирует подозрительные User-Agent по предопределённым паттернам.
+// UADetector detects suspicious User-Agent strings by predefined patterns.
 //
-// Жизненный цикл:
-//   nil          → до вызова NewUADetector
-//   *UADetector  → после NewUADetector, используется всё время жизни демона
-//   перестройка  → при SIGHUP (Task 7.1) — создаётся новый экземпляр
+// Lifecycle:
+//   nil          → before NewUADetector is called
+//   *UADetector  → after NewUADetector, used for the daemon's entire lifetime
+//   rebuild      → on SIGHUP (Task 7.1) — a new instance is created
 type UADetector struct {
 	scannerScore    int
 	grabberScore    int
@@ -81,8 +81,8 @@ type UADetector struct {
 	enabled         bool
 }
 
-// NewUADetector создаёт UADetector из конфига.
-// Вызывается из main.go при старте и SIGHUP.
+// NewUADetector creates a UADetector from config.
+// Called from main.go on startup and SIGHUP.
 func NewUADetector(cfg config.UserAgentConfig) *UADetector {
 	return &UADetector{
 		scannerScore:    cfg.ScannerScore,
@@ -93,14 +93,14 @@ func NewUADetector(cfg config.UserAgentConfig) *UADetector {
 	}
 }
 
-// Name возвращает идентификатор детектора.
+// Name returns the detector identifier.
 func (d *UADetector) Name() string { return "ua" }
 
-// Detect проверяет User-Agent по категориям угроз.
+// Detect checks User-Agent against threat categories.
 //
-// Порядок: пустой UA → сканеры → грабберы → автоматизация.
-// Пустой UA первым: короткий путь без перебора паттернов.
-// Первое совпадение возвращает результат — исключает двойное начисление.
+// Order: empty UA → scanners → grabbers → automation.
+// Empty UA first: short-circuit without iterating patterns.
+// First match returns a result — prevents double scoring.
 func (d *UADetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 	if !d.enabled {
 		return DetectResult{}
@@ -108,8 +108,8 @@ func (d *UADetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 
 	ua := entry.UserAgent
 
-	// ── Пустой UA ─────────────────────────────────────────────────────────────────────
-	// "-" — стандартный placeholder nginx для отсутствующего заголовка User-Agent
+	// ── Empty UA ──────────────────────────────────────────────────────────────────────
+	// "-" is nginx's standard placeholder for a missing User-Agent header
 	if ua == "" || ua == "-" {
 		return DetectResult{
 			Score:  d.emptyUAScore,
@@ -118,11 +118,11 @@ func (d *UADetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 		}
 	}
 
-	// Нормализуем UA один раз — ловим CURL/8.7.1, WGET/1.x и любые другие варианты регистра.
-	// Reason по-прежнему использует оригинальный паттерн для читаемости в логах.
+	// Normalize UA once — catches CURL/8.7.1, WGET/1.x and other case variants.
+	// Reason still uses the original pattern for readability in logs.
 	uaLower := strings.ToLower(ua)
 
-	// ── Сканеры ───────────────────────────────────────────────────────────────────────
+	// ── Scanners ──────────────────────────────────────────────────────────────────────
 	for _, p := range scannerPatterns {
 		if strings.Contains(uaLower, strings.ToLower(p)) {
 			return DetectResult{
@@ -133,7 +133,7 @@ func (d *UADetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 		}
 	}
 
-	// ── Грабберы ──────────────────────────────────────────────────────────────────────
+	// ── Grabbers ──────────────────────────────────────────────────────────────────────
 	for _, p := range grabberPatterns {
 		if strings.Contains(uaLower, strings.ToLower(p)) {
 			return DetectResult{
@@ -144,7 +144,7 @@ func (d *UADetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 		}
 	}
 
-	// ── Автоматизация ─────────────────────────────────────────────────────────────────
+	// ── Automation ────────────────────────────────────────────────────────────────────
 	for _, p := range automationPatterns {
 		if strings.Contains(uaLower, strings.ToLower(p)) {
 			return DetectResult{

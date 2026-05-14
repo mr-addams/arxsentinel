@@ -1,27 +1,27 @@
-// ========================== Модуль whitelist/matcher ====================================
-//   Сопоставление UA с паттернами легитимных ботов и custom whitelist по IP/CIDR/UA.
+// ========================== Module whitelist/matcher ====================================
+//   UA matching against legitimate bot patterns and custom whitelist by IP/CIDR/UA.
 //
-//   ЧТО ЗДЕСЬ:
-//     - Matcher — структура, инициализируется один раз из конфига
+//   WHAT IS HERE:
+//     - Matcher — struct, initialized once from config
 //     - MatchBot(ua) → (botName, botCfg, matched) — Task 3.1
-//     - IsWhitelistedIP(ip) bool   — custom whitelist по IP и CIDR — Task 3.4
-//     - IsWhitelistedUA(ua) bool   — custom whitelist по UA-подстроке — Task 3.4
+//     - IsWhitelistedIP(ip) bool   — custom whitelist by IP and CIDR — Task 3.4
+//     - IsWhitelistedUA(ua) bool   — custom whitelist by UA substring — Task 3.4
 //
-//   ЧТО НЕ ЗДЕСЬ:
-//     - DNS-верификация → verifier.go (Tasks 3.2, 3.5)
-//     - Кэш результатов → ipcache.go (Task 3.3)
+//   WHAT IS NOT HERE:
+//     - DNS verification → verifier.go (Tasks 3.2, 3.5)
+//     - Result cache → ipcache.go (Task 3.3)
 //
-//   АЛГОРИТМ MatchBot:
-//     Перебор ботов из конфига, для каждого — перебор UAPatterns.
-//     strings.Contains — case-sensitive (UA ботов имеют фиксированный регистр).
-//     Первое совпадение побеждает — порядок ботов в конфиге задаёт приоритет.
+//   MatchBot ALGORITHM:
+//     Iterate over bots from config; for each — iterate over UAPatterns.
+//     strings.Contains — case-sensitive (bot UAs have a fixed casing).
+//     First match wins — bot order in config sets priority.
 //
-//   АЛГОРИТМ IsWhitelistedIP:
-//     1. Точное совпадение в map[string]struct{} — O(1)
-//     2. Перебор предкомпилированных *net.IPNet — O(n) по числу CIDR
-//     Предкомпиляция в NewMatcher: net.ParseCIDR вызывается один раз при старте.
+//   IsWhitelistedIP ALGORITHM:
+//     1. Exact match in map[string]struct{} — O(1)
+//     2. Iterate over pre-compiled *net.IPNet — O(n) by number of CIDRs
+//     Pre-compilation in NewMatcher: net.ParseCIDR is called once at startup.
 //
-//   Реализуется: Task 3.1 (MatchBot) + Task 3.4 (IsWhitelistedIP, IsWhitelistedUA).
+//   Implements: Task 3.1 (MatchBot) + Task 3.4 (IsWhitelistedIP, IsWhitelistedUA).
 
 package whitelist
 
@@ -35,49 +35,49 @@ import (
 
 // ========================== Matcher ===================================================
 
-// Matcher хранит предобработанные данные для быстрого сопоставления UA/IP/CIDR.
+// Matcher holds pre-processed data for fast UA/IP/CIDR matching.
 //
-// Жизненный цикл:
-//   nil      → до вызова NewMatcher
-//   *Matcher → после NewMatcher, используется до завершения демона
-//   перестройка → при SIGHUP (Task 7.1) — создаётся новый экземпляр
+// Lifecycle:
+//   nil      → before NewMatcher is called
+//   *Matcher → after NewMatcher, used until daemon shutdown
+//   rebuild  → on SIGHUP (Task 7.1) — a new instance is created from the new config
 type Matcher struct {
-	bots []config.BotConfig // список ботов из конфига — порядок задаёт приоритет совпадения
+	bots []config.BotConfig // bot list from config — order defines match priority
 
-	// custom whitelist — предобработанные для O(1) / O(n) lookup
-	customIPs    map[string]struct{} // точные IP-адреса
-	customCIDRs  []*net.IPNet        // предкомпилированные подсети
-	customUASubs []string            // UA-подстроки (используются в strings.Contains)
+	// custom whitelist — pre-processed for O(1) / O(n) lookup
+	customIPs    map[string]struct{} // exact IP addresses
+	customCIDRs  []*net.IPNet        // pre-compiled subnets
+	customUASubs []string            // UA substrings (used in strings.Contains)
 }
 
-// NewMatcher создаёт Matcher из конфига.
-// Возвращает ошибку если любой CIDR из whitelist.custom.cidrs невалиден.
-// Вызывается из main.go при старте и при SIGHUP.
+// NewMatcher creates a Matcher from config.
+// Returns an error if any CIDR in whitelist.custom.cidrs is invalid.
+// Called from main.go at startup and on SIGHUP.
 func NewMatcher(cfg config.WhitelistConfig) (*Matcher, error) {
-	// ── Предкомпиляция CIDR ───────────────────────────────────────────────────────────
-	// net.ParseCIDR вызывается один раз при старте — дорогой парсинг убран из hot path.
+	// ── CIDR pre-compilation ──────────────────────────────────────────────────────────
+	// net.ParseCIDR is called once at startup — expensive parsing removed from hot path.
 	cidrs := make([]*net.IPNet, 0, len(cfg.Custom.CIDRs))
 	for _, cidr := range cfg.Custom.CIDRs {
 		_, ipNet, err := net.ParseCIDR(cidr)
 		if err != nil {
-			return nil, fmt.Errorf("невалидный CIDR в whitelist.custom.cidrs %q: %w", cidr, err)
+			return nil, fmt.Errorf("invalid CIDR in whitelist.custom.cidrs %q: %w", cidr, err)
 		}
 		cidrs = append(cidrs, ipNet)
 	}
 
-	// ── Индекс точных IP — O(1) lookup ────────────────────────────────────────────────
-	// map[string]struct{} вместо slice: каждый IP проверяется на каждой строке лога.
+	// ── Exact IP index — O(1) lookup ──────────────────────────────────────────────────
+	// map[string]struct{} instead of slice: every IP is checked on every log line.
 	ips := make(map[string]struct{}, len(cfg.Custom.IPs))
 	for _, ip := range cfg.Custom.IPs {
 		ips[ip] = struct{}{}
 	}
 
-	// Копируем slice заголовки — не разделяем underlying array с конфигом.
-	// При SIGHUP (Task 7.1) создаётся новый экземпляр Matcher из нового конфига;
-	// старый Matcher продолжает работать пока pipeline не переключится.
-	// Если не копировать — старый и новый Matcher могут читать один underlying array.
-	// BotConfig содержит только строки и []string — Go-строки иммутабельны, глубокое
-	// копирование не нужно; копируем только верхний уровень slice.
+	// Copy slice headers — do not share underlying array with config.
+	// On SIGHUP (Task 7.1) a new Matcher is created from the new config;
+	// the old Matcher keeps running until the pipeline switches over.
+	// Without copying — old and new Matcher would read from the same underlying array.
+	// BotConfig contains only strings and []string — Go strings are immutable, deep
+	// copy is not needed; only the top-level slice header is copied.
 	bots := append([]config.BotConfig(nil), cfg.Bots...)
 	uaSubs := append([]string(nil), cfg.Custom.UASubstrings...)
 
@@ -91,16 +91,16 @@ func NewMatcher(cfg config.WhitelistConfig) (*Matcher, error) {
 
 // ========================== Task 3.1 — UA Matcher =====================================
 
-// MatchBot проверяет UA на совпадение с паттернами легитимных ботов из конфига.
+// MatchBot checks the UA against legitimate bot patterns from config.
 //
-// Возвращает:
-//   botName — идентификатор бота (например "google", "bing")
-//   botCfg  — полная конфиг-запись бота (нужна Verifier-у для rdns_domains и verify_method)
-//   matched — true если найдено совпадение
+// Returns:
+//   botName — bot identifier (e.g. "google", "bing")
+//   botCfg  — full bot config record (needed by Verifier for rdns_domains and verify_method)
+//   matched — true if a match was found
 //
-// Алгоритм: strings.Contains, case-sensitive — UA поисковых ботов имеют зафиксированный
-// регистр в документации (RFC-подобные спецификации каждого вендора).
-// При пустом UA возвращает matched=false немедленно — нет смысла перебирать паттерны.
+// Algorithm: strings.Contains, case-sensitive — search bot UAs have a fixed casing
+// defined in vendor documentation (RFC-like specifications per vendor).
+// Empty UA returns matched=false immediately — no need to iterate over patterns.
 func (m *Matcher) MatchBot(ua string) (botName string, botCfg config.BotConfig, matched bool) {
 	if ua == "" {
 		return "", config.BotConfig{}, false
@@ -117,27 +117,27 @@ func (m *Matcher) MatchBot(ua string) (botName string, botCfg config.BotConfig, 
 
 // ========================== Task 3.4 — Custom Whitelist ================================
 
-// IsWhitelistedIP возвращает true если ip находится в custom whitelist (точный IP или CIDR).
+// IsWhitelistedIP returns true if ip is in the custom whitelist (exact IP or CIDR).
 //
-// Порядок проверок:
-//   1. Точное совпадение — O(1) map lookup
-//   2. CIDR — O(n) по предкомпилированным подсетям
-// Точная проверка идёт первой: большинство whitelist содержат единичные IP, не подсети.
+// Check order:
+//   1. Exact match — O(1) map lookup
+//   2. CIDR — O(n) over pre-compiled subnets
+// Exact check first: most whitelists contain individual IPs, not subnets.
 //
-// Невалидный ip (не парсится net.ParseIP) не матчит ни один CIDR — возвращает false.
+// An invalid ip (not parsed by net.ParseIP) does not match any CIDR — returns false.
 func (m *Matcher) IsWhitelistedIP(ip string) bool {
-	// ── Точное совпадение ─────────────────────────────────────────────────────────────
+	// ── Exact match ───────────────────────────────────────────────────────────────────
 	if _, ok := m.customIPs[ip]; ok {
 		return true
 	}
 
-	// ── Проверка по CIDR ──────────────────────────────────────────────────────────────
+	// ── CIDR check ────────────────────────────────────────────────────────────────────
 	if len(m.customCIDRs) == 0 {
 		return false
 	}
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
-		// Невалидный IP не может входить ни в одну подсеть
+		// Invalid IP cannot belong to any subnet
 		return false
 	}
 	for _, cidr := range m.customCIDRs {
@@ -148,11 +148,11 @@ func (m *Matcher) IsWhitelistedIP(ip string) bool {
 	return false
 }
 
-// IsWhitelistedUA возвращает true если ua содержит любую из custom UA-подстрок.
+// IsWhitelistedUA returns true if ua contains any of the custom UA substrings.
 //
-// Case-sensitive — кастомный whitelist предполагает точно известные UA мониторингов,
-// load balancer health-check'ов и внутренних сервисов. Нечёткое совпадение создаёт
-// риск случайного пропуска сканеров с похожим UA.
+// Case-sensitive — custom whitelist assumes precisely known UAs of monitoring tools,
+// load balancer health checks, and internal services. Fuzzy matching creates a risk
+// of accidentally skipping scanners with a similar UA.
 func (m *Matcher) IsWhitelistedUA(ua string) bool {
 	if ua == "" {
 		return false

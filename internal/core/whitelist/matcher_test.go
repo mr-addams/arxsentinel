@@ -1,9 +1,9 @@
-// ========================== Тесты whitelist/matcher ====================================
-//   Покрывает Task 3.1 (MatchBot) и Task 3.4 (IsWhitelistedIP, IsWhitelistedUA).
+// ========================== Tests whitelist/matcher ====================================
+//   Covers Task 3.1 (MatchBot) and Task 3.4 (IsWhitelistedIP, IsWhitelistedUA).
 //
-//   Тестовые данные:
-//     - Конфиг с двумя ботами: google (Googlebot, AdsBot-Google) и bing (bingbot)
-//     - Custom whitelist: IP "10.0.0.1", CIDR "192.168.1.0/24", UA-подстрока "healthcheck"
+//   Test data:
+//     - Config with two bots: google (Googlebot, AdsBot-Google) and bing (bingbot)
+//     - Custom whitelist: IP "10.0.0.1", CIDR "192.168.1.0/24", UA substring "healthcheck"
 
 package whitelist
 
@@ -13,10 +13,10 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 )
 
-// ========================== Фикстуры ==================================================
+// ========================== Fixtures ==================================================
 
-// testConfig возвращает минимальный конфиг с двумя ботами и custom whitelist.
-// Вынесен в helper — все тесты используют единую базу, изменения в одном месте.
+// testConfig returns a minimal config with two bots and a custom whitelist.
+// Extracted as a helper — all tests share a single base, changes in one place.
 func testConfig() config.WhitelistConfig {
 	return config.WhitelistConfig{
 		Bots: []config.BotConfig{
@@ -39,13 +39,13 @@ func testConfig() config.WhitelistConfig {
 	}
 }
 
-// mustNewMatcher создаёт Matcher из тестового конфига.
-// t.Fatal при ошибке — тест не может продолжаться без валидного Matcher.
+// mustNewMatcher creates a Matcher from the test config.
+// t.Fatal on error — the test cannot continue without a valid Matcher.
 func mustNewMatcher(t *testing.T) *Matcher {
 	t.Helper()
 	m, err := NewMatcher(testConfig())
 	if err != nil {
-		t.Fatalf("NewMatcher: неожиданная ошибка: %v", err)
+		t.Fatalf("NewMatcher: unexpected error: %v", err)
 	}
 	return m
 }
@@ -55,7 +55,7 @@ func mustNewMatcher(t *testing.T) *Matcher {
 func TestNewMatcher_ValidConfig(t *testing.T) {
 	m := mustNewMatcher(t)
 	if m == nil {
-		t.Fatal("NewMatcher вернул nil")
+		t.Fatal("NewMatcher returned nil")
 	}
 }
 
@@ -64,21 +64,21 @@ func TestNewMatcher_InvalidCIDR(t *testing.T) {
 	cfg.Custom.CIDRs = []string{"not-a-cidr"}
 	_, err := NewMatcher(cfg)
 	if err == nil {
-		t.Fatal("NewMatcher должен вернуть ошибку для невалидного CIDR")
+		t.Fatal("NewMatcher must return an error for an invalid CIDR")
 	}
 }
 
 func TestNewMatcher_EmptyBots(t *testing.T) {
-	// Пустой список ботов — не ошибка, просто MatchBot всегда вернёт false
+	// Empty bot list — not an error, MatchBot will simply always return false
 	cfg := testConfig()
 	cfg.Bots = nil
 	m, err := NewMatcher(cfg)
 	if err != nil {
-		t.Fatalf("NewMatcher с пустыми ботами: %v", err)
+		t.Fatalf("NewMatcher with empty bots: %v", err)
 	}
 	_, _, matched := m.MatchBot("Googlebot/2.1")
 	if matched {
-		t.Error("MatchBot: при пустом списке ботов должен вернуть matched=false")
+		t.Error("MatchBot: with an empty bot list must return matched=false")
 	}
 }
 
@@ -88,22 +88,22 @@ func TestMatchBot_GoogleUA(t *testing.T) {
 	m := mustNewMatcher(t)
 	botName, _, matched := m.MatchBot("Googlebot/2.1 (+http://www.google.com/bot.html)")
 	if !matched {
-		t.Error("MatchBot: Googlebot должен совпадать")
+		t.Error("MatchBot: Googlebot must match")
 	}
 	if botName != "google" {
-		t.Errorf("MatchBot: ожидался бот %q, получен %q", "google", botName)
+		t.Errorf("MatchBot: expected bot %q, got %q", "google", botName)
 	}
 }
 
 func TestMatchBot_AdsBotGoogle(t *testing.T) {
-	// AdsBot-Google — второй паттерн google-бота
+	// AdsBot-Google — second pattern for the google bot
 	m := mustNewMatcher(t)
 	botName, _, matched := m.MatchBot("AdsBot-Google (+http://www.google.com/adsbot.html)")
 	if !matched {
-		t.Error("MatchBot: AdsBot-Google должен совпадать")
+		t.Error("MatchBot: AdsBot-Google must match")
 	}
 	if botName != "google" {
-		t.Errorf("MatchBot: ожидался %q, получен %q", "google", botName)
+		t.Errorf("MatchBot: expected %q, got %q", "google", botName)
 	}
 }
 
@@ -111,32 +111,32 @@ func TestMatchBot_Bingbot(t *testing.T) {
 	m := mustNewMatcher(t)
 	botName, _, matched := m.MatchBot("Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)")
 	if !matched {
-		t.Error("MatchBot: bingbot должен совпадать")
+		t.Error("MatchBot: bingbot must match")
 	}
 	if botName != "bing" {
-		t.Errorf("MatchBot: ожидался %q, получен %q", "bing", botName)
+		t.Errorf("MatchBot: expected %q, got %q", "bing", botName)
 	}
 }
 
 func TestMatchBot_BotCfgReturned(t *testing.T) {
-	// Verifier (Task 3.2) использует botCfg.RDNSDomains и VerifyMethod —
-	// убеждаемся что возвращается правильная конфиг-запись, а не нулевая структура
+	// Verifier (Task 3.2) uses botCfg.RDNSDomains and VerifyMethod —
+	// verify that the correct config entry is returned, not a zero struct
 	m := mustNewMatcher(t)
 	_, botCfg, matched := m.MatchBot("Googlebot/2.1")
 	if !matched {
-		t.Fatal("MatchBot: Googlebot не совпал")
+		t.Fatal("MatchBot: Googlebot did not match")
 	}
 	if len(botCfg.RDNSDomains) == 0 {
-		t.Error("MatchBot: botCfg.RDNSDomains не должен быть пустым для google")
+		t.Error("MatchBot: botCfg.RDNSDomains must not be empty for google")
 	}
 }
 
 func TestMatchBot_CurlNotMatched(t *testing.T) {
-	// curl — не легитимный бот, не должен совпадать
+	// curl — not a legitimate bot, must not match
 	m := mustNewMatcher(t)
 	_, _, matched := m.MatchBot("curl/8.7.1")
 	if matched {
-		t.Error("MatchBot: curl не должен совпадать")
+		t.Error("MatchBot: curl must not match")
 	}
 }
 
@@ -144,7 +144,7 @@ func TestMatchBot_EmptyUA(t *testing.T) {
 	m := mustNewMatcher(t)
 	_, _, matched := m.MatchBot("")
 	if matched {
-		t.Error("MatchBot: пустой UA не должен совпадать")
+		t.Error("MatchBot: empty UA must not match")
 	}
 }
 
@@ -152,17 +152,17 @@ func TestMatchBot_ArbitraryUA(t *testing.T) {
 	m := mustNewMatcher(t)
 	_, _, matched := m.MatchBot("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	if matched {
-		t.Error("MatchBot: обычный браузерный UA не должен совпадать")
+		t.Error("MatchBot: a regular browser UA must not match")
 	}
 }
 
 func TestMatchBot_CaseSensitive(t *testing.T) {
-	// "googlebot" в нижнем регистре — не совпадает (паттерн "Googlebot" с заглавной)
-	// Реальные Googlebot пишут "Googlebot" с заглавной — это контракт Google.
+	// "googlebot" in lower case — must not match (pattern "Googlebot" is capitalised)
+	// Real Googlebot writes "Googlebot" with a capital G — this is Google's contract.
 	m := mustNewMatcher(t)
 	_, _, matched := m.MatchBot("googlebot/2.1")
 	if matched {
-		t.Error("MatchBot: совпадение должно быть case-sensitive, 'googlebot' не должен матчить паттерн 'Googlebot'")
+		t.Error("MatchBot: matching must be case-sensitive, 'googlebot' must not match pattern 'Googlebot'")
 	}
 }
 
@@ -171,56 +171,56 @@ func TestMatchBot_CaseSensitive(t *testing.T) {
 func TestIsWhitelistedIP_ExactMatch(t *testing.T) {
 	m := mustNewMatcher(t)
 	if !m.IsWhitelistedIP("10.0.0.1") {
-		t.Error("IsWhitelistedIP: IP 10.0.0.1 должен быть в whitelist")
+		t.Error("IsWhitelistedIP: IP 10.0.0.1 must be in the whitelist")
 	}
 }
 
 func TestIsWhitelistedIP_ExactNoMatch(t *testing.T) {
 	m := mustNewMatcher(t)
 	if m.IsWhitelistedIP("10.0.0.2") {
-		t.Error("IsWhitelistedIP: IP 10.0.0.2 не должен быть в whitelist")
+		t.Error("IsWhitelistedIP: IP 10.0.0.2 must not be in the whitelist")
 	}
 }
 
 func TestIsWhitelistedIP_CIDRMatch(t *testing.T) {
 	m := mustNewMatcher(t)
-	// 192.168.1.100 входит в 192.168.1.0/24
+	// 192.168.1.100 is within 192.168.1.0/24
 	if !m.IsWhitelistedIP("192.168.1.100") {
-		t.Error("IsWhitelistedIP: 192.168.1.100 должен входить в CIDR 192.168.1.0/24")
+		t.Error("IsWhitelistedIP: 192.168.1.100 must be within CIDR 192.168.1.0/24")
 	}
 }
 
 func TestIsWhitelistedIP_CIDRBoundary(t *testing.T) {
 	m := mustNewMatcher(t)
-	// .1 — первый хост в /24 (сетевой адрес .0 не хост, но net.IPNet.Contains его вернёт)
+	// .1 — first host in /24 (network address .0 is not a host, but net.IPNet.Contains returns it)
 	if !m.IsWhitelistedIP("192.168.1.1") {
-		t.Error("IsWhitelistedIP: 192.168.1.1 должен входить в CIDR 192.168.1.0/24")
+		t.Error("IsWhitelistedIP: 192.168.1.1 must be within CIDR 192.168.1.0/24")
 	}
-	// .254 — последний хост в /24
+	// .254 — last host in /24
 	if !m.IsWhitelistedIP("192.168.1.254") {
-		t.Error("IsWhitelistedIP: 192.168.1.254 должен входить в CIDR 192.168.1.0/24")
+		t.Error("IsWhitelistedIP: 192.168.1.254 must be within CIDR 192.168.1.0/24")
 	}
 }
 
 func TestIsWhitelistedIP_CIDRNoMatch(t *testing.T) {
 	m := mustNewMatcher(t)
-	// 192.168.2.1 — другая подсеть
+	// 192.168.2.1 — different subnet
 	if m.IsWhitelistedIP("192.168.2.1") {
-		t.Error("IsWhitelistedIP: 192.168.2.1 не должен входить в CIDR 192.168.1.0/24")
+		t.Error("IsWhitelistedIP: 192.168.2.1 must not be within CIDR 192.168.1.0/24")
 	}
 }
 
 func TestIsWhitelistedIP_InvalidIP(t *testing.T) {
 	m := mustNewMatcher(t)
 	if m.IsWhitelistedIP("not-an-ip") {
-		t.Error("IsWhitelistedIP: невалидный IP не должен матчить")
+		t.Error("IsWhitelistedIP: invalid IP must not match")
 	}
 }
 
 func TestIsWhitelistedIP_EmptyIP(t *testing.T) {
 	m := mustNewMatcher(t)
 	if m.IsWhitelistedIP("") {
-		t.Error("IsWhitelistedIP: пустой IP не должен матчить")
+		t.Error("IsWhitelistedIP: empty IP must not match")
 	}
 }
 
@@ -229,40 +229,40 @@ func TestIsWhitelistedIP_EmptyIP(t *testing.T) {
 func TestIsWhitelistedUA_Healthcheck(t *testing.T) {
 	m := mustNewMatcher(t)
 	if !m.IsWhitelistedUA("my-healthcheck/1.0") {
-		t.Error("IsWhitelistedUA: UA с подстрокой 'healthcheck' должен матчить")
+		t.Error("IsWhitelistedUA: UA containing substring 'healthcheck' must match")
 	}
 }
 
 func TestIsWhitelistedUA_Monitoring(t *testing.T) {
 	m := mustNewMatcher(t)
 	if !m.IsWhitelistedUA("Prometheus monitoring-agent/2.3") {
-		t.Error("IsWhitelistedUA: UA с подстрокой 'monitoring' должен матчить")
+		t.Error("IsWhitelistedUA: UA containing substring 'monitoring' must match")
 	}
 }
 
 func TestIsWhitelistedUA_NoMatch(t *testing.T) {
 	m := mustNewMatcher(t)
 	if m.IsWhitelistedUA("Mozilla/5.0 (compatible; Googlebot/2.1)") {
-		t.Error("IsWhitelistedUA: Googlebot UA не содержит кастомных подстрок")
+		t.Error("IsWhitelistedUA: Googlebot UA does not contain custom substrings")
 	}
 }
 
 func TestIsWhitelistedUA_EmptyUA(t *testing.T) {
 	m := mustNewMatcher(t)
 	if m.IsWhitelistedUA("") {
-		t.Error("IsWhitelistedUA: пустой UA не должен матчить")
+		t.Error("IsWhitelistedUA: empty UA must not match")
 	}
 }
 
 func TestIsWhitelistedUA_EmptySubstrings(t *testing.T) {
-	// Нет кастомных UA-подстрок в конфиге — ничего не матчит
+	// No custom UA substrings in config — nothing matches
 	cfg := testConfig()
 	cfg.Custom.UASubstrings = nil
 	m, err := NewMatcher(cfg)
 	if err != nil {
-		t.Fatalf("NewMatcher: неожиданная ошибка: %v", err)
+		t.Fatalf("NewMatcher: unexpected error: %v", err)
 	}
 	if m.IsWhitelistedUA("healthcheck") {
-		t.Error("IsWhitelistedUA: при пустом списке подстрок не должно быть совпадений")
+		t.Error("IsWhitelistedUA: with empty substring list there must be no matches")
 	}
 }

@@ -1,8 +1,8 @@
-// ========================== Тесты OverflowDetector ====================================
-//   Табличные тесты: URL выше/ниже лимита, WAF bypass ключевые слова,
-//   case-insensitive, длина + suspicious (приоритет длины), enabled=false.
+// ========================== OverflowDetector tests ====================================
+//   Table-driven tests: URL above/below limit, WAF bypass keywords,
+//   case-insensitive, length + suspicious (length priority), enabled=false.
 //
-//   mockIPView определён в rate_test.go — общий для всех тестов пакета.
+//   mockIPView is defined in rate_test.go — shared across all package tests.
 
 package detector
 
@@ -28,18 +28,18 @@ func TestOverflowDetector(t *testing.T) {
 		path      string
 		query     string
 		wantScore bool
-		wantMsg   string // подстрока в Reason, если срабатывает
+		wantMsg   string // substring expected in Reason when triggered
 	}{
-		// ── Buffer overflow: длина URL ────────────────────────────────────────────────────
+		// ── Buffer overflow: URL length ───────────────────────────────────────────────────
 		{
-			name:      "URL 101 символ (> max=100) → срабатывает",
+			name:      "URL 101 chars (> max=100) → triggers",
 			cfg:       baseCfg,
 			path:      "/" + strings.Repeat("a", 100),
 			wantScore: true,
 			wantMsg:   "overflow:url_len=",
 		},
 		{
-			name:      "path=50 + query=60 → total=111 > 100 → срабатывает",
+			name:      "path=50 + query=60 → total=111 > 100 → triggers",
 			cfg:       baseCfg,
 			path:      "/" + strings.Repeat("p", 49),
 			query:     strings.Repeat("q", 60),
@@ -47,20 +47,20 @@ func TestOverflowDetector(t *testing.T) {
 			wantMsg:   "overflow:url_len=",
 		},
 		{
-			name:      "URL ровно 100 символов → не срабатывает (не превышение)",
+			name:      "URL exactly 100 chars → no trigger (not exceeded)",
 			cfg:       baseCfg,
 			path:      "/" + strings.Repeat("a", 99),
 			wantScore: false,
 		},
 		{
-			name:      "короткий URL → не срабатывает",
+			name:      "short URL → no trigger",
 			cfg:       baseCfg,
 			path:      "/index.html",
 			wantScore: false,
 		},
-		// ── WAF bypass: подозрительные ключевые слова ────────────────────────────────────
+		// ── WAF bypass: suspicious keywords ──────────────────────────────────────────────
 		{
-			name:      "/?cmd=whoami → срабатывает",
+			name:      "/?cmd=whoami → triggers",
 			cfg:       baseCfg,
 			path:      "/",
 			query:     "cmd=whoami",
@@ -68,14 +68,14 @@ func TestOverflowDetector(t *testing.T) {
 			wantMsg:   "overflow:waf_bypass=cmd",
 		},
 		{
-			name:      "/exec в пути → срабатывает",
+			name:      "/exec in path → triggers",
 			cfg:       baseCfg,
 			path:      "/api/exec/run",
 			wantScore: true,
 			wantMsg:   "overflow:waf_bypass=exec",
 		},
 		{
-			name:      "/?bypass=1 → срабатывает",
+			name:      "/?bypass=1 → triggers",
 			cfg:       baseCfg,
 			path:      "/login",
 			query:     "bypass=1",
@@ -84,7 +84,7 @@ func TestOverflowDetector(t *testing.T) {
 		},
 		// ── Case-insensitive ──────────────────────────────────────────────────────────────
 		{
-			name:      "CMD в верхнем регистре → срабатывает",
+			name:      "CMD in uppercase → triggers",
 			cfg:       baseCfg,
 			path:      "/",
 			query:     "CMD=ls",
@@ -92,40 +92,40 @@ func TestOverflowDetector(t *testing.T) {
 			wantMsg:   "overflow:waf_bypass=cmd",
 		},
 		{
-			name:      "SHELL в смешанном регистре → срабатывает",
+			name:      "SHELL in mixed case → triggers",
 			cfg:       baseCfg,
 			path:      "/",
 			query:     "Shell=/bin/bash",
 			wantScore: true,
 			wantMsg:   "overflow:waf_bypass=shell",
 		},
-		// ── Приоритет: длина проверяется первой ──────────────────────────────────────────
+		// ── Priority: length is checked first ────────────────────────────────────────────
 		{
-			// URL длинный И содержит suspicious param — возвращаем overflow:url_len
-			name:      "длинный URL с suspicious param → overflow:url_len (приоритет длины)",
+			// URL is long AND contains a suspicious param — returns overflow:url_len
+			name:      "long URL with suspicious param → overflow:url_len (length priority)",
 			cfg:       baseCfg,
 			path:      "/" + strings.Repeat("x", 99),
 			query:     "cmd=test",
 			wantScore: true,
 			wantMsg:   "overflow:url_len=",
 		},
-		// ── Нормальный URL ────────────────────────────────────────────────────────────────
+		// ── Normal URL ────────────────────────────────────────────────────────────────────
 		{
-			name:      "нормальный запрос → не срабатывает",
+			name:      "normal request → no trigger",
 			cfg:       baseCfg,
 			path:      "/products",
 			query:     "page=1&sort=name",
 			wantScore: false,
 		},
 		{
-			name:      "пустой путь → не срабатывает",
+			name:      "empty path → no trigger",
 			cfg:       baseCfg,
 			path:      "/",
 			wantScore: false,
 		},
 		// ── enabled=false ─────────────────────────────────────────────────────────────────
 		{
-			name: "disabled: длинный URL не срабатывает",
+			name: "disabled: long URL does not trigger",
 			cfg: config.OverflowConfig{
 				Enabled:          false,
 				MaxURLLength:     100,
@@ -145,18 +145,18 @@ func TestOverflowDetector(t *testing.T) {
 			result := d.Detect(mv, entry)
 
 			if tt.wantScore && result.Score == 0 {
-				t.Errorf("ожидали Score > 0, получили 0 (path=%q query=%q)", tt.path, tt.query)
+				t.Errorf("expected Score > 0, got 0 (path=%q query=%q)", tt.path, tt.query)
 			}
 			if !tt.wantScore && result.Score != 0 {
-				t.Errorf("ожидали Score = 0, получили %d (path=%q query=%q)",
+				t.Errorf("expected Score = 0, got %d (path=%q query=%q)",
 					result.Score, tt.path, tt.query)
 			}
 			if result.Score > 0 {
 				if result.Module != "overflow" {
-					t.Errorf("Module = %q, ожидали %q", result.Module, "overflow")
+					t.Errorf("Module = %q, expected %q", result.Module, "overflow")
 				}
 				if tt.wantMsg != "" && !strings.Contains(result.Reason, tt.wantMsg) {
-					t.Errorf("Reason = %q, ожидали подстроку %q", result.Reason, tt.wantMsg)
+					t.Errorf("Reason = %q, expected substring %q", result.Reason, tt.wantMsg)
 				}
 			}
 		})

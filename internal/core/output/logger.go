@@ -1,21 +1,21 @@
-// ========================== Модуль output/logger ========================================
-//   Запись WARN/THREAT событий в threat-лог в формате для Fail2Ban.
+// ========================== Module output/logger ========================================
+//   Writing WARN/THREAT events to the threat log in Fail2Ban format.
 //
-//   ЧТО ЗДЕСЬ:
-//     - ThreatLogger — принимает вердикт scorer и записывает строку в лог
-//     - Log() — единственная публичная функция; не пишет при level = "" (норма)
+//   WHAT IS HERE:
+//     - ThreatLogger — accepts scorer verdict and writes a line to the log
+//     - Log() — the only public function; does not write when level = "" (normal)
 //
-//   ФОРМАТ СТРОКИ (читается Fail2Ban filter'ом, Task 5.1):
+//   LINE FORMAT (read by Fail2Ban filter, Task 5.1):
 //     2026-04-05T14:33:12Z THREAT 1.2.3.4 score=85 modules=probe,rate reason="..."
 //
-//   ИЗОЛЯЦИЯ:
-//     ThreatLogger не импортирует sys/utils напрямую — writeFn инжектируется
-//     из main.go. В тестах writeFn захватывает вывод в strings.Builder.
+//   ISOLATION:
+//     ThreatLogger does not import sys/utils directly — writeFn is injected
+//     from main.go. In tests writeFn captures output into strings.Builder.
 //
-//   ЧТО НЕ ЗДЕСЬ:
-//     - Консольное логирование (sys/utils.Log) — вызов через logFn в writeFn
-//     - Агрегация score (scorer/)
-//     - Открытие файлов (sys/utils.Init)
+//   WHAT IS NOT HERE:
+//     - Console logging (sys/utils.Log) — called via logFn in writeFn
+//     - Score aggregation (scorer/)
+//     - File opening (sys/utils.Init)
 
 package output
 
@@ -27,27 +27,27 @@ import (
 
 // ========================== ThreatLogger ==============================================
 
-// ThreatLogger записывает события угроз в threat-лог.
+// ThreatLogger writes threat events to the threat log.
 //
-// writeFn в продакшне = utils.LogThreat (записывает в threats.log + дублирует в консоль).
-// writeFn в тестах = функция, захватывающая вывод в буфер для проверки формата.
+// writeFn in production = utils.LogThreat (writes to threats.log + duplicates to console).
+// writeFn in tests = function that captures output into a buffer for format verification.
 type ThreatLogger struct {
 	writeFn func(ip string, score int, level string, modules []string, reason string)
 }
 
-// NewThreatLogger создаёт ThreatLogger с инжектированной функцией записи.
-// writeFn должна обеспечивать запись строки в threat-лог и консоль.
+// NewThreatLogger creates a ThreatLogger with an injected write function.
+// writeFn must ensure that a line is written to the threat log and console.
 func NewThreatLogger(writeFn func(ip string, score int, level string, modules []string, reason string)) *ThreatLogger {
 	return &ThreatLogger{writeFn: writeFn}
 }
 
-// Log записывает событие угрозы если level не пустой (WARN или THREAT).
+// Log writes a threat event if level is not empty (WARN or THREAT).
 //
-// При level = "" (нормальная активность) — молча возвращает, ничего не пишет.
-// Это главный фильтр: scorer вызывает Evaluate для каждой строки, но в лог
-// попадают только аномальные события — иначе threats.log переполнился бы.
+// When level = "" (normal activity) — returns silently without writing anything.
+// This is the main filter: scorer calls Evaluate for every line, but only
+// anomalous events are written to the log — otherwise threats.log would overflow.
 //
-// Вызывается из main pipeline после scorer.Evaluate.
+// Called from the main pipeline after scorer.Evaluate.
 func (l *ThreatLogger) Log(ip string, score int, level string, modules []string, reason string) {
 	if level == "" {
 		return
@@ -55,15 +55,15 @@ func (l *ThreatLogger) Log(ip string, score int, level string, modules []string,
 	l.writeFn(ip, score, level, modules, reason)
 }
 
-// ========================== Форматирование строки =====================================
+// ========================== Line formatting =====================================
 
-// FormatThreatLine форматирует одну строку threat-лога.
+// FormatThreatLine formats a single threat log line.
 //
-// Публичная функция — используется в тестах для проверки формата строки.
-// utils.LogThreat форматирует строку независимо (sys/ не импортирует core/).
-// Формат совместим с Fail2Ban: timestamp level ip score=N modules=... reason="..."
+// Public function — used in tests to verify line format.
+// utils.LogThreat formats the line independently (sys/ does not import core/).
+// Format is compatible with Fail2Ban: timestamp level ip score=N modules=... reason="..."
 //
-// Пример:
+// Example:
 //
 //	2026-04-05T14:33:12Z THREAT 1.2.3.4 score=85 modules=probe,rate reason="probe:env:3,rate:142rps"
 func FormatThreatLine(ip string, score int, level string, modules []string, reason string) string {

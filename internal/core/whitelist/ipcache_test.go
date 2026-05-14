@@ -1,5 +1,5 @@
-// ========================== Тесты whitelist/ipcache ====================================
-//   Покрывает Task 3.3: Get (miss, hit, expiry), Set (positive/negative TTL).
+// ========================== Tests whitelist/ipcache ====================================
+//   Covers Task 3.3: Get (miss, hit, expiry), Set (positive/negative TTL).
 
 package whitelist
 
@@ -10,8 +10,8 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 )
 
-// testCacheConfig возвращает конфиг кэша с короткими TTL для тестов.
-// Короткие TTL позволяют проверять expiry без долгого sleep.
+// testCacheConfig returns a cache config with short TTLs for tests.
+// Short TTLs allow verifying expiry without long sleeps.
 func testCacheConfig() config.DNSCacheConfig {
 	return config.DNSCacheConfig{
 		PositiveTTL:   config.Duration(100 * time.Millisecond),
@@ -26,7 +26,7 @@ func TestIPCache_GetMiss_NotFound(t *testing.T) {
 	c := NewIPCache(testCacheConfig())
 	_, _, ok := c.Get("1.2.3.4")
 	if ok {
-		t.Error("Get: должен вернуть ok=false для отсутствующего IP")
+		t.Error("Get: must return ok=false for a missing IP")
 	}
 }
 
@@ -38,13 +38,13 @@ func TestIPCache_SetGet_Verified(t *testing.T) {
 
 	verified, isFakeBot, ok := c.Get("1.2.3.4")
 	if !ok {
-		t.Fatal("Get: должен вернуть ok=true после Set")
+		t.Fatal("Get: must return ok=true after Set")
 	}
 	if !verified {
-		t.Error("Get: должен вернуть verified=true")
+		t.Error("Get: must return verified=true")
 	}
 	if isFakeBot {
-		t.Error("Get: должен вернуть isFakeBot=false")
+		t.Error("Get: must return isFakeBot=false")
 	}
 }
 
@@ -54,30 +54,30 @@ func TestIPCache_SetGet_NotVerified(t *testing.T) {
 
 	verified, isFakeBot, ok := c.Get("1.2.3.4")
 	if !ok {
-		t.Fatal("Get: должен вернуть ok=true после Set")
+		t.Fatal("Get: must return ok=true after Set")
 	}
 	if verified {
-		t.Error("Get: должен вернуть verified=false")
+		t.Error("Get: must return verified=false")
 	}
 	if !isFakeBot {
-		t.Error("Get: должен вернуть isFakeBot=true")
+		t.Error("Get: must return isFakeBot=true")
 	}
 }
 
 func TestIPCache_SetGet_IPRanges(t *testing.T) {
-	// ip_ranges бот: verified=false, isFakeBot=false — "неизвестно", не штраф
+	// ip_ranges bot: verified=false, isFakeBot=false — "unknown", no penalty
 	c := NewIPCache(testCacheConfig())
 	c.Set("1.2.3.4", false, false)
 
 	verified, isFakeBot, ok := c.Get("1.2.3.4")
 	if !ok {
-		t.Fatal("Get: должен вернуть ok=true после Set")
+		t.Fatal("Get: must return ok=true after Set")
 	}
 	if verified {
-		t.Error("Get: verified=false для ip_ranges бота")
+		t.Error("Get: verified=false for ip_ranges bot")
 	}
 	if isFakeBot {
-		t.Error("Get: isFakeBot=false для ip_ranges бота — не штрафовать")
+		t.Error("Get: isFakeBot=false for ip_ranges bot — do not penalize")
 	}
 }
 
@@ -87,12 +87,12 @@ func TestIPCache_PositiveTTLExpiry(t *testing.T) {
 	c := NewIPCache(testCacheConfig())
 	c.Set("1.2.3.4", true, false)
 
-	// Ждём истечения positive TTL (100ms)
+	// Wait for positive TTL to expire (100ms)
 	time.Sleep(120 * time.Millisecond)
 
 	_, _, ok := c.Get("1.2.3.4")
 	if ok {
-		t.Error("Get: запись должна истечь после positive TTL")
+		t.Error("Get: entry must expire after positive TTL")
 	}
 }
 
@@ -100,65 +100,65 @@ func TestIPCache_NegativeTTLExpiry(t *testing.T) {
 	c := NewIPCache(testCacheConfig())
 	c.Set("1.2.3.4", false, true)
 
-	// Ждём истечения negative TTL (50ms) — он короче positive
+	// Wait for negative TTL to expire (50ms) — it is shorter than positive
 	time.Sleep(70 * time.Millisecond)
 
 	_, _, ok := c.Get("1.2.3.4")
 	if ok {
-		t.Error("Get: negative запись должна истечь раньше positive")
+		t.Error("Get: negative entry must expire before positive")
 	}
 }
 
 func TestIPCache_PositiveOutlivesNegative(t *testing.T) {
 	// positive TTL=100ms, negative TTL=50ms
-	// Проверяем что positive запись ещё жива когда negative уже истекла
+	// Verify that the positive entry is still alive when the negative one has expired
 	c := NewIPCache(testCacheConfig())
 	c.Set("pos.ip", true, false)
 	c.Set("neg.ip", false, true)
 
-	time.Sleep(70 * time.Millisecond) // negative истёк, positive ещё жив
+	time.Sleep(70 * time.Millisecond) // negative expired, positive still alive
 
 	if _, _, ok := c.Get("neg.ip"); ok {
-		t.Error("Get: negative запись должна истечь через 50ms")
+		t.Error("Get: negative entry must expire after 50ms")
 	}
 	if _, _, ok := c.Get("pos.ip"); !ok {
-		t.Error("Get: positive запись должна быть жива через 70ms (TTL=100ms)")
+		t.Error("Get: positive entry must still be alive at 70ms (TTL=100ms)")
 	}
 }
 
 // ========================== Overwrite =================================================
 
 func TestIPCache_OverwriteEntry(t *testing.T) {
-	// Set дважды для одного IP — последнее значение побеждает
+	// Set twice for the same IP — last value wins
 	c := NewIPCache(testCacheConfig())
 	c.Set("1.2.3.4", false, true)
-	c.Set("1.2.3.4", true, false) // перезаписываем
+	c.Set("1.2.3.4", true, false) // overwrite
 
 	verified, isFakeBot, ok := c.Get("1.2.3.4")
 	if !ok {
-		t.Fatal("Get: должен вернуть ok=true")
+		t.Fatal("Get: must return ok=true")
 	}
 	if !verified {
-		t.Error("Get: должен вернуть verified=true после перезаписи")
+		t.Error("Get: must return verified=true after overwrite")
 	}
 	if isFakeBot {
-		t.Error("Get: должен вернуть isFakeBot=false после перезаписи")
+		t.Error("Get: must return isFakeBot=false after overwrite")
 	}
 }
 
-// ========================== Lazy expiry удаляет запись ================================
+// ========================== Lazy expiry removes entry ================================
 
 func TestIPCache_ExpiredEntryRemoved(t *testing.T) {
-	// После Get по истёкшей записи — она должна быть удалена из map.
-	// Косвенная проверка: повторный Get должен вернуть ok=false (не старое значение).
+	// After a Get on an expired entry it must be deleted from the map.
+	// Indirect check: a second Get must return ok=false (not the stale value).
 	c := NewIPCache(testCacheConfig())
 	c.Set("1.2.3.4", true, false)
-	time.Sleep(120 * time.Millisecond) // TTL истёк
+	time.Sleep(120 * time.Millisecond) // TTL expired
 
-	_, _, ok1 := c.Get("1.2.3.4") // первый Get — удаляет истёкшую запись
-	_, _, ok2 := c.Get("1.2.3.4") // второй Get — miss (запись удалена)
+	_, _, ok1 := c.Get("1.2.3.4") // first Get — deletes the expired entry
+	_, _, ok2 := c.Get("1.2.3.4") // second Get — miss (entry deleted)
 
 	if ok1 || ok2 {
-		t.Error("Get: истёкшая запись не должна возвращаться")
+		t.Error("Get: expired entry must not be returned")
 	}
 }

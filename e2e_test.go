@@ -1,15 +1,15 @@
 //go:build e2e
 
-// ========================== E2E тест — Task 5.4 =======================================
-//   Прогоняет .reference/example.access.log через реальный pipeline без TailReader
-//   и без whitelist/DNS. Проверяет что известные вредоносные IP попадают в threat-лог
-//   и что формат строк совместим с Fail2Ban.
+// ========================== E2E test — Task 5.4 ========================================
+//   Runs .reference/example.access.log through the real pipeline without TailReader
+//   and without whitelist/DNS. Verifies that known malicious IPs appear in the threat log
+//   and that the line format is compatible with Fail2Ban.
 //
-//   Запуск: go test -run TestE2E -tags e2e -v .
+//   Run: go test -run TestE2E -tags e2e -v .
 //
-//   НЕ включён в регулярный go test ./...:
-//     whitelist/DNS не нужен — тест проверяет только детекторы;
-//     build tag e2e изолирует от CI.
+//   NOT included in regular go test ./...:
+//     whitelist/DNS is not needed — the test checks detectors only;
+//     the e2e build tag isolates it from CI.
 
 package main
 
@@ -28,43 +28,43 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 )
 
-// fail2banRE — regexp полной структуры строки threat-лога.
-// Воспроизводит failregex из deploy/fail2ban/filter.d/nginx-sentinel.conf
-// и дополнительно проверяет наличие modules= и reason= — регрессия формата видна сразу.
-// modules=\S* (не \S+): поле может быть пустым при carry-over score без новых детекторов.
+// fail2banRE — regexp matching the full structure of a threat-log line.
+// Reproduces the failregex from deploy/fail2ban/filter.d/nginx-sentinel.conf
+// and additionally checks for modules= and reason= — format regressions are caught immediately.
+// modules=\S* (not \S+): the field may be empty when score carries over with no new detectors.
 var fail2banRE = regexp.MustCompile(`(WARN|THREAT)\s+\S+\s+score=\d+\s+modules=\S*\s+reason=`)
 
 func TestE2E(t *testing.T) {
-	// ── Config: Go-дефолты, без файла конфига ─────────────────────────────────────────
-	// LoadConfig("") → os.ReadFile("") → ENOENT → возвращает defaultConfig() без ошибки.
+	// ── Config: Go defaults, no config file ──────────────────────────────────────────────
+	// LoadConfig("") → os.ReadFile("") → ENOENT → returns defaultConfig() without error.
 	cfg, err := config.LoadConfig("")
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 
-	// ── Pipeline: tracker + scorer с 7 детекторами ───────────────────────────────────
-	// logFn — no-op, чтобы не засорять вывод теста детальными логами детекторов.
+	// ── Pipeline: tracker + scorer with 7 detectors ──────────────────────────────────
+	// logFn is a no-op to avoid cluttering the test output with per-request detector logs.
 	nopLog := func(_, _, _ string) {}
 
 	tracker := state.NewTracker(cfg, nopLog)
 	sc := scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), nopLog)
 
-	// ── ThreatLogger: захватывает вывод в срез ────────────────────────────────────────
-	// В продакшне writeFn = utils.LogThreat (пишет в файл + консоль).
-	// Здесь — захват в память для проверки формата и содержимого.
+	// ── ThreatLogger: captures output into a slice ────────────────────────────────────
+	// In production writeFn = utils.LogThreat (writes to file + console).
+	// Here — captured in memory to verify format and content.
 	var threatLines []string
 	threatLogger := output.NewThreatLogger(func(ip string, score int, level string, modules []string, reason string) {
 		line := output.FormatThreatLine(ip, score, level, modules, reason)
 		threatLines = append(threatLines, line)
 	})
 
-	// ── Прогон example.access.log ─────────────────────────────────────────────────────
+	// ── Process example.access.log ───────────────────────────────────────────────────
 	logPath := ".reference/example.access.log"
 	f, err := os.Open(logPath)
 	if err != nil {
-		// Файл не в git — локальный артефакт. Пропускаем тест а не падаем,
-		// чтобы отличить отсутствие тестовых данных от логической ошибки.
-		t.Skipf("файл %s недоступен, пропуск e2e: %v", logPath, err)
+		// File is not in git — a local artefact. Skip rather than fail
+		// to distinguish missing test data from a logic error.
+		t.Skipf("file %s unavailable, skipping e2e: %v", logPath, err)
 	}
 	defer f.Close()
 
@@ -79,37 +79,37 @@ func TestE2E(t *testing.T) {
 		threatLogger.Log(entry.RealIP, score, level, modules, reason)
 	}
 	if err := scan.Err(); err != nil {
-		t.Fatalf("ошибка чтения %s: %v", logPath, err)
+		t.Fatalf("scan error reading %s: %v", logPath, err)
 	}
 
-	t.Logf("e2e: обработан %s, threat/warn записей: %d", logPath, len(threatLines))
+	t.Logf("e2e: processed %s, threat/warn entries: %d", logPath, len(threatLines))
 
-	// ── Утверждение 1: есть хотя бы один THREAT ──────────────────────────────────────
-	// 185.177.72.23 (162 запроса за 97 сек) → rate + UA(curl) → score > ban_threshold=80.
+	// ── Assertion 1: at least one THREAT entry ────────────────────────────────────────
+	// 185.177.72.23 (162 requests in 97 sec) → rate + UA(curl) → score > ban_threshold=80.
 	threatCount := countLevel(threatLines, " THREAT ")
 	if threatCount == 0 {
-		t.Errorf("ожидали >= 1 THREAT-записи, получили 0 (всего записей: %d)", len(threatLines))
+		t.Errorf("expected >= 1 THREAT entry, got 0 (total entries: %d)", len(threatLines))
 		for _, line := range threatLines {
 			t.Logf("  %s", line)
 		}
 	}
 
-	// ── Утверждение 2: все строки матчатся Fail2Ban regex ─────────────────────────────
-	// Критично: если формат не совпадает, Fail2Ban не заблокирует атакующих.
+	// ── Assertion 2: all lines match the Fail2Ban regex ──────────────────────────────
+	// Critical: if the format does not match, Fail2Ban will not block attackers.
 	for _, line := range threatLines {
 		if !fail2banRE.MatchString(line) {
-			t.Errorf("строка не матчит Fail2Ban regex %q: %s", fail2banRE, line)
+			t.Errorf("line does not match Fail2Ban regex %q: %s", fail2banRE, line)
 		}
 	}
 
-	// ── Утверждение 3: 185.177.72.23 попал под THREAT ────────────────────────────────
-	// IP известен по примеру из документации: 162 запроса за 97s с curl/8.7.1.
+	// ── Assertion 3: 185.177.72.23 was caught as THREAT ──────────────────────────────
+	// IP from documentation example: 162 requests in 97s with curl/8.7.1.
 	const knownBadIP = "185.177.72.23"
 	if !hasIPAtLevel(threatLines, knownBadIP, " THREAT ") {
-		t.Errorf("ожидали THREAT для %s (rate+UA детекторы), не нашли", knownBadIP)
+		t.Errorf("expected THREAT for %s (rate+UA detectors), not found", knownBadIP)
 		found := filterByIP(threatLines, knownBadIP)
 		if len(found) == 0 {
-			t.Logf("  %s вообще не попал в threat-лог", knownBadIP)
+			t.Logf("  %s did not appear in the threat log at all", knownBadIP)
 		} else {
 			for _, line := range found {
 				t.Logf("  %s", line)
@@ -123,7 +123,7 @@ func TestE2E(t *testing.T) {
 	)
 }
 
-// ========================== Вспомогательные функции ===================================
+// ========================== Helper functions ===========================================
 
 func countLevel(lines []string, level string) int {
 	n := 0

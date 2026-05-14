@@ -1,34 +1,34 @@
-// ========================== Детектор crawler ============================================
-//   Детекция последовательного обхода URL по числовому паттерну.
-//   Признак автоматического сканера контента.
+// ========================== Crawler detector ============================================
+//   Detects sequential URL traversal by numeric pattern.
+//   Indicator of an automated content scanner.
 //
-//   ЧТО ЗДЕСЬ:
-//     - CrawlerDetector — структура с параметрами из конфига
-//     - NewCrawlerDetector(cfg) — инициализация
-//     - Detect() — ищет числовые последовательности в RecentPaths
+//   WHAT IS HERE:
+//     - CrawlerDetector — struct with parameters from config
+//     - NewCrawlerDetector(cfg) — initialization
+//     - Detect() — searches for numeric sequences in RecentPaths
 //
-//   АЛГОРИТМ:
-//     1. Для каждого пути из RecentPaths извлечь (prefix, num) через numericSuffixRE:
+//   ALGORITHM:
+//     1. For each path in RecentPaths extract (prefix, num) via numericSuffixRE:
 //        /page/5       → prefix="/page/",  num=5
 //        /product/42   → prefix="/product/", num=42
 //        /archive/2024 → prefix="/archive/", num=2024
-//     2. Сгруппировать числа по prefix.
-//     3. Если в группе найдена последовательность из MinSequential подряд идущих
-//        целых чисел (после дедупликации и сортировки) → score += Score.
+//     2. Group numbers by prefix.
+//     3. If a group contains a sequence of MinSequential consecutive integers
+//        (after deduplication and sorting) → score += Score.
 //
-//   ПОЧЕМУ ЧИСЛОВАЯ ПОСЛЕДОВАТЕЛЬНОСТЬ:
-//     Легитимные пользователи в отличие от краулеров не обходят страницы строго
-//     последовательно. /page/1 → /page/2 → /page/3 → /page/4 → /page/5 за короткое
-//     время — это паттерн автоматизации, а не органического просмотра.
-//     MinSequential=5 снижает ложные срабатывания: пользователь редко пролистывает
-//     5+ страниц подряд в одном числовом диапазоне.
+//   WHY NUMERIC SEQUENCE:
+//     Legitimate users, unlike crawlers, do not traverse pages in strict
+//     numeric order. /page/1 → /page/2 → /page/3 → /page/4 → /page/5 in a short
+//     time is an automation pattern, not organic browsing.
+//     MinSequential=5 reduces false positives: a user rarely browses
+//     5+ pages consecutively within the same numeric range.
 //
-//   ОГРАНИЧЕНИЕ:
-//     Анализируется только последние 64 пути (кольцевой буфер pathBuf в IPState).
-//     Краулер с окном > 64 уникальных URL не детектируется — приемлемо,
-//     т.к. такой трафик поймает RateDetector.
+//   LIMITATION:
+//     Only the last 64 paths are analyzed (ring buffer pathBuf in IPState).
+//     A crawler with a window > 64 unique URLs is not detected — acceptable,
+//     since such traffic will be caught by RateDetector.
 //
-//   Реализовано: Task 6.2.
+//   Implemented: Task 6.2.
 
 package detector
 
@@ -42,34 +42,34 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 )
 
-// numericSuffixRE извлекает (prefix, digits) из URL-пути где ПОСЛЕДНИЙ сегмент — чистое число.
+// numericSuffixRE extracts (prefix, digits) from a URL path where the LAST segment is a pure number.
 //
-// Паттерн: `(.*/|/)` требует разделитель `/` непосредственно перед числом,
-// что исключает slug-числа вида `/api/v2` или `/item5`.
-// Примеры совпадений:
+// Pattern: `(.*/|/)` requires a `/` separator immediately before the number,
+// which excludes slug-numbers like `/api/v2` or `/item5`.
+// Match examples:
 //
 //	/page/5    → prefix="/page/",    num="5"
 //	/items/12  → prefix="/items/",   num="12"
 //	/5         → prefix="/",         num="5"
 //
-// Примеры несовпадений (slug-числа — не отдельный сегмент):
+// Non-match examples (slug-numbers — not a standalone segment):
 //
-//	/api/v2    → нет (v2 — не отдельный числовой сегмент)
-//	/item5     → нет (5 — суффикс slug, не отдельный сегмент)
-//	/foo       → нет (нет числовых сегментов)
+//	/api/v2    → no match (v2 is not a standalone numeric segment)
+//	/item5     → no match (5 is a slug suffix, not a standalone segment)
+//	/foo       → no match (no numeric segments)
 var numericSuffixRE = regexp.MustCompile(`^(.*/|/)(\d+)/?$`)
 
 // ========================== CrawlerDetector ===========================================
 
-// CrawlerDetector детектирует последовательный числовой обход URL.
+// CrawlerDetector detects sequential numeric URL traversal.
 type CrawlerDetector struct {
 	enabled       bool
 	minSequential int
 	score         int
 }
 
-// NewCrawlerDetector создаёт CrawlerDetector из конфига.
-// Вызывается из main.go при старте и SIGHUP.
+// NewCrawlerDetector creates a CrawlerDetector from config.
+// Called from main.go on startup and SIGHUP.
 func NewCrawlerDetector(cfg config.CrawlerConfig) *CrawlerDetector {
 	return &CrawlerDetector{
 		enabled:       cfg.Enabled,
@@ -78,13 +78,13 @@ func NewCrawlerDetector(cfg config.CrawlerConfig) *CrawlerDetector {
 	}
 }
 
-// Name возвращает идентификатор детектора.
+// Name returns the detector identifier.
 func (d *CrawlerDetector) Name() string { return "crawler" }
 
-// Detect ищет числовые последовательности в истории путей IP.
+// Detect searches for numeric sequences in the IP's path history.
 //
-// Вызывается на каждой строке лога — только при наличии достаточного
-// числа путей в RecentPaths (>= MinSequential) запускает поиск паттерна.
+// Called on every log line — the pattern search only runs when
+// RecentPaths contains enough paths (>= MinSequential).
 func (d *CrawlerDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 	if !d.enabled {
 		return DetectResult{}
@@ -95,8 +95,8 @@ func (d *CrawlerDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult
 		return DetectResult{}
 	}
 
-	// Группируем числовые суффиксы по prefix.
-	// map[prefix][]int — списки чисел для каждого URL-шаблона.
+	// Group numeric suffixes by prefix.
+	// map[prefix][]int — list of numbers for each URL template.
 	groups := make(map[string][]int, len(paths))
 	for _, p := range paths {
 		prefix, num, ok := parseNumericPath(p)
@@ -119,10 +119,10 @@ func (d *CrawlerDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult
 	return DetectResult{}
 }
 
-// ========================== Вспомогательные функции ===================================
+// ========================== Helper functions ==========================================
 
-// parseNumericPath извлекает (prefix, num) из URL-пути с числовым суффиксом.
-// Возвращает ok=false если путь не содержит числового суффикса.
+// parseNumericPath extracts (prefix, num) from a URL path with a numeric suffix.
+// Returns ok=false if the path contains no numeric suffix.
 func parseNumericPath(path string) (prefix string, num int, ok bool) {
 	m := numericSuffixRE.FindStringSubmatch(path)
 	if m == nil {
@@ -135,10 +135,10 @@ func parseNumericPath(path string) (prefix string, num int, ok bool) {
 	return m[1], n, true
 }
 
-// hasConsecutiveSequence проверяет наличие последовательности minLen подряд идущих
-// целых чисел в срезе (с дедупликацией перед проверкой).
+// hasConsecutiveSequence checks whether a slice contains a run of minLen consecutive
+// integers (with deduplication applied before the check).
 func hasConsecutiveSequence(nums []int, minLen int) bool {
-	// minLen <= 0 технически невалиден; guard защищает от паники ниже (nums[:1] на пустом срезе).
+	// minLen <= 0 is technically invalid; guard prevents panic below (nums[:1] on empty slice).
 	if len(nums) == 0 || minLen <= 0 {
 		return false
 	}
@@ -148,10 +148,10 @@ func hasConsecutiveSequence(nums []int, minLen int) bool {
 
 	sort.Ints(nums)
 
-	// Дедупликация: одинаковые числа (повторные запросы к одному URL) не считаются
-	// отдельными шагами последовательности.
-	// make вместо nums[:1]: изолируем срез от исходного массива — append в цикле
-	// не модифицирует nums за пределами uniq.
+	// Deduplication: identical numbers (repeated requests to the same URL) do not count
+	// as separate steps in the sequence.
+	// make instead of nums[:1]: isolates the slice from the original array — append in the loop
+	// does not modify nums beyond uniq.
 	uniq := make([]int, 1, len(nums))
 	uniq[0] = nums[0]
 	for _, n := range nums[1:] {
@@ -175,6 +175,6 @@ func hasConsecutiveSequence(nums []int, minLen int) bool {
 		}
 	}
 
-	// Последний прогон мог не набрать minLen в цикле (в т.ч. единственный элемент при minLen=1).
+	// The last run may not have reached minLen inside the loop (including a single element with minLen=1).
 	return consec >= minLen
 }

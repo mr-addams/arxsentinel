@@ -7,12 +7,12 @@ CFG_DIR="/etc/nginx-sentinel"
 
 case "$1" in
     purge)
-        # Удалить системного пользователя
+        # Remove system user
         if id "${SENTINEL_USER}" &>/dev/null; then
             userdel "${SENTINEL_USER}" || true
         fi
 
-        # Удалить логи и конфиг (purge — явный запрос на полную очистку)
+        # Remove logs and config (purge — explicit request for full cleanup)
         rm -rf "${LOG_DIR}"
         rm -rf "${CFG_DIR}"
 
@@ -22,7 +22,7 @@ case "$1" in
         ;;
 
     remove|upgrade)
-        # При upgrade: systemd должен перечитать обновлённый unit-файл
+        # On upgrade: systemd must re-read the updated unit file
         if command -v systemctl >/dev/null 2>&1; then
             systemctl daemon-reload || true
         fi

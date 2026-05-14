@@ -1,29 +1,30 @@
-// ========================== Детектор noasset ============================================
-//   Детекция ботов, запрашивающих HTML-страницы без загрузки статики (CSS/JS/images).
-//   Легитимный браузер всегда загружает ресурсы страницы — бот нет.
+// ========================== NoAsset detector ============================================
+//   Detects bots that request HTML pages without loading static assets (CSS/JS/images).
+//   A legitimate browser always loads page resources — a bot does not.
 //
-//   ЧТО ЗДЕСЬ:
-//     - NoAssetDetector — структура с параметрами и предкомпилированным set расширений
-//     - NewNoAssetDetector(cfg) — инициализация, построение assetExts map
-//     - Detect() — считает страницы и ассеты в RecentPaths, проверяет ratio
+//   WHAT IS HERE:
+//     - NoAssetDetector — struct with parameters and a pre-built extension set
+//     - NewNoAssetDetector(cfg) — initialization, builds the assetExts map
+//     - Detect() — counts pages and assets in RecentPaths, checks ratio
 //
-//   АЛГОРИТМ:
-//     Для каждого пути из RecentPaths определить тип:
-//       - asset: расширение входит в AssetExtensions (.css, .js, .png, ...)
-//       - page:  всё остальное (без расширения, .html, .php, .asp, ...)
-//     Если pageCount >= MinPageRequests && assetCount/total < AssetRatioThreshold → score.
+//   ALGORITHM:
+//     For each path in RecentPaths determine its type:
+//       - asset: extension is in AssetExtensions (.css, .js, .png, ...)
+//       - page:  everything else (no extension, .html, .php, .asp, ...)
+//     If pageCount >= MinPageRequests && assetCount/total < AssetRatioThreshold → score.
 //
-//   ПОЧЕМУ РАСШИРЕНИЕ, А НЕ CONTENT-TYPE:
-//     LogEntry не содержит Content-Type ответа — nginx пишет только строки запроса.
-//     Расширение пути — надёжный прокси: браузер загружает href=".css" → путь имеет .css.
-//     Исключение: SPA (React/Vue) — всё через /api/ без расширений. Детектор может дать
-//     ложный WARN для SPA-ботов. Снижение порога AssetRatioThreshold уменьшает ложный шум.
+//   WHY EXTENSION AND NOT CONTENT-TYPE:
+//     LogEntry does not contain the response Content-Type — nginx writes only request lines.
+//     Path extension is a reliable proxy: a browser loads href=".css" → path has .css.
+//     Exception: SPAs (React/Vue) — everything via /api/ without extensions. The detector may
+//     produce false positives for SPA bots. Lowering AssetRatioThreshold reduces false noise.
 //
-//   ЗАВИСИМОСТЬ ОТ ДАННЫХ:
-//     RecentPaths — кольцевой буфер последних 64 путей (state.pathBuf).
-//     При minPageRequests=3 и bufer=64 первые страницы IP уже накоплены к моменту срабатывания.
+//   DATA DEPENDENCY:
+//     RecentPaths — ring buffer of the last 64 paths (state.pathBuf).
+//     With minPageRequests=3 and buffer=64, the first pages of an IP are already
+//     accumulated by the time the detector fires.
 //
-//   Реализовано: Task 6.3.
+//   Implemented: Task 6.3.
 
 package detector
 
@@ -38,18 +39,18 @@ import (
 
 // ========================== NoAssetDetector ===========================================
 
-// NoAssetDetector детектирует ботов, не загружающих статические ресурсы страниц.
+// NoAssetDetector detects bots that do not load static page resources.
 type NoAssetDetector struct {
 	enabled             bool
 	minPageRequests     int
 	assetRatioThreshold float64
 	score               int
-	assetExts           map[string]struct{} // set расширений статических ресурсов
+	assetExts           map[string]struct{} // set of static resource extensions
 }
 
-// NewNoAssetDetector создаёт NoAssetDetector из конфига.
-// Строит assetExts map один раз — на hot path O(1) lookup вместо O(n) по slice.
-// Вызывается из main.go при старте и SIGHUP.
+// NewNoAssetDetector creates a NoAssetDetector from config.
+// Builds the assetExts map once — O(1) lookup on the hot path instead of O(n) over a slice.
+// Called from main.go on startup and SIGHUP.
 func NewNoAssetDetector(cfg config.NoAssetConfig) *NoAssetDetector {
 	exts := make(map[string]struct{}, len(cfg.AssetExtensions))
 	for _, ext := range cfg.AssetExtensions {
@@ -64,13 +65,13 @@ func NewNoAssetDetector(cfg config.NoAssetConfig) *NoAssetDetector {
 	}
 }
 
-// Name возвращает идентификатор детектора.
+// Name returns the detector identifier.
 func (d *NoAssetDetector) Name() string { return "noasset" }
 
-// Detect анализирует соотношение страниц и ассетов в истории запросов IP.
+// Detect analyzes the page-to-asset ratio in the IP request history.
 //
-// Не срабатывает если pageCount < minPageRequests — IP мог только начать обход,
-// статистика нерепрезентативна.
+// Does not trigger if pageCount < minPageRequests — the IP may have just started browsing,
+// statistics are not yet representative.
 func (d *NoAssetDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 	if !d.enabled {
 		return DetectResult{}
@@ -92,7 +93,7 @@ func (d *NoAssetDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult
 	}
 
 	total := pageCount + assetCount
-	// total > 0 гарантирован: pageCount >= minPageRequests > 0.
+	// total > 0 is guaranteed: pageCount >= minPageRequests > 0.
 	assetRatio := float64(assetCount) / float64(total)
 	if assetRatio >= d.assetRatioThreshold {
 		return DetectResult{}
@@ -106,10 +107,10 @@ func (d *NoAssetDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult
 	}
 }
 
-// isAsset возвращает true если путь заканчивается расширением статического ресурса.
-// Использует path.Ext (forward-slash семантика, не filepath.Ext) для URL-путей.
+// isAsset returns true if the path ends with a static resource extension.
+// Uses path.Ext (forward-slash semantics, not filepath.Ext) for URL paths.
 func (d *NoAssetDetector) isAsset(urlPath string) bool {
-	// Отрезаем query string если каким-то образом попал в путь (defensive)
+	// Strip query string if somehow present in the path (defensive)
 	if idx := strings.IndexByte(urlPath, '?'); idx >= 0 {
 		urlPath = urlPath[:idx]
 	}

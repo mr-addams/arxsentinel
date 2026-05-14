@@ -1,7 +1,7 @@
-// ========================== Тесты ProbeDetector =======================================
-//   Табличные тесты: exact-match, prefix-match, безобидные пути, enabled=false, пустой pathSet.
+// ========================== ProbeDetector tests =======================================
+//   Table-driven tests: exact-match, prefix-match, harmless paths, enabled=false, empty pathSet.
 //
-//   mockIPView определён в rate_test.go — общий для всех тестов пакета.
+//   mockIPView is defined in rate_test.go — shared across all package tests.
 
 package detector
 
@@ -13,7 +13,7 @@ import (
 )
 
 func TestProbeDetector(t *testing.T) {
-	// Базовый конфиг для большинства тестов: exact-paths + prefix-paths, enabled.
+	// Base config for most tests: exact-paths + prefix-paths, enabled.
 	baseCfg := config.ProbeConfig{
 		Enabled: true,
 		Score:   25,
@@ -21,7 +21,7 @@ func TestProbeDetector(t *testing.T) {
 			"/.env",
 			"/wp-config.php",
 			"/.git/config",
-			"/wp-admin/", // prefix: ловит /wp-admin/anything
+			"/wp-admin/", // prefix: catches /wp-admin/anything
 			"/actuator/", // prefix: Spring Boot actuator endpoints
 		},
 	}
@@ -34,71 +34,71 @@ func TestProbeDetector(t *testing.T) {
 	}{
 		// ── Exact-match ───────────────────────────────────────────────────────────────────
 		{
-			name:      "exact: /.env срабатывает",
+			name:      "exact: /.env triggers",
 			cfg:       baseCfg,
 			path:      "/.env",
 			wantScore: true,
 		},
 		{
-			name:      "exact: /wp-config.php срабатывает",
+			name:      "exact: /wp-config.php triggers",
 			cfg:       baseCfg,
 			path:      "/wp-config.php",
 			wantScore: true,
 		},
 		{
-			name:      "exact: /.git/config срабатывает",
+			name:      "exact: /.git/config triggers",
 			cfg:       baseCfg,
 			path:      "/.git/config",
 			wantScore: true,
 		},
 		// ── Prefix-match ──────────────────────────────────────────────────────────────────
 		{
-			name:      "prefix: /wp-admin/options.php срабатывает (prefix /wp-admin/)",
+			name:      "prefix: /wp-admin/options.php triggers (prefix /wp-admin/)",
 			cfg:       baseCfg,
 			path:      "/wp-admin/options.php",
 			wantScore: true,
 		},
 		{
-			name:      "prefix: /wp-admin/ срабатывает (точный prefix-путь)",
+			name:      "prefix: /wp-admin/ triggers (exact prefix path)",
 			cfg:       baseCfg,
 			path:      "/wp-admin/",
 			wantScore: true,
 		},
 		{
-			name:      "prefix: /actuator/env срабатывает (prefix /actuator/)",
+			name:      "prefix: /actuator/env triggers (prefix /actuator/)",
 			cfg:       baseCfg,
 			path:      "/actuator/env",
 			wantScore: true,
 		},
-		// ── Безобидные пути ───────────────────────────────────────────────────────────────
+		// ── Harmless paths ────────────────────────────────────────────────────────────────
 		{
-			name:      "безобидный: /index.html не срабатывает",
+			name:      "harmless: /index.html does not trigger",
 			cfg:       baseCfg,
 			path:      "/index.html",
 			wantScore: false,
 		},
 		{
-			name:      "безобидный: /api/users не срабатывает",
+			name:      "harmless: /api/users does not trigger",
 			cfg:       baseCfg,
 			path:      "/api/users",
 			wantScore: false,
 		},
 		{
-			name:      "безобидный: / не срабатывает",
+			name:      "harmless: / does not trigger",
 			cfg:       baseCfg,
 			path:      "/",
 			wantScore: false,
 		},
 		{
-			name:      "безобидный: /wp-config.php.bak не срабатывает (нет точного совпадения)",
+			name:      "harmless: /wp-config.php.bak does not trigger (no exact match)",
 			cfg:       baseCfg,
 			path:      "/wp-config.php.bak",
 			wantScore: false,
 		},
 		// ── enabled=false ─────────────────────────────────────────────────────────────────
-		// Детектор отключён — не должен срабатывать ни на какой путь.
+		// Detector is disabled — must not trigger on any path.
 		{
-			name: "disabled: /.env не срабатывает при enabled=false",
+			name: "disabled: /.env does not trigger when enabled=false",
 			cfg: config.ProbeConfig{
 				Enabled: false,
 				Score:   25,
@@ -108,7 +108,7 @@ func TestProbeDetector(t *testing.T) {
 			wantScore: false,
 		},
 		{
-			name: "disabled: /wp-admin/login.php не срабатывает при enabled=false",
+			name: "disabled: /wp-admin/login.php does not trigger when enabled=false",
 			cfg: config.ProbeConfig{
 				Enabled: false,
 				Score:   25,
@@ -117,10 +117,10 @@ func TestProbeDetector(t *testing.T) {
 			path:      "/wp-admin/login.php",
 			wantScore: false,
 		},
-		// ── Пустой pathSet ────────────────────────────────────────────────────────────────
-		// Пустой список путей — ни один запрос не должен срабатывать.
+		// ── Empty pathSet ─────────────────────────────────────────────────────────────────
+		// Empty path list — no request should trigger.
 		{
-			name: "пустой pathSet: /.env не срабатывает",
+			name: "empty pathSet: /.env does not trigger",
 			cfg: config.ProbeConfig{
 				Enabled: true,
 				Score:   25,
@@ -130,7 +130,7 @@ func TestProbeDetector(t *testing.T) {
 			wantScore: false,
 		},
 		{
-			name: "пустой pathSet: /api/data не срабатывает",
+			name: "empty pathSet: /api/data does not trigger",
 			cfg: config.ProbeConfig{
 				Enabled: true,
 				Score:   25,
@@ -150,18 +150,18 @@ func TestProbeDetector(t *testing.T) {
 			result := d.Detect(mv, entry)
 
 			if tt.wantScore && result.Score == 0 {
-				t.Errorf("ожидали Score > 0, получили 0 (path=%q)", tt.path)
+				t.Errorf("expected Score > 0, got 0 (path=%q)", tt.path)
 			}
 			if !tt.wantScore && result.Score != 0 {
-				t.Errorf("ожидали Score = 0, получили %d (path=%q)", result.Score, tt.path)
+				t.Errorf("expected Score = 0, got %d (path=%q)", result.Score, tt.path)
 			}
-			// При срабатывании Module и Reason должны быть заполнены
+			// When triggered, Module and Reason must be populated
 			if result.Score > 0 {
 				if result.Module != "probe" {
-					t.Errorf("Module = %q, ожидали %q", result.Module, "probe")
+					t.Errorf("Module = %q, expected %q", result.Module, "probe")
 				}
 				if result.Reason == "" {
-					t.Error("Reason пустой при Score > 0")
+					t.Error("Reason is empty when Score > 0")
 				}
 			}
 		})

@@ -1,8 +1,8 @@
-// ========================== Тесты BruteforceDetector ==================================
-//   Табличные тесты: ratio выше/ниже порога, недостаточно запросов, enabled=false,
-//   граничные значения (ровно на пороге, нулевой счётчик 404).
+// ========================== BruteforceDetector tests ==================================
+//   Table-driven tests: ratio above/below threshold, insufficient requests, enabled=false,
+//   boundary values (exactly at threshold, zero 404 counter).
 //
-//   mockIPView определён в rate_test.go — общий для всех тестов пакета.
+//   mockIPView is defined in rate_test.go — shared across all package tests.
 
 package detector
 
@@ -28,55 +28,55 @@ func TestBruteforceDetector(t *testing.T) {
 		requests404   int
 		wantScore     bool
 	}{
-		// ── Выше порога ───────────────────────────────────────────────────────────────────
+		// ── Above threshold ───────────────────────────────────────────────────────────────
 		{
-			name:          "70% 404 из 20 запросов → срабатывает",
+			name:          "70% 404 out of 20 requests → triggers",
 			cfg:           baseCfg,
 			totalRequests: 20,
 			requests404:   14, // 70% > 60%
 			wantScore:     true,
 		},
 		{
-			name:          "100% 404 из 10 запросов → срабатывает",
+			name:          "100% 404 out of 10 requests → triggers",
 			cfg:           baseCfg,
 			totalRequests: 10,
 			requests404:   10,
 			wantScore:     true,
 		},
-		// ── Ровно на пороге ───────────────────────────────────────────────────────────────
+		// ── Exactly at threshold ──────────────────────────────────────────────────────────
 		{
-			name:          "ровно 60% 404 из 100 запросов → срабатывает (>= threshold)",
+			name:          "exactly 60% 404 out of 100 requests → triggers (>= threshold)",
 			cfg:           baseCfg,
 			totalRequests: 100,
 			requests404:   60,
 			wantScore:     true,
 		},
-		// ── Ниже порога ───────────────────────────────────────────────────────────────────
+		// ── Below threshold ───────────────────────────────────────────────────────────────
 		{
-			name:          "50% 404 из 20 запросов → не срабатывает",
+			name:          "50% 404 out of 20 requests → no trigger",
 			cfg:           baseCfg,
 			totalRequests: 20,
 			requests404:   10, // 50% < 60%
 			wantScore:     false,
 		},
 		{
-			name:          "0% 404 из 50 запросов → не срабатывает",
+			name:          "0% 404 out of 50 requests → no trigger",
 			cfg:           baseCfg,
 			totalRequests: 50,
 			requests404:   0,
 			wantScore:     false,
 		},
-		// ── Недостаточно запросов ────────────────────────────────────────────────────────
-		// Guard против ложных срабатываний на малом количестве запросов.
+		// ── Insufficient requests ─────────────────────────────────────────────────────────
+		// Guard against false positives on low request counts.
 		{
-			name:          "9 запросов (< min_requests=10) → не срабатывает",
+			name:          "9 requests (< min_requests=10) → no trigger",
 			cfg:           baseCfg,
 			totalRequests: 9,
-			requests404:   9, // 100%, но меньше MinRequests
+			requests404:   9, // 100%, but below MinRequests
 			wantScore:     false,
 		},
 		{
-			name:          "0 запросов → не срабатывает",
+			name:          "0 requests → no trigger",
 			cfg:           baseCfg,
 			totalRequests: 0,
 			requests404:   0,
@@ -84,7 +84,7 @@ func TestBruteforceDetector(t *testing.T) {
 		},
 		// ── enabled=false ─────────────────────────────────────────────────────────────────
 		{
-			name: "disabled: 80% 404 не срабатывает при enabled=false",
+			name: "disabled: 80% 404 does not trigger when enabled=false",
 			cfg: config.BruteforceConfig{
 				Enabled:        false,
 				MinRequests:    10,
@@ -107,19 +107,19 @@ func TestBruteforceDetector(t *testing.T) {
 			result := d.Detect(mv, &parser.LogEntry{})
 
 			if tt.wantScore && result.Score == 0 {
-				t.Errorf("ожидали Score > 0, получили 0 (total=%d 404=%d)",
+				t.Errorf("expected Score > 0, got 0 (total=%d 404=%d)",
 					tt.totalRequests, tt.requests404)
 			}
 			if !tt.wantScore && result.Score != 0 {
-				t.Errorf("ожидали Score = 0, получили %d (total=%d 404=%d)",
+				t.Errorf("expected Score = 0, got %d (total=%d 404=%d)",
 					result.Score, tt.totalRequests, tt.requests404)
 			}
 			if result.Score > 0 {
 				if result.Module != "bruteforce" {
-					t.Errorf("Module = %q, ожидали %q", result.Module, "bruteforce")
+					t.Errorf("Module = %q, expected %q", result.Module, "bruteforce")
 				}
 				if result.Reason == "" {
-					t.Error("Reason пустой при Score > 0")
+					t.Error("Reason is empty when Score > 0")
 				}
 			}
 		})

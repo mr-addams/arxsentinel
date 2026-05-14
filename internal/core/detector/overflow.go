@@ -1,29 +1,29 @@
-// ========================== Детектор overflow ============================================
-//   Детекция попыток buffer overflow и WAF bypass:
-//   аномальная длина URL, подозрительные ключевые слова в пути/параметрах.
+// ========================== Overflow detector ============================================
+//   Detects buffer overflow attempts and WAF bypass:
+//   anomalous URL length, suspicious keywords in path/parameters.
 //
-//   ЧТО ЗДЕСЬ:
-//     - OverflowDetector — структура с параметрами и нормализованным списком ключевых слов
-//     - NewOverflowDetector(cfg) — инициализация, lowercase нормализация suspicious_params
-//     - Detect() — проверяет длину URL и наличие ключевых слов
+//   WHAT IS HERE:
+//     - OverflowDetector — struct with parameters and normalized keyword list
+//     - NewOverflowDetector(cfg) — initialization, lowercase normalization of suspicious_params
+//     - Detect() — checks URL length and keyword presence
 //
-//   АЛГОРИТМ:
-//     1. Собрать полный URL: Path + "?" + Query (если Query не пустой).
-//     2. Если len(fullURL) > MaxURLLength → buffer overflow attempt, score.
-//     3. Иначе: если fullURL содержит любой suspicious_params (case-insensitive) → WAF bypass, score.
+//   ALGORITHM:
+//     1. Build the full URL: Path + "?" + Query (if Query is not empty).
+//     2. If len(fullURL) > MaxURLLength → buffer overflow attempt, score.
+//     3. Otherwise: if fullURL contains any suspicious_params (case-insensitive) → WAF bypass, score.
 //
-//   ПОЧЕМУ ОДИН Score ДЛЯ ОБОИХ УСЛОВИЙ:
-//     Оба индикатора (длина и suspicious params) предполагают один и тот же класс угрозы —
-//     попытку обойти защиту или вызвать уязвимость. Разделять score нецелесообразно:
-//     один детектор — одно решение. Разные scores → два детектора.
+//   WHY ONE Score FOR BOTH CONDITIONS:
+//     Both indicators (length and suspicious params) imply the same threat class —
+//     an attempt to bypass protection or trigger a vulnerability. Splitting score is not useful:
+//     one detector — one decision. Different scores → two detectors.
 //
-//   ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ:
-//     strings.Contains по всему URL может дать ложные срабатывания для коротких слов ("cmd").
-//     Пример: /api/cmd/results срабатывает на "cmd". Score=30 и ban_threshold=80 означает,
-//     что нужны 3+ независимых попадания прежде чем IP получит THREAT. Приемлемый компромисс
-//     для обнаружения vs точности.
+//   KNOWN LIMITATION:
+//     strings.Contains over the entire URL may produce false positives for short words ("cmd").
+//     Example: /api/cmd/results triggers on "cmd". Score=30 and ban_threshold=80 means
+//     3+ independent hits are needed before an IP receives THREAT. Acceptable trade-off
+//     between detection recall and precision.
 //
-//   Реализовано: Task 6.4.
+//   Implemented: Task 6.4.
 
 package detector
 
@@ -37,17 +37,17 @@ import (
 
 // ========================== OverflowDetector ==========================================
 
-// OverflowDetector детектирует попытки buffer overflow и WAF bypass через URL.
+// OverflowDetector detects buffer overflow and WAF bypass attempts via URL.
 type OverflowDetector struct {
 	enabled          bool
 	maxURLLength     int
-	suspiciousParams []string // lowercase-нормализованные
+	suspiciousParams []string // lowercase-normalized
 	score            int
 }
 
-// NewOverflowDetector создаёт OverflowDetector из конфига.
-// Нормализует suspicious_params в lowercase один раз — на hot path только ToLower(URL).
-// Вызывается из main.go при старте и SIGHUP.
+// NewOverflowDetector creates an OverflowDetector from config.
+// Normalizes suspicious_params to lowercase once — hot path only needs ToLower(URL).
+// Called from main.go on startup and SIGHUP.
 func NewOverflowDetector(cfg config.OverflowConfig) *OverflowDetector {
 	params := make([]string, len(cfg.SuspiciousParams))
 	for i, p := range cfg.SuspiciousParams {
@@ -61,13 +61,13 @@ func NewOverflowDetector(cfg config.OverflowConfig) *OverflowDetector {
 	}
 }
 
-// Name возвращает идентификатор детектора.
+// Name returns the detector identifier.
 func (d *OverflowDetector) Name() string { return "overflow" }
 
-// Detect проверяет текущий запрос на overflow и WAF bypass.
+// Detect checks the current request for overflow and WAF bypass.
 //
-// Проверяется entry.Path + entry.Query — текущий запрос, не история IP.
-// Первое совпадение возвращает результат: длина имеет приоритет (вероятнее целенаправленная атака).
+// Checks entry.Path + entry.Query — the current request, not the IP history.
+// First match returns a result: length takes priority (more likely a deliberate attack).
 func (d *OverflowDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResult {
 	if !d.enabled {
 		return DetectResult{}
@@ -78,10 +78,10 @@ func (d *OverflowDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResul
 		fullURL = entry.Path + "?" + entry.Query
 	}
 
-	// ── Buffer overflow: аномальная длина URL ─────────────────────────────────────────
-	// len() считает байты, не Unicode-символы — для ASCII URL (RFC 3986) это корректно.
-	// Percent-encoded символы (%XX) увеличивают len без декодирования — атакующий
-	// не может ужать байтовую длину через encoding.
+	// ── Buffer overflow: anomalous URL length ─────────────────────────────────────────
+	// len() counts bytes, not Unicode code points — correct for ASCII URLs (RFC 3986).
+	// Percent-encoded characters (%XX) increase len without decoding — an attacker
+	// cannot shrink the byte length via encoding.
 	if len(fullURL) > d.maxURLLength {
 		return DetectResult{
 			Score:  d.score,
@@ -90,7 +90,7 @@ func (d *OverflowDetector) Detect(sv IPView, entry *parser.LogEntry) DetectResul
 		}
 	}
 
-	// ── WAF bypass: подозрительные ключевые слова ────────────────────────────────────
+	// ── WAF bypass: suspicious keywords ──────────────────────────────────────────────
 	lowerURL := strings.ToLower(fullURL)
 	for _, param := range d.suspiciousParams {
 		if strings.Contains(lowerURL, param) {
