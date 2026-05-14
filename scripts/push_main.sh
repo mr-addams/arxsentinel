@@ -26,12 +26,12 @@ git push origin dev
 
 PR_NUMBER=$(gh pr list --base main --head dev --json number -q '.[0].number' 2>/dev/null || true)
 if [ -z "$PR_NUMBER" ]; then
-  PR_NUMBER=$(gh pr create \
+  PR_URL=$(gh pr create \
     --base main \
     --head dev \
     --title "$TITLE" \
-    --body "Stable release v${VERSION} — merged from dev." \
-    --json number -q '.number')
+    --body "Stable release v${VERSION} — merged from dev.")
+  PR_NUMBER=$(basename "$PR_URL")
 fi
 
 gh pr merge "$PR_NUMBER" --merge --delete-branch=false
