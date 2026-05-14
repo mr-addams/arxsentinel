@@ -14,7 +14,7 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      # Инъекция версии из git-тега; -s -w убирают debug-символы (меньше бинарник).
+      # Injects version from git tag; -s -w strip debug symbols to reduce binary size.
       - -s -w -X main.version={{.Version}}
 
 nfpms:
@@ -34,7 +34,7 @@ nfpms:
     recommends:
       - nginx
 
-    # bindir: куда горелизер кладёт сам бинарник из секции builds
+    # bindir: installation path for the binary produced by the builds section.
     bindir: /usr/bin
 
     scripts:
@@ -43,16 +43,16 @@ nfpms:
       postremove:  packaging/scripts/postrm
 
     contents:
-      # Пример конфига — apt не перезапишет при апгрейде (type: config)
+      # type: config prevents apt from overwriting the example on upgrade.
       - src: config.yaml
         dst: /etc/nginx-sentinel/config.yaml.example
         type: config
 
-      # Systemd юнит с путём /usr/bin/ (отличается от deploy/ где /usr/local/bin/)
+      # Systemd unit uses /usr/bin/ (differs from deploy/ scripts which use /usr/local/bin/).
       - src: packaging/nginx-sentinel.service
         dst: /lib/systemd/system/nginx-sentinel.service
 
-      # Fail2Ban — конфиги помечены как config чтобы apt предлагал merge при изменениях
+      # type: config causes apt to offer a merge prompt when these files are modified locally.
       - src: deploy/fail2ban/filter.d/nginx-sentinel.conf
         dst: /etc/fail2ban/filter.d/nginx-sentinel.conf
         type: config
@@ -61,7 +61,6 @@ nfpms:
         dst: /etc/fail2ban/jail.d/nginx-sentinel.conf
         type: config
 
-      # Logrotate
       - src: deploy/logrotate/nginx-sentinel
         dst: /etc/logrotate.d/nginx-sentinel
         type: config
@@ -70,7 +69,9 @@ release:
   github:
     owner: mr-addams
     name: nginx-sentinel
-  # .deb артефакты nfpm горелизер добавляет в релиз автоматически — extra_files не нужен.
+  prerelease: auto
+  replace_existing_artifacts: true
+  # nfpm .deb artifacts are attached to the release automatically — extra_files not needed.
 
 checksum:
   name_template: "checksums.txt"

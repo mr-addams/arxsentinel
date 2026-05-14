@@ -1,23 +1,20 @@
-name: Release
+name: Dev Release
 
 on:
   push:
-    branches: [main]
+    branches: [dev]
 
-# contents:write is required to create a tag and a GitHub Release.
 permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build & publish stable release
+  dev-release:
+    name: Build & publish dev pre-release
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          # fetch-depth: 0 is required by goreleaser to read the full tag history for the changelog.
           fetch-depth: 0
 
       - name: Set up Go
@@ -33,15 +30,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Resolve stable version from last dev tag
+      - name: Calculate and create dev tag
         id: tag
         run: |
-          LAST_DEV=$(git tag --list 'v*-dev.*' --sort=-version:refname | head -1)
-          if [ -z "$LAST_DEV" ]; then
-            echo "No dev tags found — cannot determine stable version" >&2
-            exit 1
-          fi
-          TAG="${LAST_DEV%-dev.*}"
+          BASE=$(cat VERSION)
+          N=$(git tag --list "v${BASE}-dev.*" | wc -l)
+          TAG="v${BASE}-dev.$((N + 1))"
           git tag "$TAG"
           git push origin "$TAG"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
