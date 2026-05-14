@@ -1,0 +1,251 @@
+# ========================== nginx-sentinel config.yaml ================================
+#
+#   Единый источник всех поведенческих параметров.
+#   Изменения применяются по SIGHUP (Task 7.1) без перезапуска демона.
+#
+#   ВАЖНО: каждая присутствующая секция должна содержать ВСЕ поля —
+#   yaml.v3 не поддерживает partial merge (незаданные поля обнуляются).
+#   Отсутствующие секции целиком берутся из Go-дефолтов.
+#
+# ========================================================================================
+
+# ── general: пути и инфраструктура ──────────────────────────────────────────────────────
+general:
+  log_file: /var/log/nginx/access.log    # путь к nginx access.log (источник данных)
+  pid_file: /var/run/nginx-sentinel.pid  # PID-файл демона
+  # Пути к лог-файлам задаются в секции output:
+
+# ── logging: поведение логгирования ────────────────────────────────────────────────────
+logging:
+  debug: false          # true = показывать PARSER/TAIL/DEBUG теги в консоль
+  console_color: true   # false = plain text без ANSI (для pipe/journalctl)
+
+# ── parser: формат nginx лога ──────────────────────────────────────────────────────────
+parser:
+  log_format: combined  # combined + real_ip (см. nginx.conf $real_ip)
+  timezone: UTC         # часовой пояс дат в логе
+
+# ── scoring: пороги и окно накопления ──────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50       # score >= 50 → WARN (запись в threat-лог)
+  ban_threshold: 80         # score >= 80 → THREAT (Fail2Ban банит IP)
+  observation_window: "300s" # окно накопления очков (5 мин)
+  decay: "linear"           # алгоритм затухания очков к концу окна
+
+# ── state: in-memory хранилище IP ──────────────────────────────────────────────────────
+state:
+  gc_interval: "60s"     # интервал сборки мусора (удаление неактивных IP)
+  max_tracked_ips: 100000 # лимит IP в памяти (LRU eviction при превышении)
+
+# ── detectors: модули детекции ─────────────────────────────────────────────────────────
+
+detectors:
+
+  # Детектор probe: запросы к чувствительным путям (.env, .git, wp-config...)
+  # ПРИМЕЧАНИЕ: список ниже — сокращённый (основные пути для большинства инсталляций).
+  # Полный список дефолтов — в config.go:defaultProbePaths().
+  # При отсутствии секции probe: в YAML используется полный список из Go-дефолтов.
+  probe:
+    enabled: true
+    score: 25   # очки за каждый probe-запрос
+    paths:
+      # Конфиги приложений
+      - "/.env"
+      - "/.env.backup"
+      - "/.env.local"
+      - "/.env.production"
+      - "/.env.staging"
+      - "/config.yml"
+      - "/config.yaml"
+      - "/config.json"
+      - "/application.properties"
+      - "/settings.py"
+      - "/local_settings.py"
+      - "/database.yml"
+      - "/web.config"
+      # Git / VCS
+      - "/.git/config"
+      - "/.git/HEAD"
+      - "/.gitignore"
+      - "/.svn/entries"
+      - "/.hg/"
+      # Облачные credentials
+      - "/.aws/credentials"
+      - "/.docker/config.json"
+      - "/aws-exports.json"
+      # CMS: WordPress
+      - "/wp-config.php"
+      - "/wp-config.php.bak"
+      - "/wp-login.php"
+      - "/xmlrpc.php"
+      - "/wp-admin/"
+      # CMS: общие
+      - "/administrator/"
+      - "/admin/"
+      - "/phpmyadmin/"
+      - "/pma/"
+      # Backup файлы
+      - "/backup.zip"
+      - "/backup.tar.gz"
+      - "/backup.sql"
+      - "/db.dump"
+      - "/database.sql"
+      - "/dump.sql"
+      # Инфраструктура
+      - "/server-status"
+      - "/server-info"
+      - "/phpinfo.php"
+      - "/info.php"
+      - "/actuator/"
+      - "/actuator/env"
+      - "/actuator/health"
+      - "/metrics"
+      # Debug
+      - "/.debug"
+      - "/trace"
+      - "/console"
+      - "/graphql"
+      - "/graphiql"
+      - "/api/graphql"
+
+  # Детектор bruteforce: аномальная доля 404 ответов
+  bruteforce:
+    enabled: true
+    min_requests: 10      # минимум запросов для активации детектора
+    ratio_threshold: 0.6  # >= 60% ответов = 404 → срабатывание
+    score: 30
+
+  # Детектор crawler: последовательный обход URL по паттерну
+  crawler:
+    enabled: true
+    min_sequential: 5  # минимум последовательных URL (/page/1, /page/2...)
+    score: 20
+
+  # Детектор noasset: страницы без загрузки статики
+  noasset:
+    enabled: true
+    min_page_requests: 3      # минимум HTML-запросов для активации
+    asset_ratio_threshold: 0.1  # < 10% запросов к ассетам → бот без рендеринга
+    asset_extensions:
+      - ".css"
+      - ".js"
+      - ".png"
+      - ".jpg"
+      - ".jpeg"
+      - ".gif"
+      - ".svg"
+      - ".woff"
+      - ".woff2"
+      - ".ttf"
+      - ".ico"
+      - ".webp"
+    score: 20
+
+  # Детектор rate: всплеск запросов за окно
+  rate:
+    enabled: true
+    window: "60s"    # окно подсчёта запросов
+    threshold: 100   # > 100 запросов за окно → срабатывание
+    score: 25
+
+  # Детектор useragent: сигнатуры сканеров и аномалии UA
+  useragent:
+    enabled: true
+    scanner_score: 40     # Nuclei, sqlmap, Nikto, Nessus...
+    grabber_score: 20     # Scrapy, HTTrack, wget, curl, Go-http-client...
+    automation_score: 15  # python-requests, aiohttp, httpx...
+    empty_ua_score: 30    # пустой User-Agent
+
+  # Детектор overflow: аномальная длина URL / WAF bypass
+  overflow:
+    enabled: true
+    max_url_length: 2048  # URL длиннее → попытка buffer overflow
+    suspicious_params:
+      - "bypass"
+      - "shell"
+      - "cmd"
+      - "exec"
+      - "eval"
+      - "system"
+      - "passthru"
+    score: 30
+
+# ── whitelist: легитимные боты и кастомный список ──────────────────────────────────────
+whitelist:
+
+  # Легитимные поисковые боты — верифицируются через rDNS + fDNS
+  bots:
+    - name: google
+      ua_patterns: ["Googlebot", "Google-InspectionTool", "GoogleOther", "AdsBot-Google"]
+      rdns_domains: [".googlebot.com", ".google.com"]
+      verify_method: rdns_ipjson
+
+    - name: bing
+      ua_patterns: ["bingbot", "BingPreview", "msnbot", "adidxbot"]
+      rdns_domains: [".search.msn.com"]
+      verify_method: rdns
+
+    - name: yandex
+      ua_patterns: ["YandexBot", "YandexImages", "YandexMetrika", "YandexDirect"]
+      rdns_domains: [".yandex.ru", ".yandex.net", ".yandex.com"]
+      verify_method: rdns
+
+    - name: duckduckgo
+      ua_patterns: ["DuckDuckBot"]
+      rdns_domains: [".duckduckgo.com"]
+      verify_method: rdns
+
+    - name: baidu
+      ua_patterns: ["Baiduspider", "BaiduMobaider"]
+      rdns_domains: [".baidu.com", ".baidu.jp"]
+      verify_method: rdns
+
+    - name: apple
+      ua_patterns: ["Applebot"]
+      rdns_domains: [".applebot.apple.com"]
+      verify_method: rdns
+
+    - name: facebook
+      ua_patterns: ["facebookexternalhit", "Facebot"]
+      rdns_domains: []
+      verify_method: ip_ranges
+
+    - name: twitter
+      ua_patterns: ["Twitterbot"]
+      rdns_domains: []
+      verify_method: ip_ranges
+
+    - name: telegram
+      ua_patterns: ["TelegramBot"]
+      rdns_domains: []
+      verify_method: ip_ranges
+
+    - name: gptbot
+      ua_patterns: ["GPTBot"]
+      rdns_domains: [".openai.com"]
+      verify_method: rdns
+
+    - name: claudebot
+      ua_patterns: ["ClaudeBot", "Claude-Web", "anthropic-ai"]
+      rdns_domains: [".anthropic.com"]
+      verify_method: rdns
+
+  # Кастомный whitelist: добавьте свои IP, подсети, UA-паттерны
+  custom:
+    ips: []      # пример: ["10.99.99.1", "192.168.1.100"]
+    cidrs: []    # пример: ["10.99.99.0/24"]
+    ua_substrings: []  # пример: ["MyInternalMonitor"]
+
+  # DNS-кэш результатов верификации
+  dns_cache:
+    positive_ttl: "24h"    # кэш успешной верификации
+    negative_ttl: "1h"     # кэш неуспешной верификации
+    ip_list_refresh: "24h" # обновление IP-диапазонов (Facebook, Telegram...)
+
+# ── output: пути к лог-файлам ──────────────────────────────────────────────────────────
+output:
+  threat_log: ./logs/threats.log          # threat-лог для Fail2Ban (dev: локально)
+  operational_log: ./logs/sentinel.log    # operational-лог демона (dev: локально)
+  # Продакшн:
+  # threat_log: /var/log/nginx-sentinel/threats.log
+  # operational_log: /var/log/nginx-sentinel/sentinel.log

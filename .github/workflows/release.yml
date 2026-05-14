@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# contents:write is required to create a tag and a GitHub Release.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish stable release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # fetch-depth: 0 is required by goreleaser to read the full tag history for the changelog.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Resolve stable version from last dev tag
+        id: tag
+        run: |
+          LAST_DEV=$(git tag --list 'v*-dev.*' --sort=-version:refname | head -1)
+          if [ -z "$LAST_DEV" ]; then
+            echo "No dev tags found — cannot determine stable version" >&2
+            exit 1
+          fi
+          TAG="${LAST_DEV%-dev.*}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Run goreleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,53 @@
+#!/bin/bash
+set -euo pipefail
+
+SENTINEL_USER="nginx-sentinel"
+LOG_DIR="/var/log/nginx-sentinel"
+CFG_DIR="/etc/nginx-sentinel"
+CFG_EXAMPLE="${CFG_DIR}/config.yaml.example"
+CFG_FILE="${CFG_DIR}/config.yaml"
+
+case "$1" in
+    configure)
+        # Create system user if it does not exist yet
+        if ! id "${SENTINEL_USER}" &>/dev/null; then
+            useradd --system --no-create-home \
+                    --shell /usr/sbin/nologin \
+                    --comment "nginx-sentinel daemon" \
+                    "${SENTINEL_USER}"
+        fi
+
+        # Create log directory with daemon ownership
+        mkdir -p "${LOG_DIR}"
+        chown "${SENTINEL_USER}:${SENTINEL_USER}" "${LOG_DIR}"
+        chmod 750 "${LOG_DIR}"
+
+        # Copy example config if the main config is missing
+        if [ -f "${CFG_EXAMPLE}" ] && [ ! -f "${CFG_FILE}" ]; then
+            cp "${CFG_EXAMPLE}" "${CFG_FILE}"
+            chown "root:${SENTINEL_USER}" "${CFG_FILE}"
+            chmod 640 "${CFG_FILE}"
+        fi
+
+        # Guard: systemd may be absent in Docker/chroot
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl daemon-reload || true
+        fi
+
+        echo ""
+        echo "nginx-sentinel installed."
+        echo ""
+        echo "Review and edit the config if needed:"
+        echo "  ${CFG_FILE}"
+        echo ""
+        echo "Then enable and start the service:"
+        echo "  systemctl enable --now nginx-sentinel"
+        echo ""
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        # dpkg rollback scenarios — no additional actions required.
+        # dpkg restores the previous state on its own.
+        exit 0
+        ;;
+esac

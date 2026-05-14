@@ -1,0 +1,20 @@
+#!/bin/bash
+set -euo pipefail
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        if command -v systemctl >/dev/null 2>&1; then
+            if systemctl is-active --quiet nginx-sentinel 2>/dev/null; then
+                systemctl stop nginx-sentinel || true
+            fi
+            if systemctl is-enabled --quiet nginx-sentinel 2>/dev/null; then
+                systemctl disable nginx-sentinel || true
+            fi
+        fi
+        ;;
+
+    failed-upgrade)
+        # dpkg calls this variant when the new postinst failed.
+        # Recovery is performed by dpkg automatically — no additional actions needed.
+        ;;
+esac
