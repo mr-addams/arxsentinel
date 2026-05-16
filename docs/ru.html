@@ -129,6 +129,7 @@
   <div class="pipeline-box">
 <span class="g">nginx access.log</span>
   <span class="dim">→</span> <span class="b">TailReader</span> <span class="dim">(inotify · поддержка logrotate)</span>
+  <span class="dim">→</span> <span class="b">Parser</span> <span class="dim">(ngx_http_realip · CF-Connecting-IP · XFF цепочка)</span>
   <span class="dim">→</span> <span class="b">Whitelist</span> <span class="dim">(IP · CIDR · UA · DNS-верификация ботов)</span>
   <span class="dim">→</span> <span class="b">Tracker</span> <span class="dim">(состояние IP · ring buffer · счётчики rate)</span>
   <span class="dim">→</span> <span class="b">Scorer</span> <span class="dim">(7 детекторов · линейный decay)</span>
@@ -254,6 +255,11 @@
         <div class="card-icon">🔄</div>
         <h3>Горячая перезагрузка</h3>
         <p>Все изменения конфига — whitelist, очки детекторов, пороги — применяются командой <code>systemctl kill -s HUP nginx-sentinel</code>. Состояние IP и DNS-кэш сохраняются.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🌐</div>
+        <h3>Работает за Cloudflare и reverse proxy</h3>
+        <p>Когда nginx стоит за Cloudflare, CDN или балансировщиком, <code>$remote_addr</code> — это IP прокси, а не реального клиента. nginx-sentinel читает поле <code>$real_ip</code>, заполняемое <code>ngx_http_realip_module</code> (<code>CF-Connecting-IP</code> или <code>X-Forwarded-For</code>), поэтому детекторы всегда видят реального атакующего. <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md#%D0%B7%D0%B0-reverse-proxy-cloudflare">Инструкция по настройке →</a></p>
       </div>
     </div>
   </div>

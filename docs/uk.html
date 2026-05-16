@@ -129,6 +129,7 @@
   <div class="pipeline-box">
 <span class="g">nginx access.log</span>
   <span class="dim">→</span> <span class="b">TailReader</span> <span class="dim">(inotify · підтримка logrotate)</span>
+  <span class="dim">→</span> <span class="b">Parser</span> <span class="dim">(ngx_http_realip · CF-Connecting-IP · XFF ланцюжок)</span>
   <span class="dim">→</span> <span class="b">Whitelist</span> <span class="dim">(IP · CIDR · UA · DNS-верифікація ботів)</span>
   <span class="dim">→</span> <span class="b">Tracker</span> <span class="dim">(стан IP · ring buffer · лічильники rate)</span>
   <span class="dim">→</span> <span class="b">Scorer</span> <span class="dim">(7 детекторів · лінійний decay)</span>
@@ -254,6 +255,11 @@
         <div class="card-icon">🔄</div>
         <h3>Гаряче перезавантаження</h3>
         <p>Всі зміни конфігу — whitelist, очки детекторів, пороги — застосовуються командою <code>systemctl kill -s HUP nginx-sentinel</code>. Стан IP і DNS-кеш зберігаються.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🌐</div>
+        <h3>Працює за Cloudflare та reverse proxy</h3>
+        <p>Коли nginx стоїть за Cloudflare, CDN або балансувальником, <code>$remote_addr</code> — це IP проксі, а не реального клієнта. nginx-sentinel читає поле <code>$real_ip</code>, яке заповнює <code>ngx_http_realip_module</code> (<code>CF-Connecting-IP</code> або <code>X-Forwarded-For</code>), тому детектори завжди бачать реального зловмисника. <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.md#behind-a-reverse-proxy-cloudflare">Інструкція з налаштування →</a></p>
       </div>
     </div>
   </div>

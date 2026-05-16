@@ -269,6 +269,7 @@
   <div class="pipeline-box">
 <span class="g">nginx access.log</span>
   <span class="dim">→</span> <span class="b">TailReader</span> <span class="dim">(inotify · logrotate-aware)</span>
+  <span class="dim">→</span> <span class="b">Parser</span> <span class="dim">(ngx_http_realip · CF-Connecting-IP · XFF chain)</span>
   <span class="dim">→</span> <span class="b">Whitelist</span> <span class="dim">(IP · CIDR · UA · bot DNS verify)</span>
   <span class="dim">→</span> <span class="b">Tracker</span> <span class="dim">(per-IP state · ring buffer · rate counters)</span>
   <span class="dim">→</span> <span class="b">Scorer</span> <span class="dim">(7 detectors · linear decay)</span>
@@ -419,6 +420,11 @@
         <div class="card-icon">🔄</div>
         <h3>Live reload</h3>
         <p>All config changes — whitelist, detector scores, thresholds — reload with <code>systemctl kill -s HUP nginx-sentinel</code>. IP state and DNS cache are preserved.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🌐</div>
+        <h3>Works behind Cloudflare &amp; reverse proxy</h3>
+        <p>When nginx sits behind Cloudflare, a CDN, or a load balancer, <code>$remote_addr</code> is the proxy IP — not the real client. nginx-sentinel reads the <code>$real_ip</code> field set by <code>ngx_http_realip_module</code> (<code>CF-Connecting-IP</code> or <code>X-Forwarded-For</code>), so detectors always score the actual attacker. See <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.md#behind-a-reverse-proxy-cloudflare">setup guide →</a></p>
       </div>
     </div>
   </div>
