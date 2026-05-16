@@ -33,6 +33,11 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// maxLineSize — maximum accepted line length in bytes.
+// ReadString accumulates chunks until '\n' — an anomalously long URL in the nginx log
+// could force a large one-shot allocation. Lines exceeding this limit are dropped.
+const maxLineSize = 64 * 1024 // 64 KB — well above any real access.log line
+
 // ========================== TailReader ================================================
 
 // TailReader reads a file in tail -f mode, sending new lines to the lines channel.
@@ -101,7 +106,7 @@ func (t *TailReader) Run(ctx context.Context) {
 		Log("TAIL", fmt.Sprintf("failed to watch file %s: %v", t.filePath, err), "error")
 	}
 
-	reader := bufio.NewReader(f)
+	reader := bufio.NewReaderSize(f, maxLineSize)
 
 	Log("TAIL", fmt.Sprintf("watching started: %s", t.filePath), "info")
 
@@ -240,6 +245,15 @@ func (t *TailReader) readAvailableLines(reader *bufio.Reader) {
 	for {
 		line, err := reader.ReadString('\n')
 		if len(line) > 0 {
+			// Drop anomalously long lines before trimming — an oversized URL
+			// in the log is either corruption or an overflow attack; skip it.
+			if len(line) > maxLineSize {
+				Log("TAIL", fmt.Sprintf("line too long (%d bytes), dropped", len(line)), "warning")
+				if err != nil {
+					return
+				}
+				continue
+			}
 			line = strings.TrimRight(line, "\r\n")
 			if line != "" {
 				select {

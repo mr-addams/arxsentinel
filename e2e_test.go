@@ -15,7 +15,6 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -27,6 +26,10 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/core/state"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 )
+
+// e2eMaxLineBytes — scanner buffer limit matching tail.go:maxLineSize.
+// Lines longer than this in the log file cause ErrTooLong → test fails via scan.Err().
+const e2eMaxLineBytes = 64 * 1024
 
 // fail2banRE — regexp matching the full structure of a threat-log line.
 // Reproduces the failregex from deploy/fail2ban/filter.d/nginx-sentinel.conf
@@ -69,6 +72,7 @@ func TestE2E(t *testing.T) {
 	defer f.Close()
 
 	scan := bufio.NewScanner(f)
+	scan.Buffer(make([]byte, e2eMaxLineBytes), e2eMaxLineBytes)
 	for scan.Scan() {
 		entry, ok := parser.Parse(scan.Text())
 		if !ok {
@@ -123,6 +127,80 @@ func TestE2E(t *testing.T) {
 	)
 }
 
+// TestE2ESynthetic runs the synthetic testdata/synthetic.access.log through the pipeline.
+// Unlike TestE2E this file is committed to git — the test always runs in CI with -tags e2e.
+//
+// Attacker IP 10.0.0.1: sqlmap UA + probe paths → THREAT after 2nd request.
+// Legitimate IP 10.0.0.2: normal browser UA + 200 responses → no threat log entries.
+func TestE2ESynthetic(t *testing.T) {
+	cfg, err := config.LoadConfig("")
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	nopLog := func(_, _, _ string) {}
+	tracker := state.NewTracker(cfg, nopLog)
+	sc := scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), nopLog)
+
+	var threatLines []string
+	threatLogger := output.NewThreatLogger(func(ip string, score int, level string, modules []string, reason string) {
+		line := output.FormatThreatLine(ip, score, level, modules, reason)
+		threatLines = append(threatLines, line)
+	})
+
+	logPath := "testdata/synthetic.access.log"
+	f, err := os.Open(logPath)
+	if err != nil {
+		t.Fatalf("cannot open %s: %v", logPath, err)
+	}
+	defer f.Close()
+
+	scan := bufio.NewScanner(f)
+	scan.Buffer(make([]byte, e2eMaxLineBytes), e2eMaxLineBytes)
+	for scan.Scan() {
+		entry, ok := parser.Parse(scan.Text())
+		if !ok {
+			continue
+		}
+		ipState := tracker.Update(entry)
+		level, score, modules, reason := sc.Evaluate(ipState, entry)
+		threatLogger.Log(entry.RealIP, score, level, modules, reason)
+	}
+	if err := scan.Err(); err != nil {
+		t.Fatalf("scan error: %v", err)
+	}
+
+	// ── Assertion 1: 10.0.0.1 must be caught as THREAT ───────────────────────────────
+	const attackerIP = "10.0.0.1"
+	if !hasIPAtLevel(threatLines, attackerIP, " THREAT ") {
+		t.Errorf("expected THREAT for %s (sqlmap UA + probe paths), not found", attackerIP)
+		for _, line := range filterByIP(threatLines, attackerIP) {
+			t.Logf("  %s", line)
+		}
+	}
+
+	// ── Assertion 2: 10.0.0.2 must not appear in threat log ──────────────────────────
+	const legitimateIP = "10.0.0.2"
+	if found := filterByIP(threatLines, legitimateIP); len(found) > 0 {
+		t.Errorf("false positive: legitimate IP %s appeared in threat log", legitimateIP)
+		for _, line := range found {
+			t.Logf("  %s", line)
+		}
+	}
+
+	// ── Assertion 3: all threat lines match Fail2Ban failregex ───────────────────────
+	for _, line := range threatLines {
+		if !fail2banRE.MatchString(line) {
+			t.Errorf("line does not match Fail2Ban regex %q: %s", fail2banRE, line)
+		}
+	}
+
+	t.Logf("synthetic e2e: THREAT=%d, WARN=%d",
+		countLevel(threatLines, " THREAT "),
+		countLevel(threatLines, " WARN "),
+	)
+}
+
 // ========================== Helper functions ===========================================
 
 func countLevel(lines []string, level string) int {
@@ -136,9 +214,10 @@ func countLevel(lines []string, level string) int {
 }
 
 func hasIPAtLevel(lines []string, ip, level string) bool {
-	target := fmt.Sprintf("%s %s score=", level[1:len(level)-1], ip) // "THREAT 1.2.3.4 score="
+	levelClean := strings.TrimSpace(level)
 	for _, line := range lines {
-		if strings.Contains(line, target) {
+		// Check IP and level independently — does not depend on field order in FormatThreatLine.
+		if strings.Contains(line, " "+ip+" ") && strings.Contains(line, " "+levelClean+" ") {
 			return true
 		}
 	}

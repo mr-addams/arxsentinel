@@ -44,6 +44,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -68,6 +69,19 @@ var (
 	processedCount atomic.Int64
 	threatCount    atomic.Int64
 )
+
+// PipelineContext holds long-lived dependencies shared by processLine.
+// Recreated on SIGHUP reload: Scorer and Matcher are replaced, Tracker and
+// Verifier survive. FakeBotScore and DNSVerifyTimeout reflect the current config.
+type PipelineContext struct {
+	Tracker          *state.Tracker
+	Scorer           *scorer.Scorer
+	ThreatLogger     *output.ThreatLogger
+	Matcher          *whitelist.Matcher
+	Verifier         *whitelist.Verifier
+	FakeBotScore     int
+	DNSVerifyTimeout time.Duration
+}
 
 // configPath — default path to the config file.
 // Absolute path: when launched via systemd with WorkingDirectory=/, a relative "./config.yaml"
@@ -146,6 +160,16 @@ func main() {
 		utils.LogThreat(ip, score, level, modules, reason)
 	})
 
+	pipe := &PipelineContext{
+		Tracker:          tracker,
+		Scorer:           sc,
+		ThreatLogger:     threatLogger,
+		Matcher:          matcher,
+		Verifier:         verifier,
+		FakeBotScore:     cfg.Whitelist.FakeBotScore,
+		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
+	}
+
 	// ── Context + shutdown ────────────────────────────────────────────────────────────
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
@@ -163,6 +187,12 @@ func main() {
 		for {
 			select {
 			case <-ctx.Done():
+				// Явно останавливаем notify и дренируем канал, чтобы signal.Notify
+				// не заблокировался на записи в полный буфер при race с завершением.
+				signal.Stop(sigHUP)
+				for len(sigHUP) > 0 {
+					<-sigHUP
+				}
 				return
 			case <-sigHUP:
 				select {
@@ -228,7 +258,7 @@ func main() {
 				if !ok {
 					break drainLoop
 				}
-				processLine(context.Background(), line, tracker, sc, threatLogger, matcher, verifier, cfg.Whitelist.FakeBotScore, time.Duration(cfg.Whitelist.DNSVerifyTimeout))
+				processLine(context.Background(), line, pipe)
 			}
 			utils.Log("SHUTDOWN", "done", "info")
 			return
@@ -253,8 +283,15 @@ func main() {
 			// Changes to dns_cache.positive_ttl/negative_ttl take effect only on restart.
 			cfg = newCfg
 			tracker.Reconfigure(cfg)
-			sc = scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log)
-			matcher = newMatcher
+			pipe = &PipelineContext{
+				Tracker:          tracker,
+				Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log),
+				ThreatLogger:     threatLogger,
+				Matcher:          newMatcher,
+				Verifier:         verifier,
+				FakeBotScore:     cfg.Whitelist.FakeBotScore,
+				DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
+			}
 			if err := utils.Reload(cfg.Logging.Debug, cfg.Logging.ConsoleColor,
 				cfg.Output.OperationalLog, cfg.Output.ThreatLog); err != nil {
 				utils.Log("CONFIG", "SIGHUP: logger reload error: "+err.Error(), "warn")
@@ -266,67 +303,89 @@ func main() {
 				utils.Log("SHUTDOWN", "channel closed, exiting", "info")
 				return
 			}
-			processLine(ctx, line, tracker, sc, threatLogger, matcher, verifier, cfg.Whitelist.FakeBotScore, time.Duration(cfg.Whitelist.DNSVerifyTimeout))
+			processLine(ctx, line, pipe)
 		}
 	}
 }
 
+// detectorFactories — registry of all available detectors.
+// Each factory returns nil when the detector is disabled in config.
+// To add a new detector: append one entry here + write a newXxxDetector function below.
+var detectorFactories = []func(config.Config) detector.Detector{
+	newProbeDetector,
+	newRateDetector,
+	newUADetector,
+	newBruteforceDetector,
+	newCrawlerDetector,
+	newNoAssetDetector,
+	newOverflowDetector,
+}
+
 // buildDetectors assembles the list of active detectors from config.
-//
-// Only enabled detectors (Enabled=true) are added to the list.
-// Flow #4 MVP: probe, rate, ua.
-// Flow #6: bruteforce, crawler, noasset, overflow.
+// Iterates detectorFactories; nil returns (disabled) are filtered out.
 func buildDetectors(cfg config.Config) []detector.Detector {
 	var detectors []detector.Detector
-
-	// Probe: requests to .env, .git, wp-config, etc. — Task 4.1
-	if cfg.Detectors.Probe.Enabled {
-		detectors = append(detectors, detector.NewProbeDetector(cfg.Detectors.Probe))
+	var names []string
+	for _, f := range detectorFactories {
+		if d := f(cfg); d != nil {
+			detectors = append(detectors, d)
+			names = append(names, d.Name())
+		}
 	}
-
-	// Rate: request spike within a window — Task 4.2
-	if cfg.Detectors.Rate.Enabled {
-		detectors = append(detectors, detector.NewRateDetector(cfg.Detectors.Rate))
-	}
-
-	// UserAgent: scanners, grabbers, automation, empty UA — Task 4.3
-	if cfg.Detectors.UserAgent.Enabled {
-		detectors = append(detectors, detector.NewUADetector(cfg.Detectors.UserAgent))
-	}
-
-	// Bruteforce: abnormal % of 404s — Task 6.1
-	if cfg.Detectors.Bruteforce.Enabled {
-		detectors = append(detectors, detector.NewBruteforceDetector(cfg.Detectors.Bruteforce))
-	}
-
-	// Crawler: sequential numeric URL enumeration — Task 6.2
-	if cfg.Detectors.Crawler.Enabled {
-		detectors = append(detectors, detector.NewCrawlerDetector(cfg.Detectors.Crawler))
-	}
-
-	// NoAsset: pages with no static assets — Task 6.3
-	if cfg.Detectors.NoAsset.Enabled {
-		detectors = append(detectors, detector.NewNoAssetDetector(cfg.Detectors.NoAsset))
-	}
-
-	// Overflow: abnormal URL length / WAF bypass — Task 6.4
-	if cfg.Detectors.Overflow.Enabled {
-		detectors = append(detectors, detector.NewOverflowDetector(cfg.Detectors.Overflow))
-	}
-
-	utils.Log("CONFIG", fmt.Sprintf(
-		"detectors: %d active (probe=%v rate=%v ua=%v bruteforce=%v crawler=%v noasset=%v overflow=%v)",
-		len(detectors),
-		cfg.Detectors.Probe.Enabled,
-		cfg.Detectors.Rate.Enabled,
-		cfg.Detectors.UserAgent.Enabled,
-		cfg.Detectors.Bruteforce.Enabled,
-		cfg.Detectors.Crawler.Enabled,
-		cfg.Detectors.NoAsset.Enabled,
-		cfg.Detectors.Overflow.Enabled,
-	), "info")
-
+	utils.Log("CONFIG", fmt.Sprintf("detectors: %d active (%s)",
+		len(detectors), strings.Join(names, " ")), "info")
 	return detectors
+}
+
+// ── Detector factories ─────────────────────────────────────────────────────────────────
+
+func newProbeDetector(cfg config.Config) detector.Detector {
+	if !cfg.Detectors.Probe.Enabled {
+		return nil
+	}
+	return detector.NewProbeDetector(cfg.Detectors.Probe)
+}
+
+func newRateDetector(cfg config.Config) detector.Detector {
+	if !cfg.Detectors.Rate.Enabled {
+		return nil
+	}
+	return detector.NewRateDetector(cfg.Detectors.Rate)
+}
+
+func newUADetector(cfg config.Config) detector.Detector {
+	if !cfg.Detectors.UserAgent.Enabled {
+		return nil
+	}
+	return detector.NewUADetector(cfg.Detectors.UserAgent)
+}
+
+func newBruteforceDetector(cfg config.Config) detector.Detector {
+	if !cfg.Detectors.Bruteforce.Enabled {
+		return nil
+	}
+	return detector.NewBruteforceDetector(cfg.Detectors.Bruteforce)
+}
+
+func newCrawlerDetector(cfg config.Config) detector.Detector {
+	if !cfg.Detectors.Crawler.Enabled {
+		return nil
+	}
+	return detector.NewCrawlerDetector(cfg.Detectors.Crawler)
+}
+
+func newNoAssetDetector(cfg config.Config) detector.Detector {
+	if !cfg.Detectors.NoAsset.Enabled {
+		return nil
+	}
+	return detector.NewNoAssetDetector(cfg.Detectors.NoAsset)
+}
+
+func newOverflowDetector(cfg config.Config) detector.Detector {
+	if !cfg.Detectors.Overflow.Enabled {
+		return nil
+	}
+	return detector.NewOverflowDetector(cfg.Detectors.Overflow)
 }
 
 // ========================== PID file ====================================================
@@ -363,17 +422,7 @@ func removePID(path string) {
 // Maximum wait is bounded by dnsVerifyTimeout (config whitelist.dns_verify_timeout, default 2s). On timeout → isFakeBot=true.
 //
 // Change (Flow #4, Task 4.0): added whitelist integration and fake bot penalty.
-func processLine(
-	ctx context.Context,
-	line string,
-	tracker *state.Tracker,
-	sc *scorer.Scorer,
-	threatLogger *output.ThreatLogger,
-	matcher *whitelist.Matcher,
-	verifier *whitelist.Verifier,
-	fakeBotScore int,
-	dnsVerifyTimeout time.Duration,
-) {
+func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 	entry, ok := parser.Parse(line)
 	if !ok {
 		utils.Log("PARSER", fmt.Sprintf("skipping malformed line: %.80s", line), "debug")
@@ -389,7 +438,7 @@ func processLine(
 	// ── Step 1: custom whitelist early-exit ──────────────────────────────────────────
 	// Custom whitelist is checked before tracker.Update — whitelisted traffic does not
 	// enter state, reducing GC load and not skewing detector statistics.
-	if matcher.IsWhitelistedIP(entry.RealIP) || matcher.IsWhitelistedUA(entry.UserAgent) {
+	if pipe.Matcher.IsWhitelistedIP(entry.RealIP) || pipe.Matcher.IsWhitelistedUA(entry.UserAgent) {
 		utils.Log("WHITELIST", "skipping via custom whitelist: "+entry.RealIP, "debug")
 		return
 	}
@@ -399,9 +448,9 @@ func processLine(
 	// DNS request is only made on the first occurrence of a new IP with a bot UA.
 	// verifyCtx with timeout: limits pipeline blocking (see KNOWN LIMITATION above).
 	isFakeBot := false
-	if _, botCfg, matched := matcher.MatchBot(entry.UserAgent); matched {
-		verifyCtx, cancelVerify := context.WithTimeout(ctx, dnsVerifyTimeout)
-		verified, fake := verifier.Verify(verifyCtx, entry.RealIP, botCfg)
+	if _, botCfg, matched := pipe.Matcher.MatchBot(entry.UserAgent); matched {
+		verifyCtx, cancelVerify := context.WithTimeout(ctx, pipe.DNSVerifyTimeout)
+		verified, fake := pipe.Verifier.Verify(verifyCtx, entry.RealIP, botCfg)
 		cancelVerify()
 		if verified {
 			// Legitimate bot confirmed via rDNS/fDNS — do not track, do not score
@@ -413,7 +462,7 @@ func processLine(
 
 	// ── Step 4: IP state tracking ─────────────────────────────────────────────────────
 	// Called after whitelist checks — only suspicious IPs enter state.
-	ipState := tracker.Update(entry)
+	ipState := pipe.Tracker.Update(entry)
 
 	// ── Step 4b: fake bot penalty ─────────────────────────────────────────────────────
 	// FakeBotScore is added to the accumulated score BEFORE Evaluate.
@@ -426,15 +475,15 @@ func processLine(
 	// Alternative — manually decay prev before SetScore — duplicates scorer.applyDecay logic
 	// and requires passing window into processLine. Deferred to Task 7.x (scorer refactor).
 	if isFakeBot {
-		ipState.SetScore(ipState.GetScore()+fakeBotScore, time.Now())
-		utils.Log("WHITELIST", fmt.Sprintf("fake bot %s +%d (fake bot score)", entry.RealIP, fakeBotScore), "warn")
+		ipState.SetScore(ipState.GetScore()+pipe.FakeBotScore, time.Now())
+		utils.Log("WHITELIST", fmt.Sprintf("fake bot %s +%d (fake bot score)", entry.RealIP, pipe.FakeBotScore), "warn")
 	}
 
 	// ── Scoring → threat log ──────────────────────────────────────────────────────────
 	// Evaluate: decay accumulated score + run detectors + issue verdict.
 	// Returned *IPState implements detector.ScoreAccess.
-	level, score, modules, reason := sc.Evaluate(ipState, entry)
+	level, score, modules, reason := pipe.Scorer.Evaluate(ipState, entry)
 
 	// Write to threat log only on WARN or THREAT
-	threatLogger.Log(entry.RealIP, score, level, modules, reason)
+	pipe.ThreatLogger.Log(entry.RealIP, score, level, modules, reason)
 }

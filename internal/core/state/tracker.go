@@ -72,6 +72,12 @@ type IPState struct {
 	pathPos  int
 	pathFull bool
 
+	// pathCache caches the result of RecentPaths() to avoid make+copy on every detector call.
+	// pathDirty is set to true in Update() after writing to pathBuf; cleared in RecentPaths().
+	// Safe without locks: pipeline is single-threaded, Update() and RecentPaths() never interleave.
+	pathCache []string
+	pathDirty bool
+
 	// ── Sliding window rate counters ──────────────────────────────────────────────────
 	// Two counters for the sliding window: avoids storing N thousands of timestamps.
 	// Formula: approxRate = (prevCount*(1-elapsed/window) + currCount) / window.
@@ -97,18 +103,26 @@ func (s *IPState) GetTotalRequests() int   { return s.TotalRequests }
 func (s *IPState) GetRequests404() int     { return s.Requests404 }
 
 // RecentPaths returns the most recent paths in chronological order (oldest → newest).
-// Returns a copy — safe to read after receiving from Tracker without locking.
+// The returned slice is owned by IPState — safe to read within a single pipeline tick
+// (between two consecutive Update() calls). Pipeline is single-threaded, so Update()
+// and RecentPaths() never interleave, and pathCache is not invalidated mid-read.
 func (s *IPState) RecentPaths() []string {
-	if !s.pathFull {
-		// Buffer not full — only the first pathPos elements are valid
-		result := make([]string, s.pathPos)
-		copy(result, s.pathBuf[:s.pathPos])
-		return result
+	if !s.pathDirty {
+		return s.pathCache
 	}
-	// Buffer full: pathPos points to the oldest element (next to be overwritten)
-	result := make([]string, pathBufSize)
-	n := copy(result, s.pathBuf[s.pathPos:])
-	copy(result[n:], s.pathBuf[:s.pathPos])
+	// Rebuild cache from ring buffer
+	var result []string
+	if !s.pathFull {
+		result = make([]string, s.pathPos)
+		copy(result, s.pathBuf[:s.pathPos])
+	} else {
+		// Buffer full: pathPos points to the oldest element (next to be overwritten)
+		result = make([]string, pathBufSize)
+		n := copy(result, s.pathBuf[s.pathPos:])
+		copy(result[n:], s.pathBuf[:s.pathPos])
+	}
+	s.pathCache = result
+	s.pathDirty = false
 	return result
 }
 
@@ -250,6 +264,7 @@ func (t *Tracker) Update(entry *parser.LogEntry) *IPState {
 		// pathPos wrapped to 0 — buffer filled for the first time
 		st.pathFull = true
 	}
+	st.pathDirty = true
 
 	// ── Sliding window rate counter ───────────────────────────────────────────────────
 	t.updateRateLocked(st, entry.Time)

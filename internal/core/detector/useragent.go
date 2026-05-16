@@ -39,20 +39,20 @@ import (
 // scannerPatterns — active scanning and exploitation tools.
 // strings.Contains: UA often includes version ("Nuclei/2.9.4") — exact match is insufficient.
 var scannerPatterns = []string{
-	"Nuclei", "sqlmap", "nikto", "Nikto",
-	"nmap", "masscan", "zgrab", "ZGrab",
-	"dirbuster", "DirBuster", "gobuster", "feroxbuster",
-	"wfuzz", "WFuzz", "ffuf", "FFUF",
-	"hydra", "Hydra", "medusa", "Medusa",
+	"nuclei", "sqlmap", "nikto",
+	"nmap", "masscan", "zgrab",
+	"dirbuster", "gobuster", "feroxbuster",
+	"wfuzz", "ffuf",
+	"hydra", "medusa",
 	"nessus", "openvas", "acunetix", "w3af",
-	"havij", "burpsuite", "BurpSuite",
+	"havij", "burpsuite",
 }
 
 // grabberPatterns — content crawlers and downloaders.
 // curl/ and wget/ with "/" to avoid blocking UAs like "Recursive wget protection".
 var grabberPatterns = []string{
 	"Wget/", "curl/", "python-requests", "libwww-perl",
-	"scrapy", "Scrapy", "HTTrack", "WebCopier",
+	"scrapy", "HTTrack", "WebCopier",
 	"SiteSnagger", "WebReaper", "Teleport Pro",
 }
 
