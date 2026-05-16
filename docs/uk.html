@@ -198,8 +198,18 @@
 <section id="install">
   <div class="container">
     <div class="section-label">Встановлення</div>
-    <h2>Одна команда для встановлення</h2>
-    <p class="section-sub">Завантажте пакет для свого дистрибутива зі сторінки <a href="https://github.com/mr-addams/nginx-sentinel/releases">Releases</a>. Пакет встановлює бінарник, systemd unit, Fail2Ban filter/jail, logrotate та створює системного користувача <code>nginx-sentinel</code>.</p>
+    <h2>Встановлення в 3 кроки</h2>
+    <p class="section-sub">Пакет робить все сам: бінарник, systemd unit, Fail2Ban filter/jail, logrotate та системного користувача <code>nginx-sentinel</code>.</p>
+
+    <div style="margin-bottom: 32px;">
+      <p style="font-size:14px; color:var(--muted); margin-bottom:10px;">
+        <strong style="color:var(--green);">Швидке встановлення</strong> — автоматично визначає OS та архітектуру:
+      </p>
+<pre><span class="g">curl</span> -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | <span class="g">sudo bash</span></pre>
+      <p style="font-size:12px; color:var(--muted); margin-top:10px;">Підтримує Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux · amd64 та arm64</p>
+    </div>
+
+    <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">Або встановіть вручну через менеджер пакетів:</p>
     <div class="tabs">
       <div class="tab active" onclick="showTab('deb')">Debian / Ubuntu</div>
       <div class="tab" onclick="showTab('rpm')">Fedora / RHEL</div>

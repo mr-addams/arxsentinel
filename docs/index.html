@@ -364,6 +364,15 @@
     <h2>Install in 3 steps</h2>
     <p class="section-sub">The package handles everything: binary, systemd unit, Fail2Ban filter/jail, logrotate config, and the <code>nginx-sentinel</code> system user.</p>
 
+    <div style="margin-bottom: 32px;">
+      <p style="font-size:14px; color:var(--muted); margin-bottom:10px;">
+        <strong style="color:var(--green);">Quick install</strong> — auto-detects your OS and architecture:
+      </p>
+<pre><span class="g">curl</span> -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | <span class="g">sudo bash</span></pre>
+      <p style="font-size:12px; color:var(--muted); margin-top:10px;">Supports Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux · amd64 and arm64</p>
+    </div>
+
+    <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">Or install manually using your package manager:</p>
     <div class="tabs">
       <div class="tab active" onclick="showTab('deb')">Debian / Ubuntu</div>
       <div class="tab" onclick="showTab('rpm')">Fedora / RHEL</div>
