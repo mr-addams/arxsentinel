@@ -1,8 +1,8 @@
 # nginx-sentinel
 
-[![Release](https://img.shields.io/github/v/release/mr-addams/nginx-sentinel?include_prereleases&label=release)](https://github.com/mr-addams/nginx-sentinel/releases)
-[![Build](https://github.com/mr-addams/nginx-sentinel/actions/workflows/release.yml/badge.svg)](https://github.com/mr-addams/nginx-sentinel/actions/workflows/release.yml)
-[![License](https://img.shields.io/github/license/mr-addams/nginx-sentinel)](LICENSE)
+[![Release](https://img.shields.io/badge/release-v0.1.3-blue)](https://github.com/mr-addams/nginx-sentinel/releases)
+[![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/mr-addams/nginx-sentinel/actions/workflows/release.yml)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/nginx-sentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/nginx-sentinel/releases)
