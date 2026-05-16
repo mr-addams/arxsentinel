@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>nginx-sentinel — Real-time nginx threat detection for Linux</title>
+  <meta name="description" content="nginx-sentinel analyzes nginx access.log in real time, detects scanners, brute-force and crawlers via 7 detectors, and automatically bans attackers via Fail2Ban. Packages for Debian, Ubuntu, Fedora, RHEL, Arch Linux.">
+  <meta name="keywords" content="nginx security, fail2ban, intrusion detection, nginx log analyzer, brute force protection, linux security, ids, web security">
+  <meta property="og:title" content="nginx-sentinel — Real-time nginx threat detection">
+  <meta property="og:description" content="7 detectors. Automatic Fail2Ban integration. Packages for deb, rpm, pacman. Written in Go.">
+  <meta property="og:url" content="https://mr-addams.github.io/nginx-sentinel/">
+  <meta property="og:type" content="website">
+  <link rel="canonical" href="https://mr-addams.github.io/nginx-sentinel/">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --bg2:      #161b22;
+      --bg3:      #21262d;
+      --border:   #30363d;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --green:    #3fb950;
+      --green-dim:#1a4327;
+      --blue:     #58a6ff;
+      --red:      #f85149;
+      --orange:   #d29922;
+      --radius:   8px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Nav ─────────────────────────────────────────────── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,17,23,.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 56px;
+    }
+    .nav-brand {
+      font-weight: 700; font-size: 18px; color: var(--text);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .nav-brand svg { color: var(--green); }
+    .nav-links { display: flex; gap: 24px; align-items: center; }
+    .nav-links a { color: var(--muted); font-size: 14px; }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+    .btn-gh {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text) !important; padding: 6px 14px;
+      border-radius: var(--radius); font-size: 14px; font-weight: 500;
+      transition: background .15s;
+    }
+    .btn-gh:hover { background: var(--border); text-decoration: none !important; }
+
+    /* ── Hero ────────────────────────────────────────────── */
+    .hero {
+      text-align: center;
+      padding: 96px 24px 72px;
+      max-width: 800px; margin: 0 auto;
+    }
+    .hero-badge {
+      display: inline-block;
+      background: var(--green-dim); color: var(--green);
+      border: 1px solid var(--green); border-radius: 20px;
+      font-size: 12px; font-weight: 600; padding: 3px 12px;
+      letter-spacing: .04em; text-transform: uppercase; margin-bottom: 24px;
+    }
+    h1 {
+      font-size: clamp(36px, 6vw, 56px);
+      font-weight: 800; line-height: 1.15;
+      letter-spacing: -.02em; margin-bottom: 20px;
+    }
+    h1 span { color: var(--green); }
+    .hero p {
+      font-size: 18px; color: var(--muted);
+      max-width: 600px; margin: 0 auto 36px;
+    }
+    .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn-primary {
+      background: var(--green); color: #000 !important;
+      font-weight: 700; padding: 12px 28px;
+      border-radius: var(--radius); font-size: 15px;
+      transition: opacity .15s;
+    }
+    .btn-primary:hover { opacity: .85; text-decoration: none !important; }
+    .btn-secondary {
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text) !important; padding: 12px 28px;
+      border-radius: var(--radius); font-size: 15px;
+      transition: background .15s;
+    }
+    .btn-secondary:hover { background: var(--border); text-decoration: none !important; }
+
+    /* ── Pipeline ────────────────────────────────────────── */
+    .pipeline {
+      margin: 0 auto 80px;
+      max-width: 860px; padding: 0 24px;
+    }
+    .pipeline-box {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px 28px;
+      font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 13px; overflow-x: auto; white-space: nowrap;
+    }
+    .pipeline-box .dim { color: var(--muted); }
+    .pipeline-box .g { color: var(--green); }
+    .pipeline-box .b { color: var(--blue); }
+    .pipeline-box .r { color: var(--red); }
+    .pipeline-box .o { color: var(--orange); }
+
+    /* ── Section ─────────────────────────────────────────── */
+    section { padding: 64px 24px; }
+    .container { max-width: 1060px; margin: 0 auto; }
+    .section-label {
+      font-size: 12px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .08em; color: var(--green); margin-bottom: 12px;
+    }
+    h2 { font-size: 28px; font-weight: 700; margin-bottom: 12px; }
+    .section-sub { color: var(--muted); font-size: 16px; margin-bottom: 40px; }
+
+    /* ── Detectors grid ──────────────────────────────────── */
+    .detectors { background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 22px;
+      transition: border-color .15s;
+    }
+    .card:hover { border-color: var(--green); }
+    .card-icon { font-size: 22px; margin-bottom: 10px; }
+    .card h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+    .card p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .card-score {
+      display: inline-block; margin-top: 10px;
+      font-size: 11px; font-weight: 600;
+      background: var(--green-dim); color: var(--green);
+      border-radius: 4px; padding: 2px 8px;
+    }
+
+    /* ── Install ─────────────────────────────────────────── */
+    .tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+    .tab {
+      padding: 7px 16px; border-radius: 6px; font-size: 14px;
+      font-weight: 500; cursor: pointer; border: 1px solid var(--border);
+      background: var(--bg2); color: var(--muted);
+      transition: all .15s;
+    }
+    .tab.active { background: var(--green); color: #000; border-color: var(--green); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    pre {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 22px;
+      font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 13px; overflow-x: auto; line-height: 1.7;
+    }
+    pre .c { color: var(--muted); }
+    pre .g { color: var(--green); }
+    pre .b { color: var(--blue); }
+
+    /* ── Stats bar ───────────────────────────────────────── */
+    .stats { text-align: center; }
+    .stats-grid {
+      display: flex; justify-content: center; gap: 48px; flex-wrap: wrap;
+    }
+    .stat-item { }
+    .stat-num {
+      font-size: 40px; font-weight: 800; color: var(--green);
+      letter-spacing: -.02em; line-height: 1;
+    }
+    .stat-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Whitelist callout ───────────────────────────────── */
+    .callout {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-left: 3px solid var(--blue);
+      border-radius: var(--radius); padding: 20px 22px;
+      margin-top: 24px; font-size: 14px; color: var(--muted);
+    }
+    .callout strong { color: var(--text); }
+
+    /* ── Footer ──────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 24px; text-align: center;
+      font-size: 13px; color: var(--muted);
+    }
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--text); }
+
+    @media (max-width: 600px) {
+      .nav-links .hide-sm { display: none; }
+      .stats-grid { gap: 32px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Nav ── -->
+<nav>
+  <div class="nav-brand">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+    nginx-sentinel
+  </div>
+  <div class="nav-links">
+    <a href="#detectors" class="hide-sm">Detectors</a>
+    <a href="#install" class="hide-sm">Install</a>
+    <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.md" class="hide-sm">Docs</a>
+    <a href="https://github.com/mr-addams/nginx-sentinel" class="btn-gh">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+      </svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<div class="hero">
+  <div class="hero-badge">Open Source · Go · Linux</div>
+  <h1>Stop attacks before<br><span>Fail2Ban</span> even wakes up</h1>
+  <p>nginx-sentinel watches your nginx access.log in real time, scores every IP through 7 behavioural detectors, and hands confirmed threats straight to Fail2Ban.</p>
+  <div class="hero-actions">
+    <a href="#install" class="btn-primary">↓ Install</a>
+    <a href="https://github.com/mr-addams/nginx-sentinel/releases" class="btn-secondary">Releases</a>
+    <a href="https://github.com/mr-addams/nginx-sentinel" class="btn-secondary">View on GitHub</a>
+  </div>
+</div>
+
+<!-- ── Pipeline ── -->
+<div class="pipeline">
+  <div class="pipeline-box">
+<span class="g">nginx access.log</span>
+  <span class="dim">→</span> <span class="b">TailReader</span> <span class="dim">(inotify · logrotate-aware)</span>
+  <span class="dim">→</span> <span class="b">Whitelist</span> <span class="dim">(IP · CIDR · UA · bot DNS verify)</span>
+  <span class="dim">→</span> <span class="b">Tracker</span> <span class="dim">(per-IP state · ring buffer · rate counters)</span>
+  <span class="dim">→</span> <span class="b">Scorer</span> <span class="dim">(7 detectors · linear decay)</span>
+  <span class="dim">→</span> <span class="r">threats.log</span>
+  <span class="dim">→</span> <span class="r">Fail2Ban</span> <span class="dim">→</span> <span class="r">iptables ban</span>
+  </div>
+</div>
+
+<!-- ── Stats ── -->
+<section class="stats">
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat-item">
+        <div class="stat-num">7</div>
+        <div class="stat-label">Behavioural detectors</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">11</div>
+        <div class="stat-label">Verified bot families</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">3</div>
+        <div class="stat-label">Package formats</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">2</div>
+        <div class="stat-label">Architectures (amd64 · arm64)</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Detectors ── -->
+<section class="detectors" id="detectors">
+  <div class="container">
+    <div class="section-label">Detection</div>
+    <h2>7 detectors, one score</h2>
+    <p class="section-sub">Each detector adds points to an IP's score. Score decays linearly over the observation window — no false bans from old traffic.</p>
+    <div class="cards">
+
+      <div class="card">
+        <div class="card-icon">🔍</div>
+        <h3>Probe</h3>
+        <p>Requests to sensitive paths: <code>/.env</code>, <code>/.git/config</code>, <code>/wp-config.php</code>, <code>/phpinfo.php</code>, admin panels, backup files and 30+ others.</p>
+        <span class="card-score">+25 per request</span>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <h3>Rate anomaly</h3>
+        <p>More than 100 requests per 60 seconds from a single IP. Catches DDoS probes, aggressive scanners and credential stuffing bursts.</p>
+        <span class="card-score">+25</span>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🤖</div>
+        <h3>Suspicious User-Agent</h3>
+        <p>Matches known scanner UAs (Nuclei, sqlmap, Nikto, Nessus…), grabbers (Scrapy, HTTrack…) and generic automation clients.</p>
+        <span class="card-score">+15 to +40</span>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🔐</div>
+        <h3>Bruteforce</h3>
+        <p>More than 60% of responses are 404 with at least 10 requests total. Typical pattern of path-enumeration and credential bruteforce tools.</p>
+        <span class="card-score">+30</span>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">📄</div>
+        <h3>Sequential crawler</h3>
+        <p>Five or more sequentially numbered URLs in a row — <code>/page/1</code>, <code>/page/2</code>… Characteristic of automated content scrapers.</p>
+        <span class="card-score">+20</span>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🖼️</div>
+        <h3>No-asset bot</h3>
+        <p>Loads pages but never requests CSS, JS or images — less than 10% of requests go to static assets. Real browsers always load assets.</p>
+        <span class="card-score">+20</span>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">💣</div>
+        <h3>URL overflow / WAF bypass</h3>
+        <p>URLs longer than 2048 characters or containing WAF bypass keywords: <code>bypass</code>, <code>shell</code>, <code>cmd</code>, <code>eval</code>, <code>exec</code>.</p>
+        <span class="card-score">+30</span>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ── Install ── -->
+<section id="install">
+  <div class="container">
+    <div class="section-label">Installation</div>
+    <h2>One command to install</h2>
+    <p class="section-sub">Download the package for your distro from <a href="https://github.com/mr-addams/nginx-sentinel/releases">Releases</a>. The package installs the binary, systemd unit, Fail2Ban filter/jail, logrotate config, and creates the <code>nginx-sentinel</code> system user.</p>
+
+    <div class="tabs">
+      <div class="tab active" onclick="showTab('deb')">Debian / Ubuntu</div>
+      <div class="tab" onclick="showTab('rpm')">Fedora / RHEL</div>
+      <div class="tab" onclick="showTab('arch')">Arch Linux</div>
+      <div class="tab" onclick="showTab('src')">From source</div>
+    </div>
+
+    <div class="tab-content active" id="tab-deb">
+<pre><span class="c"># amd64</span>
+<span class="g">sudo apt install</span> ./nginx-sentinel_&lt;version&gt;_linux_amd64.deb
+
+<span class="c"># arm64</span>
+<span class="g">sudo apt install</span> ./nginx-sentinel_&lt;version&gt;_linux_arm64.deb
+
+<span class="c"># Edit config and start</span>
+<span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
+<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
+    </div>
+
+    <div class="tab-content" id="tab-rpm">
+<pre><span class="c"># amd64</span>
+<span class="g">sudo dnf install</span> ./nginx-sentinel_&lt;version&gt;_linux_amd64.rpm
+
+<span class="c"># arm64</span>
+<span class="g">sudo dnf install</span> ./nginx-sentinel_&lt;version&gt;_linux_arm64.rpm
+
+<span class="c"># Edit config and start</span>
+<span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
+<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
+    </div>
+
+    <div class="tab-content" id="tab-arch">
+<pre><span class="c"># amd64</span>
+<span class="g">sudo pacman -U</span> nginx-sentinel_&lt;version&gt;_linux_amd64.pkg.tar.zst
+
+<span class="c"># arm64</span>
+<span class="g">sudo pacman -U</span> nginx-sentinel_&lt;version&gt;_linux_arm64.pkg.tar.zst
+
+<span class="c"># Edit config and start</span>
+<span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
+<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
+    </div>
+
+    <div class="tab-content" id="tab-src">
+<pre><span class="c"># Requires Go 1.19+</span>
+<span class="g">git clone</span> https://github.com/mr-addams/nginx-sentinel
+<span class="b">cd</span> nginx-sentinel
+<span class="g">sudo ./scripts/install.sh</span>
+<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
+    </div>
+
+    <div class="callout">
+      <strong>After installation:</strong> edit <code>/etc/nginx-sentinel/config.yaml</code> — set <code>general.log_file</code> to your nginx access.log path, adjust scoring thresholds if needed, then start the service. Config reloads on <code>SIGHUP</code> without restart.
+    </div>
+  </div>
+</section>
+
+<!-- ── Whitelist ── -->
+<section style="background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+  <div class="container">
+    <div class="section-label">Whitelist</div>
+    <h2>Legitimate traffic is never banned</h2>
+    <p class="section-sub">Two independent mechanisms protect your real visitors and tools from false positives.</p>
+    <div class="cards">
+      <div class="card">
+        <div class="card-icon">🔬</div>
+        <h3>Automatic bot verification</h3>
+        <p>Googlebot, Bingbot, Yandex, DuckDuckBot, GPTBot and 6 others are verified via reverse + forward DNS. Legitimate crawlers are never scored. Fakes get a penalty instead.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">✅</div>
+        <h3>Custom exclusions</h3>
+        <p>Add your office IPs, VPN subnets (CIDR), monitoring services or SEO tools by User-Agent substring. Changes apply instantly on <code>SIGHUP</code> — no restart needed.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔄</div>
+        <h3>Live reload</h3>
+        <p>All config changes — whitelist, detector scores, thresholds — reload with <code>systemctl kill -s HUP nginx-sentinel</code>. IP state and DNS cache are preserved.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer>
+  <p>
+    <a href="https://github.com/mr-addams/nginx-sentinel">nginx-sentinel</a> ·
+    <a href="https://github.com/mr-addams/nginx-sentinel/releases">Releases</a> ·
+    <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.md">Docs</a> ·
+    <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/CONTRIBUTING.md">Contributing</a> ·
+    <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/SECURITY.md">Security</a>
+  </p>
+  <p style="margin-top: 10px;">Licensed under <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/LICENSE">GNU GPLv3</a></p>
+</footer>
+
+<script>
+  function showTab(id) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + id).classList.add('active');
+    event.target.classList.add('active');
+  }
+</script>
+
+</body>
+</html>
