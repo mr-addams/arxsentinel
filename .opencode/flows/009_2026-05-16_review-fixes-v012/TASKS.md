@@ -1,7 +1,8 @@
 # Flow #9 — Review Fixes v0.1.2
 
 **Started:** 2026-05-16  
-**Status:** 🔄 Active
+**Closed:** 2026-05-16  
+**Status:** ✅ Closed — коммит 209efc0
 
 ## Goal
 
@@ -15,12 +16,12 @@
 
 ### Группа A — Быстрые исправления
 
-- 📋 **A.1** — W2: удалить uppercase-дубликаты из `scannerPatterns` и `grabberPatterns`
+- ✅ **A.1** — W2: удалить uppercase-дубликаты из `scannerPatterns` и `grabberPatterns`
   - Файл: `internal/core/detector/useragent.go`
   - Убрать: `"Nikto"`, `"ZGrab"`, `"DirBuster"`, `"WFuzz"`, `"FFUF"`, `"Hydra"`, `"Medusa"`, `"BurpSuite"`, `"Scrapy"`
   - Decision 2
 
-- 📋 **A.2** — W4: SIGHUP relay — дренаж `sigHUP` при `ctx.Done()`
+- ✅ **A.2** — W4: SIGHUP relay — дренаж `sigHUP` при `ctx.Done()`
   - Файл: `main.go`
   - В `case <-ctx.Done()`: добавить `signal.Stop(sigHUP)` + цикл дренажа
   - Decision 4
@@ -29,7 +30,7 @@
 
 ### Группа B — Защита от аномалий
 
-- 📋 **B.1** — W5: ограничение длины строки в `TailReader`
+- ✅ **B.1** — W5: ограничение длины строки в `TailReader`
   - Файл: `internal/sys/utils/tail.go`
   - Добавить константу `maxLineSize = 64 * 1024`
   - Заменить `bufio.NewReader(f)` → `bufio.NewReaderSize(f, maxLineSize)` во всех местах создания reader
@@ -37,7 +38,7 @@
 
 ### Группа C — Оптимизация производительности
 
-- 📋 **C.1** — W1: кэш `RecentPaths()` через dirty-флаг
+- ✅ **C.1** — W1: кэш `RecentPaths()` через dirty-флаг
   - Файл: `internal/core/state/tracker.go`
   - Добавить в `IPState`: `pathCache []string`, `pathDirty bool`
   - В `Update()` после записи в ring buffer: `st.pathDirty = true`
@@ -48,7 +49,7 @@
 
 ### Группа D — CI / тестирование
 
-- 📋 **D.1** — W3: синтетический E2E-лог для CI
+- ✅ **D.1** — W3: синтетический E2E-лог для CI
   - Создать `testdata/synthetic.access.log` (15–20 строк nginx combined format)
     - IP `10.0.0.1`: много 404-ов + scanner UA → должен дать THREAT
     - IP `10.0.0.2`: легитимный трафик → не должен попасть в threat-log
@@ -61,13 +62,13 @@
 
 ### Группа E — Рефакторинг
 
-- 📋 **E.1** — R1: factory-паттерн для `buildDetectors`
+- ✅ **E.1** — R1: factory-паттерн для `buildDetectors`
   - Файл: `main.go`
   - Ввести тип `detectorFactory func(*config.Config) detector.Detector`
   - Заменить 7 if-блоков на `[]detectorFactory{...}` + цикл с фильтрацией `nil`
   - Decision 6
 
-- 📋 **E.2** — R2: `PipelineContext` struct для `processLine`
+- ✅ **E.2** — R2: `PipelineContext` struct для `processLine`
   - Файл: `main.go`
   - Определить struct с полями: `Matcher`, `Verifier`, `Tracker`, `Scorer`, `ThreatLogger`, `Config`
   - Обновить сигнатуру `processLine` и все точки вызова
