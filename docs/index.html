@@ -361,8 +361,8 @@
 <section id="install">
   <div class="container">
     <div class="section-label">Installation</div>
-    <h2>One command to install</h2>
-    <p class="section-sub">Download the package for your distro from <a href="https://github.com/mr-addams/nginx-sentinel/releases">Releases</a>. The package installs the binary, systemd unit, Fail2Ban filter/jail, logrotate config, and creates the <code>nginx-sentinel</code> system user.</p>
+    <h2>Install in 3 steps</h2>
+    <p class="section-sub">The package handles everything: binary, systemd unit, Fail2Ban filter/jail, logrotate config, and the <code>nginx-sentinel</code> system user.</p>
 
     <div class="tabs">
       <div class="tab active" onclick="showTab('deb')">Debian / Ubuntu</div>
@@ -372,37 +372,58 @@
     </div>
 
     <div class="tab-content active" id="tab-deb">
-<pre><span class="c"># amd64</span>
-<span class="g">sudo apt install</span> ./nginx-sentinel_&lt;version&gt;_linux_amd64.deb
+<pre><span class="c"># Step 1 — download (one-liner picks the latest version automatically)</span>
+<span class="c"># amd64 — most servers and desktops</span>
+<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
+     | grep browser_download_url | grep amd64.deb | cut -d'"' -f4)
 
-<span class="c"># arm64</span>
-<span class="g">sudo apt install</span> ./nginx-sentinel_&lt;version&gt;_linux_arm64.deb
+<span class="c"># arm64 — Raspberry Pi, AWS Graviton, Oracle Ampere</span>
+<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
+     | grep browser_download_url | grep arm64.deb | cut -d'"' -f4)
 
-<span class="c"># Edit config and start</span>
+<span class="c"># Step 2 — install  (apt resolves fail2ban dependency automatically)</span>
+<span class="g">sudo apt install</span> ./*.deb
+
+<span class="c"># Step 3 — configure and start</span>
 <span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
 <span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
     </div>
 
     <div class="tab-content" id="tab-rpm">
-<pre><span class="c"># amd64</span>
-<span class="g">sudo dnf install</span> ./nginx-sentinel_&lt;version&gt;_linux_amd64.rpm
+<pre><span class="c"># Step 1 — download (one-liner picks the latest version automatically)</span>
+<span class="c"># amd64 — most servers and desktops</span>
+<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
+     | grep browser_download_url | grep amd64.rpm | cut -d'"' -f4)
 
-<span class="c"># arm64</span>
-<span class="g">sudo dnf install</span> ./nginx-sentinel_&lt;version&gt;_linux_arm64.rpm
+<span class="c"># arm64 — AWS Graviton, Oracle Ampere</span>
+<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
+     | grep browser_download_url | grep arm64.rpm | cut -d'"' -f4)
 
-<span class="c"># Edit config and start</span>
+<span class="c"># Step 2 — install  (dnf resolves fail2ban dependency automatically)</span>
+<span class="g">sudo dnf install</span> ./*.rpm
+
+<span class="c"># Step 3 — configure and start</span>
 <span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
 <span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
     </div>
 
     <div class="tab-content" id="tab-arch">
-<pre><span class="c"># amd64</span>
-<span class="g">sudo pacman -U</span> nginx-sentinel_&lt;version&gt;_linux_amd64.pkg.tar.zst
+<pre><span class="c"># Step 1 — install fail2ban if not already present</span>
+<span class="g">sudo pacman -S</span> fail2ban
+
+<span class="c"># Step 2 — download (one-liner picks the latest version automatically)</span>
+<span class="c"># amd64 — most systems</span>
+<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
+     | grep browser_download_url | grep "amd64.pkg.tar.zst" | cut -d'"' -f4)
 
 <span class="c"># arm64</span>
-<span class="g">sudo pacman -U</span> nginx-sentinel_&lt;version&gt;_linux_arm64.pkg.tar.zst
+<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
+     | grep browser_download_url | grep "arm64.pkg.tar.zst" | cut -d'"' -f4)
 
-<span class="c"># Edit config and start</span>
+<span class="c"># Step 3 — install</span>
+<span class="g">sudo pacman -U</span> ./*.pkg.tar.zst
+
+<span class="c"># Step 4 — configure and start</span>
 <span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
 <span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
     </div>
@@ -416,7 +437,7 @@
     </div>
 
     <div class="callout">
-      <strong>After installation:</strong> edit <code>/etc/nginx-sentinel/config.yaml</code> — set <code>general.log_file</code> to your nginx access.log path, adjust scoring thresholds if needed, then start the service. Config reloads on <code>SIGHUP</code> without restart.
+      <strong>After installation:</strong> open <code>/etc/nginx-sentinel/config.yaml</code> and set <code>general.log_file</code> to the path of your nginx access.log (usually <code>/var/log/nginx/access.log</code>). Then start the service. Config reloads on <code>SIGHUP</code> — no restart needed.
     </div>
   </div>
 </section>
