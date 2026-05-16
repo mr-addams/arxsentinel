@@ -152,6 +152,11 @@
       transition: border-color .15s;
     }
     .card:hover { border-color: var(--green); }
+    @media (min-width: 920px) {
+      .cards .card:last-child:nth-child(3n+1) {
+        grid-column: 2;
+      }
+    }
     .card-icon { font-size: 22px; margin-bottom: 10px; }
     .card h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
     .card p { font-size: 13px; color: var(--muted); line-height: 1.5; }
@@ -235,8 +240,8 @@
     <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.md" class="hide-sm">Docs</a>
     <div class="lang-switcher">
       <a href="index.html" class="lang-btn active">EN</a>
-      <a href="ru.html" class="lang-btn">RU</a>
       <a href="uk.html" class="lang-btn">UK</a>
+      <a href="ru.html" class="lang-btn">RU</a>
     </div>
     <a href="https://github.com/mr-addams/nginx-sentinel" class="btn-gh">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -307,49 +312,49 @@
       <div class="card">
         <div class="card-icon">🔍</div>
         <h3>Probe</h3>
-        <p>Requests to sensitive paths: <code>/.env</code>, <code>/.git/config</code>, <code>/wp-config.php</code>, <code>/phpinfo.php</code>, admin panels, backup files and 30+ others.</p>
+        <p>Requests to sensitive paths: <code>/.env</code>, <code>/.git/config</code>, <code>/.aws/credentials</code>, <code>/wp-config.php</code>, <code>/phpinfo.php</code>, admin panels, backup archives and 30+ others. These paths have no reason to appear in legitimate traffic — any hit is an active reconnaissance attempt. Triggers immediately on the first request, before any threshold.</p>
         <span class="card-score">+25 per request</span>
       </div>
 
       <div class="card">
         <div class="card-icon">⚡</div>
         <h3>Rate anomaly</h3>
-        <p>More than 100 requests per 60 seconds from a single IP. Catches DDoS probes, aggressive scanners and credential stuffing bursts.</p>
+        <p>More than 100 requests per 60 seconds from a single IP, tracked with a sliding window counter. Catches DDoS probes, aggressive vulnerability scanners, credential stuffing bursts and scraping tools that try to stay just under static per-minute rate limits. Threshold and window are fully configurable.</p>
         <span class="card-score">+25</span>
       </div>
 
       <div class="card">
         <div class="card-icon">🤖</div>
         <h3>Suspicious User-Agent</h3>
-        <p>Matches known scanner UAs (Nuclei, sqlmap, Nikto, Nessus…), grabbers (Scrapy, HTTrack…) and generic automation clients.</p>
+        <p>Case-insensitive substring match against three built-in lists: <strong>scanners</strong> (Nuclei, sqlmap, Nikto, Nessus, Acunetix…), <strong>grabbers</strong> (Scrapy, HTTrack, wget…) and <strong>automation clients</strong> (python-requests, curl, Go-http-client…). Each category carries its own configurable score. Extend built-in lists with your own patterns via <code>extra_*_patterns</code> in config — no code changes needed.</p>
         <span class="card-score">+15 to +40</span>
       </div>
 
       <div class="card">
         <div class="card-icon">🔐</div>
         <h3>Bruteforce</h3>
-        <p>More than 60% of responses are 404 with at least 10 requests total. Typical pattern of path-enumeration and credential bruteforce tools.</p>
+        <p>More than 60% of responses are 404 with at least 10 requests in the observation window. Typical signature of path-enumeration tools (dirbuster, gobuster, ffuf) blindly traversing wordlists in search of hidden files and admin panels. The <code>min_requests</code> threshold prevents false positives from users who simply mistype a URL once or twice.</p>
         <span class="card-score">+30</span>
       </div>
 
       <div class="card">
         <div class="card-icon">📄</div>
         <h3>Sequential crawler</h3>
-        <p>Five or more sequentially numbered URLs in a row — <code>/page/1</code>, <code>/page/2</code>… Characteristic of automated content scrapers.</p>
+        <p>Five or more sequentially numbered URLs in a row — <code>/page/1</code>, <code>/page/2</code>, <code>/article/100</code>, <code>/article/101</code>… Characteristic of automated content scrapers that dump entire site sections in order. Legitimate human browsing does not follow strict numeric sequences at machine speed.</p>
         <span class="card-score">+20</span>
       </div>
 
       <div class="card">
         <div class="card-icon">🖼️</div>
         <h3>No-asset bot</h3>
-        <p>Loads pages but never requests CSS, JS or images — less than 10% of requests go to static assets. Real browsers always load assets.</p>
+        <p>Loads pages but requests CSS, JS or images on fewer than 10% of hits — with at least 3 page views recorded. Every real browser fetches resources referenced in HTML. Bots that parse markup only (headless scrapers, feed readers, link harvesters) skip static assets entirely — this detector catches them without touching legitimate traffic.</p>
         <span class="card-score">+20</span>
       </div>
 
       <div class="card">
         <div class="card-icon">💣</div>
         <h3>URL overflow / WAF bypass</h3>
-        <p>URLs longer than 2048 characters or containing WAF bypass keywords: <code>bypass</code>, <code>shell</code>, <code>cmd</code>, <code>eval</code>, <code>exec</code>.</p>
+        <p>URLs longer than 2048 characters, or containing known WAF evasion keywords: <code>bypass</code>, <code>shell</code>, <code>cmd</code>, <code>eval</code>, <code>exec</code>, <code>passthru</code>, <code>system</code>. Oversized URLs probe buffer overflow and parameter injection vulnerabilities. Keyword patterns target PHP shell injection, OS command execution and generic firewall bypass techniques.</p>
         <span class="card-score">+30</span>
       </div>
 
@@ -372,69 +377,19 @@
       <p style="font-size:12px; color:var(--muted); margin-top:10px;">Supports Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux · amd64 and arm64</p>
     </div>
 
-    <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">Or install manually using your package manager:</p>
     <div class="tabs">
-      <div class="tab active" onclick="showTab('deb')">Debian / Ubuntu</div>
-      <div class="tab" onclick="showTab('rpm')">Fedora / RHEL</div>
-      <div class="tab" onclick="showTab('arch')">Arch Linux</div>
+      <div class="tab active" onclick="showTab('script')">Script install</div>
       <div class="tab" onclick="showTab('src')">From source</div>
     </div>
 
-    <div class="tab-content active" id="tab-deb">
-<pre><span class="c"># Step 1 — download (one-liner picks the latest version automatically)</span>
-<span class="c"># amd64 — most servers and desktops</span>
-<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
-     | grep browser_download_url | grep amd64.deb | cut -d'"' -f4)
-
-<span class="c"># arm64 — Raspberry Pi, AWS Graviton, Oracle Ampere</span>
-<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
-     | grep browser_download_url | grep arm64.deb | cut -d'"' -f4)
-
-<span class="c"># Step 2 — install  (apt resolves fail2ban dependency automatically)</span>
-<span class="g">sudo apt install</span> ./*.deb
-
-<span class="c"># Step 3 — configure and start</span>
-<span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
-<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
-    </div>
-
-    <div class="tab-content" id="tab-rpm">
-<pre><span class="c"># Step 1 — download (one-liner picks the latest version automatically)</span>
-<span class="c"># amd64 — most servers and desktops</span>
-<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
-     | grep browser_download_url | grep amd64.rpm | cut -d'"' -f4)
-
-<span class="c"># arm64 — AWS Graviton, Oracle Ampere</span>
-<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
-     | grep browser_download_url | grep arm64.rpm | cut -d'"' -f4)
-
-<span class="c"># Step 2 — install  (dnf resolves fail2ban dependency automatically)</span>
-<span class="g">sudo dnf install</span> ./*.rpm
-
-<span class="c"># Step 3 — configure and start</span>
-<span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
-<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
-    </div>
-
-    <div class="tab-content" id="tab-arch">
-<pre><span class="c"># Step 1 — install fail2ban if not already present</span>
-<span class="g">sudo pacman -S</span> fail2ban
-
-<span class="c"># Step 2 — download (one-liner picks the latest version automatically)</span>
-<span class="c"># amd64 — most systems</span>
-<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
-     | grep browser_download_url | grep "amd64.pkg.tar.zst" | cut -d'"' -f4)
-
-<span class="c"># arm64</span>
-<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
-     | grep browser_download_url | grep "arm64.pkg.tar.zst" | cut -d'"' -f4)
-
-<span class="c"># Step 3 — install</span>
-<span class="g">sudo pacman -U</span> ./*.pkg.tar.zst
-
-<span class="c"># Step 4 — configure and start</span>
-<span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
-<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
+    <div class="tab-content active" id="tab-script">
+<pre><span class="c"># Works on Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux</span>
+<span class="c"># Auto-detects your distro and architecture (amd64 / arm64)</span>
+<span class="g">curl</span> -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | <span class="g">sudo bash</span></pre>
+      <p style="font-size:13px; color:var(--muted); margin-top:12px;">
+        The script downloads the correct package from GitHub Releases, installs it with your system package manager,
+        checks for <code>fail2ban</code>, auto-detects your nginx access.log path, and starts the service.
+      </p>
     </div>
 
     <div class="tab-content" id="tab-src">
