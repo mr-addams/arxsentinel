@@ -206,14 +206,6 @@
     <h2>Установка в 3 шага</h2>
     <p class="section-sub">Пакет делает всё сам: бинарник, systemd unit, Fail2Ban filter/jail, logrotate и системного пользователя <code>nginx-sentinel</code>.</p>
 
-    <div style="margin-bottom: 32px;">
-      <p style="font-size:14px; color:var(--muted); margin-bottom:10px;">
-        <strong style="color:var(--green);">Быстрая установка</strong> — автоматически определяет OS и архитектуру:
-      </p>
-<pre><span class="g">curl</span> -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | <span class="g">sudo bash</span></pre>
-      <p style="font-size:12px; color:var(--muted); margin-top:10px;">Поддерживает Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux · amd64 и arm64</p>
-    </div>
-
     <div class="tabs">
       <div class="tab active" onclick="showTab('script')">Установка скриптом</div>
       <div class="tab" onclick="showTab('src')">Из исходников</div>
