@@ -45,6 +45,53 @@ sudo nano /etc/nginx-sentinel/config.yaml
 sudo systemctl enable --now nginx-sentinel
 ```
 
+### Fedora / RHEL / AlmaLinux / Rocky Linux
+
+Скачайте `.rpm` для своей архитектуры со страницы [Releases](https://github.com/mr-addams/nginx-sentinel/releases) и установите:
+
+```bash
+# amd64
+sudo dnf install ./nginx-sentinel_<version>_linux_amd64.rpm
+
+# arm64
+sudo dnf install ./nginx-sentinel_<version>_linux_arm64.rpm
+```
+
+`dnf install` автоматически подтянет зависимости, установит systemd unit в `/usr/lib/systemd/system/`, Fail2Ban filter/jail, logrotate и создаст системного пользователя `nginx-sentinel`.
+
+После установки отредактируйте конфиг и запустите сервис:
+
+```bash
+sudo nano /etc/nginx-sentinel/config.yaml
+sudo systemctl enable --now nginx-sentinel
+```
+
+> **RHEL 8 / CentOS Stream 8:** используйте `dnf` или `rpm -i` напрямую. Для Fail2Ban может потребоваться репозиторий EPEL:
+> `sudo dnf install epel-release && sudo dnf install fail2ban`
+
+### Arch Linux / Manjaro
+
+Скачайте `.pkg.tar.zst` для своей архитектуры со страницы [Releases](https://github.com/mr-addams/nginx-sentinel/releases) и установите:
+
+```bash
+# amd64
+sudo pacman -U nginx-sentinel_<version>_linux_amd64.pkg.tar.zst
+
+# arm64
+sudo pacman -U nginx-sentinel_<version>_linux_arm64.pkg.tar.zst
+```
+
+Пакет установит systemd unit в `/usr/lib/systemd/system/`, конфиги Fail2Ban, logrotate и создаст системного пользователя `nginx-sentinel`.
+
+После установки отредактируйте конфиг и запустите сервис:
+
+```bash
+sudo nano /etc/nginx-sentinel/config.yaml
+sudo systemctl enable --now nginx-sentinel
+```
+
+> **Fail2Ban на Arch:** установите перед или после nginx-sentinel: `sudo pacman -S fail2ban`
+
 ### Сборка из исходников
 
 Требуется Go 1.19+:

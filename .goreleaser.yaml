@@ -65,6 +65,94 @@ nfpms:
         dst: /etc/logrotate.d/nginx-sentinel
         type: config
 
+  - id: nginx-sentinel-rpm
+    package_name: nginx-sentinel
+    vendor: mr-addams
+    homepage: https://github.com/mr-addams/nginx-sentinel
+    maintainer: mr.addams <mr.addams@gmail.com>
+    description: nginx access log analyzer with automatic Fail2Ban integration
+    license: MIT
+    formats:
+      - rpm
+
+    dependencies:
+      - fail2ban
+
+    recommends:
+      - nginx
+
+    bindir: /usr/bin
+
+    scripts:
+      postinstall: packaging/scripts/rpm/postinst
+      preremove:   packaging/scripts/rpm/prerm
+      postremove:  packaging/scripts/rpm/postrm
+
+    contents:
+      - src: config.yaml
+        dst: /etc/nginx-sentinel/config.yaml.example
+        type: config
+
+      # RPM/systemd convention: /usr/lib/systemd/system/ (not /lib/)
+      - src: packaging/nginx-sentinel.service
+        dst: /usr/lib/systemd/system/nginx-sentinel.service
+
+      - src: deploy/fail2ban/filter.d/nginx-sentinel.conf
+        dst: /etc/fail2ban/filter.d/nginx-sentinel.conf
+        type: config
+
+      - src: deploy/fail2ban/jail.d/nginx-sentinel.conf
+        dst: /etc/fail2ban/jail.d/nginx-sentinel.conf
+        type: config
+
+      - src: deploy/logrotate/nginx-sentinel
+        dst: /etc/logrotate.d/nginx-sentinel
+        type: config
+
+  - id: nginx-sentinel-pacman
+    package_name: nginx-sentinel
+    vendor: mr-addams
+    homepage: https://github.com/mr-addams/nginx-sentinel
+    maintainer: mr.addams <mr.addams@gmail.com>
+    description: nginx access log analyzer with automatic Fail2Ban integration
+    license: MIT
+    formats:
+      - archlinux
+
+    dependencies:
+      - fail2ban
+
+    recommends:
+      - nginx
+
+    bindir: /usr/bin
+
+    scripts:
+      postinstall: packaging/scripts/arch/postinst
+      preremove:   packaging/scripts/arch/prerm
+      postremove:  packaging/scripts/arch/postrm
+
+    contents:
+      - src: config.yaml
+        dst: /etc/nginx-sentinel/config.yaml.example
+        type: config
+
+      # Arch Linux systemd convention: /usr/lib/systemd/system/
+      - src: packaging/nginx-sentinel.service
+        dst: /usr/lib/systemd/system/nginx-sentinel.service
+
+      - src: deploy/fail2ban/filter.d/nginx-sentinel.conf
+        dst: /etc/fail2ban/filter.d/nginx-sentinel.conf
+        type: config
+
+      - src: deploy/fail2ban/jail.d/nginx-sentinel.conf
+        dst: /etc/fail2ban/jail.d/nginx-sentinel.conf
+        type: config
+
+      - src: deploy/logrotate/nginx-sentinel
+        dst: /etc/logrotate.d/nginx-sentinel
+        type: config
+
 release:
   github:
     owner: mr-addams

@@ -1,0 +1,17 @@
+#!/bin/bash
+set -euo pipefail
+
+SENTINEL_USER="nginx-sentinel"
+LOG_DIR="/var/log/nginx-sentinel"
+CFG_DIR="/etc/nginx-sentinel"
+
+# Remove user and data (pacman purge — explicit uninstall)
+if id "${SENTINEL_USER}" &>/dev/null; then
+    userdel "${SENTINEL_USER}" || true
+fi
+rm -rf "${LOG_DIR}"
+rm -rf "${CFG_DIR}"
+
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || true
+fi
