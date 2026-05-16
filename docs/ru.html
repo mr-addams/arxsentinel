@@ -59,6 +59,11 @@
     .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
     .card { background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:20px 22px; transition:border-color .15s; }
     .card:hover { border-color:var(--green); }
+    @media (min-width: 920px) {
+      .cards .card:last-child:nth-child(3n+1) {
+        grid-column: 2;
+      }
+    }
     .card-icon { font-size:22px; margin-bottom:10px; }
     .card h3 { font-size:15px; font-weight:700; margin-bottom:6px; }
     .card p { font-size:13px; color:var(--muted); line-height:1.5; }
@@ -99,8 +104,8 @@
     <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md" class="hide-sm">Документация</a>
     <div class="lang-switcher">
       <a href="index.html" class="lang-btn">EN</a>
-      <a href="ru.html" class="lang-btn active">RU</a>
       <a href="uk.html" class="lang-btn">UK</a>
+      <a href="ru.html" class="lang-btn active">RU</a>
     </div>
     <a href="https://github.com/mr-addams/nginx-sentinel" class="btn-gh">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
@@ -152,43 +157,43 @@
       <div class="card">
         <div class="card-icon">🔍</div>
         <h3>Probe — зондирование</h3>
-        <p>Запросы к чувствительным путям: <code>/.env</code>, <code>/.git/config</code>, <code>/wp-config.php</code>, <code>/phpinfo.php</code>, панели администратора, backup-файлы и ещё 30+.</p>
+        <p>Запросы к чувствительным путям: <code>/.env</code>, <code>/.git/config</code>, <code>/.aws/credentials</code>, <code>/wp-config.php</code>, <code>/phpinfo.php</code>, панели администратора, backup-архивы и ещё 30+. Эти пути не имеют смысла для легитимного посетителя — любое обращение является активной разведкой. Срабатывает немедленно на первом запросе, без пороговых условий.</p>
         <span class="card-score">+25 за запрос</span>
       </div>
       <div class="card">
         <div class="card-icon">⚡</div>
         <h3>Rate — аномальная частота</h3>
-        <p>Более 100 запросов за 60 секунд с одного IP. Выявляет DDoS-зондирование, агрессивные сканеры и всплески подбора учётных данных.</p>
+        <p>Более 100 запросов за 60 секунд с одного IP — отслеживается через скользящее окно. Выявляет DDoS-зондирование, агрессивные сканеры уязвимостей, всплески подбора учётных данных и скраперы, которые пытаются держаться чуть ниже статических ограничений. Порог и окно полностью настраиваются.</p>
         <span class="card-score">+25</span>
       </div>
       <div class="card">
         <div class="card-icon">🤖</div>
         <h3>User-Agent — подозрительный клиент</h3>
-        <p>Совпадение с известными UA сканеров (Nuclei, sqlmap, Nikto, Nessus…), граббером (Scrapy, HTTrack…) и инструментами автоматизации.</p>
+        <p>Регистронезависимое совпадение подстроки с тремя встроенными списками: <strong>сканеры</strong> (Nuclei, sqlmap, Nikto, Nessus, Acunetix…), <strong>граберы</strong> (Scrapy, HTTrack, wget…) и <strong>инструменты автоматизации</strong> (python-requests, curl, Go-http-client…). Каждая категория имеет свой настраиваемый score. Расширяйте встроенные списки через <code>extra_*_patterns</code> в конфиге — без изменений кода.</p>
         <span class="card-score">+15 до +40</span>
       </div>
       <div class="card">
         <div class="card-icon">🔐</div>
         <h3>Bruteforce — перебор</h3>
-        <p>Более 60% ответов — 404 при минимум 10 запросах. Типичная картина перебора путей и подбора учётных данных.</p>
+        <p>Более 60% ответов — 404 при минимум 10 запросах в окне наблюдения. Типичная сигнатура инструментов перебора путей (dirbuster, gobuster, ffuf), слепо обходящих словари в поисках скрытых файлов и панелей администратора. Порог <code>min_requests</code> предотвращает ложные срабатывания от пользователей, опечатавшихся в URL.</p>
         <span class="card-score">+30</span>
       </div>
       <div class="card">
         <div class="card-icon">📄</div>
         <h3>Crawler — последовательный обход</h3>
-        <p>Пять и более последовательно пронумерованных URL подряд — <code>/page/1</code>, <code>/page/2</code>… Характерный признак автоматических скраперов контента.</p>
+        <p>Пять и более последовательно пронумерованных URL подряд — <code>/page/1</code>, <code>/page/2</code>, <code>/article/100</code>, <code>/article/101</code>… Характерный признак автоматических скраперов, дампящих целые разделы сайта по порядку. Реальный человек не обходит URL в строгой числовой последовательности с машинной скоростью.</p>
         <span class="card-score">+20</span>
       </div>
       <div class="card">
         <div class="card-icon">🖼️</div>
         <h3>No-asset — бот без рендеринга</h3>
-        <p>Загружает страницы, но никогда не запрашивает CSS, JS или изображения — менее 10% запросов к статике. Реальные браузеры всегда загружают ассеты.</p>
+        <p>Загружает страницы, но запрашивает CSS, JS или изображения менее чем в 10% случаев — при минимум 3 просмотрах страниц. Каждый реальный браузер загружает ресурсы, указанные в HTML. Боты, парсящие только разметку (headless-скраперы, агрегаторы, сборщики ссылок), полностью пропускают статику — детектор ловит их, не затрагивая легитимный трафик.</p>
         <span class="card-score">+20</span>
       </div>
       <div class="card">
         <div class="card-icon">💣</div>
         <h3>Overflow — WAF bypass</h3>
-        <p>URL длиннее 2048 символов или содержащий WAF bypass ключевые слова: <code>bypass</code>, <code>shell</code>, <code>cmd</code>, <code>eval</code>, <code>exec</code>.</p>
+        <p>URL длиннее 2048 символов или содержащий известные WAF bypass ключевые слова: <code>bypass</code>, <code>shell</code>, <code>cmd</code>, <code>eval</code>, <code>exec</code>, <code>passthru</code>, <code>system</code>. Сверхдлинные URL зондируют уязвимости переполнения буфера и инъекции параметров. Ключевые слова нацелены на PHP shell injection, выполнение команд ОС и обход межсетевых экранов.</p>
         <span class="card-score">+30</span>
       </div>
     </div>
@@ -209,67 +214,21 @@
       <p style="font-size:12px; color:var(--muted); margin-top:10px;">Поддерживает Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux · amd64 и arm64</p>
     </div>
 
-    <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">Или установите вручную через менеджер пакетов:</p>
     <div class="tabs">
-      <div class="tab active" onclick="showTab('deb')">Debian / Ubuntu</div>
-      <div class="tab" onclick="showTab('rpm')">Fedora / RHEL</div>
-      <div class="tab" onclick="showTab('arch')">Arch Linux</div>
+      <div class="tab active" onclick="showTab('script')">Установка скриптом</div>
       <div class="tab" onclick="showTab('src')">Из исходников</div>
     </div>
-    <div class="tab-content active" id="tab-deb">
-<pre><span class="c"># Шаг 1 — скачать (однострочник сам определяет последнюю версию)</span>
-<span class="c"># amd64 — большинство серверов и десктопов</span>
-<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
-     | grep browser_download_url | grep amd64.deb | cut -d'"' -f4)
 
-<span class="c"># arm64 — Raspberry Pi, AWS Graviton, Oracle Ampere</span>
-<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
-     | grep browser_download_url | grep arm64.deb | cut -d'"' -f4)
-
-<span class="c"># Шаг 2 — установить (apt сам подтянет зависимость fail2ban)</span>
-<span class="g">sudo apt install</span> ./*.deb
-
-<span class="c"># Шаг 3 — настроить и запустить</span>
-<span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
-<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
+    <div class="tab-content active" id="tab-script">
+<pre><span class="c"># Работает на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux</span>
+<span class="c"># Скрипт сам определяет дистрибутив и архитектуру (amd64 / arm64)</span>
+<span class="g">curl</span> -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | <span class="g">sudo bash</span></pre>
+      <p style="font-size:13px; color:var(--muted); margin-top:12px;">
+        Скрипт скачивает нужный пакет с GitHub Releases, устанавливает через системный менеджер пакетов,
+        проверяет наличие <code>fail2ban</code>, автоматически определяет путь к nginx access.log и запускает сервис.
+      </p>
     </div>
-    <div class="tab-content" id="tab-rpm">
-<pre><span class="c"># Шаг 1 — скачать (однострочник сам определяет последнюю версию)</span>
-<span class="c"># amd64 — большинство серверов и десктопов</span>
-<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
-     | grep browser_download_url | grep amd64.rpm | cut -d'"' -f4)
 
-<span class="c"># arm64 — AWS Graviton, Oracle Ampere</span>
-<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
-     | grep browser_download_url | grep arm64.rpm | cut -d'"' -f4)
-
-<span class="c"># Шаг 2 — установить (dnf сам подтянет зависимость fail2ban)</span>
-<span class="g">sudo dnf install</span> ./*.rpm
-
-<span class="c"># Шаг 3 — настроить и запустить</span>
-<span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
-<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
-    </div>
-    <div class="tab-content" id="tab-arch">
-<pre><span class="c"># Шаг 1 — установить fail2ban, если ещё не установлен</span>
-<span class="g">sudo pacman -S</span> fail2ban
-
-<span class="c"># Шаг 2 — скачать (однострочник сам определяет последнюю версию)</span>
-<span class="c"># amd64 — большинство систем</span>
-<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
-     | grep browser_download_url | grep "amd64.pkg.tar.zst" | cut -d'"' -f4)
-
-<span class="c"># arm64</span>
-<span class="g">wget</span> $(curl -s https://api.github.com/repos/mr-addams/nginx-sentinel/releases/latest \
-     | grep browser_download_url | grep "arm64.pkg.tar.zst" | cut -d'"' -f4)
-
-<span class="c"># Шаг 3 — установить</span>
-<span class="g">sudo pacman -U</span> ./*.pkg.tar.zst
-
-<span class="c"># Шаг 4 — настроить и запустить</span>
-<span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
-<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
-    </div>
     <div class="tab-content" id="tab-src">
 <pre><span class="c"># Требуется Go 1.19+</span>
 <span class="g">git clone</span> https://github.com/mr-addams/nginx-sentinel
