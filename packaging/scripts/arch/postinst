@@ -1,0 +1,37 @@
+#!/bin/bash
+set -euo pipefail
+
+SENTINEL_USER="nginx-sentinel"
+LOG_DIR="/var/log/nginx-sentinel"
+CFG_DIR="/etc/nginx-sentinel"
+CFG_EXAMPLE="${CFG_DIR}/config.yaml.example"
+CFG_FILE="${CFG_DIR}/config.yaml"
+
+# pacman does not pass install/upgrade arguments — this script runs on both events.
+# User creation is idempotent: useradd exits with code 9 if user already exists.
+if ! id "${SENTINEL_USER}" &>/dev/null; then
+    useradd --system --no-create-home \
+            --shell /usr/bin/nologin \
+            --comment "nginx-sentinel daemon" \
+            "${SENTINEL_USER}"
+fi
+
+mkdir -p "${LOG_DIR}"
+chown "${SENTINEL_USER}:${SENTINEL_USER}" "${LOG_DIR}"
+chmod 750 "${LOG_DIR}"
+
+if [ -f "${CFG_EXAMPLE}" ] && [ ! -f "${CFG_FILE}" ]; then
+    cp "${CFG_EXAMPLE}" "${CFG_FILE}"
+    chown "root:${SENTINEL_USER}" "${CFG_FILE}"
+    chmod 640 "${CFG_FILE}"
+fi
+
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || true
+fi
+
+echo ""
+echo "nginx-sentinel installed. Edit the config and start the service:"
+echo "  sudo nano /etc/nginx-sentinel/config.yaml"
+echo "  sudo systemctl enable --now nginx-sentinel"
+echo ""

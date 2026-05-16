@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+
+# pacman does not distinguish uninstall from upgrade at this stage;
+# always stop and disable so the unit file can be replaced cleanly.
+if command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active --quiet nginx-sentinel 2>/dev/null; then
+        systemctl stop nginx-sentinel || true
+    fi
+    if systemctl is-enabled --quiet nginx-sentinel 2>/dev/null; then
+        systemctl disable nginx-sentinel || true
+    fi
+fi
