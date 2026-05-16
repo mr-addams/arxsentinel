@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>nginx-sentinel — Защита nginx в реальном времени для Linux</title>
+  <meta name="description" content="nginx-sentinel анализирует nginx access.log в реальном времени, обнаруживает сканеры, брутфорс и краулеры через 7 детекторов и автоматически банит атакующих через Fail2Ban. Пакеты для Debian, Ubuntu, Fedora, RHEL, Arch Linux.">
+  <meta name="keywords" content="nginx безопасность, fail2ban, обнаружение вторжений, анализ nginx лога, защита от брутфорса, linux безопасность, ids, web security">
+  <meta property="og:title" content="nginx-sentinel — Защита nginx в реальном времени">
+  <meta property="og:description" content="7 детекторов. Автоматическая интеграция с Fail2Ban. Пакеты deb, rpm, pacman. Написан на Go.">
+  <meta property="og:url" content="https://mr-addams.github.io/nginx-sentinel/ru.html">
+  <meta property="og:type" content="website">
+  <link rel="canonical" href="https://mr-addams.github.io/nginx-sentinel/ru.html">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#0d1117; --bg2:#161b22; --bg3:#21262d; --border:#30363d;
+      --text:#e6edf3; --muted:#8b949e; --green:#3fb950; --green-dim:#1a4327;
+      --blue:#58a6ff; --red:#f85149; --orange:#d29922; --radius:8px;
+    }
+    html { scroll-behavior: smooth; }
+    body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; font-size:16px; line-height:1.6; }
+    a { color:var(--blue); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    nav { position:sticky; top:0; z-index:100; background:rgba(13,17,23,.92); backdrop-filter:blur(12px); border-bottom:1px solid var(--border); padding:0 24px; display:flex; align-items:center; justify-content:space-between; height:56px; }
+    .nav-brand { font-weight:700; font-size:18px; color:var(--text); display:flex; align-items:center; gap:10px; }
+    .nav-brand svg { color:var(--green); }
+    .nav-links { display:flex; gap:24px; align-items:center; }
+    .nav-links a { color:var(--muted); font-size:14px; }
+    .nav-links a:hover { color:var(--text); text-decoration:none; }
+    .btn-gh { display:flex; align-items:center; gap:6px; background:var(--bg3); border:1px solid var(--border); color:var(--text) !important; padding:6px 14px; border-radius:var(--radius); font-size:14px; font-weight:500; transition:background .15s; }
+    .btn-gh:hover { background:var(--border); text-decoration:none !important; }
+    .lang-switcher { display:flex; gap:4px; }
+    .lang-btn { padding:4px 10px; border-radius:5px; font-size:13px; font-weight:600; border:1px solid var(--border); background:var(--bg3); color:var(--muted); text-decoration:none !important; transition:all .15s; }
+    .lang-btn.active { background:var(--green); color:#000; border-color:var(--green); }
+    .lang-btn:hover:not(.active) { background:var(--border); color:var(--text); }
+    .hero { text-align:center; padding:96px 24px 72px; max-width:800px; margin:0 auto; }
+    .hero-badge { display:inline-block; background:var(--green-dim); color:var(--green); border:1px solid var(--green); border-radius:20px; font-size:12px; font-weight:600; padding:3px 12px; letter-spacing:.04em; text-transform:uppercase; margin-bottom:24px; }
+    h1 { font-size:clamp(36px,6vw,56px); font-weight:800; line-height:1.15; letter-spacing:-.02em; margin-bottom:20px; }
+    h1 span { color:var(--green); }
+    .hero p { font-size:18px; color:var(--muted); max-width:600px; margin:0 auto 36px; }
+    .hero-actions { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+    .btn-primary { background:var(--green); color:#000 !important; font-weight:700; padding:12px 28px; border-radius:var(--radius); font-size:15px; transition:opacity .15s; }
+    .btn-primary:hover { opacity:.85; text-decoration:none !important; }
+    .btn-secondary { background:var(--bg3); border:1px solid var(--border); color:var(--text) !important; padding:12px 28px; border-radius:var(--radius); font-size:15px; transition:background .15s; }
+    .btn-secondary:hover { background:var(--border); text-decoration:none !important; }
+    .pipeline { margin:0 auto 80px; max-width:860px; padding:0 24px; }
+    .pipeline-box { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:24px 28px; font-family:"SF Mono",Consolas,"Liberation Mono",Menlo,monospace; font-size:13px; overflow-x:auto; white-space:nowrap; }
+    .pipeline-box .dim { color:var(--muted); }
+    .pipeline-box .g { color:var(--green); }
+    .pipeline-box .b { color:var(--blue); }
+    .pipeline-box .r { color:var(--red); }
+    section { padding:64px 24px; }
+    .container { max-width:1060px; margin:0 auto; }
+    .section-label { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--green); margin-bottom:12px; }
+    h2 { font-size:28px; font-weight:700; margin-bottom:12px; }
+    .section-sub { color:var(--muted); font-size:16px; margin-bottom:40px; }
+    .detectors { background:var(--bg2); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+    .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
+    .card { background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:20px 22px; transition:border-color .15s; }
+    .card:hover { border-color:var(--green); }
+    .card-icon { font-size:22px; margin-bottom:10px; }
+    .card h3 { font-size:15px; font-weight:700; margin-bottom:6px; }
+    .card p { font-size:13px; color:var(--muted); line-height:1.5; }
+    .card-score { display:inline-block; margin-top:10px; font-size:11px; font-weight:600; background:var(--green-dim); color:var(--green); border-radius:4px; padding:2px 8px; }
+    .tabs { display:flex; gap:4px; margin-bottom:16px; flex-wrap:wrap; }
+    .tab { padding:7px 16px; border-radius:6px; font-size:14px; font-weight:500; cursor:pointer; border:1px solid var(--border); background:var(--bg2); color:var(--muted); transition:all .15s; }
+    .tab.active { background:var(--green); color:#000; border-color:var(--green); }
+    .tab-content { display:none; }
+    .tab-content.active { display:block; }
+    pre { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:20px 22px; font-family:"SF Mono",Consolas,"Liberation Mono",Menlo,monospace; font-size:13px; overflow-x:auto; line-height:1.7; }
+    pre .c { color:var(--muted); }
+    pre .g { color:var(--green); }
+    pre .b { color:var(--blue); }
+    .stats { text-align:center; }
+    .stats-grid { display:flex; justify-content:center; gap:48px; flex-wrap:wrap; }
+    .stat-num { font-size:40px; font-weight:800; color:var(--green); letter-spacing:-.02em; line-height:1; }
+    .stat-label { font-size:13px; color:var(--muted); margin-top:4px; }
+    .callout { background:var(--bg2); border:1px solid var(--border); border-left:3px solid var(--blue); border-radius:var(--radius); padding:20px 22px; margin-top:24px; font-size:14px; color:var(--muted); }
+    .callout strong { color:var(--text); }
+    footer { border-top:1px solid var(--border); padding:32px 24px; text-align:center; font-size:13px; color:var(--muted); }
+    footer a { color:var(--muted); }
+    footer a:hover { color:var(--text); }
+    @media (max-width:600px) { .nav-links .hide-sm { display:none; } .stats-grid { gap:32px; } }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+    nginx-sentinel
+  </div>
+  <div class="nav-links">
+    <a href="#detectors" class="hide-sm">Детекторы</a>
+    <a href="#install" class="hide-sm">Установка</a>
+    <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md" class="hide-sm">Документация</a>
+    <div class="lang-switcher">
+      <a href="index.html" class="lang-btn">EN</a>
+      <a href="ru.html" class="lang-btn active">RU</a>
+      <a href="uk.html" class="lang-btn">UK</a>
+    </div>
+    <a href="https://github.com/mr-addams/nginx-sentinel" class="btn-gh">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="hero-badge">Open Source · Go · Linux</div>
+  <h1>Остановите атаки до того,<br>как <span>Fail2Ban</span> проснётся</h1>
+  <p>nginx-sentinel следит за nginx access.log в реальном времени, оценивает каждый IP через 7 поведенческих детекторов и передаёт подтверждённые угрозы напрямую в Fail2Ban.</p>
+  <div class="hero-actions">
+    <a href="#install" class="btn-primary">↓ Установить</a>
+    <a href="https://github.com/mr-addams/nginx-sentinel/releases" class="btn-secondary">Релизы</a>
+    <a href="https://github.com/mr-addams/nginx-sentinel" class="btn-secondary">GitHub</a>
+  </div>
+</div>
+
+<div class="pipeline">
+  <div class="pipeline-box">
+<span class="g">nginx access.log</span>
+  <span class="dim">→</span> <span class="b">TailReader</span> <span class="dim">(inotify · поддержка logrotate)</span>
+  <span class="dim">→</span> <span class="b">Whitelist</span> <span class="dim">(IP · CIDR · UA · DNS-верификация ботов)</span>
+  <span class="dim">→</span> <span class="b">Tracker</span> <span class="dim">(состояние IP · ring buffer · счётчики rate)</span>
+  <span class="dim">→</span> <span class="b">Scorer</span> <span class="dim">(7 детекторов · линейный decay)</span>
+  <span class="dim">→</span> <span class="r">threats.log</span>
+  <span class="dim">→</span> <span class="r">Fail2Ban</span> <span class="dim">→</span> <span class="r">бан через iptables</span>
+  </div>
+</div>
+
+<section class="stats">
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat-item"><div class="stat-num">7</div><div class="stat-label">Поведенческих детекторов</div></div>
+      <div class="stat-item"><div class="stat-num">11</div><div class="stat-label">Верифицируемых семейств ботов</div></div>
+      <div class="stat-item"><div class="stat-num">3</div><div class="stat-label">Формата пакетов</div></div>
+      <div class="stat-item"><div class="stat-num">2</div><div class="stat-label">Архитектуры (amd64 · arm64)</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="detectors" id="detectors">
+  <div class="container">
+    <div class="section-label">Обнаружение угроз</div>
+    <h2>7 детекторов — один score</h2>
+    <p class="section-sub">Каждый детектор добавляет очки к счёту IP. Score затухает линейно за время observation_window — никаких ложных банов от старого трафика.</p>
+    <div class="cards">
+      <div class="card">
+        <div class="card-icon">🔍</div>
+        <h3>Probe — зондирование</h3>
+        <p>Запросы к чувствительным путям: <code>/.env</code>, <code>/.git/config</code>, <code>/wp-config.php</code>, <code>/phpinfo.php</code>, панели администратора, backup-файлы и ещё 30+.</p>
+        <span class="card-score">+25 за запрос</span>
+      </div>
+      <div class="card">
+        <div class="card-icon">⚡</div>
+        <h3>Rate — аномальная частота</h3>
+        <p>Более 100 запросов за 60 секунд с одного IP. Выявляет DDoS-зондирование, агрессивные сканеры и всплески подбора учётных данных.</p>
+        <span class="card-score">+25</span>
+      </div>
+      <div class="card">
+        <div class="card-icon">🤖</div>
+        <h3>User-Agent — подозрительный клиент</h3>
+        <p>Совпадение с известными UA сканеров (Nuclei, sqlmap, Nikto, Nessus…), граббером (Scrapy, HTTrack…) и инструментами автоматизации.</p>
+        <span class="card-score">+15 до +40</span>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔐</div>
+        <h3>Bruteforce — перебор</h3>
+        <p>Более 60% ответов — 404 при минимум 10 запросах. Типичная картина перебора путей и подбора учётных данных.</p>
+        <span class="card-score">+30</span>
+      </div>
+      <div class="card">
+        <div class="card-icon">📄</div>
+        <h3>Crawler — последовательный обход</h3>
+        <p>Пять и более последовательно пронумерованных URL подряд — <code>/page/1</code>, <code>/page/2</code>… Характерный признак автоматических скраперов контента.</p>
+        <span class="card-score">+20</span>
+      </div>
+      <div class="card">
+        <div class="card-icon">🖼️</div>
+        <h3>No-asset — бот без рендеринга</h3>
+        <p>Загружает страницы, но никогда не запрашивает CSS, JS или изображения — менее 10% запросов к статике. Реальные браузеры всегда загружают ассеты.</p>
+        <span class="card-score">+20</span>
+      </div>
+      <div class="card">
+        <div class="card-icon">💣</div>
+        <h3>Overflow — WAF bypass</h3>
+        <p>URL длиннее 2048 символов или содержащий WAF bypass ключевые слова: <code>bypass</code>, <code>shell</code>, <code>cmd</code>, <code>eval</code>, <code>exec</code>.</p>
+        <span class="card-score">+30</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="container">
+    <div class="section-label">Установка</div>
+    <h2>Одна команда для установки</h2>
+    <p class="section-sub">Скачайте пакет для своего дистрибутива со страницы <a href="https://github.com/mr-addams/nginx-sentinel/releases">Releases</a>. Пакет устанавливает бинарник, systemd unit, Fail2Ban filter/jail, logrotate и создаёт системного пользователя <code>nginx-sentinel</code>.</p>
+    <div class="tabs">
+      <div class="tab active" onclick="showTab('deb')">Debian / Ubuntu</div>
+      <div class="tab" onclick="showTab('rpm')">Fedora / RHEL</div>
+      <div class="tab" onclick="showTab('arch')">Arch Linux</div>
+      <div class="tab" onclick="showTab('src')">Из исходников</div>
+    </div>
+    <div class="tab-content active" id="tab-deb">
+<pre><span class="c"># amd64</span>
+<span class="g">sudo apt install</span> ./nginx-sentinel_&lt;version&gt;_linux_amd64.deb
+
+<span class="c"># arm64</span>
+<span class="g">sudo apt install</span> ./nginx-sentinel_&lt;version&gt;_linux_arm64.deb
+
+<span class="c"># Редактируем конфиг и запускаем</span>
+<span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
+<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
+    </div>
+    <div class="tab-content" id="tab-rpm">
+<pre><span class="c"># amd64</span>
+<span class="g">sudo dnf install</span> ./nginx-sentinel_&lt;version&gt;_linux_amd64.rpm
+
+<span class="c"># arm64</span>
+<span class="g">sudo dnf install</span> ./nginx-sentinel_&lt;version&gt;_linux_arm64.rpm
+
+<span class="c"># Редактируем конфиг и запускаем</span>
+<span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
+<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
+    </div>
+    <div class="tab-content" id="tab-arch">
+<pre><span class="c"># amd64</span>
+<span class="g">sudo pacman -U</span> nginx-sentinel_&lt;version&gt;_linux_amd64.pkg.tar.zst
+
+<span class="c"># arm64</span>
+<span class="g">sudo pacman -U</span> nginx-sentinel_&lt;version&gt;_linux_arm64.pkg.tar.zst
+
+<span class="c"># Редактируем конфиг и запускаем</span>
+<span class="b">sudo nano</span> /etc/nginx-sentinel/config.yaml
+<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
+    </div>
+    <div class="tab-content" id="tab-src">
+<pre><span class="c"># Требуется Go 1.19+</span>
+<span class="g">git clone</span> https://github.com/mr-addams/nginx-sentinel
+<span class="b">cd</span> nginx-sentinel
+<span class="g">sudo ./scripts/install.sh</span>
+<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
+    </div>
+    <div class="callout">
+      <strong>После установки:</strong> отредактируйте <code>/etc/nginx-sentinel/config.yaml</code> — укажите путь к nginx access.log в <code>general.log_file</code>, при необходимости скорректируйте пороги scoring, затем запустите сервис. Конфиг перезагружается по <code>SIGHUP</code> без рестарта.
+    </div>
+  </div>
+</section>
+
+<section style="background:var(--bg2); border-top:1px solid var(--border); border-bottom:1px solid var(--border);">
+  <div class="container">
+    <div class="section-label">Whitelist</div>
+    <h2>Легитимный трафик никогда не блокируется</h2>
+    <p class="section-sub">Два независимых механизма защищают ваших реальных посетителей и инструменты от ложных срабатываний.</p>
+    <div class="cards">
+      <div class="card">
+        <div class="card-icon">🔬</div>
+        <h3>Автоматическая верификация ботов</h3>
+        <p>Googlebot, Bingbot, Яндекс, DuckDuckBot, GPTBot и ещё 6 семейств верифицируются через обратный + прямой DNS. Легитимные краулеры никогда не получают очков. Фейковые боты получают штраф.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">✅</div>
+        <h3>Кастомные исключения</h3>
+        <p>Добавьте IP офиса, VPN-подсети (CIDR), сервисы мониторинга или SEO-инструменты по подстроке User-Agent. Изменения применяются мгновенно по <code>SIGHUP</code> — рестарт не нужен.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">🔄</div>
+        <h3>Горячая перезагрузка</h3>
+        <p>Все изменения конфига — whitelist, очки детекторов, пороги — применяются командой <code>systemctl kill -s HUP nginx-sentinel</code>. Состояние IP и DNS-кэш сохраняются.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>
+    <a href="https://github.com/mr-addams/nginx-sentinel">nginx-sentinel</a> ·
+    <a href="https://github.com/mr-addams/nginx-sentinel/releases">Релизы</a> ·
+    <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md">Документация</a> ·
+    <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/CONTRIBUTING.md">Контрибьютинг</a> ·
+    <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/SECURITY.md">Безопасность</a>
+  </p>
+  <p style="margin-top:10px;">Лицензия: <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/LICENSE">GNU GPLv3</a></p>
+</footer>
+
+<script>
+  function showTab(id) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + id).classList.add('active');
+    event.target.classList.add('active');
+  }
+</script>
+</body>
+</html>

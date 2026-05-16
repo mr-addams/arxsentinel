@@ -42,11 +42,19 @@ jobs:
             exit 1
           fi
           TAG="${LAST_DEV%-dev.*}"
-          git tag "$TAG"
-          git push origin "$TAG"
+          # Skip if stable tag already published — this push is a doc/chore commit, not a release.
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — nothing to release"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Run goreleaser
+        if: steps.tag.outputs.skip != 'true'
         uses: goreleaser/goreleaser-action@v7
         with:
           version: latest
