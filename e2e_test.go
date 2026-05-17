@@ -24,6 +24,7 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
 	"github.com/mr-addams/nginx-sentinel/internal/core/scorer"
 	"github.com/mr-addams/nginx-sentinel/internal/core/state"
+	"github.com/mr-addams/nginx-sentinel/internal/core/whitelist"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 )
 
@@ -201,7 +202,212 @@ func TestE2ESynthetic(t *testing.T) {
 	)
 }
 
+// ========================== Task 11.1 — IPv6 attacker ================================
+//
+// Verifies that IPv6 addresses are parsed correctly and scored the same as IPv4.
+// 2001:db8::1 uses sqlmap UA + probe paths → THREAT after the second request.
+func TestE2EIPv6Attacker(t *testing.T) {
+	cfg, err := config.LoadConfig("")
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	threatLines := runPipelineFromFile(t, "testdata/ipv6_attacker.access.log", cfg, nil)
+
+	const attackerIPv6 = "2001:db8::1"
+	if !hasIPAtLevel(threatLines, attackerIPv6, " THREAT ") {
+		t.Errorf("expected THREAT for %s (sqlmap UA + probe paths), not found", attackerIPv6)
+		for _, line := range filterByIP(threatLines, attackerIPv6) {
+			t.Logf("  %s", line)
+		}
+		if len(filterByIP(threatLines, attackerIPv6)) == 0 {
+			t.Logf("  %s did not appear in the threat log at all", attackerIPv6)
+		}
+	}
+
+	t.Logf("ipv6 e2e: THREAT=%d, WARN=%d",
+		countLevel(threatLines, " THREAT "),
+		countLevel(threatLines, " WARN "),
+	)
+}
+
+// ========================== Task 11.2 — Slow attack ===================================
+//
+// Verifies that low-volume automation traffic (1 request per 2 minutes) still
+// accumulates enough score for detection. Rate detector does not fire — requests are
+// spread over 1 hour. Bruteforce (67% 404 ratio) + automation UA trigger WARN or THREAT.
+func TestE2ESlowAttack(t *testing.T) {
+	cfg, err := config.LoadConfig("")
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	threatLines := runPipelineFromFile(t, "testdata/slow_attack.access.log", cfg, nil)
+
+	total := countLevel(threatLines, " THREAT ") + countLevel(threatLines, " WARN ")
+	if total == 0 {
+		t.Errorf("expected at least one WARN or THREAT for slow automation scan, got 0")
+		t.Logf("  processed slow_attack.access.log: no threats detected")
+	}
+
+	const attackerIP = "10.1.1.1"
+	if !hasIPAtLevel(threatLines, attackerIP, " WARN ") && !hasIPAtLevel(threatLines, attackerIP, " THREAT ") {
+		t.Errorf("expected WARN or THREAT for %s (automation scan + bruteforce), not found", attackerIP)
+		t.Logf("  all threat entries: %v", threatLines)
+	}
+
+	t.Logf("slow attack e2e: %s — THREAT=%d, WARN=%d",
+		attackerIP,
+		countLevel(threatLines, " THREAT "),
+		countLevel(threatLines, " WARN "),
+	)
+}
+
+// ========================== Task 11.3 — False positive check =========================
+//
+// Verifies that normal high-volume browser traffic does not trigger THREAT.
+// 4 IPs, 48 requests each, real browser UAs, <5% 404s — well below every detector threshold.
+func TestE2EFalsePositive(t *testing.T) {
+	cfg, err := config.LoadConfig("")
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	threatLines := runPipelineFromFile(t, "testdata/legit_highvolume.access.log", cfg, nil)
+
+	threatCount := countLevel(threatLines, " THREAT ")
+	if threatCount > 0 {
+		t.Errorf("false positive: expected 0 THREAT entries for legitimate traffic, got %d", threatCount)
+		for _, line := range threatLines {
+			if strings.Contains(line, " THREAT ") {
+				t.Logf("  %s", line)
+			}
+		}
+	}
+
+	// Count distinct IPs with WARN — allow at most 1 (edge cases in scoring are acceptable)
+	warnIPs := make(map[string]struct{})
+	for _, line := range threatLines {
+		if strings.Contains(line, " WARN ") {
+			if ip := extractIPFromThreatLine(line); ip != "" {
+				warnIPs[ip] = struct{}{}
+			}
+		}
+	}
+	if len(warnIPs) > 1 {
+		t.Errorf("false positive: expected ≤1 IP with WARN for legitimate traffic, got %d", len(warnIPs))
+		for _, line := range threatLines {
+			if strings.Contains(line, " WARN ") {
+				t.Logf("  %s", line)
+			}
+		}
+	}
+
+	t.Logf("false positive e2e: THREAT=%d, WARN=%d (distinct IPs with WARN: %d)",
+		threatCount,
+		countLevel(threatLines, " WARN "),
+		len(warnIPs),
+	)
+}
+
+// ========================== Task 11.4 — Whitelisted IP ================================
+//
+// Verifies that an IP in whitelist.custom.ips is excluded from scoring even if it
+// sends scanner traffic that would otherwise produce a THREAT.
+func TestE2EWhitelistedCustomIP(t *testing.T) {
+	cfg, err := config.LoadConfig("")
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	const whitelistedIP = "192.168.100.1"
+	cfg.Whitelist.Custom.IPs = []string{whitelistedIP}
+
+	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
+	if err != nil {
+		t.Fatalf("whitelist.NewMatcher: %v", err)
+	}
+
+	// Inline log: whitelistedIP with sqlmap UA + probe paths — would score THREAT without whitelist.
+	logLines := []string{
+		whitelistedIP + ` - - [17/May/2026:13:00:01 +0000] "GET /wp-login.php HTTP/1.1" 404 162 "-" "sqlmap/1.7.11" "` + whitelistedIP + `"`,
+		whitelistedIP + ` - - [17/May/2026:13:00:02 +0000] "GET /.env HTTP/1.1" 404 162 "-" "sqlmap/1.7.11" "` + whitelistedIP + `"`,
+		whitelistedIP + ` - - [17/May/2026:13:00:03 +0000] "GET /.git/config HTTP/1.1" 404 162 "-" "sqlmap/1.7.11" "` + whitelistedIP + `"`,
+		whitelistedIP + ` - - [17/May/2026:13:00:04 +0000] "GET /phpmyadmin/ HTTP/1.1" 404 162 "-" "sqlmap/1.7.11" "` + whitelistedIP + `"`,
+		whitelistedIP + ` - - [17/May/2026:13:00:05 +0000] "GET /wp-admin/ HTTP/1.1" 404 162 "-" "sqlmap/1.7.11" "` + whitelistedIP + `"`,
+	}
+
+	tmpFile := t.TempDir() + "/whitelist_test.log"
+	if err := os.WriteFile(tmpFile, []byte(strings.Join(logLines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatalf("cannot write temp log file: %v", err)
+	}
+
+	threatLines := runPipelineFromFile(t, tmpFile, cfg, matcher)
+
+	if found := filterByIP(threatLines, whitelistedIP); len(found) > 0 {
+		t.Errorf("whitelisted IP %s appeared in threat log (%d entries)", whitelistedIP, len(found))
+		for _, line := range found {
+			t.Logf("  %s", line)
+		}
+	}
+
+	t.Logf("whitelist e2e: whitelisted IP %s not in threat log (total entries: %d)", whitelistedIP, len(threatLines))
+}
+
 // ========================== Helper functions ===========================================
+
+// runPipelineFromFile processes a log file through the detection pipeline and returns
+// all threat log lines. If matcher is non-nil, whitelisted IPs are skipped before
+// tracking — matching the behaviour of processLine in production.
+func runPipelineFromFile(t *testing.T, logPath string, cfg config.Config, matcher *whitelist.Matcher) []string {
+	t.Helper()
+
+	nopLog := func(_, _, _ string) {}
+	tracker := state.NewTracker(cfg, nopLog)
+	sc := scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), nopLog)
+
+	var threatLines []string
+	threatLogger := output.NewThreatLogger(func(ip string, score int, level string, modules []string, reason string) {
+		line := output.FormatThreatLine(ip, score, level, modules, reason)
+		threatLines = append(threatLines, line)
+	})
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		t.Fatalf("cannot open %s: %v", logPath, err)
+	}
+	defer f.Close()
+
+	scan := bufio.NewScanner(f)
+	scan.Buffer(make([]byte, e2eMaxLineBytes), e2eMaxLineBytes)
+	for scan.Scan() {
+		entry, ok := parser.Parse(scan.Text())
+		if !ok {
+			continue
+		}
+		if matcher != nil && matcher.IsWhitelistedIP(entry.RealIP) {
+			continue
+		}
+		ipState := tracker.Update(entry)
+		level, score, modules, reason := sc.Evaluate(ipState, entry)
+		threatLogger.Log(entry.RealIP, score, level, modules, reason)
+	}
+	if err := scan.Err(); err != nil {
+		t.Fatalf("scan error reading %s: %v", logPath, err)
+	}
+
+	return threatLines
+}
+
+// extractIPFromThreatLine parses the IP field from a FormatThreatLine output.
+// Format: "TIMESTAMP LEVEL IP score=N ..." — IP is the third whitespace-separated field.
+func extractIPFromThreatLine(line string) string {
+	parts := strings.Fields(line)
+	if len(parts) < 3 {
+		return ""
+	}
+	return parts[2]
+}
 
 func countLevel(lines []string, level string) int {
 	n := 0

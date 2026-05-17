@@ -1,0 +1,69 @@
+# nginx-sentinel — Generic PHP application probe paths override
+#
+# Covers common misconfigurations and exposed tools found in custom PHP apps,
+# legacy codebases, and shared hosting environments.
+# Use this config if you are not running a specific CMS.
+#
+# Usage:
+#   Merge detectors.probe.paths into your config.yaml.
+#
+# Apply without restart:
+#   kill -HUP $(pgrep nginx-sentinel)   # or systemctl kill -s HUP nginx-sentinel
+
+detectors:
+  probe:
+    paths:
+      # ── PHP info and diagnostics — never leave these in production ────────────────────
+      - /phpinfo.php
+      - /phpinfo/
+      - /info.php
+      - /php.php
+      - /test.php
+      - /check.php
+
+      # ── Database admin tools ───────────────────────────────────────────────────────────
+      - /phpmyadmin/           # phpMyAdmin — direct database access
+      - /pma/                  # common phpMyAdmin alias
+      - /myadmin/
+      - /mysql/
+      - /adminer.php           # Adminer — single-file database manager
+      - /adminer/
+
+      # ── Environment and configuration files ───────────────────────────────────────────
+      - /.env
+      - /.env.backup
+      - /config.php
+      - /config.inc.php        # common legacy config filename
+      - /conf.php
+      - /database.php
+      - /db.php
+      - /settings.php
+      - /local.php
+
+      # ── Backup and archive files left in web root ─────────────────────────────────────
+      - /backup.zip
+      - /backup.tar.gz
+      - /backup.sql
+      - /backup.sql.gz
+      - /db.sql
+      - /database.sql
+      - /dump.sql
+      - /site.zip
+      - /www.zip
+
+      # ── VCS — source code exposure ───────────────────────────────────────────────────
+      - /.git/
+      - /.git/config
+      - /.git/HEAD
+      - /.svn/entries
+
+      # ── Composer artifacts ────────────────────────────────────────────────────────────
+      - /composer.json
+      - /composer.lock
+      - /vendor/
+
+      # ── Exposed log and error files ────────────────────────────────────────────────────
+      - /error_log
+      - /error.log
+      - /php_error.log
+      - /application.log
