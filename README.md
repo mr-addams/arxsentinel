@@ -19,7 +19,10 @@ nginx access.log → TailReader → whitelist → tracker → scorer → threats
 - **Bot DNS verification:** Googlebot, Bingbot, Yandex, DuckDuckGo and others are verified via rDNS/fDNS — legitimate crawlers are never banned
 - **Whitelist:** IPs, CIDRs, UA substrings — configurable exclusion lists
 - **Linear score decay:** points decay over `observation_window`, no false bans from old traffic
-- **SIGHUP reload:** config, scorer and whitelist are rebuilt without restarting the daemon
+- **Prometheus metrics:** `/metrics` on configurable port (default `:9117`), optional bcrypt basic auth; Grafana dashboard included
+- **Health endpoint:** `/health` always returns `200 {"status":"ok"}` — no credentials required; ready for Docker `HEALTHCHECK`, k8s probes, and load balancers
+- **JSON log format:** switch nginx-sentinel to JSON log parsing via `parser.log_format: "json"` — no recompilation needed
+- **SIGHUP reload:** config, scorer, parser and whitelist are rebuilt without restarting the daemon
 - **Graceful shutdown:** line buffer is drained on SIGTERM
 - **Systemd + logrotate + Fail2Ban:** ready-to-use deploy configs included
 
@@ -34,7 +37,7 @@ nginx access.log → TailReader → whitelist → tracker → scorer → threats
 ### Quick install — any distro (recommended)
 
 Auto-detects your distro and architecture, downloads the correct package from GitHub Releases,
-installs it with your package manager, and starts the service:
+installs it with your package manager, enables and starts the service:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | sudo bash
@@ -43,11 +46,11 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scrip
 Works on Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, and Arch Linux.
 Requires `curl` and `sudo`. Fail2Ban is installed automatically if missing.
 
-After installation, edit the config and enable the service:
+The service starts immediately with default settings. To apply your config:
 
 ```bash
 sudo nano /etc/nginx-sentinel/config.yaml
-sudo systemctl enable --now nginx-sentinel
+sudo systemctl kill -s HUP nginx-sentinel   # reload without restart
 ```
 
 ---
@@ -624,6 +627,55 @@ Ready-made `probe.paths` overrides for the most common PHP stacks are in
 
 The paths **extend** (not replace) the built-in sensitive-path list by default.
 To use only your custom list, set `detectors.probe.paths:` to exactly the paths you want.
+
+---
+
+## Prometheus metrics
+
+Enable in `config.yaml`:
+
+```yaml
+metrics:
+  enabled: true
+  listen_addr: ":9117"   # port for the metrics HTTP server
+  # Optional basic auth — leave username empty to disable:
+  username: ""
+  password_hash: ""      # bcrypt hash; see deploy/grafana/README.md for generation
+```
+
+### Endpoints
+
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `/metrics` | optional basic auth | Prometheus scrape endpoint |
+| `/health` | none | Liveness probe — always returns `200 {"status":"ok"}` |
+
+The `/health` endpoint requires no credentials and is safe to expose to load balancers,
+Docker `HEALTHCHECK`, and k8s liveness/readiness probes.
+
+### Available metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `nginx_sentinel_lines_processed_total` | Counter | Log lines processed |
+| `nginx_sentinel_threats_total{level}` | Counter | Threats by level (`THREAT` / `WARN`) |
+| `nginx_sentinel_detector_hits_total{detector}` | Counter | Hits per detector name |
+| `nginx_sentinel_tracked_ips` | Gauge | Currently tracked IPs |
+| `nginx_sentinel_suspicious_ips` | Gauge | IPs with score above alert threshold |
+
+### Prometheus scrape config
+
+```yaml
+scrape_configs:
+  - job_name: "nginx-sentinel"
+    static_configs:
+      - targets: ["localhost:9117"]
+    # basic_auth:          # only if auth is enabled in sentinel config
+    #   username: "prometheus"
+    #   password: "your-plaintext-password"
+```
+
+For Grafana dashboard setup see [`deploy/grafana/README.md`](deploy/grafana/README.md).
 
 ---
 

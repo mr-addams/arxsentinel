@@ -19,7 +19,10 @@ nginx access.log → TailReader → whitelist → tracker → scorer → threats
 - **DNS-верификация ботов:** Googlebot, Bingbot, Yandex, DuckDuckGo и другие верифицируются по rDNS/fDNS — легитимные краулеры в бан не попадают
 - **Whitelist:** IP, CIDR, UA-подстроки — конфигурируемые списки исключений
 - **Линейный decay score:** очки затухают за `observation_window`, нет ложных банов от старого трафика
-- **SIGHUP reload:** конфиг, scorer и whitelist пересоздаются без перезапуска демона
+- **Prometheus-метрики:** `/metrics` на настраиваемом порту (по умолчанию `:9117`), опциональная basic auth с bcrypt; дашборд Grafana в комплекте
+- **Health endpoint:** `/health` всегда возвращает `200 {"status":"ok"}` без авторизации — готов для Docker `HEALTHCHECK`, k8s probes и балансировщиков
+- **JSON-формат логов:** переключение на JSON-парсинг через `parser.log_format: "json"` без перекомпиляции
+- **SIGHUP reload:** конфиг, scorer, парсер и whitelist пересоздаются без перезапуска демона
 - **Graceful shutdown:** дренирование буфера строк при SIGTERM
 - **Systemd + logrotate + Fail2Ban:** готовые deploy-конфиги в комплекте
 
@@ -34,7 +37,7 @@ nginx access.log → TailReader → whitelist → tracker → scorer → threats
 ### Быстрая установка — любой дистрибутив (рекомендуется)
 
 Скрипт автоматически определяет дистрибутив и архитектуру, скачивает нужный пакет из GitHub Releases,
-устанавливает его через штатный менеджер пакетов и запускает сервис:
+устанавливает его через штатный менеджер пакетов, добавляет в автозагрузку и запускает сервис:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | sudo bash
@@ -43,11 +46,11 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scrip
 Работает на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux и Arch Linux.
 Требует `curl` и `sudo`. Fail2Ban устанавливается автоматически, если отсутствует.
 
-После установки отредактируйте конфиг и включите сервис:
+Сервис запускается сразу с настройками по умолчанию. Чтобы применить свой конфиг:
 
 ```bash
 sudo nano /etc/nginx-sentinel/config.yaml
-sudo systemctl enable --now nginx-sentinel
+sudo systemctl kill -s HUP nginx-sentinel   # перезагрузка без рестарта
 ```
 
 ---
@@ -626,6 +629,55 @@ parser:
 ```
 
 Неизвестные поля в JSON-строке игнорируются — потребляются только поля из маппинга.
+
+---
+
+## Prometheus-метрики
+
+Включить в `config.yaml`:
+
+```yaml
+metrics:
+  enabled: true
+  listen_addr: ":9117"   # порт HTTP-сервера метрик
+  # Опциональная basic auth — оставьте username пустым для отключения:
+  username: ""
+  password_hash: ""      # bcrypt-хеш; генерацию см. в deploy/grafana/README.md
+```
+
+### Эндпоинты
+
+| Эндпоинт | Авторизация | Описание |
+|----------|-------------|----------|
+| `/metrics` | опциональная basic auth | Scrape-эндпоинт Prometheus |
+| `/health` | нет | Liveness probe — всегда возвращает `200 {"status":"ok"}` |
+
+`/health` не требует учётных данных и безопасно открывается для балансировщиков,
+Docker `HEALTHCHECK` и k8s liveness/readiness probes.
+
+### Доступные метрики
+
+| Метрика | Тип | Описание |
+|---------|-----|----------|
+| `nginx_sentinel_lines_processed_total` | Counter | Обработано строк лога |
+| `nginx_sentinel_threats_total{level}` | Counter | Угрозы по уровню (`THREAT` / `WARN`) |
+| `nginx_sentinel_detector_hits_total{detector}` | Counter | Срабатывания по детектору |
+| `nginx_sentinel_tracked_ips` | Gauge | Текущее количество отслеживаемых IP |
+| `nginx_sentinel_suspicious_ips` | Gauge | IP с score выше alert threshold |
+
+### Конфиг scrape для Prometheus
+
+```yaml
+scrape_configs:
+  - job_name: "nginx-sentinel"
+    static_configs:
+      - targets: ["localhost:9117"]
+    # basic_auth:          # только если авторизация включена в конфиге sentinel
+    #   username: "prometheus"
+    #   password: "ваш-пароль-открытым-текстом"
+```
+
+Настройка дашборда Grafana — в [`deploy/grafana/README.md`](deploy/grafana/README.md).
 
 ---
 
