@@ -147,7 +147,7 @@ func main() {
 		if len(displayAddr) > 0 && displayAddr[0] == ':' {
 			displayAddr = "localhost" + displayAddr
 		}
-		utils.Log("CONFIG", fmt.Sprintf("metrics: http://%s/metrics", displayAddr), "info")
+		utils.Log("CONFIG", fmt.Sprintf("metrics: http://%s/metrics  health: http://%s/health", displayAddr, displayAddr), "info")
 	}
 
 	// ── Pipeline component initialization ────────────────────────────────────────────
@@ -229,9 +229,15 @@ func main() {
 	// keeps continuous counter timeseries (no reset on config reload).
 	if cfg.Metrics.Enabled {
 		metrics.Init()
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", metricsHandler(cfg.Metrics.Username, cfg.Metrics.PasswordHash))
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"status":"ok"}`)
+		})
 		srv := &http.Server{
 			Addr:              cfg.Metrics.ListenAddr,
-			Handler:           metricsHandler(cfg.Metrics.Username, cfg.Metrics.PasswordHash),
+			Handler:           mux,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 		go func() {
