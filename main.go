@@ -34,13 +34,18 @@
 //     Four detectors connected: bruteforce, crawler, noasset, overflow.
 //   Change (Flow #5, Task 5.3):
 //     Added PID file management: writePID after utils.Init, defer removePID.
+//   Change (Flow #8, Task 8.2):
+//     Metrics HTTP server: started once after logger init, survives SIGHUP reload.
 
 package main
 
 import (
 	"context"
+	"crypto/subtle"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -49,6 +54,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/mr-addams/nginx-sentinel/internal/core/detector"
 	"github.com/mr-addams/nginx-sentinel/internal/core/output"
 	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
@@ -56,7 +63,9 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/core/state"
 	"github.com/mr-addams/nginx-sentinel/internal/core/whitelist"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
+	"github.com/mr-addams/nginx-sentinel/internal/sys/metrics"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // processedCount / threatCount — atomic counters for the stats goroutine (Task 7.3).
@@ -131,6 +140,14 @@ func main() {
 		cfg.Logging.Debug,
 	), "info")
 	utils.Log("CONFIG", fmt.Sprintf("log: %s", cfg.General.LogFile), "info")
+	if cfg.Metrics.Enabled {
+		// Resolve display address: ":9117" → "localhost:9117" for readable log output.
+		displayAddr := cfg.Metrics.ListenAddr
+		if len(displayAddr) > 0 && displayAddr[0] == ':' {
+			displayAddr = "localhost" + displayAddr
+		}
+		utils.Log("CONFIG", fmt.Sprintf("metrics: http://%s/metrics", displayAddr), "info")
+	}
 
 	// ── Pipeline component initialization ────────────────────────────────────────────
 
@@ -154,6 +171,8 @@ func main() {
 	// threatLogger — writes WARN/THREAT to threats.log (Task 2.4).
 	// Closure around utils.LogThreat: increments threatCount for the stats goroutine.
 	threatLogger := output.NewThreatLogger(func(ip string, score int, level string, modules []string, reason string) {
+		// threatCount tracks THREAT-only for STATS log; nginx_sentinel_threats_total tracks
+		// both WARN and THREAT — use the Prometheus metric for full threat breakdown.
 		if level == "THREAT" {
 			threatCount.Add(1)
 		}
@@ -203,6 +222,29 @@ func main() {
 		}
 	}()
 
+	// ── Metrics HTTP server (Tasks 8.2, 8.6) ────────────────────────────────────────
+	// Started once here — intentionally NOT restarted on SIGHUP so Prometheus scraper
+	// keeps continuous counter timeseries (no reset on config reload).
+	if cfg.Metrics.Enabled {
+		metrics.Init()
+		srv := &http.Server{
+			Addr:              cfg.Metrics.ListenAddr,
+			Handler:           metricsHandler(cfg.Metrics.Username, cfg.Metrics.PasswordHash),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		go func() {
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				utils.Log("METRICS", "server error: "+err.Error(), "warn")
+			}
+		}()
+		go func() {
+			<-ctx.Done()
+			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutCancel()
+			_ = srv.Shutdown(shutCtx)
+		}()
+	}
+
 	// ── GC goroutine ──────────────────────────────────────────────────────────────────
 	go tracker.RunGC(ctx, time.Duration(cfg.State.GCInterval))
 
@@ -225,6 +267,7 @@ func main() {
 					processedCount.Load(), st.TrackedIPs,
 					threatCount.Load(), st.Suspicious,
 				), "info")
+				metrics.UpdateGauges(st.TrackedIPs, st.Suspicious)
 			}
 		}
 	}()
@@ -430,6 +473,7 @@ func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 	}
 	// Only successfully parsed lines are counted — malformed entries are excluded.
 	processedCount.Add(1)
+	metrics.RecordLine()
 
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
@@ -484,6 +528,38 @@ func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 	// Returned *IPState implements detector.ScoreAccess.
 	level, score, modules, reason := pipe.Scorer.Evaluate(ipState, entry)
 
-	// Write to threat log only on WARN or THREAT
+	// Write to threat log and record metrics only on WARN or THREAT.
+	if level != "" {
+		metrics.RecordThreat(level)
+		for _, mod := range modules {
+			metrics.RecordDetectorHit(mod)
+		}
+	}
 	pipe.ThreatLogger.Log(entry.RealIP, score, level, modules, reason)
+}
+
+// ========================== Metrics auth ================================================
+
+// metricsHandler wraps promhttp.Handler with optional bcrypt basic auth.
+// If username is empty, auth is disabled and the handler is returned as-is.
+// Both username and password are always compared to prevent timing side-channels.
+func metricsHandler(username, passwordHash string) http.Handler {
+	inner := promhttp.Handler()
+	if username == "" {
+		return inner
+	}
+	usernameBytes := []byte(username)
+	hashBytes := []byte(passwordHash)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, p, ok := r.BasicAuth()
+		// Both checks run unconditionally to avoid timing side-channels.
+		userOK := subtle.ConstantTimeCompare([]byte(u), usernameBytes) == 1
+		passOK := bcrypt.CompareHashAndPassword(hashBytes, []byte(p)) == nil
+		if !ok || !userOK || !passOK {
+			w.Header().Set("WWW-Authenticate", `Basic realm="nginx-sentinel metrics"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		inner.ServeHTTP(w, r)
+	})
 }
