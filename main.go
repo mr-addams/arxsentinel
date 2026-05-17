@@ -384,9 +384,12 @@ func buildDetectors(cfg config.Config) []detector.Detector {
 }
 
 // buildParser returns the parser matching cfg.Parser.LogFormat.
-// "json" → JSONParser (Task 9.5); all other values → CombinedParser (default).
+// "json" → JSONParser; all other values → CombinedParser (default).
 // Called at startup and on SIGHUP so a log_format change takes effect without restart.
 func buildParser(cfg config.Config) parser.Parser {
+	if cfg.Parser.LogFormat == "json" {
+		return parser.NewJSONParser(cfg.Parser.JSONFields)
+	}
 	return &parser.CombinedParser{}
 }
 
