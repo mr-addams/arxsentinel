@@ -422,6 +422,64 @@ fail2ban-client set nginx-sentinel unbanip 1.2.3.4
 **What is updated on SIGHUP:** scorer (detectors + thresholds), whitelist matcher, debug/color flags, log file paths.  
 **What is NOT updated:** tracker (IP state), DNS cache, TailReader (access.log path requires a restart).
 
+## JSON log format
+
+By default nginx-sentinel expects nginx combined log format with a `$real_ip` field appended.  
+It also supports JSON log format — switch via `config.yaml` without recompilation.
+
+### Step 1 — Configure nginx
+
+Add a JSON log format to `nginx.conf`:
+
+```nginx
+log_format json_log escape=json
+  '{"remote_addr":"$remote_addr",'
+  '"time_iso8601":"$time_iso8601",'
+  '"request":"$request",'
+  '"status":"$status",'
+  '"bytes_sent":"$bytes_sent",'
+  '"http_referer":"$http_referer",'
+  '"http_user_agent":"$http_user_agent",'
+  '"real_ip":"$real_ip"}';
+
+access_log /var/log/nginx/access.log json_log;
+```
+
+> `$real_ip` requires `ngx_http_realip_module`. If you don't use a reverse proxy, replace it with `$remote_addr`.
+
+### Step 2 — Update sentinel config
+
+```yaml
+parser:
+  log_format: "json"   # "combined" (default) | "json"
+```
+
+The change takes effect on the next **SIGHUP** — no restart needed:
+
+```bash
+kill -HUP $(cat /var/run/nginx-sentinel.pid)
+```
+
+### Custom field names
+
+If your nginx `log_format` uses different key names, override the mapping:
+
+```yaml
+parser:
+  log_format: "json"
+  json_fields:
+    remote_addr: "client"
+    time:        "ts"
+    request:     "req"
+    status:      "code"
+    bytes_sent:  "size"
+    referer:     "ref"
+    user_agent:  "ua"
+    real_ip:     "ip"
+```
+
+Unknown fields in the JSON log line are silently ignored — only the mapped fields are consumed.
+
 ## Behind a Reverse Proxy (Cloudflare)
 
 If nginx sits behind Cloudflare, `$remote_addr` in the logs will be a Cloudflare IP, not the real client. nginx-sentinel would then score Cloudflare's addresses → Fail2Ban would ban Cloudflare → the site goes down for everyone.

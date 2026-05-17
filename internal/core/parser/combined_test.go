@@ -1,5 +1,5 @@
-// ========================== Tests for parser/nginx module ==================================
-//   Unit tests for Parse() and helper functions.
+// ========================== Tests for parser/combined module ================================
+//   Unit tests for CombinedParser.Parse() and helper functions.
 //
 //   Covered scenarios:
 //     - Normal IPv4 line
