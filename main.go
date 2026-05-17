@@ -34,13 +34,17 @@
 //     Four detectors connected: bruteforce, crawler, noasset, overflow.
 //   Change (Flow #5, Task 5.3):
 //     Added PID file management: writePID after utils.Init, defer removePID.
+//   Change (Flow #8, Task 8.2):
+//     Metrics HTTP server: started once after logger init, survives SIGHUP reload.
 
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -56,7 +60,9 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/core/state"
 	"github.com/mr-addams/nginx-sentinel/internal/core/whitelist"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
+	"github.com/mr-addams/nginx-sentinel/internal/sys/metrics"
 	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // processedCount / threatCount — atomic counters for the stats goroutine (Task 7.3).
@@ -131,6 +137,14 @@ func main() {
 		cfg.Logging.Debug,
 	), "info")
 	utils.Log("CONFIG", fmt.Sprintf("log: %s", cfg.General.LogFile), "info")
+	if cfg.Metrics.Enabled {
+		// Resolve display address: ":9117" → "localhost:9117" for readable log output.
+		displayAddr := cfg.Metrics.ListenAddr
+		if len(displayAddr) > 0 && displayAddr[0] == ':' {
+			displayAddr = "localhost" + displayAddr
+		}
+		utils.Log("CONFIG", fmt.Sprintf("metrics: http://%s/metrics", displayAddr), "info")
+	}
 
 	// ── Pipeline component initialization ────────────────────────────────────────────
 
@@ -202,6 +216,29 @@ func main() {
 			}
 		}
 	}()
+
+	// ── Metrics HTTP server (Task 8.2) ───────────────────────────────────────────────
+	// Started once here — intentionally NOT restarted on SIGHUP so Prometheus scraper
+	// keeps continuous counter timeseries (no reset on config reload).
+	if cfg.Metrics.Enabled {
+		metrics.Init()
+		srv := &http.Server{
+			Addr:              cfg.Metrics.ListenAddr,
+			Handler:           promhttp.Handler(),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		go func() {
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				utils.Log("METRICS", "server error: "+err.Error(), "warn")
+			}
+		}()
+		go func() {
+			<-ctx.Done()
+			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutCancel()
+			_ = srv.Shutdown(shutCtx)
+		}()
+	}
 
 	// ── GC goroutine ──────────────────────────────────────────────────────────────────
 	go tracker.RunGC(ctx, time.Duration(cfg.State.GCInterval))

@@ -59,6 +59,7 @@ type Config struct {
 	Detectors DetectorsConfig `yaml:"detectors"`
 	Whitelist WhitelistConfig `yaml:"whitelist"`
 	Output    OutputConfig    `yaml:"output"`
+	Metrics   MetricsConfig   `yaml:"metrics"`
 }
 
 // ++++++++++++++++++++++++++ Section: general +++++++++++++++++++++++++++++++++++++++++++
@@ -215,6 +216,14 @@ type DNSCacheConfig struct {
 type OutputConfig struct {
 	ThreatLog      string `yaml:"threat_log"`      // YAML: output.threat_log, default "/var/log/nginx-sentinel/threats.log" — threat log for Fail2Ban. Consumer: output.Logger
 	OperationalLog string `yaml:"operational_log"` // YAML: output.operational_log, default "/var/log/nginx-sentinel/sentinel.log" — daemon operational log. Consumer: utils.Init
+}
+
+// ++++++++++++++++++++++++++ Section: metrics ++++++++++++++++++++++++++++++++++++++++++++
+
+// MetricsConfig holds Prometheus /metrics endpoint settings.
+type MetricsConfig struct {
+	Enabled    bool   `yaml:"enabled"`     // YAML: metrics.enabled, default false — enable Prometheus /metrics endpoint. Consumer: main.go metrics server
+	ListenAddr string `yaml:"listen_addr"` // YAML: metrics.listen_addr, default ":9117" — address for the metrics HTTP server. Consumer: main.go metrics server
 }
 
 // ========================== Config loading ============================================
@@ -387,6 +396,10 @@ func defaultConfig() Config {
 		Output: OutputConfig{
 			ThreatLog:      "/var/log/nginx-sentinel/threats.log",
 			OperationalLog: "/var/log/nginx-sentinel/sentinel.log",
+		},
+		Metrics: MetricsConfig{
+			Enabled:    false,
+			ListenAddr: ":9117",
 		},
 	}
 }
