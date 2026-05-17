@@ -41,6 +41,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net"
@@ -52,6 +53,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/mr-addams/nginx-sentinel/internal/core/detector"
 	"github.com/mr-addams/nginx-sentinel/internal/core/output"
@@ -219,14 +222,14 @@ func main() {
 		}
 	}()
 
-	// ── Metrics HTTP server (Task 8.2) ───────────────────────────────────────────────
+	// ── Metrics HTTP server (Tasks 8.2, 8.6) ────────────────────────────────────────
 	// Started once here — intentionally NOT restarted on SIGHUP so Prometheus scraper
 	// keeps continuous counter timeseries (no reset on config reload).
 	if cfg.Metrics.Enabled {
 		metrics.Init()
 		srv := &http.Server{
 			Addr:              cfg.Metrics.ListenAddr,
-			Handler:           promhttp.Handler(),
+			Handler:           metricsHandler(cfg.Metrics.Username, cfg.Metrics.PasswordHash),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 		go func() {
@@ -533,4 +536,30 @@ func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 		}
 	}
 	pipe.ThreatLogger.Log(entry.RealIP, score, level, modules, reason)
+}
+
+// ========================== Metrics auth ================================================
+
+// metricsHandler wraps promhttp.Handler with optional bcrypt basic auth.
+// If username is empty, auth is disabled and the handler is returned as-is.
+// Both username and password are always compared to prevent timing side-channels.
+func metricsHandler(username, passwordHash string) http.Handler {
+	inner := promhttp.Handler()
+	if username == "" {
+		return inner
+	}
+	usernameBytes := []byte(username)
+	hashBytes := []byte(passwordHash)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, p, ok := r.BasicAuth()
+		// Both checks run unconditionally to avoid timing side-channels.
+		userOK := subtle.ConstantTimeCompare([]byte(u), usernameBytes) == 1
+		passOK := bcrypt.CompareHashAndPassword(hashBytes, []byte(p)) == nil
+		if !ok || !userOK || !passOK {
+			w.Header().Set("WWW-Authenticate", `Basic realm="nginx-sentinel metrics"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		inner.ServeHTTP(w, r)
+	})
 }
