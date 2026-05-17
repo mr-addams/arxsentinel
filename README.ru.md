@@ -382,7 +382,7 @@ nginx access.log
 **Operational log** (`/var/log/nginx-sentinel/sentinel.log`) — рабочий лог демона:
 
 ```
-2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.1 запуск
+2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.2 запуск
 2026-04-02 14:33:12 [THREAT] 45.134.26.8 score=85 modules=probe,rate reason="..."
 2026-04-02 14:38:10 [STATS] processed=14320 tracked=87 threats=3 suspicious=12
 ```
