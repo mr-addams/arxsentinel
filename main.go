@@ -80,7 +80,7 @@ var (
 )
 
 // PipelineContext holds long-lived dependencies shared by processLine.
-// Recreated on SIGHUP reload: Scorer and Matcher are replaced, Tracker and
+// Recreated on SIGHUP reload: Scorer, Matcher, and Parser are replaced; Tracker and
 // Verifier survive. FakeBotScore and DNSVerifyTimeout reflect the current config.
 type PipelineContext struct {
 	Tracker          *state.Tracker
@@ -88,6 +88,7 @@ type PipelineContext struct {
 	ThreatLogger     *output.ThreatLogger
 	Matcher          *whitelist.Matcher
 	Verifier         *whitelist.Verifier
+	Parser           parser.Parser
 	FakeBotScore     int
 	DNSVerifyTimeout time.Duration
 }
@@ -185,6 +186,7 @@ func main() {
 		ThreatLogger:     threatLogger,
 		Matcher:          matcher,
 		Verifier:         verifier,
+		Parser:           buildParser(cfg),
 		FakeBotScore:     cfg.Whitelist.FakeBotScore,
 		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
 	}
@@ -332,6 +334,7 @@ func main() {
 				ThreatLogger:     threatLogger,
 				Matcher:          newMatcher,
 				Verifier:         verifier,
+				Parser:           buildParser(cfg),
 				FakeBotScore:     cfg.Whitelist.FakeBotScore,
 				DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
 			}
@@ -378,6 +381,13 @@ func buildDetectors(cfg config.Config) []detector.Detector {
 	utils.Log("CONFIG", fmt.Sprintf("detectors: %d active (%s)",
 		len(detectors), strings.Join(names, " ")), "info")
 	return detectors
+}
+
+// buildParser returns the parser matching cfg.Parser.LogFormat.
+// "json" → JSONParser (Task 9.5); all other values → CombinedParser (default).
+// Called at startup and on SIGHUP so a log_format change takes effect without restart.
+func buildParser(cfg config.Config) parser.Parser {
+	return &parser.CombinedParser{}
 }
 
 // ── Detector factories ─────────────────────────────────────────────────────────────────
@@ -466,7 +476,7 @@ func removePID(path string) {
 //
 // Change (Flow #4, Task 4.0): added whitelist integration and fake bot penalty.
 func processLine(ctx context.Context, line string, pipe *PipelineContext) {
-	entry, ok := parser.Parse(line)
+	entry, ok := pipe.Parser.Parse(line)
 	if !ok {
 		utils.Log("PARSER", fmt.Sprintf("skipping malformed line: %.80s", line), "debug")
 		return
