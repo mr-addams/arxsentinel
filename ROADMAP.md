@@ -5,55 +5,92 @@ Items are not guaranteed — they reflect current thinking and may be reprioriti
 
 ---
 
-## v0.3.0
+## Stage 1 — v0.3.0 (nginx-sentinel repo)
 
-### Multi-stream support (multiple log files in one process)
+Universal parser support + multi-stream. Developed in the current repo.
+After v0.3.0 ships, the project migrates to **arx-sentinel**.
 
-**Problem:** servers hosting multiple domains each have a separate nginx `access.log`.
-Today the only option is running one `nginx-sentinel` instance per domain — separate
-configs, separate ports, N × memory.
+### Flow #13 — Multi-stream support
 
-**Proposed solution:** a `streams:` section in `config.yaml` that lets a single process
-watch multiple log files simultaneously, with full isolation between streams at every
-layer — tracker, scorer, whitelist, threat log, and metrics.
+Watch multiple log files in one process with full per-stream isolation.
+See `~/.claude/flows/013_2026-05-17_multi-stream/` for detailed plan.
 
 ```yaml
 streams:
   - name: site1
     log_file: /var/log/nginx/site1.access.log
     threat_log: /var/log/nginx-sentinel/site1.threats.log
-    # Optional per-stream config overrides (scoring, detectors, whitelist)
-
   - name: site2
     log_file: /var/log/nginx/site2.access.log
     threat_log: /var/log/nginx-sentinel/site2.threats.log
 ```
 
-**Metrics isolation:** all streams report to the same `/metrics` endpoint, but every
-counter and gauge carries a `stream` label — the native Prometheus approach for
-multi-instance data on a single scrape target:
+Metrics carry a `stream` label on all counters/gauges. Backward compatible:
+`general.log_file` continues to work as a single unnamed stream.
 
-```
-nginx_sentinel_threats_total{level="THREAT", stream="site1"} 12
-nginx_sentinel_threats_total{level="THREAT", stream="site2"} 3
-nginx_sentinel_tracked_ips{stream="site1"} 47
-nginx_sentinel_tracked_ips{stream="site2"} 11
+### Flow #14 — Regex parser
+
+Custom text log format via named capture groups:
+
+```yaml
+parser:
+  log_format: "regex"
+  regex_pattern: '(?P<remote_addr>\S+) .* "(?P<request>[^"]+)" (?P<status>\d+) (?P<bytes_sent>\d+).*'
 ```
 
-**Scope:**
-- `PipelineContext` becomes per-stream; each stream runs in its own goroutine set
-- Metrics registry redesigned to accept a `stream` label on all vectors
-- SIGHUP rebuilds all stream pipelines without dropping the metrics HTTP server
-- Fail2Ban threat log remains per-stream (one file per domain)
-- Backward compatible: existing single `general.log_file` config continues to work
-  (treated as a single unnamed stream)
+### Flow #15 — Built-in server profiles
+
+Drop-in support for Apache, Caddy, Traefik, HAProxy:
+
+```yaml
+parser:
+  profile: "apache"   # apache | caddy | traefik | haproxy-http
+```
+
+Each profile ships with a `deploy/examples/<server>/` config and README section.
+
+### Flow #16 — Release v0.3.0
+
+---
+
+## Stage 2 — v1.0.0 (arx-sentinel repo)
+
+Migration and rebrand. All development from this point happens in `mr-addams/arx-sentinel`.
+**Language rule:** all code, comments, flows, and docs switch to English at migration.
+Documentation continues in EN + RU + UK.
+
+### Flow #17 — Repo migration
+
+- Create `mr-addams/arx-sentinel`, push current code with full git history
+- Archive `nginx-sentinel` with a redirect notice in README
+- Update `get.sh` repo reference, CI workflows, GitHub Pages source
+
+### Flow #18 — Core rebrand
+
+- Binary: `nginx-sentinel` → `arxsentinel`
+- Systemd unit: `nginx-sentinel.service` → `arxsentinel.service`
+- Config path: `/etc/nginx-sentinel/` → `/etc/arxsentinel/`
+- Log path: `/var/log/nginx-sentinel/` → `/var/log/arxsentinel/`
+- Prometheus metrics: `nginx_sentinel_*` → `arx_sentinel_*` (breaking — documented in CHANGELOG)
+- `scripts/migrate.sh` — automatic config migration for existing users
+- Fail2Ban filter updated
+
+### Flow #19 — Landing pages + SEO rebrand
+
+- Name: ArxSentinel across all three landing pages (EN/RU/UK)
+- Tagline: "works with nginx, Apache, Caddy, Traefik, HAProxy"
+- JSON-LD, canonical URLs, og:url, hreflang → new repo URLs
+- README rewritten for ArxSentinel
+
+### Flow #20 — Release v1.0.0
+
+VERSION 1.0.0, CHANGELOG with migration notes from 0.x.
 
 ---
 
 ## Backlog (unscheduled)
 
-- **GeoIP enrichment** — add country/ASN label to threat log and metrics
+- **GeoIP enrichment** — country/ASN label in threat log and metrics
 - **Rate-limit exemptions per path** — exclude `/api/health` and similar from rate detector
 - **Webhook notifications** — HTTP POST on THREAT event (Slack, Telegram, generic)
-- **eBPF tail reader** — replace inotify-based tail with eBPF for lower latency on
-  high-throughput logs
+- **eBPF tail reader** — replace inotify-based tail with eBPF for lower latency
