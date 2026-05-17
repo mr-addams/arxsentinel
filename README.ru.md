@@ -503,6 +503,30 @@ http {
 0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
 ```
 
+## Конфигурации для CMS
+
+Готовые переопределения `probe.paths` для наиболее популярных PHP-стеков находятся в
+`deploy/examples/cms/`. Скопируйте нужные пути в свой `config.yaml`:
+
+| Файл | Для кого |
+|------|----------|
+| [`wordpress.yaml`](deploy/examples/cms/wordpress.yaml) | WordPress — `wp-login.php`, `xmlrpc.php`, перечисление пользователей через REST |
+| [`laravel.yaml`](deploy/examples/cms/laravel.yaml) | Laravel — `.env`, `/storage/`, `/vendor/`, Telescope, Horizon |
+| [`drupal.yaml`](deploy/examples/cms/drupal.yaml) | Drupal — `/user/login`, `settings.php`, `update.php` |
+| [`joomla.yaml`](deploy/examples/cms/joomla.yaml) | Joomla — `/administrator/`, `configuration.php` |
+| [`generic-php.yaml`](deploy/examples/cms/generic-php.yaml) | Custom PHP — phpinfo, phpMyAdmin, Adminer, резервные копии |
+
+**Как применить конфиг CMS:**
+
+1. Откройте `deploy/examples/cms/<cms>.yaml` и скопируйте список `paths:`.
+2. Вставьте его в `config.yaml` под `detectors.probe.paths:`.
+3. Перезагрузите без рестарта: `kill -HUP $(pgrep nginx-sentinel)` — или `systemctl kill -s HUP nginx-sentinel`.
+
+Пути **дополняют** (а не заменяют) встроенный список sensitive-путей по умолчанию.
+Чтобы использовать только свой список, задайте в `detectors.probe.paths:` ровно те пути, которые нужны.
+
+---
+
 ## Решение проблем
 
 **Демон не запускается — ошибка threat log:**  

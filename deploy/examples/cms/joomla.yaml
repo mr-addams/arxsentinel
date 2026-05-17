@@ -1,0 +1,43 @@
+# nginx-sentinel — Joomla-specific probe paths override
+#
+# Joomla uses /administrator as the admin entry point.
+# These paths are targeted by JoomScan, Joomla-specific exploit kits,
+# and generic CMS scanners.
+#
+# Usage:
+#   Merge detectors.probe.paths into your config.yaml.
+#
+# Apply without restart:
+#   kill -HUP $(pgrep nginx-sentinel)   # or systemctl kill -s HUP nginx-sentinel
+
+detectors:
+  probe:
+    paths:
+      # ── Admin entry point ─────────────────────────────────────────────────────────────
+      - /administrator/        # primary brute-force target
+      - /administrator/index.php
+
+      # ── Configuration — must never be web-accessible ─────────────────────────────────
+      - /configuration.php     # database credentials and secret key
+      - /configuration.php.bak
+      - /configuration.php~
+
+      # ── Installation and maintenance ────────────────────────────────────────────────
+      - /installation/         # must be removed after install
+      - /cli/                  # CLI scripts leaked to web root
+
+      # ── Component and plugin vulnerability scanning ───────────────────────────────────
+      - /components/
+      - /plugins/
+      - /modules/
+      - /templates/
+
+      # ── Known exploit targets ──────────────────────────────────────────────────────────
+      - /xmlrpc.php           # not standard in Joomla but added by some extensions
+      - /htaccess.txt         # sample htaccess leaks server configuration hints
+      - /web.config.txt       # IIS configuration sample
+
+      # ── VCS and environment ───────────────────────────────────────────────────────────
+      - /.git/config
+      - /.git/HEAD
+      - /.env

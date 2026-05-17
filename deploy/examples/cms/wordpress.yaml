@@ -1,0 +1,42 @@
+# nginx-sentinel — WordPress-specific probe paths override
+#
+# Copy the paths below into your config.yaml to harden detection
+# against WordPress-targeted scanners and exploit kits.
+#
+# Usage:
+#   Merge detectors.probe.paths into your config.yaml.
+#   These paths extend (or replace) the default probe path list.
+#
+# Apply without restart:
+#   kill -HUP $(pgrep nginx-sentinel)   # or systemctl kill -s HUP nginx-sentinel
+
+detectors:
+  probe:
+    paths:
+      # ── Admin and auth ─────────────────────────────────────────────────────────────────
+      - /wp-login.php          # primary brute-force target
+      - /wp-admin/             # admin dashboard entry point
+      - /wp-admin/admin-ajax.php # AJAX endpoint abused by bots
+
+      # ── Configuration and secrets ─────────────────────────────────────────────────────
+      - /wp-config.php         # database credentials — must never be reachable
+      - /wp-config.php.bak
+      - /wp-config.php.old
+      - /wp-config.php~
+
+      # ── XML-RPC — DDoS amplification and credential stuffing vector ──────────────────
+      - /xmlrpc.php
+
+      # ── REST API enumeration ──────────────────────────────────────────────────────────
+      - /wp-json/wp/v2/users  # leaks usernames unless explicitly disabled
+      - /?rest_route=/wp/v2/users
+
+      # ── Plugin and theme vulnerability scanners ───────────────────────────────────────
+      - /wp-content/plugins/
+      - /wp-content/themes/
+      - /wp-content/uploads/
+
+      # ── Install and upgrade endpoints ─────────────────────────────────────────────────
+      - /wp-admin/install.php
+      - /wp-admin/upgrade.php
+      - /wp-includes/          # direct access indicates misconfiguration

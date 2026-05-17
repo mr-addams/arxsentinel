@@ -561,6 +561,30 @@ http {
 0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
 ```
 
+## CMS-specific configurations
+
+Ready-made `probe.paths` overrides for the most common PHP stacks are in
+`deploy/examples/cms/`. Copy the relevant paths into your `config.yaml`:
+
+| File | Target |
+|------|--------|
+| [`wordpress.yaml`](deploy/examples/cms/wordpress.yaml) | WordPress — `wp-login.php`, `xmlrpc.php`, REST user enumeration |
+| [`laravel.yaml`](deploy/examples/cms/laravel.yaml) | Laravel — `.env`, `/storage/`, `/vendor/`, Telescope, Horizon |
+| [`drupal.yaml`](deploy/examples/cms/drupal.yaml) | Drupal — `/user/login`, `settings.php`, `update.php` |
+| [`joomla.yaml`](deploy/examples/cms/joomla.yaml) | Joomla — `/administrator/`, `configuration.php` |
+| [`generic-php.yaml`](deploy/examples/cms/generic-php.yaml) | Custom PHP apps — phpinfo, phpMyAdmin, Adminer, backup files |
+
+**How to apply a CMS config:**
+
+1. Open `deploy/examples/cms/<cms>.yaml` and copy the `paths:` list.
+2. Paste it into your `config.yaml` under `detectors.probe.paths:`.
+3. Reload without restart: `kill -HUP $(pgrep nginx-sentinel)` — or `systemctl kill -s HUP nginx-sentinel`.
+
+The paths **extend** (not replace) the built-in sensitive-path list by default.
+To use only your custom list, set `detectors.probe.paths:` to exactly the paths you want.
+
+---
+
 ## Troubleshooting
 
 **Daemon fails to start — threat log error:**  
