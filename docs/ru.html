@@ -1,288 +1,855 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>nginx-sentinel — Защита nginx в реальном времени для Linux</title>
-  <meta name="description" content="nginx-sentinel анализирует nginx access.log в реальном времени, обнаруживает сканеры, брутфорс и краулеры через 7 детекторов и автоматически банит атакующих через Fail2Ban. Пакеты для Debian, Ubuntu, Fedora, RHEL, Arch Linux.">
-  <meta name="keywords" content="nginx безопасность, fail2ban, обнаружение вторжений, анализ nginx лога, защита от брутфорса, linux безопасность, ids, web security">
-  <meta property="og:title" content="nginx-sentinel — Защита nginx в реальном времени">
-  <meta property="og:description" content="7 детекторов. Автоматическая интеграция с Fail2Ban. Пакеты deb, rpm, pacman. Написан на Go.">
-  <meta property="og:url" content="https://mr-addams.github.io/nginx-sentinel/ru.html">
-  <meta property="og:type" content="website">
-  <link rel="canonical" href="https://mr-addams.github.io/nginx-sentinel/ru.html">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg:#0d1117; --bg2:#161b22; --bg3:#21262d; --border:#30363d;
-      --text:#e6edf3; --muted:#8b949e; --green:#3fb950; --green-dim:#1a4327;
-      --blue:#58a6ff; --red:#f85149; --orange:#d29922; --radius:8px;
-    }
-    html { scroll-behavior: smooth; }
-    body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; font-size:16px; line-height:1.6; }
-    a { color:var(--blue); text-decoration:none; }
-    a:hover { text-decoration:underline; }
-    nav { position:sticky; top:0; z-index:100; background:rgba(13,17,23,.92); backdrop-filter:blur(12px); border-bottom:1px solid var(--border); padding:0 24px; display:flex; align-items:center; justify-content:space-between; height:56px; }
-    .nav-brand { font-weight:700; font-size:18px; color:var(--text); display:flex; align-items:center; gap:10px; }
-    .nav-brand svg { color:var(--green); }
-    .nav-links { display:flex; gap:24px; align-items:center; }
-    .nav-links a { color:var(--muted); font-size:14px; }
-    .nav-links a:hover { color:var(--text); text-decoration:none; }
-    .btn-gh { display:flex; align-items:center; gap:6px; background:var(--bg3); border:1px solid var(--border); color:var(--text) !important; padding:6px 14px; border-radius:var(--radius); font-size:14px; font-weight:500; transition:background .15s; }
-    .btn-gh:hover { background:var(--border); text-decoration:none !important; }
-    .lang-switcher { display:flex; gap:4px; }
-    .lang-btn { padding:4px 10px; border-radius:5px; font-size:13px; font-weight:600; border:1px solid var(--border); background:var(--bg3); color:var(--muted); text-decoration:none !important; transition:all .15s; }
-    .lang-btn.active { background:var(--green); color:#000; border-color:var(--green); }
-    .lang-btn:hover:not(.active) { background:var(--border); color:var(--text); }
-    .hero { text-align:center; padding:96px 24px 72px; max-width:800px; margin:0 auto; }
-    .hero-badge { display:inline-block; background:var(--green-dim); color:var(--green); border:1px solid var(--green); border-radius:20px; font-size:12px; font-weight:600; padding:3px 12px; letter-spacing:.04em; text-transform:uppercase; margin-bottom:24px; }
-    h1 { font-size:clamp(36px,6vw,56px); font-weight:800; line-height:1.15; letter-spacing:-.02em; margin-bottom:20px; }
-    h1 span { color:var(--green); }
-    .hero p { font-size:18px; color:var(--muted); max-width:600px; margin:0 auto 36px; }
-    .hero-actions { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
-    .btn-primary { background:var(--green); color:#000 !important; font-weight:700; padding:12px 28px; border-radius:var(--radius); font-size:15px; transition:opacity .15s; }
-    .btn-primary:hover { opacity:.85; text-decoration:none !important; }
-    .btn-secondary { background:var(--bg3); border:1px solid var(--border); color:var(--text) !important; padding:12px 28px; border-radius:var(--radius); font-size:15px; transition:background .15s; }
-    .btn-secondary:hover { background:var(--border); text-decoration:none !important; }
-    .pipeline { margin:0 auto 80px; max-width:860px; padding:0 24px; }
-    .pipeline-box { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:24px 28px; font-family:"SF Mono",Consolas,"Liberation Mono",Menlo,monospace; font-size:13px; overflow-x:auto; white-space:nowrap; }
-    .pipeline-box .dim { color:var(--muted); }
-    .pipeline-box .g { color:var(--green); }
-    .pipeline-box .b { color:var(--blue); }
-    .pipeline-box .r { color:var(--red); }
-    section { padding:64px 24px; }
-    .container { max-width:1060px; margin:0 auto; }
-    .section-label { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--green); margin-bottom:12px; }
-    h2 { font-size:28px; font-weight:700; margin-bottom:12px; }
-    .section-sub { color:var(--muted); font-size:16px; margin-bottom:40px; }
-    .detectors { background:var(--bg2); border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
-    .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
-    .card { background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:20px 22px; transition:border-color .15s; }
-    .card:hover { border-color:var(--green); }
-    @media (min-width: 920px) {
-      .cards .card:last-child:nth-child(3n+1) {
-        grid-column: 2;
-      }
-    }
-    .card-icon { font-size:22px; margin-bottom:10px; }
-    .card h3 { font-size:15px; font-weight:700; margin-bottom:6px; }
-    .card p { font-size:13px; color:var(--muted); line-height:1.5; }
-    .card-score { display:inline-block; margin-top:10px; font-size:11px; font-weight:600; background:var(--green-dim); color:var(--green); border-radius:4px; padding:2px 8px; }
-    .tabs { display:flex; gap:4px; margin-bottom:16px; flex-wrap:wrap; }
-    .tab { padding:7px 16px; border-radius:6px; font-size:14px; font-weight:500; cursor:pointer; border:1px solid var(--border); background:var(--bg2); color:var(--muted); transition:all .15s; }
-    .tab.active { background:var(--green); color:#000; border-color:var(--green); }
-    .tab-content { display:none; }
-    .tab-content.active { display:block; }
-    pre { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:20px 22px; font-family:"SF Mono",Consolas,"Liberation Mono",Menlo,monospace; font-size:13px; overflow-x:auto; line-height:1.7; }
-    pre .c { color:var(--muted); }
-    pre .g { color:var(--green); }
-    pre .b { color:var(--blue); }
-    .stats { text-align:center; }
-    .stats-grid { display:flex; justify-content:center; gap:48px; flex-wrap:wrap; }
-    .stat-num { font-size:40px; font-weight:800; color:var(--green); letter-spacing:-.02em; line-height:1; }
-    .stat-label { font-size:13px; color:var(--muted); margin-top:4px; }
-    .callout { background:var(--bg2); border:1px solid var(--border); border-left:3px solid var(--blue); border-radius:var(--radius); padding:20px 22px; margin-top:24px; font-size:14px; color:var(--muted); }
-    .callout strong { color:var(--text); }
-    footer { border-top:1px solid var(--border); padding:32px 24px; text-align:center; font-size:13px; color:var(--muted); }
-    footer a { color:var(--muted); }
-    footer a:hover { color:var(--text); }
-    @media (max-width:600px) { .nav-links .hide-sm { display:none; } .stats-grid { gap:32px; } }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>nginx-sentinel — Защита nginx в реальном времени для Linux</title>
+    <meta name="description" content="nginx-sentinel следит за nginx access.log в реальном времени, оценивает каждый IP через 7 поведенческих детекторов и передаёт подтверждённые угрозы в Fail2Ban. Пакеты для Debian, Ubuntu, Fedora, RHEL, Arch Linux.">
+    <meta property="og:title" content="nginx-sentinel — Защита nginx в реальном времени">
+    <meta property="og:description" content="7 детекторов. Автоматическая интеграция с Fail2Ban. Пакеты deb, rpm, pacman. Написан на Go.">
+    <meta property="og:url" content="https://mr-addams.github.io/nginx-sentinel/ru.html">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-space: #06060e;
+            --bg-panel: rgba(13, 13, 31, 0.65);
+            --bg-code: rgba(5, 5, 15, 0.85);
+            --accent-blue: #00f0ff;
+            --accent-purple: #bd00ff;
+            --accent-red: #ff0055;
+            --text-main: #d1d5db;
+            --text-muted: #8892b0;
+            --text-glow: rgba(0, 240, 255, 0.4);
+            --border-glow: rgba(189, 0, 255, 0.3);
+            --font-cyber: 'Orbitron', sans-serif;
+            --font-main: 'Space Grotesk', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            background-color: var(--bg-space); color: var(--text-main);
+            font-family: var(--font-main); line-height: 1.6;
+            overflow-x: hidden; position: relative;
+        }
+
+        #starfield {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -2; pointer-events: none; opacity: 0.4;
+        }
+
+        body::after {
+            content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%;
+            background: radial-gradient(circle at 70% 30%, rgba(189, 0, 255, 0.08) 0%, transparent 50%),
+                        radial-gradient(circle at 20% 80%, rgba(0, 240, 255, 0.06) 0%, transparent 50%);
+            z-index: -1; pointer-events: none;
+        }
+
+        a { color: var(--accent-blue); text-decoration: none; transition: all 0.3s ease; }
+        a:hover { color: var(--accent-purple); text-shadow: 0 0 8px var(--accent-purple); }
+
+        header {
+            position: sticky; top: 0; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            background: rgba(6, 6, 14, 0.8); border-bottom: 1px solid var(--border-glow);
+            z-index: 100; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+        .nav-container {
+            max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between;
+            align-items: center; padding: 1rem 2rem;
+        }
+        .logo {
+            font-family: var(--font-cyber);
+            font-weight: 900;
+            font-size: 1.5rem;
+            letter-spacing: 2px;
+            color: #fff;
+            text-shadow: 0 0 10px var(--text-glow);
+            display: flex;
+            align-items: center;
+        }
+        .logo span { color: var(--accent-blue); }
+        .nav-links { display: flex; gap: 1.5rem; align-items: center; list-style: none; }
+        .nav-links a { font-weight: 500; font-size: 0.95rem; letter-spacing: 1px; }
+        .lang-selector {
+            display: flex; gap: 0.5rem; background: rgba(255, 255, 255, 0.05);
+            padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .lang-selector a { padding: 0.1rem 0.4rem; font-size: 0.8rem; border-radius: 2px; }
+        .lang-selector a.active { background: var(--accent-blue); color: var(--bg-space); font-weight: bold; }
+
+        .hero { max-width: 1200px; margin: 0 auto; padding: 6rem 2rem 4rem; text-align: center; position: relative; }
+        .badge-container { display: flex; justify-content: center; gap: 1rem; margin-bottom: 2rem; font-family: var(--font-cyber); font-size: 0.8rem; }
+        .badge {
+            background: rgba(0, 240, 255, 0.1); border: 1px solid var(--accent-blue);
+            color: var(--accent-blue); padding: 0.4rem 1rem; border-radius: 20px;
+            text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+        }
+        .hero h1 {
+            font-family: var(--font-cyber); font-size: 3.5rem; font-weight: 900; line-height: 1.2;
+            margin-bottom: 1.5rem; letter-spacing: -1px;
+            background: linear-gradient(135deg, #fff 0%, var(--text-muted) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .shimmer-text {
+            background: linear-gradient(90deg, var(--accent-blue) 0%, #ffffff 40%, var(--accent-purple) 60%, var(--accent-blue) 100%);
+            background-size: 200% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            animation: shine 3s linear infinite;
+        }
+        @keyframes shine { to { background-position: 200% center; } }
+        .hero p { font-size: 1.25rem; color: var(--text-muted); max-width: 700px; margin: 0 auto 3rem; }
+        .cta-buttons { display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap; }
+        .btn {
+            font-family: var(--font-cyber); font-weight: 700; padding: 1rem 2rem; border-radius: 4px;
+            letter-spacing: 1px; text-transform: uppercase; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative; overflow: hidden;
+        }
+        .btn-primary { background: var(--accent-blue); color: var(--bg-space); border: none; box-shadow: 0 0 20px rgba(0, 240, 255, 0.4); }
+        .btn-primary:hover { background: #fff; color: var(--bg-space); box-shadow: 0 0 30px #fff; transform: translateY(-2px); }
+        .btn-secondary { background: rgba(255, 255, 255, 0.03); color: #fff; border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(5px); }
+        .btn-secondary:hover { border-color: var(--accent-purple); box-shadow: 0 0 20px rgba(189, 0, 255, 0.4); color: #fff; transform: translateY(-2px); }
+
+        .pipeline-section { max-width: 1000px; margin: 4rem auto; padding: 0 2rem; }
+        .pipeline-box {
+            position: relative; background: var(--bg-panel); border: 1px solid var(--border-glow);
+            border-radius: 8px; padding: 2.5rem 2rem; backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px); box-shadow: 0 0 30px rgba(0, 240, 255, 0.05);
+            overflow: hidden;
+        }
+        .pipeline-box::before {
+            content: 'АРХИТЕКТУРА // ПОТОК ДАННЫХ'; position: absolute; top: 0.8rem; right: 1.5rem;
+            font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-muted);
+            letter-spacing: 2px; opacity: 0.7;
+        }
+        .pipeline-box::after {
+            content: 'SENTINEL'; position: absolute; top: 0.8rem; left: 1.5rem;
+            font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-muted);
+            letter-spacing: 2px; opacity: 0.7;
+        }
+        .box-scanline {
+            position: absolute; left: 0; width: 100%; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent-blue), transparent);
+            opacity: 0; pointer-events: none; z-index: 10;
+            box-shadow: 0 0 10px var(--accent-blue), 0 0 20px var(--accent-blue);
+            transition: opacity 0.2s;
+        }
+
+        .pipeline-flow { position: relative; padding-left: 3.5rem; }
+        .flow-line {
+            position: absolute; left: 1.1rem; top: 0; width: 2px;
+            background: linear-gradient(to bottom, var(--accent-blue) 0%, var(--accent-purple) 60%, var(--accent-red) 100%);
+            opacity: 0.4; z-index: -1;
+            box-shadow: 0 0 8px rgba(0, 240, 255, 0.2);
+        }
+
+        .pipeline-node {
+            position: relative; background: rgba(6, 6, 14, 0.6);
+            border: 1px solid var(--circle-color-dim, rgba(0, 240, 255, 0.15));
+            border-left: 3px solid var(--circle-color, var(--accent-blue));
+            border-radius: 4px; padding: 0.8rem 1.2rem; margin-bottom: 1.5rem;
+            font-family: var(--font-mono); font-size: 0.9rem; display: flex; align-items: center;
+            opacity: 0.4;
+            transition: opacity 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+        }
+        .pipeline-node:last-child { margin-bottom: 0; }
+
+        .pipeline-node.active {
+            opacity: 1;
+            background: var(--circle-color-dim, rgba(0, 240, 255, 0.1));
+            border-color: var(--circle-color, var(--accent-blue));
+            box-shadow: 0 0 20px var(--circle-glow, rgba(0, 240, 255, 0.2));
+        }
+
+        .pipeline-node::before {
+            content: ''; position: absolute;
+            left: -2.5rem;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 14px; height: 14px;
+            background: #0d0d1f; border: 2px solid var(--circle-color, rgba(0, 240, 255, 0.4));
+            border-radius: 50%;
+            z-index: 20;
+            transition: border-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.15s;
+        }
+        .pipeline-node.active::before {
+            background: #fff; border-color: #fff;
+            box-shadow: 0 0 15px var(--accent-blue), 0 0 5px #fff;
+            transform: translate(-50%, -50%) scale(1.3);
+        }
+
+        .pipeline-node::after {
+            content: '▶'; position: absolute; right: 1rem; color: var(--accent-blue);
+            opacity: 0.2; font-size: 0.8rem;
+            transition: opacity 0.15s, color 0.15s, text-shadow 0.15s;
+        }
+        .pipeline-node.active::after {
+            opacity: 1; color: #fff; text-shadow: 0 0 5px var(--accent-blue);
+        }
+
+        .pipeline-node.final.active {
+            opacity: 1;
+            background: var(--circle-color-dim, rgba(255, 0, 85, 0.15));
+            border-color: var(--circle-color, var(--accent-red));
+            box-shadow: 0 0 25px var(--circle-glow, rgba(255, 0, 85, 0.2));
+        }
+        .pipeline-node.final.active::before {
+            background: #fff; border-color: #fff;
+            box-shadow: 0 0 15px var(--accent-red), 0 0 5px #fff;
+            transform: translate(-50%, -50%) scale(1.3);
+        }
+        .pipeline-node.final.active::after {
+            opacity: 1; color: #fff; text-shadow: 0 0 5px var(--accent-red);
+        }
+
+        .stats-grid {
+            max-width: 1200px; margin: 4rem auto;
+            display: flex; flex-wrap: wrap; justify-content: center;
+            gap: 1.5rem; padding: 0 2rem;
+        }
+        .stat-card {
+            flex: 0 1 220px;
+            background: linear-gradient(145deg, rgba(13,13,31,0.8), rgba(6,6,14,0.6));
+            border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 6px;
+            padding: 2rem; text-align: center;
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+        .stat-card:hover { transform: translateY(-5px); border-color: var(--accent-blue); }
+        .stat-number {
+            font-family: var(--font-cyber); font-size: 3rem; font-weight: 900;
+            color: #fff; text-shadow: 0 0 15px var(--text-glow); line-height: 1; margin-bottom: 0.5rem;
+        }
+        .stat-label { font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+
+        .section-header { text-align: center; margin-bottom: 3rem; padding: 0 2rem; }
+        .section-tag {
+            font-family: var(--font-cyber); color: var(--accent-purple); font-size: 0.85rem;
+            text-transform: uppercase; letter-spacing: 2px; margin-bottom: 0.5rem; display: block;
+        }
+        .section-title { font-family: var(--font-cyber); font-size: 2.2rem; color: #fff; }
+        .detectors-section { max-width: 1200px; margin: 6rem auto; }
+        .detectors-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2rem; padding: 0 2rem; justify-items: center;
+        }
+        .detector-card:last-child { grid-column: 1 / -1; justify-self: center; max-width: 380px; width: 100%; }
+        .detector-card {
+            background: var(--bg-panel); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 8px;
+            padding: 2rem; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+            display: flex; flex-direction: column; justify-content: space-between;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .detector-card:hover { border-color: var(--border-glow); box-shadow: 0 0 25px rgba(189, 0, 255, 0.15); transform: scale(1.02); }
+        .detector-top h3 {
+            font-family: var(--font-cyber); font-size: 1.25rem; color: #fff;
+            margin-bottom: 1rem; display: flex; align-items: center; gap: 0.75rem;
+        }
+        .detector-icon { font-size: 1.5rem; filter: drop-shadow(0 0 5px rgba(255,255,255,0.5)); }
+        .detector-desc { color: var(--text-main); font-size: 0.95rem; margin-bottom: 1.5rem; }
+        .detector-desc code {
+            background: rgba(0,0,0,0.3); padding: 0.1rem 0.3rem; border-radius: 3px;
+            font-family: var(--font-mono); color: var(--accent-blue); font-size: 0.85rem;
+        }
+        .detector-score {
+            font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent-red);
+            background: rgba(255, 0, 85, 0.1); padding: 0.4rem 0.8rem; border-radius: 4px;
+            align-self: flex-start; border: 1px solid rgba(255, 0, 85, 0.2);
+        }
+
+        .install-section { max-width: 900px; margin: 6rem auto; padding: 0 2rem; }
+        .tabs-nav { display: flex; gap: 0.5rem; margin-bottom: -1px; list-style: none; }
+        .tab-btn {
+            font-family: var(--font-cyber); background: rgba(13, 13, 31, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1); border-bottom: none;
+            color: var(--text-muted); padding: 0.75rem 1.5rem; cursor: pointer;
+            border-radius: 4px 4px 0 0; font-size: 0.85rem; letter-spacing: 1px; transition: all 0.3s;
+        }
+        .tab-btn.active {
+            background: var(--bg-panel); color: var(--accent-blue); border-color: var(--border-glow);
+            border-bottom: 1px solid var(--bg-space); box-shadow: 0 -4px 10px rgba(0, 240, 255, 0.1);
+        }
+        .terminal-container {
+            background: var(--bg-code); border: 1px solid var(--border-glow); border-radius: 0 6px 6px 6px;
+            padding: 1.5rem; box-shadow: 0 15px 40px rgba(0,0,0,0.8); position: relative;
+        }
+
+        .copy-btn {
+            position: absolute; top: 1rem; right: 1rem;
+            display: flex; align-items: center; gap: 0.5rem;
+            background: rgba(0, 240, 255, 0.1); border: 1px solid var(--accent-blue);
+            color: var(--accent-blue); padding: 0.4rem 0.8rem; border-radius: 4px;
+            font-family: var(--font-cyber); font-size: 0.75rem; cursor: pointer;
+            transition: all 0.3s ease; z-index: 5; text-transform: uppercase; letter-spacing: 1px;
+        }
+        .copy-btn:hover { background: rgba(0, 240, 255, 0.2); box-shadow: 0 0 15px rgba(0, 240, 255, 0.3); transform: translateY(-1px); }
+        .copy-btn:active { transform: translateY(0); }
+        .copy-btn svg { width: 14px; height: 14px; }
+        .copy-btn.copied { background: rgba(0, 255, 100, 0.15); border-color: #00ff64; color: #00ff64; }
+        .copy-btn.copied:hover { box-shadow: 0 0 15px rgba(0, 255, 100, 0.3); }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        pre {
+            font-family: var(--font-mono); font-size: 0.9rem; overflow-x: auto;
+            white-space: pre-wrap; word-break: break-all; color: #a6accd;
+        }
+        .comment { color: #506680; font-style: italic; }
+        .command { color: var(--accent-blue); }
+        .install-note {
+            margin-top: 1.5rem; background: rgba(255, 255, 255, 0.02);
+            border-left: 3px solid var(--accent-purple); padding: 1rem; border-radius: 0 4px 4px 0;
+            font-size: 0.95rem;
+        }
+        .install-note code {
+            font-family: var(--font-mono); color: var(--accent-purple); background: rgba(0,0,0,0.2);
+            padding: 0.1rem 0.3rem; border-radius: 2px;
+        }
+
+        .whitelist-section { max-width: 1200px; margin: 6rem auto; }
+        .whitelist-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; padding: 0 2rem; }
+        .whitelist-card {
+            flex: 0 1 260px;
+            background: rgba(13, 13, 31, 0.4); border: 1px solid rgba(255, 255, 255, 0.03);
+            border-radius: 6px; padding: 1.75rem; transition: border-color 0.3s;
+        }
+        .whitelist-card:hover { border-color: rgba(0, 240, 255, 0.2); }
+        .whitelist-card h3 {
+            font-family: var(--font-cyber); font-size: 1.1rem; color: #fff;
+            margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;
+        }
+        .whitelist-card p { font-size: 0.9rem; color: var(--text-muted); }
+        .whitelist-card code {
+            font-family: var(--font-mono); color: var(--accent-blue); background: rgba(0,0,0,0.2);
+            padding: 0.1rem 0.3rem; border-radius: 2px; font-size: 0.85rem;
+        }
+
+        footer {
+            border-top: 1px solid rgba(255, 255, 255, 0.05); padding: 3rem 2rem;
+            text-align: center; background: rgba(4, 4, 10, 0.9); margin-top: 6rem;
+        }
+        .footer-links {
+            display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap;
+            list-style: none; margin-bottom: 1.5rem; font-family: var(--font-cyber); font-size: 0.85rem;
+        }
+        .footer-credits { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; }
+        .footer-credits a { color: var(--accent-blue); text-decoration: none; transition: all 0.3s ease; }
+        .footer-credits a:hover { color: var(--accent-purple); text-shadow: 0 0 8px var(--accent-purple); }
+        .footer-copyright { font-size: 0.85rem; color: var(--text-muted); }
+
+        @media (max-width: 768px) {
+            .nav-container { flex-direction: column; gap: 1rem; padding: 1rem; }
+            .nav-links { flex-wrap: wrap; justify-content: center; gap: 0.75rem; }
+            .hero { padding: 4rem 1.5rem 3rem; }
+            .hero h1 { font-size: 2rem; }
+            .hero p { font-size: 1rem; }
+            .badge-container { flex-wrap: wrap; gap: 0.5rem; }
+            .cta-buttons { flex-direction: column; width: 100%; max-width: 300px; margin: 0 auto; }
+            .btn { width: 100%; text-align: center; }
+            .pipeline-section { margin: 2rem auto; padding: 0 1rem; }
+            .pipeline-box { padding: 1.5rem 1rem; }
+            .pipeline-box::before { display: none; }
+            .pipeline-box::after  { display: none; }
+            .pipeline-flow { padding-left: 2.5rem; }
+            .pipeline-node { font-size: 0.8rem; padding: 0.6rem 0.8rem; margin-bottom: 1rem; }
+            .pipeline-node::before { width: 10px; height: 10px; left: -1.8rem; }
+            .stats-grid { gap: 1rem; padding: 0 1rem; margin: 2rem auto; }
+            .stat-card { flex: 0 1 140px; padding: 1.25rem 1rem; }
+            .stat-number { font-size: 2.2rem; }
+            .stat-label { font-size: 0.75rem; }
+            .detectors-section { margin: 3rem auto; }
+            .section-title { font-size: 1.75rem; }
+            .detectors-grid { grid-template-columns: 1fr; padding: 0 1rem; gap: 1rem; }
+            .detector-card:last-child { grid-column: auto; justify-self: stretch; max-width: 100%; }
+            .install-section { padding: 0 1rem; margin: 3rem auto; }
+            .tabs-nav { gap: 0.25rem; }
+            .tab-btn { padding: 0.6rem 1rem; font-size: 0.75rem; letter-spacing: 0.5px; }
+            .terminal-container { padding: 1rem; padding-top: 3rem; }
+            .copy-btn { top: 0.75rem; right: 0.75rem; padding: 0.3rem 0.6rem; font-size: 0.7rem; }
+            pre { font-size: 0.78rem; }
+            .whitelist-section { margin: 3rem auto; }
+            .whitelist-grid { padding: 0 1rem; gap: 1rem; }
+            .whitelist-card { flex: 1 1 100%; }
+            footer { padding: 2rem 1rem; margin-top: 3rem; }
+            .footer-links { gap: 1rem; font-size: 0.8rem; }
+        }
+
+        @media (max-width: 400px) {
+            .hero h1 { font-size: 1.6rem; }
+            .stat-card { flex: 1 1 100%; }
+            .tab-btn { padding: 0.5rem 0.75rem; }
+        }
+    </style>
 </head>
 <body>
+    <canvas id="starfield"></canvas>
 
-<nav>
-  <div class="nav-brand">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-    </svg>
-    nginx-sentinel
-  </div>
-  <div class="nav-links">
-    <a href="#detectors" class="hide-sm">Детекторы</a>
-    <a href="#install" class="hide-sm">Установка</a>
-    <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md" class="hide-sm">Документация</a>
-    <div class="lang-switcher">
-      <a href="index.html" class="lang-btn">EN</a>
-      <a href="uk.html" class="lang-btn">UK</a>
-      <a href="ru.html" class="lang-btn active">RU</a>
-    </div>
-    <a href="https://github.com/mr-addams/nginx-sentinel" class="btn-gh">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-      GitHub
-    </a>
-  </div>
-</nav>
+    <header>
+        <div class="nav-container">
+            <div class="logo">nginx-<span>sentinel</span></div>
+            <nav>
+                <ul class="nav-links">
+                    <li><a href="#detectors">Детекторы</a></li>
+                    <li><a href="#install">Установка</a></li>
+                    <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md" target="_blank">Документация</a></li>
+                    <li class="lang-selector">
+                        <a href="index.html">EN</a>
+                        <a href="uk.html">UK</a>
+                        <a href="ru.html" class="active">RU</a>
+                    </li>
+                    <li><a href="https://github.com/mr-addams/nginx-sentinel" target="_blank" style="font-family: var(--font-cyber); color: var(--accent-blue);">GitHub</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
 
-<div class="hero">
-  <div class="hero-badge">Open Source · Go · Linux</div>
-  <h1>Остановите атаки до того,<br>как <span>Fail2Ban</span> проснётся</h1>
-  <p>nginx-sentinel следит за nginx access.log в реальном времени, оценивает каждый IP через 7 поведенческих детекторов и передаёт подтверждённые угрозы напрямую в Fail2Ban.</p>
-  <div class="hero-actions">
-    <a href="#install" class="btn-primary">↓ Установить</a>
-    <a href="https://github.com/mr-addams/nginx-sentinel/releases" class="btn-secondary">Релизы</a>
-    <a href="https://github.com/mr-addams/nginx-sentinel" class="btn-secondary">GitHub</a>
-  </div>
-</div>
+    <section class="hero">
+        <div class="badge-container">
+            <span class="badge">Open Source</span>
+            <span class="badge">Go</span>
+            <span class="badge">Linux</span>
+        </div>
+        <h1>
+            <span class="shimmer-text">Остановите атаки</span><br>
+            до того, как<br>
+            проснётся Fail2Ban
+        </h1>
+        <p>nginx-sentinel следит за nginx access.log в реальном времени, оценивает каждый IP через 7 поведенческих детекторов и передаёт подтверждённые угрозы напрямую в Fail2Ban.</p>
+        <div class="cta-buttons">
+            <a href="#install" class="btn btn-primary">↓ Установить</a>
+            <a href="https://github.com/mr-addams/nginx-sentinel/releases" target="_blank" class="btn btn-secondary">Релизы</a>
+            <a href="https://github.com/mr-addams/nginx-sentinel" target="_blank" class="btn btn-secondary">GitHub</a>
+        </div>
+    </section>
 
-<div class="pipeline">
-  <div class="pipeline-box">
-<span class="g">nginx access.log</span>
-  <span class="dim">→</span> <span class="b">TailReader</span> <span class="dim">(inotify · поддержка logrotate)</span>
-  <span class="dim">→</span> <span class="b">Parser</span> <span class="dim">(ngx_http_realip · CF-Connecting-IP · XFF цепочка)</span>
-  <span class="dim">→</span> <span class="b">Whitelist</span> <span class="dim">(IP · CIDR · UA · DNS-верификация ботов)</span>
-  <span class="dim">→</span> <span class="b">Tracker</span> <span class="dim">(состояние IP · ring buffer · счётчики rate)</span>
-  <span class="dim">→</span> <span class="b">Scorer</span> <span class="dim">(7 детекторов · линейный decay)</span>
-  <span class="dim">→</span> <span class="r">threats.log</span>
-  <span class="dim">→</span> <span class="r">Fail2Ban</span> <span class="dim">→</span> <span class="r">бан через iptables</span>
-  </div>
-</div>
+    <section class="pipeline-section">
+        <div class="pipeline-box">
+            <div class="box-scanline"></div>
+            <div class="pipeline-flow">
+                <div class="flow-line"></div>
+                <div class="pipeline-node">nginx access.log</div>
+                <div class="pipeline-node">TailReader (inotify · поддержка logrotate)</div>
+                <div class="pipeline-node">Parser (ngx_http_realip · CF-Connecting-IP · XFF цепочка)</div>
+                <div class="pipeline-node">Whitelist (IP · CIDR · UA · верификация DNS)</div>
+                <div class="pipeline-node">Tracker (состояние IP · ring buffer · счётчики rate)</div>
+                <div class="pipeline-node">Scorer (7 детекторов · линейный decay)</div>
+                <div class="pipeline-node">threats.log</div>
+                <div class="pipeline-node final">Fail2Ban → бан через iptables</div>
+            </div>
+        </div>
+    </section>
 
-<section class="stats">
-  <div class="container">
-    <div class="stats-grid">
-      <div class="stat-item"><div class="stat-num">7</div><div class="stat-label">Поведенческих детекторов</div></div>
-      <div class="stat-item"><div class="stat-num">11</div><div class="stat-label">Верифицируемых семейств ботов</div></div>
-      <div class="stat-item"><div class="stat-num">3</div><div class="stat-label">Формата пакетов</div></div>
-      <div class="stat-item"><div class="stat-num">2</div><div class="stat-label">Архитектуры (amd64 · arm64)</div></div>
-    </div>
-  </div>
-</section>
+    <section class="stats-grid">
+        <div class="stat-card"><div class="stat-number">7</div><div class="stat-label">Поведенческих детекторов</div></div>
+        <div class="stat-card"><div class="stat-number">11</div><div class="stat-label">Семейств ботов</div></div>
+        <div class="stat-card"><div class="stat-number">3</div><div class="stat-label">Формата пакетов</div></div>
+        <div class="stat-card"><div class="stat-number">2</div><div class="stat-label">Архитектуры (amd64 · arm64)</div></div>
+    </section>
 
-<section class="detectors" id="detectors">
-  <div class="container">
-    <div class="section-label">Обнаружение угроз</div>
-    <h2>7 детекторов — один score</h2>
-    <p class="section-sub">Каждый детектор добавляет очки к счёту IP. Score затухает линейно за время observation_window — никаких ложных банов от старого трафика.</p>
-    <div class="cards">
-      <div class="card">
-        <div class="card-icon">🔍</div>
-        <h3>Probe — зондирование</h3>
-        <p>Запросы к чувствительным путям: <code>/.env</code>, <code>/.git/config</code>, <code>/.aws/credentials</code>, <code>/wp-config.php</code>, <code>/phpinfo.php</code>, панели администратора, backup-архивы и ещё 30+. Эти пути не имеют смысла для легитимного посетителя — любое обращение является активной разведкой. Срабатывает немедленно на первом запросе, без пороговых условий.</p>
-        <span class="card-score">+25 за запрос</span>
-      </div>
-      <div class="card">
-        <div class="card-icon">⚡</div>
-        <h3>Rate — аномальная частота</h3>
-        <p>Более 100 запросов за 60 секунд с одного IP — отслеживается через скользящее окно. Выявляет DDoS-зондирование, агрессивные сканеры уязвимостей, всплески подбора учётных данных и скраперы, которые пытаются держаться чуть ниже статических ограничений. Порог и окно полностью настраиваются.</p>
-        <span class="card-score">+25</span>
-      </div>
-      <div class="card">
-        <div class="card-icon">🤖</div>
-        <h3>User-Agent — подозрительный клиент</h3>
-        <p>Регистронезависимое совпадение подстроки с тремя встроенными списками: <strong>сканеры</strong> (Nuclei, sqlmap, Nikto, Nessus, Acunetix…), <strong>граберы</strong> (Scrapy, HTTrack, wget…) и <strong>инструменты автоматизации</strong> (python-requests, curl, Go-http-client…). Каждая категория имеет свой настраиваемый score. Расширяйте встроенные списки через <code>extra_*_patterns</code> в конфиге — без изменений кода.</p>
-        <span class="card-score">+15 до +40</span>
-      </div>
-      <div class="card">
-        <div class="card-icon">🔐</div>
-        <h3>Bruteforce — перебор</h3>
-        <p>Более 60% ответов — 404 при минимум 10 запросах в окне наблюдения. Типичная сигнатура инструментов перебора путей (dirbuster, gobuster, ffuf), слепо обходящих словари в поисках скрытых файлов и панелей администратора. Порог <code>min_requests</code> предотвращает ложные срабатывания от пользователей, опечатавшихся в URL.</p>
-        <span class="card-score">+30</span>
-      </div>
-      <div class="card">
-        <div class="card-icon">📄</div>
-        <h3>Crawler — последовательный обход</h3>
-        <p>Пять и более последовательно пронумерованных URL подряд — <code>/page/1</code>, <code>/page/2</code>, <code>/article/100</code>, <code>/article/101</code>… Характерный признак автоматических скраперов, дампящих целые разделы сайта по порядку. Реальный человек не обходит URL в строгой числовой последовательности с машинной скоростью.</p>
-        <span class="card-score">+20</span>
-      </div>
-      <div class="card">
-        <div class="card-icon">🖼️</div>
-        <h3>No-asset — бот без рендеринга</h3>
-        <p>Загружает страницы, но запрашивает CSS, JS или изображения менее чем в 10% случаев — при минимум 3 просмотрах страниц. Каждый реальный браузер загружает ресурсы, указанные в HTML. Боты, парсящие только разметку (headless-скраперы, агрегаторы, сборщики ссылок), полностью пропускают статику — детектор ловит их, не затрагивая легитимный трафик.</p>
-        <span class="card-score">+20</span>
-      </div>
-      <div class="card">
-        <div class="card-icon">💣</div>
-        <h3>Overflow — WAF bypass</h3>
-        <p>URL длиннее 2048 символов или содержащий известные WAF bypass ключевые слова: <code>bypass</code>, <code>shell</code>, <code>cmd</code>, <code>eval</code>, <code>exec</code>, <code>passthru</code>, <code>system</code>. Сверхдлинные URL зондируют уязвимости переполнения буфера и инъекции параметров. Ключевые слова нацелены на PHP shell injection, выполнение команд ОС и обход межсетевых экранов.</p>
-        <span class="card-score">+30</span>
-      </div>
-    </div>
-  </div>
-</section>
+    <section id="detectors" class="detectors-section">
+        <div class="section-header">
+            <span class="section-tag">Анализ аномалий</span>
+            <h2 class="section-title">7 детекторов — один score</h2>
+            <p style="color: var(--text-muted); max-width: 600px; margin: 1rem auto 0;">Каждый детектор добавляет очки к счёту IP. Score затухает линейно за время observation_window — никаких ложных банов от старого трафика.</p>
+        </div>
+        <div class="detectors-grid">
+            <div class="detector-card">
+                <div class="detector-top">
+                    <h3><span class="detector-icon">🔍</span> Probe</h3>
+                    <p class="detector-desc">Запросы к чувствительным путям: <code>/.env</code>, <code>/.git/config</code>, <code>/.aws/credentials</code>, <code>/wp-config.php</code>, <code>/phpinfo.php</code>, панели администратора, резервные архивы и ещё 30+. Активная разведка — срабатывает немедленно на первом запросе.</p>
+                </div>
+                <span class="detector-score">+25 за запрос</span>
+            </div>
+            <div class="detector-card">
+                <div class="detector-top">
+                    <h3><span class="detector-icon">⚡</span> Rate anomaly</h3>
+                    <p class="detector-desc">Более 100 запросов за 60 секунд с одного IP. Выявляет DDoS-зондирование, агрессивные сканеры уязвимостей, всплески перебора учётных данных и скраперы, пытающиеся держаться ниже статических ограничений.</p>
+                </div>
+                <span class="detector-score">+25</span>
+            </div>
+            <div class="detector-card">
+                <div class="detector-top">
+                    <h3><span class="detector-icon">🤖</span> Suspicious User-Agent</h3>
+                    <p class="detector-desc">Регистронезависимое сравнение подстрок с встроенными списками: <strong>сканеры</strong> (Nuclei, sqlmap...), <strong>граберы</strong> (Scrapy, HTTrack...) и <strong>клиенты автоматизации</strong> (python-requests, curl...). Легко расширяется через конфиг.</p>
+                </div>
+                <span class="detector-score">+15 до +40</span>
+            </div>
+            <div class="detector-card">
+                <div class="detector-top">
+                    <h3><span class="detector-icon">🔐</span> Bruteforce</h3>
+                    <p class="detector-desc">Более 60% ответов — 404 при минимум 10 запросах. Типичная сигнатура инструментов перебора путей (dirbuster, gobuster, ffuf). <code>min_requests</code> предотвращает ложные срабатывания.</p>
+                </div>
+                <span class="detector-score">+30</span>
+            </div>
+            <div class="detector-card">
+                <div class="detector-top">
+                    <h3><span class="detector-icon">📄</span> Sequential crawler</h3>
+                    <p class="detector-desc">Пять и более последовательно пронумерованных URL подряд — <code>/page/1</code>, <code>/page/2</code>, <code>/article/100</code>... Характерный признак автоматических скраперов, дампящих целые разделы сайта.</p>
+                </div>
+                <span class="detector-score">+20</span>
+            </div>
+            <div class="detector-card">
+                <div class="detector-top">
+                    <h3><span class="detector-icon">🖼️</span> No-asset bot</h3>
+                    <p class="detector-desc">Загружает страницы, но запрашивает CSS, JS или изображения менее чем в 10% случаев — при минимум 3 просмотрах. Реальный браузер всегда загружает ресурсы; markup-only боты пропускают статику.</p>
+                </div>
+                <span class="detector-score">+20</span>
+            </div>
+            <div class="detector-card">
+                <div class="detector-top">
+                    <h3><span class="detector-icon">💣</span> URL overflow / WAF bypass</h3>
+                    <p class="detector-desc">URL длиннее 2048 символов или содержащий известные ключевые слова обхода WAF: <code>bypass</code>, <code>shell</code>, <code>cmd</code>, <code>eval</code>, <code>exec</code>... Нацелен на переполнения буфера и инъекции кода.</p>
+                </div>
+                <span class="detector-score">+30</span>
+            </div>
+        </div>
+    </section>
 
-<section id="install">
-  <div class="container">
-    <div class="section-label">Установка</div>
-    <h2>Установка в 3 шага</h2>
-    <p class="section-sub">Пакет делает всё сам: бинарник, systemd unit, Fail2Ban filter/jail, logrotate и системного пользователя <code>nginx-sentinel</code>.</p>
+    <section id="install" class="install-section">
+        <div class="section-header">
+            <span class="section-tag">Развертывание</span>
+            <h2 class="section-title">Установка за 3 шага</h2>
+            <p style="color: var(--text-muted); margin-top: 0.5rem;">Пакет делает всё сам: бинарник, systemd unit, Fail2Ban config и системный пользователь.</p>
+        </div>
 
-    <div class="tabs">
-      <div class="tab active" onclick="showTab('script')">Установка скриптом</div>
-      <div class="tab" onclick="showTab('src')">Из исходников</div>
-    </div>
+        <ul class="tabs-nav">
+            <li><button class="tab-btn active" onclick="switchTab(event, 'script-install')">Установка скриптом</button></li>
+            <li><button class="tab-btn" onclick="switchTab(event, 'source-install')">Из исходников</button></li>
+        </ul>
 
-    <div class="tab-content active" id="tab-script">
-<pre><span class="c"># Работает на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux</span>
-<span class="c"># Скрипт сам определяет дистрибутив и архитектуру (amd64 / arm64)</span>
-<span class="g">curl</span> -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | <span class="g">sudo bash</span></pre>
-      <p style="font-size:13px; color:var(--muted); margin-top:12px;">
-        Скрипт скачивает нужный пакет с GitHub Releases, устанавливает через системный менеджер пакетов,
-        проверяет наличие <code>fail2ban</code>, автоматически определяет путь к nginx access.log и запускает сервис.
-      </p>
-    </div>
+        <div class="terminal-container">
+            <button class="copy-btn" onclick="copyToClipboard(this)" title="Копировать команду">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span class="copy-text">Копировать</span>
+            </button>
 
-    <div class="tab-content" id="tab-src">
-<pre><span class="c"># Требуется Go 1.19+</span>
-<span class="g">git clone</span> https://github.com/mr-addams/nginx-sentinel
-<span class="b">cd</span> nginx-sentinel
-<span class="g">sudo ./scripts/install.sh</span>
-<span class="b">sudo systemctl enable --now</span> nginx-sentinel</pre>
-    </div>
-    <div class="callout">
-      <strong>После установки:</strong> откройте <code>/etc/nginx-sentinel/config.yaml</code> и укажите путь к nginx access.log в параметре <code>general.log_file</code> (обычно <code>/var/log/nginx/access.log</code>). Запустите сервис. Конфиг перезагружается по <code>SIGHUP</code> — рестарт не нужен.
-    </div>
-  </div>
-</section>
+            <div id="script-install" class="tab-content active">
+                <pre><span class="comment"># Работает на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux
+# Скрипт сам определяет дистрибутив и архитектуру (amd64 / arm64)</span>
+<span class="command">curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | sudo bash</span></pre>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">Скрипт скачивает нужный пакет с GitHub Releases, устанавливает через системный менеджер пакетов, проверяет наличие <code style="font-family: var(--font-mono); color: var(--accent-blue);">fail2ban</code>, автоматически определяет путь к nginx access.log и запускает сервис.</p>
+            </div>
 
-<section style="background:var(--bg2); border-top:1px solid var(--border); border-bottom:1px solid var(--border);">
-  <div class="container">
-    <div class="section-label">Whitelist</div>
-    <h2>Легитимный трафик никогда не блокируется</h2>
-    <p class="section-sub">Два независимых механизма защищают ваших реальных посетителей и инструменты от ложных срабатываний.</p>
-    <div class="cards">
-      <div class="card">
-        <div class="card-icon">🔬</div>
-        <h3>Автоматическая верификация ботов</h3>
-        <p>Googlebot, Bingbot, Яндекс, DuckDuckBot, GPTBot и ещё 6 семейств верифицируются через обратный + прямой DNS. Легитимные краулеры никогда не получают очков. Фейковые боты получают штраф.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">✅</div>
-        <h3>Кастомные исключения</h3>
-        <p>Добавьте IP офиса, VPN-подсети (CIDR), сервисы мониторинга или SEO-инструменты по подстроке User-Agent. Изменения применяются мгновенно по <code>SIGHUP</code> — рестарт не нужен.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">🔄</div>
-        <h3>Горячая перезагрузка</h3>
-        <p>Все изменения конфига — whitelist, очки детекторов, пороги — применяются командой <code>systemctl kill -s HUP nginx-sentinel</code>. Состояние IP и DNS-кэш сохраняются.</p>
-      </div>
-      <div class="card">
-        <div class="card-icon">🌐</div>
-        <h3>Работает за Cloudflare и reverse proxy</h3>
-        <p>Когда nginx стоит за Cloudflare, CDN или балансировщиком, <code>$remote_addr</code> — это IP прокси, а не реального клиента. nginx-sentinel читает поле <code>$real_ip</code>, заполняемое <code>ngx_http_realip_module</code> (<code>CF-Connecting-IP</code> или <code>X-Forwarded-For</code>), поэтому детекторы всегда видят реального атакующего. <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md#%D0%B7%D0%B0-reverse-proxy-cloudflare">Инструкция по настройке →</a></p>
-      </div>
-    </div>
-  </div>
-</section>
+            <div id="source-install" class="tab-content">
+                <pre><span class="comment"># Требуется Go 1.19+</span>
+<span class="command">git clone https://github.com/mr-addams/nginx-sentinel
+cd nginx-sentinel
+sudo ./scripts/install.sh
+sudo systemctl enable --now nginx-sentinel</span></pre>
+            </div>
+        </div>
 
-<footer>
-  <p>
-    <a href="https://github.com/mr-addams/nginx-sentinel">nginx-sentinel</a> ·
-    <a href="https://github.com/mr-addams/nginx-sentinel/releases">Релизы</a> ·
-    <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md">Документация</a> ·
-    <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/CONTRIBUTING.md">Контрибьютинг</a> ·
-    <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/SECURITY.md">Безопасность</a>
-  </p>
-  <p style="margin-top:10px;">Лицензия: <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/LICENSE">GNU GPLv3</a></p>
-</footer>
+        <div class="install-note">
+            <strong>После установки:</strong> откройте <code>/etc/nginx-sentinel/config.yaml</code> и укажите путь к nginx access.log в параметре <code>general.log_file</code> (обычно <code>/var/log/nginx/access.log</code>). Запустите сервис. Конфиг перезагружается по <code>SIGHUP</code> — рестарт не нужен.
+        </div>
+    </section>
 
-<script>
-  function showTab(id) {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    document.getElementById('tab-' + id).classList.add('active');
-    event.target.classList.add('active');
-  }
-</script>
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Механизмы защиты</span>
+            <h2 class="section-title">Легитимный трафик никогда не блокируется</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🔬</span> Автоматическая верификация</h3>
+                <p>Googlebot, Bingbot, Яндекс, DuckDuckBot, GPTBot и ещё 6 семейств верифицируются через обратный + прямой DNS. Легитимные краулеры никогда не получают очков. Фейковые боты получают штраф.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">✅</span> Кастомные исключения</h3>
+                <p>Добавьте IP офиса, VPN-подсети (CIDR), сервисы мониторинга или SEO-инструменты по подстроке User-Agent. Изменения применяются по SIGHUP.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🔄</span> Горячая перезагрузка</h3>
+                <p>Все изменения конфига — whitelist, очки детекторов, пороги — применяются командой <code>systemctl kill -s HUP nginx-sentinel</code>. Состояние IP и DNS-кэш сохраняются.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🌐</span> Поддержка Cloudflare</h3>
+                <p>Читает поле <code>$real_ip</code>, заполняемое <code>ngx_http_realip_module</code> (<code>CF-Connecting-IP</code> или <code>X-Forwarded-For</code>), поэтому детекторы всегда видят реального атакующего, а не прокси.</p>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <ul class="footer-links">
+            <li><a href="https://github.com/mr-addams/nginx-sentinel" target="_blank">nginx-sentinel</a></li>
+            <li><a href="https://github.com/mr-addams/nginx-sentinel/releases" target="_blank">Релизы</a></li>
+            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md" target="_blank">Документация</a></li>
+            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/CONTRIBUTING.md" target="_blank">Контрибьютинг</a></li>
+            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/SECURITY.md" target="_blank">Безопасность</a></li>
+        </ul>
+        <div class="footer-credits">
+            Автор: <a href="https://github.com/mr-addams" target="_blank">mr.Addams</a>
+        </div>
+        <div class="footer-copyright">
+            Лицензия: <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/LICENSE" target="_blank">GNU GPLv3</a>
+        </div>
+    </footer>
+
+    <script>
+        function switchTab(event, tabId) {
+            const tabs = document.querySelectorAll('.tab-content');
+            const buttons = document.querySelectorAll('.tab-btn');
+            tabs.forEach(tab => tab.classList.remove('active'));
+            buttons.forEach(btn => btn.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+
+        function copyToClipboard(btn) {
+            const activeTab = document.querySelector('.tab-content.active');
+            const command = activeTab ? activeTab.querySelector('pre').textContent.trim() : '';
+
+            navigator.clipboard.writeText(command).then(() => {
+                const originalHTML = btn.innerHTML;
+                btn.classList.add('copied');
+                btn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <span class="copy-text">Скопировано!</span>
+                `;
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    btn.innerHTML = originalHTML;
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                const textArea = document.createElement('textarea');
+                textArea.value = command;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                btn.classList.add('copied');
+                const originalHTML = btn.innerHTML;
+                btn.innerHTML = '<span class="copy-text">Скопировано!</span>';
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    btn.innerHTML = originalHTML;
+                }, 2000);
+            });
+        }
+
+        // ── Flow Line Engine — линия рисуется СЕГМЕНТАМИ между кружками, не сквозь них ──
+        // Причина: z-index:-1 на .flow-line помещает её за stacking context pipeline-box
+        // (созданный backdrop-filter), из-за чего ::before кружки не могут её перекрыть.
+        // Решение: скрыть исходный div, создать JS-сегменты между нижним краем кружка[N]
+        // и верхним краем кружка[N+1]. Градиент сохраняется через интерполяцию цветов.
+        (function() {
+            const CIRCLE_R = 7;
+            const LINE_LEFT = '1.1rem';
+
+            function gradientColor(t, alpha = 1) {
+                let r, g, b;
+                if (t <= 0.6) {
+                    const f = t / 0.6;
+                    r = Math.round(f * 189);
+                    g = Math.round(240 * (1 - f));
+                    b = 255;
+                } else {
+                    const f = (t - 0.6) / 0.4;
+                    r = Math.round(189 + f * (255 - 189));
+                    g = 0;
+                    b = Math.round(255 + f * (85 - 255));
+                }
+                return alpha < 1 ? `rgba(${r},${g},${b},${alpha})` : `rgb(${r},${g},${b})`;
+            }
+
+            const flow     = document.querySelector('.pipeline-flow');
+            const flowLine = document.querySelector('.flow-line');
+            const nodes    = document.querySelectorAll('.pipeline-node');
+            if (!flow || !flowLine || !nodes.length) return;
+
+            flowLine.style.display = 'none';
+
+            const segments = [];
+            for (let i = 0; i < nodes.length - 1; i++) {
+                const seg = document.createElement('div');
+                seg.style.cssText = `
+                    position: absolute;
+                    left: ${LINE_LEFT};
+                    width: 2px;
+                    pointer-events: none;
+                    opacity: 0.5;
+                    box-shadow: 0 0 8px rgba(0,240,255,0.2);
+                `;
+                flow.appendChild(seg);
+                segments.push(seg);
+            }
+
+            function recalc() {
+                const flowRect    = flow.getBoundingClientRect();
+                const nodeCenters = Array.from(nodes).map(n => {
+                    const r = n.getBoundingClientRect();
+                    return r.top + r.height / 2 - flowRect.top;
+                });
+
+                const totalH = nodeCenters[nodeCenters.length - 1] - nodeCenters[0];
+
+                nodeCenters.forEach((center, i) => {
+                    const t = totalH > 0 ? (center - nodeCenters[0]) / totalH : 0;
+                    nodes[i].style.setProperty('--circle-color',     gradientColor(t));
+                    nodes[i].style.setProperty('--circle-color-dim', gradientColor(t, 0.15));
+                    nodes[i].style.setProperty('--circle-glow',      gradientColor(t, 0.2));
+                });
+
+                segments.forEach((seg, i) => {
+                    const top    = nodeCenters[i]     + CIRCLE_R;
+                    const bottom = nodeCenters[i + 1] - CIRCLE_R;
+                    const height = Math.max(0, bottom - top);
+
+                    seg.style.top    = top + 'px';
+                    seg.style.height = height + 'px';
+
+                    const t0 = (top    - CIRCLE_R) / totalH;
+                    const t1 = (bottom + CIRCLE_R) / totalH;
+                    seg.style.background =
+                        `linear-gradient(to bottom, ${gradientColor(t0)}, ${gradientColor(t1)})`;
+                });
+            }
+
+            window.addEventListener('load',   recalc);
+            window.addEventListener('resize', recalc);
+            recalc();
+        })();
+
+        // ── Pipeline Scanline Engine ──
+        (function() {
+            const box = document.querySelector('.pipeline-box');
+            const scanline = document.querySelector('.box-scanline');
+            const nodes = document.querySelectorAll('.pipeline-node');
+            if (!box || !scanline || !nodes.length) return;
+
+            const DURATION = 16000;
+            let nodesPos = [];
+            let boxTop = 0;
+            let boxHeight = 0;
+
+            function recalcPositions() {
+                const boxRect = box.getBoundingClientRect();
+                boxTop = boxRect.top + window.scrollY;
+                boxHeight = boxRect.height;
+
+                nodesPos = [];
+                nodes.forEach(node => {
+                    const r = node.getBoundingClientRect();
+                    nodesPos.push({
+                        el: node,
+                        top: r.top + window.scrollY - boxTop,
+                        bottom: r.top + window.scrollY + r.height - boxTop,
+                    });
+                });
+            }
+
+            function refresh() { recalcPositions(); }
+            window.addEventListener('load', refresh);
+            window.addEventListener('resize', refresh);
+            window.addEventListener('scroll', refresh, { passive: true });
+
+            let startTime = null;
+
+            function tick(now) {
+                if (startTime === null) startTime = now;
+                const elapsed = (now - startTime) % DURATION;
+                const progress = elapsed / DURATION;
+                const scanY = progress * boxHeight;
+
+                scanline.style.top = scanY + 'px';
+                scanline.style.opacity = (scanY > 0 && scanY < boxHeight) ? '0.6' : '0';
+
+                for (const np of nodesPos) {
+                    const active = (scanY >= np.top && scanY <= np.bottom);
+                    np.el.classList.toggle('active', active);
+                }
+
+                requestAnimationFrame(tick);
+            }
+
+            requestAnimationFrame(tick);
+        })();
+
+        // ── Starfield Engine ──
+        (function() {
+            const canvas = document.getElementById('starfield');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+
+            function resize() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            resize();
+            window.addEventListener('resize', resize);
+
+            const FIELD_W = 600;
+            const FIELD_H = 600;
+            const Z_MAX = 500;
+            const Z_MIN = 1;
+            const SPEED = 2.5;
+            const FOCAL = 450;
+            const STAR_COUNT = 500;
+
+            const stars = [];
+            for (let i = 0; i < STAR_COUNT; i++) {
+                stars.push({
+                    x: (Math.random() - 0.5) * FIELD_W,
+                    y: (Math.random() - 0.5) * FIELD_H,
+                    z: Math.random() * Z_MAX + Z_MIN,
+                    baseSize: 0.2 + Math.random() * 0.6,
+                    glowSize: 0.6 + Math.random() * 1.8,
+                });
+            }
+
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                const cx = canvas.width / 2;
+                const cy = canvas.height / 2;
+
+                for (const star of stars) {
+                    star.z -= SPEED;
+                    if (star.z < Z_MIN) {
+                        star.z = Z_MAX;
+                        star.x = (Math.random() - 0.5) * FIELD_W;
+                        star.y = (Math.random() - 0.5) * FIELD_H;
+                    }
+
+                    const sc = FOCAL / star.z;
+                    const sx = cx + star.x * sc;
+                    const sy = cy + star.y * sc;
+
+                    if (sx < -30 || sx > canvas.width + 30 || sy < -30 || sy > canvas.height + 30) continue;
+
+                    const r = star.baseSize * sc;
+                    const glowR = (star.baseSize + star.glowSize) * sc;
+                    if (glowR < 0.5) {
+                        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+                        ctx.fillRect(sx, sy, 1, 1);
+                        continue;
+                    }
+
+                    const depth = star.z / Z_MAX;
+                    const alpha = Math.min(1, (1 - depth) * 1.8);
+
+                    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
+                    grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
+                    grad.addColorStop(0.15, `rgba(255,255,255,${alpha * 0.7})`);
+                    grad.addColorStop(0.5, `rgba(255,255,255,${alpha * 0.25})`);
+                    grad.addColorStop(1, 'rgba(255,255,255,0)');
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, glowR, 0, Math.PI * 2);
+                    ctx.fillStyle = grad;
+                    ctx.fill();
+                }
+
+                requestAnimationFrame(animate);
+            }
+
+            animate();
+        })();
+    </script>
 </body>
 </html>
