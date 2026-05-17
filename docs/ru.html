@@ -2,15 +2,15 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'self'; form-action 'none';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>nginx-sentinel — Защита nginx в реальном времени для Linux</title>
     <meta name="description" content="nginx-sentinel следит за nginx access.log в реальном времени, оценивает каждый IP через 7 поведенческих детекторов и передаёт подтверждённые угрозы в Fail2Ban. Пакеты для Debian, Ubuntu, Fedora, RHEL, Arch Linux.">
     <meta property="og:title" content="nginx-sentinel — Защита nginx в реальном времени">
     <meta property="og:description" content="7 детекторов. Автоматическая интеграция с Fail2Ban. Пакеты deb, rpm, pacman. Написан на Go.">
     <meta property="og:url" content="https://mr-addams.github.io/nginx-sentinel/ru.html">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="fonts/fonts.css">
 
     <style>
         :root {
@@ -392,13 +392,13 @@
                 <ul class="nav-links">
                     <li><a href="#detectors">Детекторы</a></li>
                     <li><a href="#install">Установка</a></li>
-                    <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md" target="_blank">Документация</a></li>
+                    <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md" target="_blank" rel="noopener noreferrer">Документация</a></li>
                     <li class="lang-selector">
                         <a href="index.html">EN</a>
                         <a href="uk.html">UK</a>
                         <a href="ru.html" class="active">RU</a>
                     </li>
-                    <li><a href="https://github.com/mr-addams/nginx-sentinel" target="_blank" style="font-family: var(--font-cyber); color: var(--accent-blue);">GitHub</a></li>
+                    <li><a href="https://github.com/mr-addams/nginx-sentinel" target="_blank" rel="noopener noreferrer" style="font-family: var(--font-cyber); color: var(--accent-blue);">GitHub</a></li>
                 </ul>
             </nav>
         </div>
@@ -418,8 +418,8 @@
         <p>nginx-sentinel следит за nginx access.log в реальном времени, оценивает каждый IP через 7 поведенческих детекторов и передаёт подтверждённые угрозы напрямую в Fail2Ban.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Установить</a>
-            <a href="https://github.com/mr-addams/nginx-sentinel/releases" target="_blank" class="btn btn-secondary">Релизы</a>
-            <a href="https://github.com/mr-addams/nginx-sentinel" target="_blank" class="btn btn-secondary">GitHub</a>
+            <a href="https://github.com/mr-addams/nginx-sentinel/releases" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Релизы</a>
+            <a href="https://github.com/mr-addams/nginx-sentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">GitHub</a>
         </div>
     </section>
 
@@ -575,17 +575,17 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
 
     <footer>
         <ul class="footer-links">
-            <li><a href="https://github.com/mr-addams/nginx-sentinel" target="_blank">nginx-sentinel</a></li>
-            <li><a href="https://github.com/mr-addams/nginx-sentinel/releases" target="_blank">Релизы</a></li>
-            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md" target="_blank">Документация</a></li>
-            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/CONTRIBUTING.md" target="_blank">Контрибьютинг</a></li>
-            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/SECURITY.md" target="_blank">Безопасность</a></li>
+            <li><a href="https://github.com/mr-addams/nginx-sentinel" target="_blank" rel="noopener noreferrer">nginx-sentinel</a></li>
+            <li><a href="https://github.com/mr-addams/nginx-sentinel/releases" target="_blank" rel="noopener noreferrer">Релизы</a></li>
+            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.ru.md" target="_blank" rel="noopener noreferrer">Документация</a></li>
+            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Контрибьютинг</a></li>
+            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">Безопасность</a></li>
         </ul>
         <div class="footer-credits">
-            Автор: <a href="https://github.com/mr-addams" target="_blank">mr.Addams</a>
+            Автор: <a href="https://github.com/mr-addams" target="_blank" rel="noopener noreferrer">mr.Addams</a>
         </div>
         <div class="footer-copyright">
-            Лицензия: <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/LICENSE" target="_blank">GNU GPLv3</a>
+            Лицензия: <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GNU GPLv3</a>
         </div>
     </footer>
 
@@ -600,11 +600,11 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
         }
 
         function copyToClipboard(btn) {
+            const originalHTML = btn.innerHTML;
             const activeTab = document.querySelector('.tab-content.active');
             const command = activeTab ? activeTab.querySelector('pre').textContent.trim() : '';
 
             navigator.clipboard.writeText(command).then(() => {
-                const originalHTML = btn.innerHTML;
                 btn.classList.add('copied');
                 btn.innerHTML = `
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -618,19 +618,12 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
                 }, 2000);
             }).catch(err => {
                 console.error('Failed to copy:', err);
-                const textArea = document.createElement('textarea');
-                textArea.value = command;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
                 btn.classList.add('copied');
-                const originalHTML = btn.innerHTML;
-                btn.innerHTML = '<span class="copy-text">Скопировано!</span>';
+                btn.innerHTML = '<span class="copy-text">Ошибка — скопируйте вручную</span>';
                 setTimeout(() => {
                     btn.classList.remove('copied');
                     btn.innerHTML = originalHTML;
-                }, 2000);
+                }, 3000);
             });
         }
 
