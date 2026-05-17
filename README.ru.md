@@ -548,6 +548,87 @@ http {
 
 ---
 
+## JSON-формат логов
+
+По умолчанию nginx-sentinel ожидает combined-формат nginx.
+Поддерживается также JSON-формат — переключается через `config.yaml` без перекомпиляции.
+
+### Шаг 1 — Настройка nginx
+
+Добавьте нужный `log_format` в блок `http {}` файла `nginx.conf`.
+Готовые конфиги также в [`deploy/examples/nginx-json-logformat.conf`](deploy/examples/nginx-json-logformat.conf).
+
+**Прямой nginx (без прокси)** — `$remote_addr` содержит реальный IP клиента:
+
+```nginx
+log_format sentinel_json_direct escape=json
+    '{'
+        '"remote_addr":"$remote_addr",'
+        '"time_iso8601":"$time_iso8601",'
+        '"request":"$request",'
+        '"status":"$status",'
+        '"bytes_sent":"$bytes_sent",'
+        '"http_referer":"$http_referer",'
+        '"http_user_agent":"$http_user_agent"'
+    '}';
+
+access_log /var/log/nginx/access.log sentinel_json_direct;
+```
+
+**За обратным прокси** — используйте `$real_ip`, заполняемый модулем `ngx_http_realip_module`
+(конфиги прокси — в [`deploy/examples/reverse-proxy/`](deploy/examples/reverse-proxy/)):
+
+```nginx
+log_format sentinel_json_proxy escape=json
+    '{'
+        '"remote_addr":"$remote_addr",'
+        '"real_ip":"$real_ip",'
+        '"time_iso8601":"$time_iso8601",'
+        '"request":"$request",'
+        '"status":"$status",'
+        '"bytes_sent":"$bytes_sent",'
+        '"http_referer":"$http_referer",'
+        '"http_user_agent":"$http_user_agent"'
+    '}';
+
+access_log /var/log/nginx/access.log sentinel_json_proxy;
+```
+
+### Шаг 2 — Обновить конфиг sentinel
+
+```yaml
+parser:
+  log_format: "json"   # "combined" (по умолчанию) | "json"
+```
+
+Изменение вступает в силу после **SIGHUP** — рестарт не нужен:
+
+```bash
+kill -HUP $(cat /var/run/nginx-sentinel.pid)
+```
+
+### Кастомные имена полей
+
+Если в вашем `log_format` используются другие ключи — переопределите маппинг:
+
+```yaml
+parser:
+  log_format: "json"
+  json_fields:
+    remote_addr: "client"
+    time:        "ts"
+    request:     "req"
+    status:      "code"
+    bytes_sent:  "size"
+    referer:     "ref"
+    user_agent:  "ua"
+    real_ip:     "ip"
+```
+
+Неизвестные поля в JSON-строке игнорируются — потребляются только поля из маппинга.
+
+---
+
 ## Решение проблем
 
 **Демон не запускается — ошибка threat log:**  
