@@ -382,7 +382,7 @@ nginx access.log
 **Operational log** (`/var/log/nginx-sentinel/sentinel.log`) — рабочий лог демона:
 
 ```
-2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.1 запуск
+2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.2 запуск
 2026-04-02 14:33:12 [THREAT] 45.134.26.8 score=85 modules=probe,rate reason="..."
 2026-04-02 14:38:10 [STATS] processed=14320 tracked=87 threats=3 suspicious=12
 ```
@@ -422,16 +422,67 @@ fail2ban-client set nginx-sentinel unbanip 1.2.3.4
 **Что обновляется при SIGHUP:** scorer (детекторы + пороги), whitelist matcher, debug/color флаги, пути к лог-файлам.  
 **Что НЕ обновляется:** tracker (state IP), DNS cache, TailReader (путь к access.log требует перезапуска).
 
-## За обратным прокси (Cloudflare)
+## Деплой за обратным прокси
 
-Если nginx стоит за Cloudflare, `$remote_addr` в логах будет IP Cloudflare, а не реального клиента. nginx-sentinel начислит score Cloudflare-адресам → Fail2Ban забанит Cloudflare → сайт упадёт для всех.
+> **Внимание:** если nginx стоит за прокси и `$real_ip` настроен некорректно,
+> nginx-sentinel будет выставлять score **IP-адресу прокси**, а не реальному атакующему.
+> Fail2Ban заблокирует ваш же прокси — сайт упадёт для всех.
 
-**Решение: `ngx_http_realip_module`**
+### Как это работает
 
-Подключите конфиг с IP-диапазонами Cloudflare в nginx:
+```
+[Клиент 1.2.3.4] → [Прокси] → (X-Forwarded-For / X-Real-IP заголовок) → [nginx]
+                                                                               ↓
+                                               переменная $real_ip в log_format
+                                                                               ↓
+                                                                  nginx-sentinel
+```
+
+Модуль `ngx_http_realip_module` читает заголовок с проброшенным IP и подставляет
+его как `$real_ip` — именно эту переменную nginx-sentinel использует для всей детекции.
+
+### Готовые конфиги
+
+Полные рабочие примеры для каждого прокси находятся в `deploy/examples/reverse-proxy/`:
+
+| Прокси | Файлы |
+|--------|-------|
+| **HAProxy** | [`haproxy/haproxy.cfg`](deploy/examples/reverse-proxy/haproxy/haproxy.cfg), [`nginx.conf`](deploy/examples/reverse-proxy/haproxy/nginx.conf) |
+| **Traefik** | [`traefik/traefik.yml`](deploy/examples/reverse-proxy/traefik/traefik.yml), [`nginx.conf`](deploy/examples/reverse-proxy/traefik/nginx.conf) |
+| **Caddy** | [`caddy/Caddyfile`](deploy/examples/reverse-proxy/caddy/Caddyfile), [`nginx.conf`](deploy/examples/reverse-proxy/caddy/nginx.conf) |
+| **nginx как RP** | [`nginx-rp/nginx-upstream.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-upstream.conf), [`nginx-origin.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-origin.conf) |
+
+Каждый пример содержит конфиг прокси и конфиг origin-nginx с `set_real_ip_from`,
+`real_ip_header` и форматом лога `combined_realip`.
+
+### Минимальный конфиг nginx (для любого прокси)
+
+```nginx
+http {
+    set_real_ip_from  <ip-или-cidr-прокси>;  # доверяем только своему прокси
+    real_ip_header    X-Real-IP;             # или X-Forwarded-For для Traefik
+    real_ip_recursive off;                   # on для цепочек X-Forwarded-For
+
+    log_format combined_realip
+        '$remote_addr - $remote_user [$time_local] '
+        '"$request" $status $body_bytes_sent '
+        '"$http_referer" "$http_user_agent" "$real_ip"';
+
+    server {
+        access_log /var/log/nginx/access.log combined_realip;
+        ...
+    }
+}
+```
+
+### Cloudflare
+
+Если nginx стоит напрямую за Cloudflare — используйте `CF-Connecting-IP` вместо `X-Real-IP`
+(Cloudflare проставляет этот заголовок на своём edge; `X-Forwarded-For` может быть подделан клиентом).
+
+Сгенерируйте директивы `set_real_ip_from` для всех CIDR-диапазонов Cloudflare:
 
 ```bash
-# Сгенерировать и сохранить конфиг
 sudo scripts/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf
 ```
 
@@ -439,12 +490,11 @@ sudo scripts/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf
 
 ```nginx
 http {
-    include /etc/nginx/cloudflare-real-ip.conf;
+    include /etc/nginx/cloudflare-real-ip.conf;  # set_real_ip_from для всех CF-диапазонов
+    real_ip_header CF-Connecting-IP;
     ...
 }
 ```
-
-После этого nginx перезаписывает `$remote_addr` реальным IP клиента (из заголовка `CF-Connecting-IP`) ещё до записи в лог — nginx-sentinel работает без изменений.
 
 **Автообновление диапазонов** (Cloudflare обновляет их периодически):
 
@@ -453,7 +503,29 @@ http {
 0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
 ```
 
-> **Почему `CF-Connecting-IP`, а не `X-Forwarded-For`:** заголовок `X-Forwarded-For` может быть подделан клиентом до попадания в Cloudflare. `CF-Connecting-IP` проставляется самим Cloudflare и не принимается от клиента.
+## Конфигурации для CMS
+
+Готовые переопределения `probe.paths` для наиболее популярных PHP-стеков находятся в
+`deploy/examples/cms/`. Скопируйте нужные пути в свой `config.yaml`:
+
+| Файл | Для кого |
+|------|----------|
+| [`wordpress.yaml`](deploy/examples/cms/wordpress.yaml) | WordPress — `wp-login.php`, `xmlrpc.php`, перечисление пользователей через REST |
+| [`laravel.yaml`](deploy/examples/cms/laravel.yaml) | Laravel — `.env`, `/storage/`, `/vendor/`, Telescope, Horizon |
+| [`drupal.yaml`](deploy/examples/cms/drupal.yaml) | Drupal — `/user/login`, `settings.php`, `update.php` |
+| [`joomla.yaml`](deploy/examples/cms/joomla.yaml) | Joomla — `/administrator/`, `configuration.php` |
+| [`generic-php.yaml`](deploy/examples/cms/generic-php.yaml) | Custom PHP — phpinfo, phpMyAdmin, Adminer, резервные копии |
+
+**Как применить конфиг CMS:**
+
+1. Откройте `deploy/examples/cms/<cms>.yaml` и скопируйте список `paths:`.
+2. Вставьте его в `config.yaml` под `detectors.probe.paths:`.
+3. Перезагрузите без рестарта: `kill -HUP $(pgrep nginx-sentinel)` — или `systemctl kill -s HUP nginx-sentinel`.
+
+Пути **дополняют** (а не заменяют) встроенный список sensitive-путей по умолчанию.
+Чтобы использовать только свой список, задайте в `detectors.probe.paths:` ровно те пути, которые нужны.
+
+---
 
 ## Решение проблем
 

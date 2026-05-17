@@ -382,7 +382,7 @@ Background goroutines:
 **Operational log** (`/var/log/nginx-sentinel/sentinel.log`) — daemon's working log:
 
 ```
-2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.1 started
+2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.2 started
 2026-04-02 14:33:12 [THREAT] 45.134.26.8 score=85 modules=probe,rate reason="..."
 2026-04-02 14:38:10 [STATS] processed=14320 tracked=87 threats=3 suspicious=12
 ```
@@ -422,16 +422,125 @@ fail2ban-client set nginx-sentinel unbanip 1.2.3.4
 **What is updated on SIGHUP:** scorer (detectors + thresholds), whitelist matcher, debug/color flags, log file paths.  
 **What is NOT updated:** tracker (IP state), DNS cache, TailReader (access.log path requires a restart).
 
-## Behind a Reverse Proxy (Cloudflare)
+## JSON log format
 
-If nginx sits behind Cloudflare, `$remote_addr` in the logs will be a Cloudflare IP, not the real client. nginx-sentinel would then score Cloudflare's addresses → Fail2Ban would ban Cloudflare → the site goes down for everyone.
+By default nginx-sentinel expects nginx combined log format with a `$real_ip` field appended.  
+It also supports JSON log format — switch via `config.yaml` without recompilation.
 
-**Solution: `ngx_http_realip_module`**
+### Step 1 — Configure nginx
 
-Generate the nginx config with Cloudflare IP ranges and include it:
+Add a JSON log format to `nginx.conf`:
+
+```nginx
+log_format json_log escape=json
+  '{"remote_addr":"$remote_addr",'
+  '"time_iso8601":"$time_iso8601",'
+  '"request":"$request",'
+  '"status":"$status",'
+  '"bytes_sent":"$bytes_sent",'
+  '"http_referer":"$http_referer",'
+  '"http_user_agent":"$http_user_agent",'
+  '"real_ip":"$real_ip"}';
+
+access_log /var/log/nginx/access.log json_log;
+```
+
+> `$real_ip` requires `ngx_http_realip_module`. If you don't use a reverse proxy, replace it with `$remote_addr`.
+
+### Step 2 — Update sentinel config
+
+```yaml
+parser:
+  log_format: "json"   # "combined" (default) | "json"
+```
+
+The change takes effect on the next **SIGHUP** — no restart needed:
 
 ```bash
-# Generate and save the config
+kill -HUP $(cat /var/run/nginx-sentinel.pid)
+```
+
+### Custom field names
+
+If your nginx `log_format` uses different key names, override the mapping:
+
+```yaml
+parser:
+  log_format: "json"
+  json_fields:
+    remote_addr: "client"
+    time:        "ts"
+    request:     "req"
+    status:      "code"
+    bytes_sent:  "size"
+    referer:     "ref"
+    user_agent:  "ua"
+    real_ip:     "ip"
+```
+
+Unknown fields in the JSON log line are silently ignored — only the mapped fields are consumed.
+
+## Deployment behind a reverse proxy
+
+> **Warning:** if nginx sits behind a proxy and `$real_ip` is not configured correctly,
+> nginx-sentinel will score the **proxy's IP address** instead of the real attacker.
+> Fail2Ban will then ban your own proxy — taking the site down for everyone.
+
+### How it works
+
+```
+[Client 1.2.3.4] → [Proxy] → (X-Forwarded-For / X-Real-IP header) → [nginx]
+                                                                           ↓
+                                               $real_ip variable in log_format
+                                                                           ↓
+                                                              nginx-sentinel
+```
+
+nginx's `ngx_http_realip_module` reads the forwarded IP header and exposes it as
+`$real_ip` — the variable nginx-sentinel uses for all detection.
+
+### Ready-made configs
+
+Full working examples for each proxy are in `deploy/examples/reverse-proxy/`:
+
+| Proxy | Files |
+|-------|-------|
+| **HAProxy** | [`haproxy/haproxy.cfg`](deploy/examples/reverse-proxy/haproxy/haproxy.cfg), [`nginx.conf`](deploy/examples/reverse-proxy/haproxy/nginx.conf) |
+| **Traefik** | [`traefik/traefik.yml`](deploy/examples/reverse-proxy/traefik/traefik.yml), [`nginx.conf`](deploy/examples/reverse-proxy/traefik/nginx.conf) |
+| **Caddy** | [`caddy/Caddyfile`](deploy/examples/reverse-proxy/caddy/Caddyfile), [`nginx.conf`](deploy/examples/reverse-proxy/caddy/nginx.conf) |
+| **nginx as RP** | [`nginx-rp/nginx-upstream.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-upstream.conf), [`nginx-origin.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-origin.conf) |
+
+Each example includes both the proxy config and the origin nginx config with
+`set_real_ip_from`, `real_ip_header`, and the `combined_realip` log format.
+
+### Minimum nginx config (any proxy)
+
+```nginx
+http {
+    set_real_ip_from  <proxy-ip-or-cidr>;  # trust only your proxy
+    real_ip_header    X-Real-IP;           # or X-Forwarded-For for Traefik
+    real_ip_recursive off;                 # on for X-Forwarded-For chains
+
+    log_format combined_realip
+        '$remote_addr - $remote_user [$time_local] '
+        '"$request" $status $body_bytes_sent '
+        '"$http_referer" "$http_user_agent" "$real_ip"';
+
+    server {
+        access_log /var/log/nginx/access.log combined_realip;
+        ...
+    }
+}
+```
+
+### Cloudflare
+
+If nginx sits directly behind Cloudflare, use `CF-Connecting-IP` instead of `X-Real-IP`
+(Cloudflare sets it from their edge; `X-Forwarded-For` can be spoofed by clients).
+
+Generate `set_real_ip_from` lines for all Cloudflare CIDR ranges:
+
+```bash
 sudo scripts/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf
 ```
 
@@ -439,12 +548,11 @@ Add to `nginx.conf`:
 
 ```nginx
 http {
-    include /etc/nginx/cloudflare-real-ip.conf;
+    include /etc/nginx/cloudflare-real-ip.conf;  # set_real_ip_from for all CF ranges
+    real_ip_header CF-Connecting-IP;
     ...
 }
 ```
-
-nginx will then replace `$remote_addr` with the real client IP (from the `CF-Connecting-IP` header) before writing to the log — nginx-sentinel works without any changes.
 
 **Auto-update IP ranges** (Cloudflare updates them periodically):
 
@@ -453,7 +561,29 @@ nginx will then replace `$remote_addr` with the real client IP (from the `CF-Con
 0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
 ```
 
-> **Why `CF-Connecting-IP` and not `X-Forwarded-For`:** `X-Forwarded-For` can be spoofed by the client before it reaches Cloudflare. `CF-Connecting-IP` is set by Cloudflare itself and cannot be supplied by the client.
+## CMS-specific configurations
+
+Ready-made `probe.paths` overrides for the most common PHP stacks are in
+`deploy/examples/cms/`. Copy the relevant paths into your `config.yaml`:
+
+| File | Target |
+|------|--------|
+| [`wordpress.yaml`](deploy/examples/cms/wordpress.yaml) | WordPress — `wp-login.php`, `xmlrpc.php`, REST user enumeration |
+| [`laravel.yaml`](deploy/examples/cms/laravel.yaml) | Laravel — `.env`, `/storage/`, `/vendor/`, Telescope, Horizon |
+| [`drupal.yaml`](deploy/examples/cms/drupal.yaml) | Drupal — `/user/login`, `settings.php`, `update.php` |
+| [`joomla.yaml`](deploy/examples/cms/joomla.yaml) | Joomla — `/administrator/`, `configuration.php` |
+| [`generic-php.yaml`](deploy/examples/cms/generic-php.yaml) | Custom PHP apps — phpinfo, phpMyAdmin, Adminer, backup files |
+
+**How to apply a CMS config:**
+
+1. Open `deploy/examples/cms/<cms>.yaml` and copy the `paths:` list.
+2. Paste it into your `config.yaml` under `detectors.probe.paths:`.
+3. Reload without restart: `kill -HUP $(pgrep nginx-sentinel)` — or `systemctl kill -s HUP nginx-sentinel`.
+
+The paths **extend** (not replace) the built-in sensitive-path list by default.
+To use only your custom list, set `detectors.probe.paths:` to exactly the paths you want.
+
+---
 
 ## Troubleshooting
 

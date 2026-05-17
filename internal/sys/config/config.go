@@ -23,6 +23,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -59,6 +60,7 @@ type Config struct {
 	Detectors DetectorsConfig `yaml:"detectors"`
 	Whitelist WhitelistConfig `yaml:"whitelist"`
 	Output    OutputConfig    `yaml:"output"`
+	Metrics   MetricsConfig   `yaml:"metrics"`
 }
 
 // ++++++++++++++++++++++++++ Section: general +++++++++++++++++++++++++++++++++++++++++++
@@ -82,8 +84,23 @@ type LoggingConfig struct {
 // ++++++++++++++++++++++++++ Section: parser +++++++++++++++++++++++++++++++++++++++++++++
 
 type ParserConfig struct {
-	LogFormat string `yaml:"log_format"` // YAML: parser.log_format, default "combined" — reserved, only "combined" is supported. Consumer: not connected
-	Timezone  string `yaml:"timezone"`   // YAML: parser.timezone, default "UTC" — reserved; parser reads timezone from offset in log line (+0000). Consumer: not connected
+	LogFormat  string           `yaml:"log_format"`  // YAML: parser.log_format, default "combined" — "combined" | "json". Consumer: main.go buildParser
+	Timezone   string           `yaml:"timezone"`    // YAML: parser.timezone, default "UTC" — reserved; parser reads timezone from offset in log line (+0000). Consumer: not connected
+	JSONFields JSONFieldsConfig `yaml:"json_fields"` // YAML: parser.json_fields — field name mapping for JSON log format. Consumer: JSONParser
+}
+
+// JSONFieldsConfig maps LogEntry fields to the actual JSON key names in the nginx log.
+// Allows users to customize nginx log_format json without changing sentinel config structure.
+// All fields default to standard nginx variable names.
+type JSONFieldsConfig struct {
+	RemoteAddr string `yaml:"remote_addr"`  // default "remote_addr"
+	Time       string `yaml:"time"`         // default "time_iso8601"
+	Request    string `yaml:"request"`      // default "request" — "METHOD /uri PROTO" string
+	Status     string `yaml:"status"`       // default "status"
+	BytesSent  string `yaml:"bytes_sent"`   // default "bytes_sent"
+	Referer    string `yaml:"referer"`      // default "http_referer"
+	UserAgent  string `yaml:"user_agent"`   // default "http_user_agent"
+	RealIP     string `yaml:"real_ip"`      // default "real_ip"
 }
 
 // ++++++++++++++++++++++++++ Section: scoring +++++++++++++++++++++++++++++++++++++++++++
@@ -217,6 +234,16 @@ type OutputConfig struct {
 	OperationalLog string `yaml:"operational_log"` // YAML: output.operational_log, default "/var/log/nginx-sentinel/sentinel.log" — daemon operational log. Consumer: utils.Init
 }
 
+// ++++++++++++++++++++++++++ Section: metrics ++++++++++++++++++++++++++++++++++++++++++++
+
+// MetricsConfig holds Prometheus /metrics endpoint settings.
+type MetricsConfig struct {
+	Enabled      bool   `yaml:"enabled"`       // YAML: metrics.enabled, default false — enable Prometheus /metrics endpoint. Consumer: main.go metrics server
+	ListenAddr   string `yaml:"listen_addr"`   // YAML: metrics.listen_addr, default ":9117" — address for the metrics HTTP server. Consumer: main.go metrics server
+	Username     string `yaml:"username"`      // YAML: metrics.username — basic auth username; empty disables auth. Consumer: main.go metrics server
+	PasswordHash string `yaml:"password_hash"` // YAML: metrics.password_hash — bcrypt hash of the password (cost ≥ 10). Consumer: main.go metrics server
+}
+
 // ========================== Config loading ============================================
 
 // LoadConfig reads config from path and overlays it on top of Go defaults.
@@ -248,6 +275,9 @@ func LoadConfig(path string) (Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parsing config %q: %w", path, err)
 	}
+
+	// Normalize log_format to lowercase so buildParser() can compare without case sensitivity.
+	cfg.Parser.LogFormat = strings.ToLower(cfg.Parser.LogFormat)
 
 	if err := validateConfig(&cfg); err != nil {
 		return cfg, fmt.Errorf("invalid config %q: %w", path, err)
@@ -294,6 +324,9 @@ func validateConfig(cfg *Config) error {
 		return fmt.Errorf("detectors.overflow.max_url_length must be > 0, got %d",
 			cfg.Detectors.Overflow.MaxURLLength)
 	}
+	if cfg.Metrics.Username != "" && cfg.Metrics.PasswordHash == "" {
+		return fmt.Errorf("metrics.password_hash must be set when metrics.username is configured")
+	}
 	return nil
 }
 
@@ -318,6 +351,16 @@ func defaultConfig() Config {
 		Parser: ParserConfig{
 			LogFormat: "combined",
 			Timezone:  "UTC",
+			JSONFields: JSONFieldsConfig{
+				RemoteAddr: "remote_addr",
+				Time:       "time_iso8601",
+				Request:    "request",
+				Status:     "status",
+				BytesSent:  "bytes_sent",
+				Referer:    "http_referer",
+				UserAgent:  "http_user_agent",
+				RealIP:     "real_ip",
+			},
 		},
 		Scoring: ScoringConfig{
 			AlertThreshold:    50,
@@ -387,6 +430,10 @@ func defaultConfig() Config {
 		Output: OutputConfig{
 			ThreatLog:      "/var/log/nginx-sentinel/threats.log",
 			OperationalLog: "/var/log/nginx-sentinel/sentinel.log",
+		},
+		Metrics: MetricsConfig{
+			Enabled:    false,
+			ListenAddr: ":9117",
 		},
 	}
 }

@@ -34,10 +34,16 @@ jobs:
         id: tag
         run: |
           BASE=$(cat VERSION)
-          N=$(git tag --list "v${BASE}-dev.*" | wc -l)
-          TAG="v${BASE}-dev.$((N + 1))"
-          git tag "$TAG"
-          git push origin "$TAG"
+          # Retry loop: multiple PRs merging simultaneously see the same tag count.
+          # Fetch latest tags before each attempt so the counter is always current.
+          for i in $(seq 1 10); do
+            git fetch --tags --quiet
+            N=$(git tag --list "v${BASE}-dev.*" | wc -l)
+            TAG="v${BASE}-dev.$((N + 1))"
+            git tag "$TAG" 2>/dev/null && git push origin "$TAG" && break
+            echo "Tag $TAG already exists, retrying ($i/10)..."
+            sleep 2
+          done
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Run goreleaser

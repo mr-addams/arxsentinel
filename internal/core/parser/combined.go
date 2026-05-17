@@ -1,11 +1,12 @@
-// ========================== Module parser/nginx =========================================
-//   Parser for combined log format + real_ip field.
-//   Extracts a structured LogEntry from an Nginx log line.
+// ========================== Module parser/combined =======================================
+//   Parser for nginx combined log format + real_ip field.
+//   Implements the Parser interface.
 //
 //   WHAT IS HERE:
-//     - LogEntry — all log line fields + derived fields (Path, Query, RealIP)
-//     - Parse(line) — parses a single line, graceful skip on broken line
-//     - extractRealIP() — last IP from the X-Forwarded-For chain in the real_ip field
+//     - CombinedParser — implements Parser for the combined + real_ip format
+//     - Parse(line) — package-level wrapper for backward compatibility (removed in v0.2)
+//     - logLineRe, nginxTimeLayout — format constants
+//     - extractRealIP(), splitRequest(), splitURI() — helpers
 //
 //   Log format (combined + real_ip):
 //     $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent
@@ -15,6 +16,7 @@
 //     20.48.232.178 - - [02/Apr/2026:00:26:49 +0000] "GET / HTTP/2.0" 200 66088 "-" "-" "20.48.232.178"
 //
 //   WHAT IS NOT HERE:
+//     - LogEntry struct (parser.go — shared output type)
 //     - Logging (sys/utils) — the caller decides how to log skips
 //     - State aggregation (core/state)
 
@@ -46,38 +48,28 @@ var logLineRe = regexp.MustCompile(
 // Example: 02/Apr/2026:00:26:49 +0000
 const nginxTimeLayout = "02/Jan/2006:15:04:05 -0700"
 
-// ========================== LogEntry struct ==========================================
+// ========================== CombinedParser ==========================================
 
-// LogEntry — structured record of a single nginx access.log line.
-//
-// RealIP — the preferred client IP: either from the $real_ip field (last in the chain),
-// or RemoteAddr if $real_ip is not set. Used by all detectors.
-// RemoteAddr is kept for audit purposes (may be a load balancer address).
-type LogEntry struct {
-	RemoteAddr string    // $remote_addr — TCP connection address (may be nginx-proxy or load balancer)
-	RemoteUser string    // $remote_user — Basic Auth user; "-" for anonymous requests
-	Time       time.Time // $time_local — time the request started processing on the server
-	Method     string    // from $request — HTTP method (GET, POST, HEAD, ...)
-	RawURI     string    // from $request — full URI including query string; used by overflow detector to measure length
-	Path       string    // from $request — path without query string; used by probe detector and state tracker
-	Query      string    // from $request — query string without "?"; used by overflow detector for parameter analysis
-	Protocol   string    // from $request — HTTP version (HTTP/1.1, HTTP/2.0, HTTP/3.0)
-	Status     int       // $status — HTTP response code
-	BytesSent  int64     // $body_bytes_sent — response body bytes (0 for HEAD and 304)
-	Referer    string    // $http_referer — string as-is; "-" if absent
-	UserAgent  string    // $http_user_agent — string as-is; "-" if absent
-	RealIP     string    // last IP from $real_ip; == RemoteAddr if real_ip field == "-"
-}
-
-// ========================== Public API ===============================================
+// CombinedParser parses nginx combined log format lines with the real_ip field appended.
+type CombinedParser struct{}
 
 // Parse parses a single nginx combined log format + real_ip line.
 // Returns (entry, true) on success, (nil, false) for an invalid line.
-//
-// Called by the pipeline for each line from the tail-reader.
-// Broken lines (binary garbage, truncated lines, non-standard format) are skipped
-// without panic — logging the skip is left to the caller's discretion.
+func (p *CombinedParser) Parse(line string) (*LogEntry, bool) {
+	return parseCombined(line)
+}
+
+// ========================== Package-level wrapper (backward compat) ====================
+
+// Parse is a package-level convenience wrapper kept for e2e_test.go compatibility.
+// Removed once e2e tests are updated to use CombinedParser directly.
 func Parse(line string) (*LogEntry, bool) {
+	return parseCombined(line)
+}
+
+// ========================== Core parsing logic =========================================
+
+func parseCombined(line string) (*LogEntry, bool) {
 	m := logLineRe.FindStringSubmatch(line)
 	if m == nil {
 		return nil, false
