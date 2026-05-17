@@ -450,23 +450,44 @@ It also supports JSON log format — switch via `config.yaml` without recompilat
 
 ### Step 1 — Configure nginx
 
-Add a JSON log format to `nginx.conf`:
+Add the appropriate `log_format` to your `nginx.conf` (`http {}` block).
+Ready-to-use configs are also in [`deploy/examples/nginx-json-logformat.conf`](deploy/examples/nginx-json-logformat.conf).
+
+**Direct nginx (no reverse proxy)** — `$remote_addr` is the real client IP:
 
 ```nginx
-log_format json_log escape=json
-  '{"remote_addr":"$remote_addr",'
-  '"time_iso8601":"$time_iso8601",'
-  '"request":"$request",'
-  '"status":"$status",'
-  '"bytes_sent":"$bytes_sent",'
-  '"http_referer":"$http_referer",'
-  '"http_user_agent":"$http_user_agent",'
-  '"real_ip":"$real_ip"}';
+log_format sentinel_json_direct escape=json
+    '{'
+        '"remote_addr":"$remote_addr",'
+        '"time_iso8601":"$time_iso8601",'
+        '"request":"$request",'
+        '"status":"$status",'
+        '"bytes_sent":"$bytes_sent",'
+        '"http_referer":"$http_referer",'
+        '"http_user_agent":"$http_user_agent"'
+    '}';
 
-access_log /var/log/nginx/access.log json_log;
+access_log /var/log/nginx/access.log sentinel_json_direct;
 ```
 
-> `$real_ip` requires `ngx_http_realip_module`. If you don't use a reverse proxy, replace it with `$remote_addr`.
+**Behind a reverse proxy** — use `$real_ip` populated by `ngx_http_realip_module`
+(see [`deploy/examples/reverse-proxy/`](deploy/examples/reverse-proxy/) for per-proxy setup):
+
+```nginx
+log_format sentinel_json_proxy escape=json
+    '{'
+        '"remote_addr":"$remote_addr",'
+        '"real_ip":"$real_ip",'
+        '"time_iso8601":"$time_iso8601",'
+        '"request":"$request",'
+        '"status":"$status",'
+        '"bytes_sent":"$bytes_sent",'
+        '"http_referer":"$http_referer",'
+        '"http_user_agent":"$http_user_agent"'
+    '}';
+
+access_log /var/log/nginx/access.log sentinel_json_proxy;
+```
 
 ### Step 2 — Update sentinel config
 
