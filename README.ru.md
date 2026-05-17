@@ -37,7 +37,7 @@ nginx access.log → TailReader → whitelist → tracker → scorer → threats
 ### Быстрая установка — любой дистрибутив (рекомендуется)
 
 Скрипт автоматически определяет дистрибутив и архитектуру, скачивает нужный пакет из GitHub Releases,
-устанавливает его через штатный менеджер пакетов и запускает сервис:
+устанавливает его через штатный менеджер пакетов, добавляет в автозагрузку и запускает сервис:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | sudo bash
@@ -46,11 +46,11 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scrip
 Работает на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux и Arch Linux.
 Требует `curl` и `sudo`. Fail2Ban устанавливается автоматически, если отсутствует.
 
-После установки отредактируйте конфиг и включите сервис:
+Сервис запускается сразу с настройками по умолчанию. Чтобы применить свой конфиг:
 
 ```bash
 sudo nano /etc/nginx-sentinel/config.yaml
-sudo systemctl enable --now nginx-sentinel
+sudo systemctl kill -s HUP nginx-sentinel   # перезагрузка без рестарта
 ```
 
 ---
