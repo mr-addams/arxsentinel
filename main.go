@@ -168,6 +168,8 @@ func main() {
 	// threatLogger — writes WARN/THREAT to threats.log (Task 2.4).
 	// Closure around utils.LogThreat: increments threatCount for the stats goroutine.
 	threatLogger := output.NewThreatLogger(func(ip string, score int, level string, modules []string, reason string) {
+		// threatCount tracks THREAT-only for STATS log; nginx_sentinel_threats_total tracks
+		// both WARN and THREAT — use the Prometheus metric for full threat breakdown.
 		if level == "THREAT" {
 			threatCount.Add(1)
 		}
@@ -262,6 +264,7 @@ func main() {
 					processedCount.Load(), st.TrackedIPs,
 					threatCount.Load(), st.Suspicious,
 				), "info")
+				metrics.UpdateGauges(st.TrackedIPs, st.Suspicious)
 			}
 		}
 	}()
@@ -467,6 +470,7 @@ func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 	}
 	// Only successfully parsed lines are counted — malformed entries are excluded.
 	processedCount.Add(1)
+	metrics.RecordLine()
 
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
@@ -521,6 +525,12 @@ func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 	// Returned *IPState implements detector.ScoreAccess.
 	level, score, modules, reason := pipe.Scorer.Evaluate(ipState, entry)
 
-	// Write to threat log only on WARN or THREAT
+	// Write to threat log and record metrics only on WARN or THREAT.
+	if level != "" {
+		metrics.RecordThreat(level)
+		for _, mod := range modules {
+			metrics.RecordDetectorHit(mod)
+		}
+	}
 	pipe.ThreatLogger.Log(entry.RealIP, score, level, modules, reason)
 }
