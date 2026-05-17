@@ -480,16 +480,67 @@ parser:
 
 Unknown fields in the JSON log line are silently ignored — only the mapped fields are consumed.
 
-## Behind a Reverse Proxy (Cloudflare)
+## Deployment behind a reverse proxy
 
-If nginx sits behind Cloudflare, `$remote_addr` in the logs will be a Cloudflare IP, not the real client. nginx-sentinel would then score Cloudflare's addresses → Fail2Ban would ban Cloudflare → the site goes down for everyone.
+> **Warning:** if nginx sits behind a proxy and `$real_ip` is not configured correctly,
+> nginx-sentinel will score the **proxy's IP address** instead of the real attacker.
+> Fail2Ban will then ban your own proxy — taking the site down for everyone.
 
-**Solution: `ngx_http_realip_module`**
+### How it works
 
-Generate the nginx config with Cloudflare IP ranges and include it:
+```
+[Client 1.2.3.4] → [Proxy] → (X-Forwarded-For / X-Real-IP header) → [nginx]
+                                                                           ↓
+                                               $real_ip variable in log_format
+                                                                           ↓
+                                                              nginx-sentinel
+```
+
+nginx's `ngx_http_realip_module` reads the forwarded IP header and exposes it as
+`$real_ip` — the variable nginx-sentinel uses for all detection.
+
+### Ready-made configs
+
+Full working examples for each proxy are in `deploy/examples/reverse-proxy/`:
+
+| Proxy | Files |
+|-------|-------|
+| **HAProxy** | [`haproxy/haproxy.cfg`](deploy/examples/reverse-proxy/haproxy/haproxy.cfg), [`nginx.conf`](deploy/examples/reverse-proxy/haproxy/nginx.conf) |
+| **Traefik** | [`traefik/traefik.yml`](deploy/examples/reverse-proxy/traefik/traefik.yml), [`nginx.conf`](deploy/examples/reverse-proxy/traefik/nginx.conf) |
+| **Caddy** | [`caddy/Caddyfile`](deploy/examples/reverse-proxy/caddy/Caddyfile), [`nginx.conf`](deploy/examples/reverse-proxy/caddy/nginx.conf) |
+| **nginx as RP** | [`nginx-rp/nginx-upstream.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-upstream.conf), [`nginx-origin.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-origin.conf) |
+
+Each example includes both the proxy config and the origin nginx config with
+`set_real_ip_from`, `real_ip_header`, and the `combined_realip` log format.
+
+### Minimum nginx config (any proxy)
+
+```nginx
+http {
+    set_real_ip_from  <proxy-ip-or-cidr>;  # trust only your proxy
+    real_ip_header    X-Real-IP;           # or X-Forwarded-For for Traefik
+    real_ip_recursive off;                 # on for X-Forwarded-For chains
+
+    log_format combined_realip
+        '$remote_addr - $remote_user [$time_local] '
+        '"$request" $status $body_bytes_sent '
+        '"$http_referer" "$http_user_agent" "$real_ip"';
+
+    server {
+        access_log /var/log/nginx/access.log combined_realip;
+        ...
+    }
+}
+```
+
+### Cloudflare
+
+If nginx sits directly behind Cloudflare, use `CF-Connecting-IP` instead of `X-Real-IP`
+(Cloudflare sets it from their edge; `X-Forwarded-For` can be spoofed by clients).
+
+Generate `set_real_ip_from` lines for all Cloudflare CIDR ranges:
 
 ```bash
-# Generate and save the config
 sudo scripts/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf
 ```
 
@@ -497,12 +548,11 @@ Add to `nginx.conf`:
 
 ```nginx
 http {
-    include /etc/nginx/cloudflare-real-ip.conf;
+    include /etc/nginx/cloudflare-real-ip.conf;  # set_real_ip_from for all CF ranges
+    real_ip_header CF-Connecting-IP;
     ...
 }
 ```
-
-nginx will then replace `$remote_addr` with the real client IP (from the `CF-Connecting-IP` header) before writing to the log — nginx-sentinel works without any changes.
 
 **Auto-update IP ranges** (Cloudflare updates them periodically):
 
@@ -510,8 +560,6 @@ nginx will then replace `$remote_addr` with the real client IP (from the `CF-Con
 # Add to cron — every Monday at 03:00
 0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
 ```
-
-> **Why `CF-Connecting-IP` and not `X-Forwarded-For`:** `X-Forwarded-For` can be spoofed by the client before it reaches Cloudflare. `CF-Connecting-IP` is set by Cloudflare itself and cannot be supplied by the client.
 
 ## Troubleshooting
 
