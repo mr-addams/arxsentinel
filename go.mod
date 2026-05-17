@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/fatih/color v1.19.0
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/crypto v0.51.0
 	gopkg.in/yaml.v3 v3.0.1
