@@ -31,7 +31,28 @@ nginx access.log → TailReader → whitelist → tracker → scorer → threats
 
 ## Установка
 
-### Debian / Ubuntu — рекомендуемый способ
+### Быстрая установка — любой дистрибутив (рекомендуется)
+
+Скрипт автоматически определяет дистрибутив и архитектуру, скачивает нужный пакет из GitHub Releases,
+устанавливает его через штатный менеджер пакетов и запускает сервис:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | sudo bash
+```
+
+Работает на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux и Arch Linux.
+Требует `curl` и `sudo`. Fail2Ban устанавливается автоматически, если отсутствует.
+
+После установки отредактируйте конфиг и включите сервис:
+
+```bash
+sudo nano /etc/nginx-sentinel/config.yaml
+sudo systemctl enable --now nginx-sentinel
+```
+
+---
+
+### Debian / Ubuntu — ручная установка пакета
 
 Скачайте `.deb` для своей архитектуры со страницы [Releases](https://github.com/mr-addams/nginx-sentinel/releases) и установите:
 
