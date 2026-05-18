@@ -30,7 +30,7 @@ OLD_LOG_DIR="/var/log/nginx-sentinel"
 NEW_LOG_DIR="/var/log/arxsentinel"
 
 FAIL2BAN_JAIL_DIR="/etc/fail2ban/jail.d"
-METRICS_URL="http://localhost:9090/metrics"
+METRICS_URL="http://localhost:9117/metrics"
 
 # ── Flags ─────────────────────────────────────────────────────────────────────────────
 

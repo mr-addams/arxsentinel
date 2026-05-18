@@ -242,7 +242,7 @@ install_package() {
 configure() {
   section "Configuration"
 
-  CFG="/etc/nginx-sentinel/config.yaml"
+  CFG="/etc/arxsentinel/config.yaml"
 
   # Try to detect nginx access.log path automatically
   NGINX_LOG=""
@@ -279,15 +279,15 @@ start_service() {
   fi
 
   systemctl daemon-reload
-  systemctl enable nginx-sentinel
-  systemctl restart nginx-sentinel
+  systemctl enable arxsentinel
+  systemctl restart arxsentinel
 
   sleep 1
 
-  if systemctl is-active --quiet nginx-sentinel; then
+  if systemctl is-active --quiet arxsentinel; then
     ok "${G}ArxSentinel is running${RESET}"
   else
-    warn "Service did not start. Check: ${W}journalctl -u nginx-sentinel -n 30${RESET}"
+    warn "Service did not start. Check: ${W}journalctl -u arxsentinel -n 30${RESET}"
   fi
 }
 
@@ -300,14 +300,14 @@ summary() {
   echo -e "${G}└─────────────────────────────────────────────┘${RESET}"
   echo
   echo -e "  ${W}Version   ${RESET}${VERSION}"
-  echo -e "  ${W}Config    ${RESET}/etc/nginx-sentinel/config.yaml"
-  echo -e "  ${W}Logs      ${RESET}/var/log/nginx-sentinel/sentinel.log"
-  echo -e "  ${W}Threats   ${RESET}/var/log/nginx-sentinel/threats.log"
+  echo -e "  ${W}Config    ${RESET}/etc/arxsentinel/config.yaml"
+  echo -e "  ${W}Logs      ${RESET}/var/log/arxsentinel/sentinel.log"
+  echo -e "  ${W}Threats   ${RESET}/var/log/arxsentinel/threats.log"
   echo
   echo -e "  ${DIM}Next steps:${RESET}"
-  echo -e "  ${B}→${RESET}  Review config:   ${C}sudo nano /etc/nginx-sentinel/config.yaml${RESET}"
-  echo -e "  ${B}→${RESET}  Watch live logs: ${C}sudo journalctl -u nginx-sentinel -f${RESET}"
-  echo -e "  ${B}→${RESET}  Reload config:   ${C}sudo systemctl kill -s HUP nginx-sentinel${RESET}"
+  echo -e "  ${B}→${RESET}  Review config:   ${C}sudo nano /etc/arxsentinel/config.yaml${RESET}"
+  echo -e "  ${B}→${RESET}  Watch live logs: ${C}sudo journalctl -u arxsentinel -f${RESET}"
+  echo -e "  ${B}→${RESET}  Reload config:   ${C}sudo systemctl kill -s HUP arxsentinel${RESET}"
   echo -e "  ${B}→${RESET}  Docs:            ${C}https://mr-addams.github.io/arxsentinel/${RESET}"
   echo
 }
