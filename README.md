@@ -630,6 +630,47 @@ To use only your custom list, set `detectors.probe.paths:` to exactly the paths 
 
 ---
 
+## Custom log format (regex)
+
+Use any text log format by supplying a Go regex with named capture groups.
+
+```yaml
+parser:
+  log_format: "regex"
+  regex_pattern: '(?P<remote_addr>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] "(?P<request>[^"]*)" (?P<status>\d+) (?P<bytes_sent>\d+) "(?P<http_referer>[^"]*)" "(?P<http_user_agent>[^"]*)"'
+```
+
+### Named groups
+
+| Group | Required | Description |
+|-------|----------|-------------|
+| `remote_addr` | ✅ | Client or proxy IP address |
+| `time` | ✅ | Request time (`02/Jan/2006:15:04:05 -0700` format) |
+| `request` | ✅ | Full request line: `METHOD /path HTTP/x.x` |
+| `status` | ✅ | HTTP response code |
+| `bytes_sent` | ✅ | Response size in bytes |
+| `http_referer` | optional | Referer header value |
+| `http_user_agent` | optional | User-Agent header value |
+| `real_ip` | optional | Real client IP from a trusted proxy header |
+
+Missing optional groups produce empty fields in the parsed entry — sentinel still works, just without referer/UA/real-IP data.
+
+### Example: HAProxy HTTP log
+
+```yaml
+parser:
+  log_format: "regex"
+  regex_pattern: '(?P<remote_addr>\S+):\d+ \S+ \S+/\S+ \d+/\d+/\d+/\d+/\d+ (?P<status>\d+) (?P<bytes_sent>\d+) .* "(?P<request>[^"]*)"'
+```
+
+### Common mistakes
+
+- **Missing mandatory group** — sentinel exits at startup with a clear error message listing the missing group name.
+- **Unanchored pattern** — the regex is applied with `FindStringSubmatch`, so it matches anywhere in the line. Anchor with `^` / `$` if needed.
+- **Wrong time format** — only `02/Jan/2006:15:04:05 -0700` (nginx `$time_local`) is parsed. ISO 8601 timestamps are not parsed; time-based features still work with zero time.
+
+---
+
 ## Multi-stream monitoring
 
 Run one sentinel process that watches multiple log files simultaneously — one pipeline per domain, full isolation.

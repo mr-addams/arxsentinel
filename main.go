@@ -297,6 +297,11 @@ func runStream(
 	}
 
 	// Build initial pipeline context.
+	p, err := buildParser(cfg)
+	if err != nil {
+		utils.Log("ERROR", fmt.Sprintf("stream %q: parser init error: %v", streamCfg.Name, err), "error")
+		return
+	}
 	pipe := &PipelineContext{
 		StreamName:       streamCfg.Name,
 		processedCount:   &processedCount,
@@ -305,7 +310,7 @@ func runStream(
 		ThreatLogger:     makeThreatLogger(threatFile),
 		Matcher:          matcher,
 		Verifier:         verifier,
-		Parser:           buildParser(cfg),
+		Parser:           p,
 		FakeBotScore:     cfg.Whitelist.FakeBotScore,
 		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
 	}
@@ -403,6 +408,11 @@ func runStream(
 			threatFile = newThreatFile
 			streamCfg = newStreamCfg
 
+			newParser, err := buildParser(newCfg)
+			if err != nil {
+				utils.Log("CONFIG", fmt.Sprintf("stream %q: SIGHUP parser error, reload cancelled: %v", streamCfg.Name, err), "warn")
+				continue
+			}
 			cfg = newCfg
 			tracker.Reconfigure(cfg)
 			pipe = &PipelineContext{
@@ -413,7 +423,7 @@ func runStream(
 				ThreatLogger:     makeThreatLogger(threatFile),
 				Matcher:          newMatcher,
 				Verifier:         verifier,
-				Parser:           buildParser(cfg),
+				Parser:           newParser,
 				FakeBotScore:     cfg.Whitelist.FakeBotScore,
 				DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
 			}
@@ -459,13 +469,18 @@ func buildDetectors(cfg config.Config) []detector.Detector {
 }
 
 // buildParser returns the parser matching cfg.Parser.LogFormat.
-// "json" → JSONParser; all other values → CombinedParser (default).
+// Priority (Decision 3 — Flow #14): profile (Flow #15) → log_format → default combined.
+// Returns an error only for "regex" with an invalid or incomplete pattern.
 // Called at startup and on SIGHUP so a log_format change takes effect without restart.
-func buildParser(cfg config.Config) parser.Parser {
-	if cfg.Parser.LogFormat == "json" {
-		return parser.NewJSONParser(cfg.Parser.JSONFields)
+func buildParser(cfg config.Config) (parser.Parser, error) {
+	switch cfg.Parser.LogFormat {
+	case "json":
+		return parser.NewJSONParser(cfg.Parser.JSONFields), nil
+	case "regex":
+		return parser.NewRegexParser(cfg.Parser.RegexPattern)
+	default:
+		return &parser.CombinedParser{}, nil
 	}
-	return &parser.CombinedParser{}
 }
 
 // ── Detector factories ─────────────────────────────────────────────────────────────────

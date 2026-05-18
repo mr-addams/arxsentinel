@@ -93,9 +93,10 @@ type LoggingConfig struct {
 // ++++++++++++++++++++++++++ Section: parser +++++++++++++++++++++++++++++++++++++++++++++
 
 type ParserConfig struct {
-	LogFormat  string           `yaml:"log_format"`  // YAML: parser.log_format, default "combined" — "combined" | "json". Consumer: main.go buildParser
-	Timezone   string           `yaml:"timezone"`    // YAML: parser.timezone, default "UTC" — reserved; parser reads timezone from offset in log line (+0000). Consumer: not connected
-	JSONFields JSONFieldsConfig `yaml:"json_fields"` // YAML: parser.json_fields — field name mapping for JSON log format. Consumer: JSONParser
+	LogFormat    string           `yaml:"log_format"`    // YAML: parser.log_format, default "combined" — "combined" | "json" | "regex". Consumer: main.go buildParser
+	RegexPattern string           `yaml:"regex_pattern"` // YAML: parser.regex_pattern — Go regex with named groups; required when log_format = "regex"
+	Timezone     string           `yaml:"timezone"`      // YAML: parser.timezone, default "UTC" — reserved; parser reads timezone from offset in log line (+0000). Consumer: not connected
+	JSONFields   JSONFieldsConfig `yaml:"json_fields"`   // YAML: parser.json_fields — field name mapping for JSON log format. Consumer: JSONParser
 }
 
 // JSONFieldsConfig maps LogEntry fields to the actual JSON key names in the nginx log.

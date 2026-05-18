@@ -267,6 +267,39 @@ func TestLoadConfig_StderrOnMissingFile(t *testing.T) {
 	}
 }
 
+// ========================== Tests: regex parser config ================================
+
+func TestLoadConfig_RegexParser(t *testing.T) {
+	pattern := `(?P<remote_addr>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] "(?P<request>[^"]+)" (?P<status>\d+) (?P<bytes_sent>\d+)`
+	path := writeTempYAML(t, `
+parser:
+  log_format: "regex"
+  regex_pattern: '`+pattern+`'
+general:
+  log_file: /var/log/nginx/access.log
+output:
+  threat_log: /var/log/nginx-sentinel/threats.log
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Parser.LogFormat != "regex" {
+		t.Errorf("LogFormat: want %q, got %q", "regex", cfg.Parser.LogFormat)
+	}
+	if cfg.Parser.RegexPattern != pattern {
+		t.Errorf("RegexPattern: want %q, got %q", pattern, cfg.Parser.RegexPattern)
+	}
+}
+
+func TestLoadConfig_RegexPattern_DefaultEmpty(t *testing.T) {
+	// Default config must have empty regex_pattern — no pattern pre-filled.
+	cfg, _ := LoadConfig("/nonexistent/defaults-only.yaml")
+	if cfg.Parser.RegexPattern != "" {
+		t.Errorf("RegexPattern default: want empty, got %q", cfg.Parser.RegexPattern)
+	}
+}
+
 // ========================== Tests: multi-stream config ================================
 
 func TestLoadConfig_BackwardCompat_SingleStream(t *testing.T) {
