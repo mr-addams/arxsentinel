@@ -632,6 +632,57 @@ parser:
 
 ---
 
+## Мониторинг нескольких потоков
+
+Запустите один процесс sentinel, который наблюдает за несколькими лог-файлами одновременно — один конвейер на домен, полная изоляция.
+
+### Конфигурация
+
+```yaml
+streams:
+  - name: site1
+    log_file: /var/log/nginx/site1.access.log
+    threat_log: /var/log/nginx-sentinel/site1.threats.log
+  - name: site2
+    log_file: /var/log/nginx/site2.access.log
+    threat_log: /var/log/nginx-sentinel/site2.threats.log
+```
+
+> **Важно:** `streams:` и `general.log_file` взаимно исключают друг друга. Используйте одно или другое.
+
+Каждый поток имеет собственный трекер, scorer, whitelist и лог угроз. Медленная атака или сбой в одном потоке не влияет на остальные.
+
+### Обратная совместимость
+
+Классическая конфигурация с `general.log_file` продолжает работать — она автоматически конвертируется в один безымянный поток (метка `stream=""` в Prometheus). Миграция конфига не требуется.
+
+### Fail2Ban при нескольких потоках
+
+Каждый поток записывает в свой `threat_log`. Создайте отдельную ловушку Fail2Ban для каждого файла:
+
+```ini
+# /etc/fail2ban/jail.d/nginx-sentinel-site1.conf
+[nginx-sentinel-site1]
+enabled  = true
+filter   = nginx-sentinel
+logpath  = /var/log/nginx-sentinel/site1.threats.log
+maxretry = 1
+bantime  = 86400
+
+[nginx-sentinel-site2]
+enabled  = true
+filter   = nginx-sentinel
+logpath  = /var/log/nginx-sentinel/site2.threats.log
+maxretry = 1
+bantime  = 86400
+```
+
+### Grafana
+
+Дашборд включает переменную **Stream** для фильтрации панелей по потоку. Импортируйте `deploy/grafana/nginx-sentinel-dashboard.json` (v2).
+
+---
+
 ## Prometheus-метрики
 
 Включить в `config.yaml`:
