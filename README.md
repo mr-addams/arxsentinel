@@ -9,7 +9,7 @@
 
 A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 7 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy.
 
-Supports **nginx, Apache, Caddy, Traefik, and HAProxy** out of the box via built-in profiles. Custom log formats supported via regex. Watch multiple log files in a single process.
+Supports **nginx, Apache, Caddy, Traefik, and HAProxy** via built-in profiles. nginx works out of the box with no profile needed. Caddy and HAProxy require minimal one-time setup. Custom log formats supported via regex. Watch multiple log files in a single process.
 
 ```
 access.log → TailReader → whitelist → tracker → scorer → threats.log → Fail2Ban → iptables
@@ -17,15 +17,19 @@ access.log → TailReader → whitelist → tracker → scorer → threats.log �
 
 ## Supported HTTP servers
 
-Built-in profiles — no regex or field mapping required. Set `parser.profile` to the server name:
+### Compatibility table
 
-| Profile | Server | Log format |
-|---------|--------|------------|
-| `nginx` | nginx | Combined log format with `$real_ip` (default) |
-| `apache` | Apache httpd 2.4+ | Combined Log Format |
-| `caddy` | Caddy v2 | Apache CLF via transform-encoder |
-| `traefik` | Traefik v2/v3 | Common Log Format (default accessLog) |
-| `haproxy-http` | HAProxy | HTTP log (`option httplog`) |
+| Server | Profile | Setup required |
+|--------|---------|----------------|
+| nginx | *(default — no profile needed)* | None — nginx combined log format works out of the box |
+| Apache | `apache` | None — default CLF format |
+| Traefik | `traefik` | None — default access log (CLF) |
+| Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + [transform-encoder](https://github.com/caddyserver/transform-encoder) plugin |
+| HAProxy | `haproxy-http` | `option httplog` in haproxy.cfg + rsyslog to write to file |
+
+> **nginx:** no `profile:` setting is needed. The default CombinedParser handles nginx combined log format out of the box. Set only `general.log_file` pointing to your access log.
+
+Built-in profiles — no regex or field mapping required. Set `parser.profile` to the server name for Apache, Traefik, Caddy, or HAProxy:
 
 **Example — Apache:**
 
@@ -94,7 +98,7 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/
 Works on Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, and Arch Linux.
 Requires `curl` and `sudo`. Fail2Ban is installed automatically if missing.
 
-The service starts immediately with the nginx profile as default. Edit the config to switch to your server (apache, caddy, traefik, haproxy-http, or a custom regex):
+The service starts immediately and works with nginx out of the box — no profile needed. Edit the config to switch to another server (apache, caddy, traefik, haproxy-http, or a custom regex):
 
 ```bash
 sudo nano /etc/arxsentinel/config.yaml
@@ -195,7 +199,8 @@ general:
   stats_interval: 300s                  # STATS output interval to operational log
 
 parser:
-  profile: "nginx"   # built-in profile: nginx | apache | caddy | traefik | haproxy-http
+  # profile: "apache"  # set for non-nginx servers: apache | caddy | traefik | haproxy-http
+  #                     # nginx combined log format works without any profile setting
 
 scoring:
   alert_threshold: 50    # score → WARN in threat log
@@ -551,7 +556,7 @@ fail2ban-client set arxsentinel unbanip 1.2.3.4
 
 ## JSON log format
 
-By default ArxSentinel parses the log format defined by the active profile (nginx, Apache, Caddy, Traefik, or HAProxy).  
+By default ArxSentinel parses nginx combined log format (no profile needed) or the format defined by the active profile (apache, caddy, traefik, or haproxy-http).  
 It also supports JSON log format — switch via `config.yaml` without recompilation.
 
 The examples below use nginx. For other servers, adapt the `log_format` directive to your server's equivalent.
