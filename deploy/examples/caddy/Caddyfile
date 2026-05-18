@@ -1,0 +1,38 @@
+# Caddy v2 configuration for nginx-sentinel integration.
+#
+# nginx-sentinel's "caddy" profile expects Apache Combined Log Format (CLF).
+# Caddy v2's built-in log encoder outputs JSON (nested), which is not compatible
+# directly. Use the caddy-transform-encoder plugin to emit CLF text format.
+#
+# Install the plugin:
+#   xcaddy build --with github.com/caddyserver/transform-encoder
+#
+# Then configure the log block as shown below.
+
+example.com {
+    root * /var/www/html
+    file_server
+
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+        # transform-encoder outputs Apache CLF — required by the "caddy" sentinel profile.
+        format transform `{request>remote_addr} - {user_id} [{ts}] "{request>method} {request>uri} {request>proto}" {status} {size} "{>Referer}" "{>User-Agent}"` {
+            time_format "02/Jan/2006:15:04:05 -0700"
+        }
+    }
+}
+
+# ── Without the transform-encoder plugin ──────────────────────────────────────────────
+#
+# If you cannot install the plugin, use the "regex" parser profile with this pattern:
+#
+#   parser:
+#     profile: ""
+#     log_format: "json"
+#
+# And configure a flat-JSON nginx-compatible log_format in your reverse proxy instead,
+# or use sentinel's regex parser with a custom pattern matching Caddy's default JSON
+# (requires processing nested fields — see parser.regex_pattern in the docs).

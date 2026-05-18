@@ -468,11 +468,19 @@ func buildDetectors(cfg config.Config) []detector.Detector {
 	return detectors
 }
 
-// buildParser returns the parser matching cfg.Parser.LogFormat.
-// Priority (Decision 3 — Flow #14): profile (Flow #15) → log_format → default combined.
-// Returns an error only for "regex" with an invalid or incomplete pattern.
-// Called at startup and on SIGHUP so a log_format change takes effect without restart.
+// buildParser returns the parser for the current config.
+// Priority: parser.profile → parser.log_format → default combined (Decision 1 — Flow #15).
+// Called at startup and on SIGHUP so format changes take effect without restart.
 func buildParser(cfg config.Config) (parser.Parser, error) {
+	// Profile takes priority over log_format.
+	if cfg.Parser.Profile != "" {
+		factory, ok := parser.Profiles[cfg.Parser.Profile]
+		if !ok {
+			return nil, fmt.Errorf("unknown parser profile %q; available: %s",
+				cfg.Parser.Profile, parser.AvailableProfiles())
+		}
+		return factory()
+	}
 	switch cfg.Parser.LogFormat {
 	case "json":
 		return parser.NewJSONParser(cfg.Parser.JSONFields), nil

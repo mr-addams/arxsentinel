@@ -630,6 +630,51 @@ To use only your custom list, set `detectors.probe.paths:` to exactly the paths 
 
 ---
 
+## Supported HTTP servers
+
+nginx-sentinel includes built-in profiles for popular HTTP servers.
+Set `parser.profile` to the server name — no regex or field mapping required.
+
+| Profile | Server | Log format |
+|---------|--------|------------|
+| `apache` | Apache httpd 2.4+ | Combined Log Format (default) |
+| `caddy` | Caddy v2 | Apache CLF via transform-encoder |
+| `traefik` | Traefik v2/v3 | Common Log Format (default accessLog) |
+| `haproxy-http` | HAProxy | HTTP log (`option httplog`) |
+
+**Example:**
+
+```yaml
+parser:
+  profile: "apache"
+
+general:
+  log_file: /var/log/apache2/access.log
+
+output:
+  threat_log: /var/log/nginx-sentinel/threats.log
+```
+
+Ready-made configs for each server are in [`deploy/examples/`](deploy/examples/):
+
+```
+deploy/examples/
+├── apache/      httpd.conf + sentinel-config.yaml
+├── caddy/       Caddyfile + sentinel-config.yaml
+├── traefik/     traefik.yml + sentinel-config.yaml
+└── haproxy/     haproxy.cfg + sentinel-config.yaml
+```
+
+> **Note — HAProxy timestamps:** HAProxy includes milliseconds in the timestamp
+> (`14:30:00.123`), which does not match the expected time format. Sentinel falls
+> back to `time.Time{}` for that field. Rate-window detection uses wall-clock time
+> regardless, so all detectors work correctly.
+
+> **Note — Caddy:** Caddy v2's built-in JSON encoder outputs nested objects. The
+> `caddy` profile requires the
+> [caddy-transform-encoder](https://github.com/caddyserver/transform-encoder) plugin
+> to produce CLF output. See `deploy/examples/caddy/Caddyfile` for the setup.
+
 ## Custom log format (regex)
 
 Use any text log format by supplying a Go regex with named capture groups.
