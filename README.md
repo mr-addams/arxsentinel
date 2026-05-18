@@ -406,7 +406,7 @@ Background goroutines:
 **Operational log** (`/var/log/nginx-sentinel/sentinel.log`) — daemon's working log:
 
 ```
-2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.2 started
+2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.3 started
 2026-04-02 14:33:12 [THREAT] 45.134.26.8 score=85 modules=probe,rate reason="..."
 2026-04-02 14:38:10 [STATS] processed=14320 tracked=87 threats=3 suspicious=12
 ```
