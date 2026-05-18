@@ -93,6 +93,7 @@ type LoggingConfig struct {
 // ++++++++++++++++++++++++++ Section: parser +++++++++++++++++++++++++++++++++++++++++++++
 
 type ParserConfig struct {
+	Profile      string           `yaml:"profile"`       // YAML: parser.profile — built-in server profile: "apache" | "caddy" | "traefik" | "haproxy-http". Takes priority over log_format.
 	LogFormat    string           `yaml:"log_format"`    // YAML: parser.log_format, default "combined" — "combined" | "json" | "regex". Consumer: main.go buildParser
 	RegexPattern string           `yaml:"regex_pattern"` // YAML: parser.regex_pattern — Go regex with named groups; required when log_format = "regex"
 	Timezone     string           `yaml:"timezone"`      // YAML: parser.timezone, default "UTC" — reserved; parser reads timezone from offset in log line (+0000). Consumer: not connected

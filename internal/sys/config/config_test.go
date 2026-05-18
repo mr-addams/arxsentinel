@@ -300,6 +300,34 @@ func TestLoadConfig_RegexPattern_DefaultEmpty(t *testing.T) {
 	}
 }
 
+// ========================== Tests: profile config =====================================
+
+func TestLoadConfig_Profile(t *testing.T) {
+	path := writeTempYAML(t, `
+parser:
+  profile: "apache"
+general:
+  log_file: /var/log/apache2/access.log
+output:
+  threat_log: /var/log/nginx-sentinel/threats.log
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Parser.Profile != "apache" {
+		t.Errorf("Parser.Profile: want %q, got %q", "apache", cfg.Parser.Profile)
+	}
+}
+
+func TestLoadConfig_ProfileDefault(t *testing.T) {
+	// Default config must have empty profile — no profile pre-filled.
+	cfg, _ := LoadConfig("/nonexistent/defaults-only.yaml")
+	if cfg.Parser.Profile != "" {
+		t.Errorf("Parser.Profile default: want empty, got %q", cfg.Parser.Profile)
+	}
+}
+
 // ========================== Tests: multi-stream config ================================
 
 func TestLoadConfig_BackwardCompat_SingleStream(t *testing.T) {

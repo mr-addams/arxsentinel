@@ -632,6 +632,51 @@ parser:
 
 ---
 
+## Поддерживаемые HTTP-серверы
+
+nginx-sentinel содержит встроенные профили для популярных HTTP-серверов.
+Укажите `parser.profile` с именем сервера — настройка regex или маппинга полей не требуется.
+
+| Профиль | Сервер | Формат логов |
+|---------|--------|--------------|
+| `apache` | Apache httpd 2.4+ | Combined Log Format (по умолчанию) |
+| `caddy` | Caddy v2 | Apache CLF через transform-encoder |
+| `traefik` | Traefik v2/v3 | Common Log Format (accessLog по умолчанию) |
+| `haproxy-http` | HAProxy | HTTP log (`option httplog`) |
+
+**Пример:**
+
+```yaml
+parser:
+  profile: "apache"
+
+general:
+  log_file: /var/log/apache2/access.log
+
+output:
+  threat_log: /var/log/nginx-sentinel/threats.log
+```
+
+Готовые конфиги для каждого сервера находятся в [`deploy/examples/`](deploy/examples/):
+
+```
+deploy/examples/
+├── apache/      httpd.conf + sentinel-config.yaml
+├── caddy/       Caddyfile + sentinel-config.yaml
+├── traefik/     traefik.yml + sentinel-config.yaml
+└── haproxy/     haproxy.cfg + sentinel-config.yaml
+```
+
+> **Замечание — HAProxy:** HAProxy включает миллисекунды в временную метку
+> (`14:30:00.123`), что не соответствует ожидаемому формату. Sentinel использует
+> `time.Time{}` для этого поля. Обнаружение rate-окон работает по системному
+> времени, поэтому все детекторы функционируют корректно.
+
+> **Замечание — Caddy:** Встроенный JSON-энкодер Caddy v2 выводит вложенные объекты.
+> Профиль `caddy` требует плагина
+> [caddy-transform-encoder](https://github.com/caddyserver/transform-encoder)
+> для вывода CLF. Смотрите `deploy/examples/caddy/Caddyfile` для настройки.
+
 ## Произвольный формат логов (regex)
 
 Используйте любой текстовый формат логов, указав Go-регулярное выражение с именованными группами.
