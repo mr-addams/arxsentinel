@@ -1,5 +1,7 @@
 # nginx-sentinel
 
+> ⚠️ **This project is moving.** Development continues at [ArxSentinel](https://github.com/mr-addams/arxsentinel) — a universal HTTP access log threat detector supporting nginx, Apache, Caddy, Traefik, and HAProxy.
+
 [![Release](https://img.shields.io/github/v/release/mr-addams/nginx-sentinel?include_prereleases&label=release)](https://github.com/mr-addams/nginx-sentinel/releases)
 [![Build](https://github.com/mr-addams/nginx-sentinel/actions/workflows/release.yml/badge.svg)](https://github.com/mr-addams/nginx-sentinel/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
