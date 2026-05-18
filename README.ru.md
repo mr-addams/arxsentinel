@@ -7,7 +7,7 @@
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
-Универсальный детектор угроз по HTTP access.log. Следит за логами любого HTTP-сервера, запускает 7 поведенческих детекторов на каждый IP и записывает подозрительные адреса в threat-лог — Fail2Ban читает его и банит атакующих.
+Бдительный страж вашего веб-сервера: читает HTTP access-логи в реальном времени, оценивает каждый IP через 7 поведенческих детекторов и блокирует атакующих через Fail2Ban. Работает с nginx, Apache, Caddy, Traefik, HAProxy.
 
 Поддерживает **nginx, Apache, Caddy, Traefik и HAProxy** из коробки через встроенные профили. Произвольные форматы логов — через regex. Несколько лог-файлов в одном процессе.
 

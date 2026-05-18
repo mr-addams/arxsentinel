@@ -7,7 +7,7 @@
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
-Universal HTTP access log threat detector. Tails any HTTP server log, runs 7 behavioural detectors per IP, and writes suspicious IPs to a threat log — Fail2Ban reads it and bans the attackers.
+A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 7 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy.
 
 Supports **nginx, Apache, Caddy, Traefik, and HAProxy** out of the box via built-in profiles. Custom log formats supported via regex. Watch multiple log files in a single process.
 
