@@ -118,14 +118,14 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "nginx_sentinel_tracked_ips{job=~\"$job\"}",
+          "expr": "nginx_sentinel_tracked_ips{job=~\"$job\",stream=~\"$stream\"}",
           "instant": true,
           "legendFormat": "Tracked IPs",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "nginx_sentinel_suspicious_ips{job=~\"$job\"}",
+          "expr": "nginx_sentinel_suspicious_ips{job=~\"$job\",stream=~\"$stream\"}",
           "instant": true,
           "legendFormat": "Suspicious IPs",
           "refId": "B"
@@ -166,7 +166,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(nginx_sentinel_threats_total{job=~\"$job\", level=\"THREAT\"}[5m])) * 60",
+          "expr": "sum(rate(nginx_sentinel_threats_total{job=~\"$job\",stream=~\"$stream\",level=\"THREAT\"}[5m])) * 60",
           "instant": true,
           "legendFormat": "THREAT/min",
           "refId": "A"
@@ -207,7 +207,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(nginx_sentinel_lines_processed_total{job=~\"$job\"}[1m]))",
+          "expr": "sum(rate(nginx_sentinel_lines_processed_total{job=~\"$job\",stream=~\"$stream\"}[1m]))",
           "instant": true,
           "legendFormat": "lines/s",
           "refId": "A"
@@ -250,7 +250,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(increase(nginx_sentinel_threats_total{job=~\"$job\", level=\"THREAT\"}[$__range]))",
+          "expr": "sum(increase(nginx_sentinel_threats_total{job=~\"$job\",stream=~\"$stream\",level=\"THREAT\"}[$__range]))",
           "instant": true,
           "legendFormat": "Total THREATs",
           "refId": "A"
@@ -310,8 +310,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum by(level) (rate(nginx_sentinel_threats_total{job=~\"$job\"}[5m])) * 60",
-          "legendFormat": "{{level}}",
+          "expr": "sum by(stream, level) (rate(nginx_sentinel_threats_total{job=~\"$job\",stream=~\"$stream\"}[5m])) * 60",
+          "legendFormat": "{{stream}} {{level}}",
           "refId": "A"
         }
       ],
@@ -360,8 +360,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum(rate(nginx_sentinel_lines_processed_total{job=~\"$job\"}[1m]))",
-          "legendFormat": "lines/s",
+          "expr": "sum by(stream) (rate(nginx_sentinel_lines_processed_total{job=~\"$job\",stream=~\"$stream\"}[1m]))",
+          "legendFormat": "{{stream}}",
           "refId": "A"
         }
       ],
@@ -406,7 +406,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sort_desc(sum by(detector) (increase(nginx_sentinel_detector_hits_total{job=~\"$job\"}[$__range])))",
+          "expr": "sort_desc(sum by(detector) (increase(nginx_sentinel_detector_hits_total{job=~\"$job\",stream=~\"$stream\"}[$__range])))",
           "instant": true,
           "legendFormat": "{{detector}}",
           "refId": "A"
@@ -448,7 +448,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "sum by(level) (increase(nginx_sentinel_threats_total{job=~\"$job\"}[$__range]))",
+          "expr": "sum by(level) (increase(nginx_sentinel_threats_total{job=~\"$job\",stream=~\"$stream\"}[$__range]))",
           "instant": true,
           "legendFormat": "{{level}}",
           "refId": "A"
@@ -481,6 +481,25 @@
         "regex": "",
         "sort": 1,
         "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(nginx_sentinel_lines_processed_total{job=~\"$job\"}, stream)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Stream",
+        "multi": true,
+        "name": "stream",
+        "options": [],
+        "query": {
+          "query": "label_values(nginx_sentinel_lines_processed_total{job=~\"$job\"}, stream)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
       }
     ]
   },
@@ -488,7 +507,7 @@
   "timepicker": {},
   "timezone": "browser",
   "title": "nginx-sentinel",
-  "uid": "nginx-sentinel-v1",
-  "version": 1,
+  "uid": "nginx-sentinel-v2",
+  "version": 2,
   "weekStart": ""
 }

@@ -61,6 +61,15 @@ type Config struct {
 	Whitelist WhitelistConfig `yaml:"whitelist"`
 	Output    OutputConfig    `yaml:"output"`
 	Metrics   MetricsConfig   `yaml:"metrics"`
+	Streams   []StreamConfig  `yaml:"streams"` // YAML: streams — multi-stream mode; mutually exclusive with general.log_file
+}
+
+// StreamConfig defines one log-watching pipeline.
+// Each stream has its own tracker, scorer, whitelist, and threat log — full isolation.
+type StreamConfig struct {
+	Name      string `yaml:"name"`       // YAML: streams[].name — label used in metrics and log output
+	LogFile   string `yaml:"log_file"`   // YAML: streams[].log_file — path to the access log to watch
+	ThreatLog string `yaml:"threat_log"` // YAML: streams[].threat_log — path to the per-stream threat log (Fail2Ban reads this)
 }
 
 // ++++++++++++++++++++++++++ Section: general +++++++++++++++++++++++++++++++++++++++++++
@@ -279,6 +288,19 @@ func LoadConfig(path string) (Config, error) {
 	// Normalize log_format to lowercase so buildParser() can compare without case sensitivity.
 	cfg.Parser.LogFormat = strings.ToLower(cfg.Parser.LogFormat)
 
+	// Backward compat: single general.log_file → synthesize a single unnamed stream.
+	// Mutually exclusive with streams: — operator must not specify both.
+	if cfg.General.LogFile != "" && len(cfg.Streams) > 0 {
+		return cfg, fmt.Errorf("invalid config %q: general.log_file and streams: are mutually exclusive — use one or the other", path)
+	}
+	if len(cfg.Streams) == 0 {
+		cfg.Streams = []StreamConfig{{
+			Name:      "",
+			LogFile:   cfg.General.LogFile,
+			ThreatLog: cfg.Output.ThreatLog,
+		}}
+	}
+
 	if err := validateConfig(&cfg); err != nil {
 		return cfg, fmt.Errorf("invalid config %q: %w", path, err)
 	}
@@ -326,6 +348,14 @@ func validateConfig(cfg *Config) error {
 	}
 	if cfg.Metrics.Username != "" && cfg.Metrics.PasswordHash == "" {
 		return fmt.Errorf("metrics.password_hash must be set when metrics.username is configured")
+	}
+	for i, s := range cfg.Streams {
+		if s.LogFile == "" {
+			return fmt.Errorf("streams[%d].log_file must not be empty", i)
+		}
+		if s.ThreatLog == "" {
+			return fmt.Errorf("streams[%d].threat_log must not be empty", i)
+		}
 	}
 	return nil
 }

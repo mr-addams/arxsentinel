@@ -630,6 +630,57 @@ To use only your custom list, set `detectors.probe.paths:` to exactly the paths 
 
 ---
 
+## Multi-stream monitoring
+
+Run one sentinel process that watches multiple log files simultaneously — one pipeline per domain, full isolation.
+
+### Config
+
+```yaml
+streams:
+  - name: site1
+    log_file: /var/log/nginx/site1.access.log
+    threat_log: /var/log/nginx-sentinel/site1.threats.log
+  - name: site2
+    log_file: /var/log/nginx/site2.access.log
+    threat_log: /var/log/nginx-sentinel/site2.threats.log
+```
+
+> **Note:** `streams:` and `general.log_file` are mutually exclusive. Use one or the other.
+
+Each stream gets its own tracker, scorer, whitelist state, and threat log. A crash or slow scan on one stream does not affect others.
+
+### Backward compatibility
+
+The classic single-file config (`general.log_file`) keeps working — it is silently converted to a single unnamed stream (`stream=""` label on metrics). No config migration needed.
+
+### Fail2Ban multi-stream
+
+Each stream writes its own `threat_log` file. Create one Fail2Ban jail per file:
+
+```ini
+# /etc/fail2ban/jail.d/nginx-sentinel-site1.conf
+[nginx-sentinel-site1]
+enabled  = true
+filter   = nginx-sentinel
+logpath  = /var/log/nginx-sentinel/site1.threats.log
+maxretry = 1
+bantime  = 86400
+
+[nginx-sentinel-site2]
+enabled  = true
+filter   = nginx-sentinel
+logpath  = /var/log/nginx-sentinel/site2.threats.log
+maxretry = 1
+bantime  = 86400
+```
+
+### Grafana
+
+The dashboard includes a **Stream** variable. Select one or multiple streams to filter all panels. Import `deploy/grafana/nginx-sentinel-dashboard.json` (v2).
+
+---
+
 ## Prometheus metrics
 
 Enable in `config.yaml`:
