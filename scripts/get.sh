@@ -214,7 +214,7 @@ install_deps() {
 # ── Install package ───────────────────────────────────────────────────────────
 
 install_package() {
-  section "Installing nginx-sentinel ${VERSION}"
+  section "Installing ArxSentinel ${VERSION}"
 
   case "$PKG_MGR" in
     apt)
@@ -234,7 +234,7 @@ install_package() {
       ;;
   esac
 
-  ok "nginx-sentinel ${VERSION} installed"
+  ok "ArxSentinel ${VERSION} installed"
 }
 
 # ── Post-install config ───────────────────────────────────────────────────────
@@ -274,7 +274,7 @@ start_service() {
   section "Starting service"
 
   if ! command -v systemctl &>/dev/null; then
-    warn "systemd not found — start nginx-sentinel manually."
+    warn "systemd not found — start the service manually."
     return
   fi
 
@@ -285,7 +285,7 @@ start_service() {
   sleep 1
 
   if systemctl is-active --quiet nginx-sentinel; then
-    ok "${G}nginx-sentinel is running${RESET}"
+    ok "${G}ArxSentinel is running${RESET}"
   else
     warn "Service did not start. Check: ${W}journalctl -u nginx-sentinel -n 30${RESET}"
   fi
@@ -308,7 +308,7 @@ summary() {
   echo -e "  ${B}→${RESET}  Review config:   ${C}sudo nano /etc/nginx-sentinel/config.yaml${RESET}"
   echo -e "  ${B}→${RESET}  Watch live logs: ${C}sudo journalctl -u nginx-sentinel -f${RESET}"
   echo -e "  ${B}→${RESET}  Reload config:   ${C}sudo systemctl kill -s HUP nginx-sentinel${RESET}"
-  echo -e "  ${B}→${RESET}  Docs:            ${C}https://mr-addams.github.io/nginx-sentinel/${RESET}"
+  echo -e "  ${B}→${RESET}  Docs:            ${C}https://mr-addams.github.io/arxsentinel/${RESET}"
   echo
 }
 
