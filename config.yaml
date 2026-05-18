@@ -1,4 +1,4 @@
-# ========================== nginx-sentinel config.yaml ================================
+# ========================== arxsentinel config.yaml ====================================
 #
 #   Single source of all behavioral parameters.
 #   Единый источник всех поведенческих параметров.
@@ -19,7 +19,7 @@
 # ── general: paths and infrastructure / пути и инфраструктура ───────────────────────────
 general:
   log_file: /var/log/nginx/access.log    # path to nginx access.log (data source) / путь к nginx access.log (источник данных)
-  pid_file: /var/run/nginx-sentinel.pid  # daemon PID file / PID-файл демона
+  pid_file: /var/run/arxsentinel.pid  # daemon PID file / PID-файл демона
 
   # Channel buffer between TailReader and line processor.
   # Increase for burst loads exceeding 1000 lines/sec.
@@ -356,5 +356,5 @@ output:
   threat_log: ./logs/threats.log          # threat log for Fail2Ban (dev: local) / threat-лог для Fail2Ban (dev: локально)
   operational_log: ./logs/sentinel.log    # daemon operational log (dev: local) / operational-лог демона (dev: локально)
   # Production / Продакшн:
-  # threat_log: /var/log/nginx-sentinel/threats.log
-  # operational_log: /var/log/nginx-sentinel/sentinel.log
+  # threat_log: /var/log/arxsentinel/threats.log
+  # operational_log: /var/log/arxsentinel/sentinel.log
