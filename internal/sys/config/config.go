@@ -76,7 +76,7 @@ type StreamConfig struct {
 
 type GeneralConfig struct {
 	LogFile           string   `yaml:"log_file"`            // YAML: general.log_file, default "/var/log/nginx/access.log" — path to nginx access.log. Consumer: utils.TailReader
-	PIDFile           string   `yaml:"pid_file"`            // YAML: general.pid_file, default "/var/run/nginx-sentinel.pid" — daemon PID file. Consumer: main.go
+	PIDFile           string   `yaml:"pid_file"`            // YAML: general.pid_file, default "/var/run/arxsentinel.pid" — daemon PID file. Consumer: main.go
 	LinesBufSize      int      `yaml:"lines_buf_size"`      // YAML: general.lines_buf_size, default 1000 — channel buffer between TailReader and line processor; increase for burst >1000 lines/sec. Consumer: main.go
 	TailRetryInterval Duration `yaml:"tail_retry_interval"` // YAML: general.tail_retry_interval, default "5s" — retry interval when log_file is unavailable. Consumer: utils.TailReader
 	StatsInterval     Duration `yaml:"stats_interval"`      // YAML: general.stats_interval, default "300s" — period for STATS output to operational.log. Consumer: main.go stats goroutine. Takes effect only on restart (goroutine starts once).
@@ -241,8 +241,8 @@ type DNSCacheConfig struct {
 // ++++++++++++++++++++++++++ Section: output ++++++++++++++++++++++++++++++++++++++++++++
 
 type OutputConfig struct {
-	ThreatLog      string `yaml:"threat_log"`      // YAML: output.threat_log, default "/var/log/nginx-sentinel/threats.log" — threat log for Fail2Ban. Consumer: output.Logger
-	OperationalLog string `yaml:"operational_log"` // YAML: output.operational_log, default "/var/log/nginx-sentinel/sentinel.log" — daemon operational log. Consumer: utils.Init
+	ThreatLog      string `yaml:"threat_log"`      // YAML: output.threat_log, default "/var/log/arxsentinel/threats.log" — threat log for Fail2Ban. Consumer: output.Logger
+	OperationalLog string `yaml:"operational_log"` // YAML: output.operational_log, default "/var/log/arxsentinel/sentinel.log" — daemon operational log. Consumer: utils.Init
 }
 
 // ++++++++++++++++++++++++++ Section: metrics ++++++++++++++++++++++++++++++++++++++++++++
@@ -377,7 +377,7 @@ func defaultConfig() Config {
 		General: GeneralConfig{
 			// LogFile default is applied lazily in the backward-compat block below
 			// so it does not conflict with streams: when streams: is explicitly set.
-			PIDFile:           "/var/run/nginx-sentinel.pid",
+			PIDFile:           "/var/run/arxsentinel.pid",
 			LinesBufSize:      1000,
 			TailRetryInterval: Duration(5 * time.Second),
 			StatsInterval:     Duration(300 * time.Second),
@@ -466,8 +466,8 @@ func defaultConfig() Config {
 			},
 		},
 		Output: OutputConfig{
-			ThreatLog:      "/var/log/nginx-sentinel/threats.log",
-			OperationalLog: "/var/log/nginx-sentinel/sentinel.log",
+			ThreatLog:      "/var/log/arxsentinel/threats.log",
+			OperationalLog: "/var/log/arxsentinel/sentinel.log",
 		},
 		Metrics: MetricsConfig{
 			Enabled:    false,

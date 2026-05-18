@@ -82,14 +82,14 @@ type PipelineContext struct {
 // configPath — default path to the config file.
 // Absolute path: when launched via systemd with WorkingDirectory=/, a relative "./config.yaml"
 // would not be found. Matches the path used in install.sh.
-// Can be overridden via the NGINX_SENTINEL_CONFIG environment variable.
-const configPath = "/etc/nginx-sentinel/config.yaml"
+// Can be overridden via the ARXSENTINEL_CONFIG environment variable.
+const configPath = "/etc/arxsentinel/config.yaml"
 
 func main() {
 	// ── Config loading ────────────────────────────────────────────────────────────────
 
 	path := configPath
-	if env := os.Getenv("NGINX_SENTINEL_CONFIG"); env != "" {
+	if env := os.Getenv("ARXSENTINEL_CONFIG"); env != "" {
 		path = env
 	}
 
