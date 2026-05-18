@@ -2,12 +2,45 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'self'; form-action 'none';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>nginx-sentinel — Real-time nginx threat detection for Linux</title>
-    <meta name="description" content="nginx-sentinel watches your nginx access.log in real time, scores every IP through 7 behavioural detectors, and hands confirmed threats straight to Fail2Ban.">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <title>ArxSentinel — A vigilant sentinel for your web server</title>
+    <meta name="description" content="A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 7 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy.">
+    <meta property="og:title" content="ArxSentinel — A vigilant sentinel for your web server">
+    <meta property="og:description" content="A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 7 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy.">
+    <meta property="og:url" content="https://mr-addams.github.io/arxsentinel/">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="https://opengraph.githubassets.com/1/mr-addams/arxsentinel">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:site_name" content="ArxSentinel">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="ArxSentinel — A vigilant sentinel for your web server">
+    <meta name="twitter:description" content="A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 7 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy.">
+    <meta name="twitter:image" content="https://opengraph.githubassets.com/1/mr-addams/arxsentinel">
+    <link rel="canonical" href="https://mr-addams.github.io/arxsentinel/">
+    <link rel="alternate" hreflang="en"        href="https://mr-addams.github.io/arxsentinel/">
+    <link rel="alternate" hreflang="uk"        href="https://mr-addams.github.io/arxsentinel/uk.html">
+    <link rel="alternate" hreflang="ru"        href="https://mr-addams.github.io/arxsentinel/ru.html">
+    <link rel="alternate" hreflang="x-default" href="https://mr-addams.github.io/arxsentinel/">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "ArxSentinel",
+      "applicationCategory": "SecurityApplication",
+      "operatingSystem": "Linux",
+      "description": "A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 7 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy.",
+      "url": "https://mr-addams.github.io/arxsentinel/",
+      "downloadUrl": "https://github.com/mr-addams/arxsentinel/releases/latest",
+      "codeRepository": "https://github.com/mr-addams/arxsentinel",
+      "license": "https://opensource.org/licenses/MIT",
+      "softwareVersion": "1.0.0",
+      "author": { "@type": "Person", "name": "mr-addams" }
+    }
+    </script>
+    <link rel="stylesheet" href="fonts/fonts.css">
     
     <style>
         :root {
@@ -84,6 +117,10 @@
             background: rgba(0, 240, 255, 0.1); border: 1px solid var(--accent-blue);
             color: var(--accent-blue); padding: 0.4rem 1rem; border-radius: 20px;
             text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+        }
+        .badge-version {
+            background: rgba(189, 0, 255, 0.1); border-color: var(--accent-purple);
+            color: var(--accent-purple); box-shadow: 0 0 10px rgba(189, 0, 255, 0.2);
         }
         .hero h1 {
             font-family: var(--font-cyber); font-size: 3.5rem; font-weight: 900; line-height: 1.2;
@@ -366,6 +403,7 @@
             list-style: none; margin-bottom: 1.5rem; font-family: var(--font-cyber); font-size: 0.85rem;
         }
         .footer-credits {
+            font-family: var(--font-cyber);
             font-size: 0.85rem;
             color: var(--text-muted);
             margin-bottom: 0.5rem;
@@ -379,7 +417,7 @@
             color: var(--accent-purple);
             text-shadow: 0 0 8px var(--accent-purple);
         }
-        .footer-copyright { font-size: 0.85rem; color: var(--text-muted); }
+        .footer-copyright { font-family: var(--font-cyber); font-size: 0.85rem; color: var(--text-muted); }
 
         @media (max-width: 768px) {
             /* ── Nav ── */
@@ -460,18 +498,18 @@
 
     <header>
         <div class="nav-container">
-            <div class="logo">nginx-<span>sentinel</span></div>
+            <div class="logo">Arx<span>Sentinel</span></div>
             <nav>
                 <ul class="nav-links">
                     <li><a href="#detectors">Detectors</a></li>
                     <li><a href="#install">Install</a></li>
-                    <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.md" target="_blank">Docs</a></li>
+                    <li><a href="https://github.com/mr-addams/arxsentinel/blob/main/README.md" target="_blank" rel="noopener noreferrer">Docs</a></li>
                     <li class="lang-selector">
                         <a href="index.html" class="active">EN</a>
                         <a href="uk.html">UK</a>
                         <a href="ru.html">RU</a>
                     </li>
-                    <li><a href="https://github.com/mr-addams/nginx-sentinel" target="_blank" style="font-family: var(--font-cyber); color: var(--accent-blue);">GitHub</a></li>
+                    <li><a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" style="font-family: var(--font-cyber); color: var(--accent-blue);">GitHub</a></li>
                 </ul>
             </nav>
         </div>
@@ -479,20 +517,21 @@
 
     <section class="hero">
         <div class="badge-container">
+            <span class="badge badge-version">v1.0.0</span>
             <span class="badge">Open Source</span>
             <span class="badge">Go</span>
             <span class="badge">Linux</span>
         </div>
         <h1>
-            <span class="shimmer-text">Stop attacks</span><br>
-            before<br>
-            Fail2Ban even wakes up
+            <span class="shimmer-text">A vigilant sentinel</span><br>
+            that sees what<br>
+            your server misses
         </h1>
-        <p>nginx-sentinel watches your nginx access.log in real time, scores every IP through 7 behavioural detectors, and hands confirmed threats straight to Fail2Ban.</p>
+        <p>A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 7 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Install</a>
-            <a href="https://github.com/mr-addams/nginx-sentinel/releases" target="_blank" class="btn btn-secondary">Releases</a>
-            <a href="https://github.com/mr-addams/nginx-sentinel" target="_blank" class="btn btn-secondary">View on GitHub</a>
+            <a href="https://github.com/mr-addams/arxsentinel/releases" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Releases</a>
+            <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">View on GitHub</a>
         </div>
     </section>
 
@@ -501,8 +540,9 @@
             <div class="box-scanline"></div>
             <div class="pipeline-flow">
                 <div class="flow-line"></div>
-                <div class="pipeline-node">nginx access.log</div>
-                <div class="pipeline-node">TailReader (inotify · logrotate-aware)</div>
+                <div class="pipeline-node">nginx / Apache / Caddy / Traefik / HAProxy access.log</div>
+                <div class="pipeline-node">Profile (log format · field mapping · server type)</div>
+                <div class="pipeline-node">TailReader × N streams (inotify · logrotate-aware)</div>
                 <div class="pipeline-node">Parser (ngx_http_realip · CF-Connecting-IP · XFF chain)</div>
                 <div class="pipeline-node">Whitelist (IP · CIDR · UA · bot DNS verify)</div>
                 <div class="pipeline-node">Tracker (per-IP state · ring buffer · rate counters)</div>
@@ -603,21 +643,42 @@
             <div id="script-install" class="tab-content active">
                 <pre><span class="comment"># Works on Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux
 # Auto-detects your distro and architecture (amd64 / arm64)</span>
-<span class="command">curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | sudo bash</span></pre>
-                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">The script downloads the correct package from GitHub Releases, installs it with your package manager, checks for <code>fail2ban</code>, auto-detects your nginx access.log path, and starts the service.</p>
+<span class="command">curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash</span></pre>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">The script downloads the correct package from GitHub Releases, installs it with your package manager, checks for <code>fail2ban</code>, auto-detects your access.log path, and starts the service.</p>
             </div>
 
             <div id="source-install" class="tab-content">
                 <pre><span class="comment"># Requires Go 1.19+</span>
-<span class="command">git clone https://github.com/mr-addams/nginx-sentinel
-cd nginx-sentinel
+<span class="command">git clone https://github.com/mr-addams/arxsentinel
+cd arxsentinel
 sudo ./scripts/install.sh
-sudo systemctl enable --now nginx-sentinel</span></pre>
+sudo systemctl enable --now arxsentinel</span></pre>
             </div>
         </div>
 
         <div class="install-note">
-            <strong>After installation:</strong> open <code>/etc/nginx-sentinel/config.yaml</code> and set <code>general.log_file</code> to the path of your nginx access.log (usually <code>/var/log/nginx/access.log</code>). Then start the service. Config reloads on <code>SIGHUP</code> — no restart needed.
+            <strong>After installation:</strong> open <code>/etc/arxsentinel/config.yaml</code>, select a server profile and set your log path. Then start the service. Config reloads on <code>SIGHUP</code> — no restart needed.
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">v1.0.0 Capabilities</span>
+            <h2 class="section-title">Universal by design</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🌐</span> Multi-server support</h3>
+                <p>Works with nginx, Apache, Caddy, Traefik and HAProxy out of the box. Profile system maps any log format to the same detection pipeline.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">📂</span> Multi-stream parsing</h3>
+                <p>Watch multiple log files simultaneously — different vhosts, ports or servers in a single daemon instance. Each stream is parsed independently.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🔧</span> Server profiles</h3>
+                <p>Ship-ready profiles for popular servers. Override field positions, date formats and delimiter rules per log source without touching core logic.</p>
+            </div>
         </div>
     </section>
 
@@ -637,7 +698,7 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🔄</span> Live reload</h3>
-                <p>All config changes — whitelist, detector scores, thresholds — reload with <code>systemctl kill -s HUP nginx-sentinel</code>. IP state and DNS cache are preserved.</p>
+                <p>All config changes — whitelist, detector scores, thresholds — reload with <code>systemctl kill -s HUP arxsentinel</code>. IP state and DNS cache are preserved.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🌐</span> Cloudflare support</h3>
@@ -648,17 +709,17 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
 
     <footer>
         <ul class="footer-links">
-            <li><a href="https://github.com/mr-addams/nginx-sentinel" target="_blank">nginx-sentinel</a></li>
-            <li><a href="https://github.com/mr-addams/nginx-sentinel/releases" target="_blank">Releases</a></li>
-            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.md" target="_blank">Docs</a></li>
-            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/CONTRIBUTING.md" target="_blank">Contributing</a></li>
-            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/SECURITY.md" target="_blank">Security</a></li>
+            <li><a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer">ArxSentinel</a></li>
+            <li><a href="https://github.com/mr-addams/arxsentinel/releases" target="_blank" rel="noopener noreferrer">Releases</a></li>
+            <li><a href="https://github.com/mr-addams/arxsentinel/blob/main/README.md" target="_blank" rel="noopener noreferrer">Docs</a></li>
+            <li><a href="https://github.com/mr-addams/arxsentinel/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Contributing</a></li>
+            <li><a href="https://github.com/mr-addams/arxsentinel/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">Security</a></li>
         </ul>
         <div class="footer-credits">
-            Created by <a href="https://github.com/mr-addams" target="_blank">mr.Addams</a>
+            Created by <a href="https://github.com/mr-addams" target="_blank" rel="noopener noreferrer">mr.Addams</a>
         </div>
         <div class="footer-copyright">
-            Licensed under <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/LICENSE" target="_blank">GNU GPLv3</a>
+            Licensed under <a href="https://github.com/mr-addams/arxsentinel/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GNU GPLv3</a>
         </div>
     </footer>
 
@@ -675,11 +736,11 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
         }
 
         function copyToClipboard(btn) {
+            const originalHTML = btn.innerHTML;
             const activeTab = document.querySelector('.tab-content.active');
             const command = activeTab ? activeTab.querySelector('pre').textContent.trim() : '';
-            
+
             navigator.clipboard.writeText(command).then(() => {
-                const originalHTML = btn.innerHTML;
                 btn.classList.add('copied');
                 btn.innerHTML = `
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -687,27 +748,18 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
                     </svg>
                     <span class="copy-text">Copied!</span>
                 `;
-                
                 setTimeout(() => {
                     btn.classList.remove('copied');
                     btn.innerHTML = originalHTML;
                 }, 2000);
             }).catch(err => {
                 console.error('Failed to copy:', err);
-                const textArea = document.createElement('textarea');
-                textArea.value = command;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
-                
                 btn.classList.add('copied');
-                const originalHTML = btn.innerHTML;
-                btn.innerHTML = '<span class="copy-text">Copied!</span>';
+                btn.innerHTML = '<span class="copy-text">Copy failed — please copy manually</span>';
                 setTimeout(() => {
                     btn.classList.remove('copied');
                     btn.innerHTML = originalHTML;
-                }, 2000);
+                }, 3000);
             });
         }
 

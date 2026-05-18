@@ -1,25 +1,76 @@
-# nginx-sentinel
+# ArxSentinel
 
-[![Release](https://img.shields.io/github/v/release/mr-addams/nginx-sentinel?include_prereleases&label=release)](https://github.com/mr-addams/nginx-sentinel/releases)
-[![Build](https://github.com/mr-addams/nginx-sentinel/actions/workflows/release.yml/badge.svg)](https://github.com/mr-addams/nginx-sentinel/actions/workflows/release.yml)
+[![Release](https://img.shields.io/github/v/release/mr-addams/arxsentinel?include_prereleases&label=release)](https://github.com/mr-addams/arxsentinel/releases)
+[![Build](https://github.com/mr-addams/arxsentinel/actions/workflows/release.yml/badge.svg)](https://github.com/mr-addams/arxsentinel/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
-[![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/nginx-sentinel/releases)
-[![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/nginx-sentinel/releases)
+[![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
+[![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
-Демон анализа nginx access.log в реальном времени. Отслеживает поведение IP-адресов, накапливает score через 7 детекторов и записывает подозрительные IP в threat-лог — Fail2Ban читает его и банит атакующих.
+Бдительный страж вашего веб-сервера: читает HTTP access-логи в реальном времени, оценивает каждый IP через 7 поведенческих детекторов и блокирует атакующих через Fail2Ban. Работает с nginx, Apache, Caddy, Traefik, HAProxy.
+
+Поддерживает **nginx, Apache, Caddy, Traefik и HAProxy** из коробки через встроенные профили. Произвольные форматы логов — через regex. Несколько лог-файлов в одном процессе.
 
 ```
-nginx access.log → TailReader → whitelist → tracker → scorer → threats.log → Fail2Ban → iptables
+access.log → TailReader → whitelist → tracker → scorer → threats.log → Fail2Ban → iptables
 ```
+
+## Поддерживаемые HTTP-серверы
+
+Встроенные профили — настройка regex и маппинга полей не требуется. Укажите `parser.profile` с именем сервера:
+
+| Профиль | Сервер | Формат логов |
+|---------|--------|--------------|
+| `nginx` | nginx | Combined log format с `$real_ip` (по умолчанию) |
+| `apache` | Apache httpd 2.4+ | Combined Log Format |
+| `caddy` | Caddy v2 | Apache CLF через transform-encoder |
+| `traefik` | Traefik v2/v3 | Common Log Format (accessLog по умолчанию) |
+| `haproxy-http` | HAProxy | HTTP log (`option httplog`) |
+
+**Пример — Apache:**
+
+```yaml
+parser:
+  profile: "apache"
+
+general:
+  log_file: /var/log/apache2/access.log
+
+output:
+  threat_log: /var/log/arxsentinel/threats.log
+```
+
+Готовые конфиги для каждого сервера находятся в [`deploy/examples/`](deploy/examples/):
+
+```
+deploy/examples/
+├── apache/      httpd.conf + sentinel-config.yaml
+├── caddy/       Caddyfile + sentinel-config.yaml
+├── traefik/     traefik.yml + sentinel-config.yaml
+└── haproxy/     haproxy.cfg + sentinel-config.yaml
+```
+
+> **Замечание — HAProxy:** HAProxy включает миллисекунды в временную метку
+> (`14:30:00.123`), что не соответствует ожидаемому формату. Sentinel использует
+> `time.Time{}` для этого поля. Обнаружение rate-окон работает по системному
+> времени, поэтому все детекторы функционируют корректно.
+
+> **Замечание — Caddy:** Встроенный JSON-энкодер Caddy v2 выводит вложенные объекты.
+> Профиль `caddy` требует плагина
+> [caddy-transform-encoder](https://github.com/caddyserver/transform-encoder)
+> для вывода в формате CLF. Смотрите `deploy/examples/caddy/Caddyfile` для настройки.
 
 ## Возможности
 
 - **7 детекторов:** probe-сканирование, rate-аномалия, подозрительный User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass
 - **DNS-верификация ботов:** Googlebot, Bingbot, Yandex, DuckDuckGo и другие верифицируются по rDNS/fDNS — легитимные краулеры в бан не попадают
+- **Multi-stream:** несколько лог-файлов в одном процессе — полная изоляция конвейера на поток
 - **Whitelist:** IP, CIDR, UA-подстроки — конфигурируемые списки исключений
 - **Линейный decay score:** очки затухают за `observation_window`, нет ложных банов от старого трафика
-- **SIGHUP reload:** конфиг, scorer и whitelist пересоздаются без перезапуска демона
+- **Prometheus-метрики:** `/metrics` на настраиваемом порту (по умолчанию `:9117`), опциональная basic auth с bcrypt; дашборд Grafana в комплекте
+- **Health endpoint:** `/health` всегда возвращает `200 {"status":"ok"}` без авторизации — готов для Docker `HEALTHCHECK`, k8s probes и балансировщиков
+- **JSON-формат логов:** переключение на JSON-парсинг через `parser.log_format: "json"` без перекомпиляции
+- **SIGHUP reload:** конфиг, scorer, парсер и whitelist пересоздаются без перезапуска демона
 - **Graceful shutdown:** дренирование буфера строк при SIGTERM
 - **Systemd + logrotate + Fail2Ban:** готовые deploy-конфиги в комплекте
 
@@ -27,50 +78,71 @@ nginx access.log → TailReader → whitelist → tracker → scorer → threats
 
 - Linux x86_64 или arm64 с systemd
 - Fail2Ban
-- nginx с директивой `$real_ip` в log_format (или стандартный combined — поле `$remote_addr`)
+- HTTP-сервер, пишущий access.log в поддерживаемом формате (nginx, Apache, Caddy, Traefik, HAProxy — или произвольный regex)
 
 ## Установка
 
-### Debian / Ubuntu — рекомендуемый способ
+### Быстрая установка — любой дистрибутив (рекомендуется)
 
-Скачайте `.deb` для своей архитектуры со страницы [Releases](https://github.com/mr-addams/nginx-sentinel/releases) и установите:
+Скрипт автоматически определяет дистрибутив и архитектуру, скачивает нужный пакет из GitHub Releases,
+устанавливает его через штатный менеджер пакетов, добавляет в автозагрузку и запускает сервис:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash
+```
+
+Работает на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux и Arch Linux.
+Требует `curl` и `sudo`. Fail2Ban устанавливается автоматически, если отсутствует.
+
+Сервис запускается сразу с профилем nginx по умолчанию. Чтобы переключиться на другой сервер (apache, caddy, traefik, haproxy-http или произвольный regex):
+
+```bash
+sudo nano /etc/arxsentinel/config.yaml
+sudo systemctl kill -s HUP arxsentinel   # перезагрузка без рестарта
+```
+
+---
+
+### Debian / Ubuntu — ручная установка пакета
+
+Скачайте `.deb` для своей архитектуры со страницы [Releases](https://github.com/mr-addams/arxsentinel/releases) и установите:
 
 ```bash
 # amd64
-sudo apt install ./nginx-sentinel_<version>_linux_amd64.deb
+sudo apt install ./arxsentinel_<version>_linux_amd64.deb
 
 # arm64
-sudo apt install ./nginx-sentinel_<version>_linux_arm64.deb
+sudo apt install ./arxsentinel_<version>_linux_arm64.deb
 ```
 
-`apt install` автоматически подтянет зависимости (`fail2ban`), установит systemd unit, Fail2Ban filter/jail, logrotate и создаст системного пользователя `nginx-sentinel`.
+`apt install` автоматически подтянет зависимости (`fail2ban`), установит systemd unit, Fail2Ban filter/jail, logrotate и создаст системного пользователя `arxsentinel`.
 
 После установки отредактируйте конфиг и запустите сервис:
 
 ```bash
-sudo nano /etc/nginx-sentinel/config.yaml
-sudo systemctl enable --now nginx-sentinel
+sudo nano /etc/arxsentinel/config.yaml
+sudo systemctl enable --now arxsentinel
 ```
 
 ### Fedora / RHEL / AlmaLinux / Rocky Linux
 
-Скачайте `.rpm` для своей архитектуры со страницы [Releases](https://github.com/mr-addams/nginx-sentinel/releases) и установите:
+Скачайте `.rpm` для своей архитектуры со страницы [Releases](https://github.com/mr-addams/arxsentinel/releases) и установите:
 
 ```bash
 # amd64
-sudo dnf install ./nginx-sentinel_<version>_linux_amd64.rpm
+sudo dnf install ./arxsentinel_<version>_linux_amd64.rpm
 
 # arm64
-sudo dnf install ./nginx-sentinel_<version>_linux_arm64.rpm
+sudo dnf install ./arxsentinel_<version>_linux_arm64.rpm
 ```
 
-`dnf install` автоматически подтянет зависимости, установит systemd unit в `/usr/lib/systemd/system/`, Fail2Ban filter/jail, logrotate и создаст системного пользователя `nginx-sentinel`.
+`dnf install` автоматически подтянет зависимости, установит systemd unit в `/usr/lib/systemd/system/`, Fail2Ban filter/jail, logrotate и создаст системного пользователя `arxsentinel`.
 
 После установки отредактируйте конфиг и запустите сервис:
 
 ```bash
-sudo nano /etc/nginx-sentinel/config.yaml
-sudo systemctl enable --now nginx-sentinel
+sudo nano /etc/arxsentinel/config.yaml
+sudo systemctl enable --now arxsentinel
 ```
 
 > **RHEL 8 / CentOS Stream 8:** используйте `dnf` или `rpm -i` напрямую. Для Fail2Ban может потребоваться репозиторий EPEL:
@@ -78,49 +150,52 @@ sudo systemctl enable --now nginx-sentinel
 
 ### Arch Linux / Manjaro
 
-Скачайте `.pkg.tar.zst` для своей архитектуры со страницы [Releases](https://github.com/mr-addams/nginx-sentinel/releases) и установите:
+Скачайте `.pkg.tar.zst` для своей архитектуры со страницы [Releases](https://github.com/mr-addams/arxsentinel/releases) и установите:
 
 ```bash
 # amd64
-sudo pacman -U nginx-sentinel_<version>_linux_amd64.pkg.tar.zst
+sudo pacman -U arxsentinel_<version>_linux_amd64.pkg.tar.zst
 
 # arm64
-sudo pacman -U nginx-sentinel_<version>_linux_arm64.pkg.tar.zst
+sudo pacman -U arxsentinel_<version>_linux_arm64.pkg.tar.zst
 ```
 
-Пакет установит systemd unit в `/usr/lib/systemd/system/`, конфиги Fail2Ban, logrotate и создаст системного пользователя `nginx-sentinel`.
+Пакет установит systemd unit в `/usr/lib/systemd/system/`, конфиги Fail2Ban, logrotate и создаст системного пользователя `arxsentinel`.
 
 После установки отредактируйте конфиг и запустите сервис:
 
 ```bash
-sudo nano /etc/nginx-sentinel/config.yaml
-sudo systemctl enable --now nginx-sentinel
+sudo nano /etc/arxsentinel/config.yaml
+sudo systemctl enable --now arxsentinel
 ```
 
-> **Fail2Ban на Arch:** установите перед или после nginx-sentinel: `sudo pacman -S fail2ban`
+> **Fail2Ban на Arch:** установите перед или после arxsentinel: `sudo pacman -S fail2ban`
 
 ### Сборка из исходников
 
 Требуется Go 1.19+:
 
 ```bash
-git clone https://github.com/mr-addams/nginx-sentinel
-cd nginx-sentinel
+git clone https://github.com/mr-addams/arxsentinel
+cd arxsentinel
 sudo ./scripts/install.sh
-sudo systemctl enable --now nginx-sentinel
+sudo systemctl enable --now arxsentinel
 ```
 
 ## Конфигурация
 
-Конфиг: `/etc/nginx-sentinel/config.yaml` (создаётся из `config.yaml` при установке).  
-Переопределить путь: `NGINX_SENTINEL_CONFIG=/path/to/config.yaml`.
+Конфиг: `/etc/arxsentinel/config.yaml` (создаётся из `config.yaml` при установке).  
+Переопределить путь: `ARXSENTINEL_CONFIG=/path/to/config.yaml`.
 
 Ключевые параметры:
 
 ```yaml
 general:
-  log_file: /var/log/nginx/access.log   # nginx access.log
+  log_file: /var/log/nginx/access.log   # лог-файл для наблюдения (пример nginx; см. также: streams:)
   stats_interval: 300s                  # период вывода STATS в operational.log
+
+parser:
+  profile: "nginx"   # встроенный профиль: nginx | apache | caddy | traefik | haproxy-http
 
 scoring:
   alert_threshold: 50    # score → WARN в threat-лог
@@ -178,8 +253,8 @@ whitelist:
     ua_substrings: [internal-monitor]
 
 output:
-  threat_log: /var/log/nginx-sentinel/threats.log
-  operational_log: /var/log/nginx-sentinel/sentinel.log
+  threat_log: /var/log/arxsentinel/threats.log
+  operational_log: /var/log/arxsentinel/sentinel.log
 ```
 
 > **Ограничение yaml.v3:** если в config.yaml указана секция (например, `scoring:`), она должна содержать **все** поля — иначе неуказанные обнулятся. Отсутствующие секции целиком берут Go-дефолты.
@@ -200,11 +275,11 @@ Score накапливается с линейным decay за `observation_win
 
 ## Whitelist
 
-Whitelist говорит nginx-sentinel: «эти — свои, пропускай без проверки». Есть два независимых механизма: **автоматическая верификация ботов** (поисковые системы) и **кастомные исключения** (ваши IP, подсети, инструменты).
+Whitelist говорит ArxSentinel: «эти — свои, пропускай без проверки». Есть два независимых механизма: **автоматическая верификация ботов** (поисковые системы) и **кастомные исключения** (ваши IP, подсети, инструменты).
 
 ### Автоматическая верификация ботов (Googlebot, Bingbot, Яндекс и др.)
 
-nginx-sentinel знает User-Agent строки всех крупных поисковых ботов. Когда такой бот приходит, выполняется DNS-проверка подлинности:
+ArxSentinel знает User-Agent строки всех крупных поисковых ботов. Когда такой бот приходит, выполняется DNS-проверка подлинности:
 
 1. Обратный DNS-запрос по IP → получаем hostname (например `crawl-66-249-66-1.googlebot.com`)
 2. Прямой DNS по этому hostname → должен вернуть тот же IP
@@ -293,7 +368,7 @@ whitelist:
       - "Semrush"              # краулер SEMrush
 ```
 
-> **Для SEO-инструментов:** если ваш SEO-краулер попадает под блокировку (делает много запросов или у него подозрительный UA), добавьте его название сюда. Точную UA-строку можно посмотреть в nginx access.log:
+> **Для SEO-инструментов:** если ваш SEO-краулер попадает под блокировку (делает много запросов или у него подозрительный UA), добавьте его название сюда. Точную UA-строку можно посмотреть в access.log:
 > ```bash
 > grep -i "screaming\|ahrefs\|semrush\|moz\|sitebulb" /var/log/nginx/access.log | awk -F'"' '{print $6}' | sort -u
 > ```
@@ -308,10 +383,10 @@ whitelist:
 
 ```bash
 # Перезагрузить конфиг (whitelist, детекторы, пороги — всё кроме пути к лог-файлу)
-systemctl kill -s HUP nginx-sentinel
+systemctl kill -s HUP arxsentinel
 
 # Или через PID-файл
-kill -HUP $(cat /var/run/nginx-sentinel.pid)
+kill -HUP $(cat /var/run/arxsentinel.pid)
 ```
 
 Изменения вступают в силу в течение секунд. В operational-логе появится:
@@ -347,7 +422,7 @@ whitelist:
 ## Архитектура
 
 ```
-nginx access.log
+access.log (nginx / apache / caddy / traefik / haproxy)
        │
   TailReader (inotify, logrotate-aware)
        │
@@ -377,12 +452,64 @@ nginx access.log
 - **Stats** — вывод `STATS processed/tracked/threats/suspicious` каждые `stats_interval`
 - **SIGHUP listener** — конвертирует сигнал в канал для главного loop
 
+## Мониторинг нескольких потоков
+
+Запустите один процесс ArxSentinel, который наблюдает за несколькими лог-файлами одновременно — один конвейер на домен, полная изоляция.
+
+### Конфигурация
+
+```yaml
+streams:
+  - name: site1
+    log_file: /var/log/nginx/site1.access.log
+    threat_log: /var/log/arxsentinel/site1.threats.log
+  - name: site2
+    log_file: /var/log/apache2/site2.access.log
+    threat_log: /var/log/arxsentinel/site2.threats.log
+    profile: apache
+```
+
+> **Важно:** `streams:` и `general.log_file` взаимно исключают друг друга. Используйте одно или другое.
+
+Каждый поток имеет собственный трекер, scorer, whitelist и лог угроз. Медленная атака или сбой в одном потоке не влияет на остальные.
+
+### Обратная совместимость
+
+Классическая конфигурация с `general.log_file` продолжает работать — она автоматически конвертируется в один безымянный поток (метка `stream=""` в Prometheus). Миграция конфига не требуется.
+
+### Fail2Ban при нескольких потоках
+
+Каждый поток записывает в свой `threat_log`. Создайте отдельную ловушку Fail2Ban для каждого файла:
+
+```ini
+# /etc/fail2ban/jail.d/arxsentinel-site1.conf
+[arxsentinel-site1]
+enabled  = true
+filter   = arxsentinel
+logpath  = /var/log/arxsentinel/site1.threats.log
+maxretry = 1
+bantime  = 86400
+
+[arxsentinel-site2]
+enabled  = true
+filter   = arxsentinel
+logpath  = /var/log/arxsentinel/site2.threats.log
+maxretry = 1
+bantime  = 86400
+```
+
+### Grafana
+
+Дашборд включает переменную **Stream** для фильтрации панелей по потоку. Импортируйте `deploy/grafana/arxsentinel-dashboard.json` (v2).
+
+---
+
 ## Логи
 
-**Operational log** (`/var/log/nginx-sentinel/sentinel.log`) — рабочий лог демона:
+**Operational log** (`/var/log/arxsentinel/sentinel.log`) — рабочий лог демона:
 
 ```
-2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.1 запуск
+2026-04-02 14:33:10 [STARTUP] arxsentinel v1.0.0 started
 2026-04-02 14:33:12 [THREAT] 45.134.26.8 score=85 modules=probe,rate reason="..."
 2026-04-02 14:38:10 [STATS] processed=14320 tracked=87 threats=3 suspicious=12
 ```
@@ -390,48 +517,180 @@ nginx access.log
 Теги: `STARTUP`, `SHUTDOWN`, `CONFIG`, `THREAT`, `WHITELIST`, `STATS`, `GC`, `ERROR`, `WARN`.  
 Debug-теги (`PARSER`, `TAIL`, `DETECTOR`, `SCORER`) видны только при `logging.debug: true`.
 
-**Threat log** (`/var/log/nginx-sentinel/threats.log`) — читает Fail2Ban:
+**Threat log** (`/var/log/arxsentinel/threats.log`) — читает Fail2Ban:
 
 ```
 2026-04-02T14:33:12Z THREAT 45.134.26.8 score=85 modules=probe,rate reason="probe:/.env,rate:142rps"
 2026-04-02T14:35:01Z WARN   92.63.104.12 score=55 modules=useragent reason="ua:Nuclei/3.1.0"
 ```
 
-Fail2Ban failregex: `THREAT <HOST> score=\d+` (файл `deploy/fail2ban/filter.d/nginx-sentinel.conf`).
+Fail2Ban failregex: `THREAT <HOST> score=\d+` (файл `deploy/fail2ban/filter.d/arxsentinel.conf`).
 
 ## Управление
 
 ```bash
 # Статус и логи
-systemctl status nginx-sentinel
-journalctl -u nginx-sentinel -f
+systemctl status arxsentinel
+journalctl -u arxsentinel -f
 
 # Перезагрузка конфига без перезапуска (SIGHUP)
-kill -HUP $(cat /var/run/nginx-sentinel.pid)
+kill -HUP $(cat /var/run/arxsentinel.pid)
 # или
-systemctl kill -s HUP nginx-sentinel
+systemctl kill -s HUP arxsentinel
 
 # Остановка (graceful — дренирует буфер строк)
-systemctl stop nginx-sentinel
+systemctl stop arxsentinel
 
 # Ручной бан/разбан через Fail2Ban
-fail2ban-client status nginx-sentinel
-fail2ban-client set nginx-sentinel unbanip 1.2.3.4
+fail2ban-client status arxsentinel
+fail2ban-client set arxsentinel unbanip 1.2.3.4
 ```
 
 **Что обновляется при SIGHUP:** scorer (детекторы + пороги), whitelist matcher, debug/color флаги, пути к лог-файлам.  
 **Что НЕ обновляется:** tracker (state IP), DNS cache, TailReader (путь к access.log требует перезапуска).
 
-## За обратным прокси (Cloudflare)
+## JSON-формат логов
 
-Если nginx стоит за Cloudflare, `$remote_addr` в логах будет IP Cloudflare, а не реального клиента. nginx-sentinel начислит score Cloudflare-адресам → Fail2Ban забанит Cloudflare → сайт упадёт для всех.
+По умолчанию ArxSentinel парсит формат логов, определённый активным профилем (nginx, Apache, Caddy, Traefik или HAProxy).  
+Поддерживается также JSON-формат — переключается через `config.yaml` без перекомпиляции.
 
-**Решение: `ngx_http_realip_module`**
+Примеры ниже используют nginx. Для других серверов адаптируйте директиву `log_format` к вашему серверу.
 
-Подключите конфиг с IP-диапазонами Cloudflare в nginx:
+### Шаг 1 — Настройка HTTP-сервера (пример nginx)
+
+Добавьте нужный `log_format` в блок `http {}` файла `nginx.conf`.
+Готовые конфиги также в [`deploy/examples/nginx-json-logformat.conf`](deploy/examples/nginx-json-logformat.conf).
+
+**Прямой nginx (без прокси)** — `$remote_addr` содержит реальный IP клиента:
+
+```nginx
+log_format sentinel_json_direct escape=json
+    '{'
+        '"remote_addr":"$remote_addr",'
+        '"time_iso8601":"$time_iso8601",'
+        '"request":"$request",'
+        '"status":"$status",'
+        '"bytes_sent":"$bytes_sent",'
+        '"http_referer":"$http_referer",'
+        '"http_user_agent":"$http_user_agent"'
+    '}';
+
+access_log /var/log/nginx/access.log sentinel_json_direct;
+```
+
+**За обратным прокси** — используйте `$real_ip`, заполняемый модулем `ngx_http_realip_module`
+(конфиги прокси — в [`deploy/examples/reverse-proxy/`](deploy/examples/reverse-proxy/)):
+
+```nginx
+log_format sentinel_json_proxy escape=json
+    '{'
+        '"remote_addr":"$remote_addr",'
+        '"real_ip":"$real_ip",'
+        '"time_iso8601":"$time_iso8601",'
+        '"request":"$request",'
+        '"status":"$status",'
+        '"bytes_sent":"$bytes_sent",'
+        '"http_referer":"$http_referer",'
+        '"http_user_agent":"$http_user_agent"'
+    '}';
+
+access_log /var/log/nginx/access.log sentinel_json_proxy;
+```
+
+### Шаг 2 — Обновить конфиг sentinel
+
+```yaml
+parser:
+  log_format: "json"   # "combined" (по умолчанию) | "json"
+```
+
+Изменение вступает в силу после **SIGHUP** — рестарт не нужен:
 
 ```bash
-# Сгенерировать и сохранить конфиг
+kill -HUP $(cat /var/run/arxsentinel.pid)
+```
+
+### Кастомные имена полей
+
+Если в вашем формате логов используются другие ключи — переопределите маппинг:
+
+```yaml
+parser:
+  log_format: "json"
+  json_fields:
+    remote_addr: "client"
+    time:        "ts"
+    request:     "req"
+    status:      "code"
+    bytes_sent:  "size"
+    referer:     "ref"
+    user_agent:  "ua"
+    real_ip:     "ip"
+```
+
+Неизвестные поля в JSON-строке игнорируются — потребляются только поля из маппинга.
+
+## Деплой за обратным прокси
+
+> **Внимание:** если HTTP-сервер стоит за прокси и реальный IP клиента настроен некорректно,
+> ArxSentinel будет выставлять score **IP-адресу прокси**, а не реальному атакующему.
+> Fail2Ban заблокирует ваш же прокси — сайт упадёт для всех.
+
+### Как это работает
+
+```
+[Клиент 1.2.3.4] → [Прокси] → (X-Forwarded-For / X-Real-IP заголовок) → [HTTP-сервер]
+                                                                               ↓
+                                               переменная $real_ip в log_format
+                                                                               ↓
+                                                                      ArxSentinel
+```
+
+Модуль nginx `ngx_http_realip_module` читает заголовок с проброшенным IP и подставляет
+его как `$real_ip` — именно эту переменную ArxSentinel использует для всей детекции.
+
+### Готовые конфиги
+
+Полные рабочие примеры для каждого прокси находятся в `deploy/examples/reverse-proxy/`:
+
+| Прокси | Файлы |
+|--------|-------|
+| **HAProxy** | [`haproxy/haproxy.cfg`](deploy/examples/reverse-proxy/haproxy/haproxy.cfg), [`nginx.conf`](deploy/examples/reverse-proxy/haproxy/nginx.conf) |
+| **Traefik** | [`traefik/traefik.yml`](deploy/examples/reverse-proxy/traefik/traefik.yml), [`nginx.conf`](deploy/examples/reverse-proxy/traefik/nginx.conf) |
+| **Caddy** | [`caddy/Caddyfile`](deploy/examples/reverse-proxy/caddy/Caddyfile), [`nginx.conf`](deploy/examples/reverse-proxy/caddy/nginx.conf) |
+| **nginx как RP** | [`nginx-rp/nginx-upstream.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-upstream.conf), [`nginx-origin.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-origin.conf) |
+
+Каждый пример содержит конфиг прокси и конфиг origin-nginx с `set_real_ip_from`,
+`real_ip_header` и форматом лога `combined_realip`.
+
+### Минимальный конфиг nginx (для любого прокси)
+
+```nginx
+http {
+    set_real_ip_from  <ip-или-cidr-прокси>;  # доверяем только своему прокси
+    real_ip_header    X-Real-IP;             # или X-Forwarded-For для Traefik
+    real_ip_recursive off;                   # on для цепочек X-Forwarded-For
+
+    log_format combined_realip
+        '$remote_addr - $remote_user [$time_local] '
+        '"$request" $status $body_bytes_sent '
+        '"$http_referer" "$http_user_agent" "$real_ip"';
+
+    server {
+        access_log /var/log/nginx/access.log combined_realip;
+        ...
+    }
+}
+```
+
+### Cloudflare
+
+Если nginx стоит напрямую за Cloudflare — используйте `CF-Connecting-IP` вместо `X-Real-IP`
+(Cloudflare проставляет этот заголовок на своём edge; `X-Forwarded-For` может быть подделан клиентом).
+
+Сгенерируйте директивы `set_real_ip_from` для всех CIDR-диапазонов Cloudflare:
+
+```bash
 sudo scripts/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf
 ```
 
@@ -439,12 +698,11 @@ sudo scripts/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf
 
 ```nginx
 http {
-    include /etc/nginx/cloudflare-real-ip.conf;
+    include /etc/nginx/cloudflare-real-ip.conf;  # set_real_ip_from для всех CF-диапазонов
+    real_ip_header CF-Connecting-IP;
     ...
 }
 ```
-
-После этого nginx перезаписывает `$remote_addr` реальным IP клиента (из заголовка `CF-Connecting-IP`) ещё до записи в лог — nginx-sentinel работает без изменений.
 
 **Автообновление диапазонов** (Cloudflare обновляет их периодически):
 
@@ -453,16 +711,125 @@ http {
 0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
 ```
 
-> **Почему `CF-Connecting-IP`, а не `X-Forwarded-For`:** заголовок `X-Forwarded-For` может быть подделан клиентом до попадания в Cloudflare. `CF-Connecting-IP` проставляется самим Cloudflare и не принимается от клиента.
+## Конфигурации для CMS
+
+Готовые переопределения `probe.paths` для наиболее популярных PHP-стеков находятся в
+`deploy/examples/cms/`. Скопируйте нужные пути в свой `config.yaml`:
+
+| Файл | Для кого |
+|------|----------|
+| [`wordpress.yaml`](deploy/examples/cms/wordpress.yaml) | WordPress — `wp-login.php`, `xmlrpc.php`, перечисление пользователей через REST |
+| [`laravel.yaml`](deploy/examples/cms/laravel.yaml) | Laravel — `.env`, `/storage/`, `/vendor/`, Telescope, Horizon |
+| [`drupal.yaml`](deploy/examples/cms/drupal.yaml) | Drupal — `/user/login`, `settings.php`, `update.php` |
+| [`joomla.yaml`](deploy/examples/cms/joomla.yaml) | Joomla — `/administrator/`, `configuration.php` |
+| [`generic-php.yaml`](deploy/examples/cms/generic-php.yaml) | Custom PHP — phpinfo, phpMyAdmin, Adminer, резервные копии |
+
+**Как применить конфиг CMS:**
+
+1. Откройте `deploy/examples/cms/<cms>.yaml` и скопируйте список `paths:`.
+2. Вставьте его в `config.yaml` под `detectors.probe.paths:`.
+3. Перезагрузите без рестарта: `kill -HUP $(pgrep arxsentinel)` — или `systemctl kill -s HUP arxsentinel`.
+
+Пути **дополняют** (а не заменяют) встроенный список sensitive-путей по умолчанию.
+Чтобы использовать только свой список, задайте в `detectors.probe.paths:` ровно те пути, которые нужны.
+
+## Произвольный формат логов (regex)
+
+Используйте любой текстовый формат логов, указав Go-регулярное выражение с именованными группами.
+
+```yaml
+parser:
+  log_format: "regex"
+  regex_pattern: '(?P<remote_addr>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] "(?P<request>[^"]*)" (?P<status>\d+) (?P<bytes_sent>\d+) "(?P<http_referer>[^"]*)" "(?P<http_user_agent>[^"]*)"'
+```
+
+### Именованные группы
+
+| Группа | Обязательная | Описание |
+|--------|-------------|----------|
+| `remote_addr` | ✅ | IP-адрес клиента или прокси |
+| `time` | ✅ | Время запроса (формат `02/Jan/2006:15:04:05 -0700`) |
+| `request` | ✅ | Строка запроса: `METHOD /path HTTP/x.x` |
+| `status` | ✅ | HTTP-код ответа |
+| `bytes_sent` | ✅ | Размер ответа в байтах |
+| `http_referer` | опциональная | Значение заголовка Referer |
+| `http_user_agent` | опциональная | Значение заголовка User-Agent |
+| `real_ip` | опциональная | Реальный IP клиента из заголовка доверенного прокси |
+
+Отсутствующие опциональные группы дают пустые поля — sentinel продолжает работу.
+
+### Пример: HAProxy HTTP log
+
+```yaml
+parser:
+  log_format: "regex"
+  regex_pattern: '(?P<remote_addr>\S+):\d+ \S+ \S+/\S+ \d+/\d+/\d+/\d+/\d+ (?P<status>\d+) (?P<bytes_sent>\d+) .* "(?P<request>[^"]*)"'
+```
+
+### Типичные ошибки
+
+- **Отсутствует обязательная группа** — sentinel завершается при старте с понятным сообщением об ошибке.
+- **Неверный формат времени** — поддерживается только `02/Jan/2006:15:04:05 -0700` (nginx `$time_local`). ISO 8601 не парсится; детекторы без временны́х зависимостей работают в любом случае.
+
+---
+
+## Prometheus-метрики
+
+Включить в `config.yaml`:
+
+```yaml
+metrics:
+  enabled: true
+  listen_addr: ":9117"   # порт HTTP-сервера метрик
+  # Опциональная basic auth — оставьте username пустым для отключения:
+  username: ""
+  password_hash: ""      # bcrypt-хеш; генерацию см. в deploy/grafana/README.md
+```
+
+### Эндпоинты
+
+| Эндпоинт | Авторизация | Описание |
+|----------|-------------|----------|
+| `/metrics` | опциональная basic auth | Scrape-эндпоинт Prometheus |
+| `/health` | нет | Liveness probe — всегда возвращает `200 {"status":"ok"}` |
+
+`/health` не требует учётных данных и безопасно открывается для балансировщиков,
+Docker `HEALTHCHECK` и k8s liveness/readiness probes.
+
+### Доступные метрики
+
+| Метрика | Тип | Описание |
+|---------|-----|----------|
+| `arxsentinel_lines_processed_total` | Counter | Обработано строк лога |
+| `arxsentinel_threats_total{level}` | Counter | Угрозы по уровню (`THREAT` / `WARN`) |
+| `arxsentinel_detector_hits_total{detector}` | Counter | Срабатывания по детектору |
+| `arxsentinel_tracked_ips` | Gauge | Текущее количество отслеживаемых IP |
+| `arxsentinel_suspicious_ips` | Gauge | IP с score выше alert threshold |
+
+### Конфиг scrape для Prometheus
+
+```yaml
+scrape_configs:
+  - job_name: "arxsentinel"
+    static_configs:
+      - targets: ["localhost:9117"]
+    # basic_auth:          # только если авторизация включена в конфиге sentinel
+    #   username: "prometheus"
+    #   password: "ваш-пароль-открытым-текстом"
+```
+
+Настройка дашборда Grafana — в [`deploy/grafana/README.md`](deploy/grafana/README.md).
+
+---
 
 ## Решение проблем
 
 **Демон не запускается — ошибка threat log:**  
-Проверьте права на `/var/log/nginx-sentinel/` — директория должна принадлежать пользователю `nginx-sentinel`.
+Проверьте права на `/var/log/arxsentinel/` — директория должна принадлежать пользователю `arxsentinel`.
 
 **Fail2Ban не банит — проверьте формат лога:**  
 ```bash
-fail2ban-regex /var/log/nginx-sentinel/threats.log /etc/fail2ban/filter.d/nginx-sentinel.conf
+fail2ban-regex /var/log/arxsentinel/threats.log /etc/fail2ban/filter.d/arxsentinel.conf
 ```
 
 **Слишком много ложных WARN — снизьте чувствительность:**  

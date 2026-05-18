@@ -1,0 +1,13 @@
+# nginx-sentinel config for HAProxy.
+# Uses the built-in "haproxy-http" profile (HAProxy httplog format).
+# Requires HAProxy configured with "option httplog" and rsyslog writing to a file.
+# See haproxy.cfg in this directory for the full setup.
+
+parser:
+  profile: "haproxy-http"
+
+general:
+  log_file: /var/log/haproxy/access.log
+
+output:
+  threat_log: /var/log/nginx-sentinel/threats.log

@@ -2,15 +2,45 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'self'; form-action 'none';">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>nginx-sentinel — Захист nginx у реальному часі для Linux</title>
-    <meta name="description" content="nginx-sentinel стежить за nginx access.log у реальному часі, оцінює кожен IP через 7 поведінкових детекторів та передає підтверджені загрози до Fail2Ban. Пакети для Debian, Ubuntu, Fedora, RHEL, Arch Linux.">
-    <meta property="og:title" content="nginx-sentinel — Захист nginx у реальному часі">
-    <meta property="og:description" content="7 детекторів. Автоматична інтеграція з Fail2Ban. Пакети deb, rpm, pacman. Написано на Go.">
-    <meta property="og:url" content="https://mr-addams.github.io/nginx-sentinel/uk.html">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <title>ArxSentinel — Пильний вартовий вашого веб-сервера</title>
+    <meta name="description" content="Пильний вартовий вашого веб-сервера: читає HTTP access-логи у реальному часі, оцінює кожен IP через 7 поведінкових детекторів і блокує нападників через Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy.">
+    <meta property="og:title" content="ArxSentinel — Пильний вартовий вашого веб-сервера">
+    <meta property="og:description" content="Пильний вартовий вашого веб-сервера: читає HTTP access-логи у реальному часі, оцінює кожен IP через 7 поведінкових детекторів і блокує нападників через Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy.">
+    <meta property="og:url" content="https://mr-addams.github.io/arxsentinel/uk.html">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="https://opengraph.githubassets.com/1/mr-addams/arxsentinel">
+    <meta property="og:locale" content="uk_UA">
+    <meta property="og:site_name" content="ArxSentinel">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="ArxSentinel — Пильний вартовий вашого веб-сервера">
+    <meta name="twitter:description" content="Пильний вартовий вашого веб-сервера: читає HTTP access-логи у реальному часі, оцінює кожен IP через 7 поведінкових детекторів і блокує нападників через Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy.">
+    <meta name="twitter:image" content="https://opengraph.githubassets.com/1/mr-addams/arxsentinel">
+    <link rel="canonical" href="https://mr-addams.github.io/arxsentinel/uk.html">
+    <link rel="alternate" hreflang="en"        href="https://mr-addams.github.io/arxsentinel/">
+    <link rel="alternate" hreflang="uk"        href="https://mr-addams.github.io/arxsentinel/uk.html">
+    <link rel="alternate" hreflang="ru"        href="https://mr-addams.github.io/arxsentinel/ru.html">
+    <link rel="alternate" hreflang="x-default" href="https://mr-addams.github.io/arxsentinel/">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "ArxSentinel",
+      "applicationCategory": "SecurityApplication",
+      "operatingSystem": "Linux",
+      "description": "Пильний вартовий вашого веб-сервера: читає HTTP access-логи у реальному часі, оцінює кожен IP через 7 поведінкових детекторів і блокує нападників через Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy.",
+      "url": "https://mr-addams.github.io/arxsentinel/uk.html",
+      "downloadUrl": "https://github.com/mr-addams/arxsentinel/releases/latest",
+      "codeRepository": "https://github.com/mr-addams/arxsentinel",
+      "license": "https://opensource.org/licenses/MIT",
+      "softwareVersion": "1.0.0",
+      "author": { "@type": "Person", "name": "mr-addams" }
+    }
+    </script>
+    <link rel="stylesheet" href="fonts/fonts.css">
 
     <style>
         :root {
@@ -87,6 +117,10 @@
             background: rgba(0, 240, 255, 0.1); border: 1px solid var(--accent-blue);
             color: var(--accent-blue); padding: 0.4rem 1rem; border-radius: 20px;
             text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+        }
+        .badge-version {
+            background: rgba(189, 0, 255, 0.1); border-color: var(--accent-purple);
+            color: var(--accent-purple); box-shadow: 0 0 10px rgba(189, 0, 255, 0.2);
         }
         .hero h1 {
             font-family: var(--font-cyber); font-size: 3.5rem; font-weight: 900; line-height: 1.2;
@@ -169,6 +203,10 @@
             top: 50%;
             transform: translate(-50%, -50%);
             width: 14px; height: 14px;
+            /* opacity прибрано — він робив прозорим весь елемент разом з фоном,
+               через що лінія просвічувала крізь кружок.
+               Розмір збільшено до 14px: при border 2px залишається 10px непрозорого ядра,
+               що надійно перекриває лінію в 2px навіть при субпіксельних зміщеннях. */
             background: #0d0d1f; border: 2px solid var(--circle-color, rgba(0, 240, 255, 0.4));
             border-radius: 50%;
             z-index: 20;
@@ -189,6 +227,9 @@
             opacity: 1; color: #fff; text-shadow: 0 0 5px var(--accent-blue);
         }
 
+        .pipeline-node.final {
+            /* колір рамки та свічення успадковується з --circle-color градієнта (червоний на останній ноді) */
+        }
         .pipeline-node.final.active {
             opacity: 1;
             background: var(--circle-color-dim, rgba(255, 0, 85, 0.15));
@@ -333,48 +374,66 @@
             display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap;
             list-style: none; margin-bottom: 1.5rem; font-family: var(--font-cyber); font-size: 0.85rem;
         }
-        .footer-credits { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; }
+        .footer-credits { font-family: var(--font-cyber); font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; }
         .footer-credits a { color: var(--accent-blue); text-decoration: none; transition: all 0.3s ease; }
         .footer-credits a:hover { color: var(--accent-purple); text-shadow: 0 0 8px var(--accent-purple); }
-        .footer-copyright { font-size: 0.85rem; color: var(--text-muted); }
+        .footer-copyright { font-family: var(--font-cyber); font-size: 0.85rem; color: var(--text-muted); }
 
         @media (max-width: 768px) {
+            /* ── Nav ── */
             .nav-container { flex-direction: column; gap: 1rem; padding: 1rem; }
             .nav-links { flex-wrap: wrap; justify-content: center; gap: 0.75rem; }
+
+            /* ── Hero ── */
             .hero { padding: 4rem 1.5rem 3rem; }
             .hero h1 { font-size: 2rem; }
             .hero p { font-size: 1rem; }
             .badge-container { flex-wrap: wrap; gap: 0.5rem; }
             .cta-buttons { flex-direction: column; width: 100%; max-width: 300px; margin: 0 auto; }
             .btn { width: 100%; text-align: center; }
+
+            /* ── Pipeline ── */
             .pipeline-section { margin: 2rem auto; padding: 0 1rem; }
             .pipeline-box { padding: 1.5rem 1rem; }
             .pipeline-box::before { display: none; }
             .pipeline-box::after  { display: none; }
             .pipeline-flow { padding-left: 2.5rem; }
             .pipeline-node { font-size: 0.8rem; padding: 0.6rem 0.8rem; margin-bottom: 1rem; }
+            /* кружок: був 14px, на мобілі 10px — перерахунок left під padding-left: 2.5rem */
             .pipeline-node::before { width: 10px; height: 10px; left: -1.8rem; }
+
+            /* ── Stats ── */
             .stats-grid { gap: 1rem; padding: 0 1rem; margin: 2rem auto; }
             .stat-card { flex: 0 1 140px; padding: 1.25rem 1rem; }
             .stat-number { font-size: 2.2rem; }
             .stat-label { font-size: 0.75rem; }
+
+            /* ── Detectors ── */
             .detectors-section { margin: 3rem auto; }
             .section-title { font-size: 1.75rem; }
             .detectors-grid { grid-template-columns: 1fr; padding: 0 1rem; gap: 1rem; }
+            /* остання картка — знімаємо центрування, на 1 колонці не потрібно */
             .detector-card:last-child { grid-column: auto; justify-self: stretch; max-width: 100%; }
+
+            /* ── Install ── */
             .install-section { padding: 0 1rem; margin: 3rem auto; }
             .tabs-nav { gap: 0.25rem; }
             .tab-btn { padding: 0.6rem 1rem; font-size: 0.75rem; letter-spacing: 0.5px; }
             .terminal-container { padding: 1rem; padding-top: 3rem; }
             .copy-btn { top: 0.75rem; right: 0.75rem; padding: 0.3rem 0.6rem; font-size: 0.7rem; }
             pre { font-size: 0.78rem; }
+
+            /* ── Whitelist ── */
             .whitelist-section { margin: 3rem auto; }
             .whitelist-grid { padding: 0 1rem; gap: 1rem; }
             .whitelist-card { flex: 1 1 100%; }
+
+            /* ── Footer ── */
             footer { padding: 2rem 1rem; margin-top: 3rem; }
             .footer-links { gap: 1rem; font-size: 0.8rem; }
         }
 
+        /* Дуже вузькі екрани (< 400px) */
         @media (max-width: 400px) {
             .hero h1 { font-size: 1.6rem; }
             .stat-card { flex: 1 1 100%; }
@@ -387,18 +446,18 @@
 
     <header>
         <div class="nav-container">
-            <div class="logo">nginx-<span>sentinel</span></div>
+            <div class="logo">Arx<span>Sentinel</span></div>
             <nav>
                 <ul class="nav-links">
                     <li><a href="#detectors">Детектори</a></li>
                     <li><a href="#install">Встановлення</a></li>
-                    <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.md" target="_blank">Документація</a></li>
+                    <li><a href="https://github.com/mr-addams/arxsentinel/blob/main/README.md" target="_blank" rel="noopener noreferrer">Документація</a></li>
                     <li class="lang-selector">
                         <a href="index.html">EN</a>
                         <a href="uk.html" class="active">UK</a>
                         <a href="ru.html">RU</a>
                     </li>
-                    <li><a href="https://github.com/mr-addams/nginx-sentinel" target="_blank" style="font-family: var(--font-cyber); color: var(--accent-blue);">GitHub</a></li>
+                    <li><a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" style="font-family: var(--font-cyber); color: var(--accent-blue);">GitHub</a></li>
                 </ul>
             </nav>
         </div>
@@ -406,20 +465,21 @@
 
     <section class="hero">
         <div class="badge-container">
+            <span class="badge badge-version">v1.0.0</span>
             <span class="badge">Open Source</span>
             <span class="badge">Go</span>
             <span class="badge">Linux</span>
         </div>
         <h1>
-            <span class="shimmer-text">Зупиніть атаки</span><br>
-            до того, як<br>
-            прокинеться Fail2Ban
+            <span class="shimmer-text">Пильний вартовий</span><br>
+            бачить те, чого<br>
+            не помічає сервер
         </h1>
-        <p>nginx-sentinel стежить за nginx access.log у реальному часі, оцінює кожен IP через 7 поведінкових детекторів та передає підтверджені загрози напряму до Fail2Ban.</p>
+        <p>Пильний вартовий вашого веб-сервера: читає HTTP access-логи у реальному часі, оцінює кожен IP через 7 поведінкових детекторів і блокує нападників через Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Встановити</a>
-            <a href="https://github.com/mr-addams/nginx-sentinel/releases" target="_blank" class="btn btn-secondary">Релізи</a>
-            <a href="https://github.com/mr-addams/nginx-sentinel" target="_blank" class="btn btn-secondary">GitHub</a>
+            <a href="https://github.com/mr-addams/arxsentinel/releases" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Релізи</a>
+            <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">GitHub</a>
         </div>
     </section>
 
@@ -428,8 +488,9 @@
             <div class="box-scanline"></div>
             <div class="pipeline-flow">
                 <div class="flow-line"></div>
-                <div class="pipeline-node">nginx access.log</div>
-                <div class="pipeline-node">TailReader (inotify · підтримка logrotate)</div>
+                <div class="pipeline-node">nginx / Apache / Caddy / Traefik / HAProxy access.log</div>
+                <div class="pipeline-node">Profile (формат логу · маппінг полів · тип сервера)</div>
+                <div class="pipeline-node">TailReader × N потоків (inotify · підтримка logrotate)</div>
                 <div class="pipeline-node">Parser (ngx_http_realip · CF-Connecting-IP · XFF ланцюжок)</div>
                 <div class="pipeline-node">Whitelist (IP · CIDR · UA · верифікація DNS)</div>
                 <div class="pipeline-node">Tracker (стан IP · ring buffer · лічильники rate)</div>
@@ -530,21 +591,42 @@
             <div id="script-install" class="tab-content active">
                 <pre><span class="comment"># Працює на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux
 # Скрипт сам визначає дистрибутив та архітектуру (amd64 / arm64)</span>
-<span class="command">curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | sudo bash</span></pre>
-                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">Скрипт завантажує потрібний пакет з GitHub Releases, встановлює через системний менеджер пакетів, перевіряє наявність <code style="font-family: var(--font-mono); color: var(--accent-blue);">fail2ban</code>, автоматично визначає шлях до nginx access.log та запускає сервіс.</p>
+<span class="command">curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash</span></pre>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">Скрипт завантажує потрібний пакет з GitHub Releases, встановлює через системний менеджер пакетів, перевіряє наявність <code style="font-family: var(--font-mono); color: var(--accent-blue);">fail2ban</code>, автоматично визначає шлях до access.log та запускає сервіс.</p>
             </div>
 
             <div id="source-install" class="tab-content">
                 <pre><span class="comment"># Потрібен Go 1.19+</span>
-<span class="command">git clone https://github.com/mr-addams/nginx-sentinel
-cd nginx-sentinel
+<span class="command">git clone https://github.com/mr-addams/arxsentinel
+cd arxsentinel
 sudo ./scripts/install.sh
-sudo systemctl enable --now nginx-sentinel</span></pre>
+sudo systemctl enable --now arxsentinel</span></pre>
             </div>
         </div>
 
         <div class="install-note">
-            <strong>Після встановлення:</strong> відкрийте <code>/etc/nginx-sentinel/config.yaml</code> та вкажіть шлях до nginx access.log у параметрі <code>general.log_file</code> (зазвичай <code>/var/log/nginx/access.log</code>). Запустіть сервіс. Конфіг перезавантажується по <code>SIGHUP</code> — перезапуск не потрібен.
+            <strong>Після встановлення:</strong> відкрийте <code>/etc/arxsentinel/config.yaml</code>, оберіть профіль сервера та вкажіть шлях до access.log. Запустіть сервіс. Конфіг перезавантажується по <code>SIGHUP</code> — перезапуск не потрібен.
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Можливості v1.0.0</span>
+            <h2 class="section-title">Універсальність за замовчуванням</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🌐</span> Підтримка кількох серверів</h3>
+                <p>Працює з nginx, Apache, Caddy, Traefik та HAProxy з коробки. Система профілів маппить будь-який формат логів на єдиний пайплайн виявлення.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">📂</span> Кілька потоків логів</h3>
+                <p>Стеження за кількома файлами логу одночасно — різні віртуальні хости, порти або сервери в одному екземплярі демона. Кожен потік парситься незалежно.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🔧</span> Профілі серверів</h3>
+                <p>Готові профілі для популярних серверів. Перевизначайте позиції полів, формати дат та правила роздільників для кожного джерела логу без зміни ядра.</p>
+            </div>
         </div>
     </section>
 
@@ -564,7 +646,7 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🔄</span> Гаряче перезавантаження</h3>
-                <p>Всі зміни конфігу — whitelist, очки детекторів, пороги — застосовуються командою <code>systemctl kill -s HUP nginx-sentinel</code>. Стан IP і DNS-кеш зберігаються.</p>
+                <p>Всі зміни конфігу — whitelist, очки детекторів, пороги — застосовуються командою <code>systemctl kill -s HUP arxsentinel</code>. Стан IP і DNS-кеш зберігаються.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🌐</span> Підтримка Cloudflare</h3>
@@ -575,17 +657,17 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
 
     <footer>
         <ul class="footer-links">
-            <li><a href="https://github.com/mr-addams/nginx-sentinel" target="_blank">nginx-sentinel</a></li>
-            <li><a href="https://github.com/mr-addams/nginx-sentinel/releases" target="_blank">Релізи</a></li>
-            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/README.md" target="_blank">Документація</a></li>
-            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/CONTRIBUTING.md" target="_blank">Контрибьютинг</a></li>
-            <li><a href="https://github.com/mr-addams/nginx-sentinel/blob/main/SECURITY.md" target="_blank">Безпека</a></li>
+            <li><a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer">ArxSentinel</a></li>
+            <li><a href="https://github.com/mr-addams/arxsentinel/releases" target="_blank" rel="noopener noreferrer">Релізи</a></li>
+            <li><a href="https://github.com/mr-addams/arxsentinel/blob/main/README.md" target="_blank" rel="noopener noreferrer">Документація</a></li>
+            <li><a href="https://github.com/mr-addams/arxsentinel/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Контрибьютинг</a></li>
+            <li><a href="https://github.com/mr-addams/arxsentinel/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">Безпека</a></li>
         </ul>
         <div class="footer-credits">
-            Автор: <a href="https://github.com/mr-addams" target="_blank">mr.Addams</a>
+            Автор: <a href="https://github.com/mr-addams" target="_blank" rel="noopener noreferrer">mr.Addams</a>
         </div>
         <div class="footer-copyright">
-            Ліцензія: <a href="https://github.com/mr-addams/nginx-sentinel/blob/main/LICENSE" target="_blank">GNU GPLv3</a>
+            Ліцензія: <a href="https://github.com/mr-addams/arxsentinel/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GNU GPLv3</a>
         </div>
     </footer>
 
@@ -600,11 +682,11 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
         }
 
         function copyToClipboard(btn) {
+            const originalHTML = btn.innerHTML;
             const activeTab = document.querySelector('.tab-content.active');
             const command = activeTab ? activeTab.querySelector('pre').textContent.trim() : '';
 
             navigator.clipboard.writeText(command).then(() => {
-                const originalHTML = btn.innerHTML;
                 btn.classList.add('copied');
                 btn.innerHTML = `
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -618,19 +700,12 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
                 }, 2000);
             }).catch(err => {
                 console.error('Failed to copy:', err);
-                const textArea = document.createElement('textarea');
-                textArea.value = command;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
                 btn.classList.add('copied');
-                const originalHTML = btn.innerHTML;
-                btn.innerHTML = '<span class="copy-text">Скопійовано!</span>';
+                btn.innerHTML = '<span class="copy-text">Помилка — скопіюйте вручну</span>';
                 setTimeout(() => {
                     btn.classList.remove('copied');
                     btn.innerHTML = originalHTML;
-                }, 2000);
+                }, 3000);
             });
         }
 
@@ -640,9 +715,12 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
         // Рішення: сховати вихідний div, створити JS-сегменти між нижнім краєм кружка[N]
         // та верхнім краєм кружка[N+1]. Градієнт зберігається через інтерполяцію кольорів.
         (function() {
-            const CIRCLE_R = 7;
+            const CIRCLE_R = 7; // радіус кружка (14px / 2)
             const LINE_LEFT = '1.1rem';
 
+            // Інтерполяція трьохточкового градієнта: blue→purple→red
+            // stops: 0→#00f0ff, 0.6→#bd00ff, 1.0→#ff0055
+            // alpha: опціональна прозорість (1 = повна, 0.15 = тонка рамка тощо)
             function gradientColor(t, alpha = 1) {
                 let r, g, b;
                 if (t <= 0.6) {
@@ -664,8 +742,10 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
             const nodes    = document.querySelectorAll('.pipeline-node');
             if (!flow || !flowLine || !nodes.length) return;
 
+            // Ховаємо оригінальний div-лінії
             flowLine.style.display = 'none';
 
+            // Створюємо N-1 сегментів між нодами
             const segments = [];
             for (let i = 0; i < nodes.length - 1; i++) {
                 const seg = document.createElement('div');
@@ -690,6 +770,7 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
 
                 const totalH = nodeCenters[nodeCenters.length - 1] - nodeCenters[0];
 
+                // Фарбуємо рамку кожного кружка в колір градієнта на його позиції
                 nodeCenters.forEach((center, i) => {
                     const t = totalH > 0 ? (center - nodeCenters[0]) / totalH : 0;
                     nodes[i].style.setProperty('--circle-color',     gradientColor(t));
@@ -698,6 +779,7 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
                 });
 
                 segments.forEach((seg, i) => {
+                    // Сегмент: від нижнього краю кружка[i] до верхнього краю кружка[i+1]
                     const top    = nodeCenters[i]     + CIRCLE_R;
                     const bottom = nodeCenters[i + 1] - CIRCLE_R;
                     const height = Math.max(0, bottom - top);
@@ -705,8 +787,9 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
                     seg.style.top    = top + 'px';
                     seg.style.height = height + 'px';
 
-                    const t0 = (top    - CIRCLE_R) / totalH;
-                    const t1 = (bottom + CIRCLE_R) / totalH;
+                    // Кольори: частка в загальному градієнті
+                    const t0 = (top    - CIRCLE_R) / totalH; // верх сегмента
+                    const t1 = (bottom + CIRCLE_R) / totalH; // низ сегмента
                     seg.style.background =
                         `linear-gradient(to bottom, ${gradientColor(t0)}, ${gradientColor(t1)})`;
                 });
@@ -717,14 +800,14 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
             recalc();
         })();
 
-        // ── Pipeline Scanline Engine ──
+        // ── Pipeline Scanline Engine — hit-tested against real node positions ──
         (function() {
             const box = document.querySelector('.pipeline-box');
             const scanline = document.querySelector('.box-scanline');
             const nodes = document.querySelectorAll('.pipeline-node');
             if (!box || !scanline || !nodes.length) return;
 
-            const DURATION = 16000;
+            const DURATION = 16000;  // ms, швидкість сканування (підібрати візуально)
             let nodesPos = [];
             let boxTop = 0;
             let boxHeight = 0;
@@ -745,6 +828,7 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
                 });
             }
 
+            // Перерахунок: при завантаженні, resize та при scroll
             function refresh() { recalcPositions(); }
             window.addEventListener('load', refresh);
             window.addEventListener('resize', refresh);
@@ -754,13 +838,18 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
 
             function tick(now) {
                 if (startTime === null) startTime = now;
+
                 const elapsed = (now - startTime) % DURATION;
-                const progress = elapsed / DURATION;
+                const progress = elapsed / DURATION;  // 0..1
+
+                // Позиція scanline
                 const scanY = progress * boxHeight;
 
+                // Рухаємо смужку
                 scanline.style.top = scanY + 'px';
                 scanline.style.opacity = (scanY > 0 && scanY < boxHeight) ? '0.6' : '0';
 
+                // Hit-test з кожним блоком
                 for (const np of nodesPos) {
                     const active = (scanY >= np.top && scanY <= np.bottom);
                     np.el.classList.toggle('active', active);
@@ -772,7 +861,7 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
             requestAnimationFrame(tick);
         })();
 
-        // ── Starfield Engine ──
+        // ── Starfield Engine — 3D flight through soft gradient stars ─────────
         (function() {
             const canvas = document.getElementById('starfield');
             if (!canvas) return;
@@ -785,6 +874,8 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
             resize();
             window.addEventListener('resize', resize);
 
+            // Розмір 3D-поля: підібрано так, щоб більшість зірок
+            // увесь час була видна на екрані
             const FIELD_W = 600;
             const FIELD_H = 600;
             const Z_MAX = 500;
@@ -794,6 +885,7 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
             const STAR_COUNT = 500;
 
             const stars = [];
+
             for (let i = 0; i < STAR_COUNT; i++) {
                 stars.push({
                     x: (Math.random() - 0.5) * FIELD_W,
@@ -806,31 +898,41 @@ sudo systemctl enable --now nginx-sentinel</span></pre>
 
             function animate() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
+
                 const cx = canvas.width / 2;
                 const cy = canvas.height / 2;
 
                 for (const star of stars) {
                     star.z -= SPEED;
+
                     if (star.z < Z_MIN) {
                         star.z = Z_MAX;
                         star.x = (Math.random() - 0.5) * FIELD_W;
                         star.y = (Math.random() - 0.5) * FIELD_H;
                     }
 
+                    // Перспективна проекція
                     const sc = FOCAL / star.z;
                     const sx = cx + star.x * sc;
                     const sy = cy + star.y * sc;
 
-                    if (sx < -30 || sx > canvas.width + 30 || sy < -30 || sy > canvas.height + 30) continue;
+                    // За межами екрану — не малюємо
+                    if (sx < -30 || sx > canvas.width + 30 ||
+                        sy < -30 || sy > canvas.height + 30) {
+                        continue;
+                    }
 
+                    // Зірка — не жорсткий круг, а м'який radial-gradient
                     const r = star.baseSize * sc;
                     const glowR = (star.baseSize + star.glowSize) * sc;
                     if (glowR < 0.5) {
+                        // Занадто дрібна — точка
                         ctx.fillStyle = 'rgba(255,255,255,0.6)';
                         ctx.fillRect(sx, sy, 1, 1);
                         continue;
                     }
 
+                    // Яскравість: далеко тьмяні, ближче яскравіші
                     const depth = star.z / Z_MAX;
                     const alpha = Math.min(1, (1 - depth) * 1.8);
 

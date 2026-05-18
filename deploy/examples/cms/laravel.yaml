@@ -1,0 +1,46 @@
+# nginx-sentinel — Laravel-specific probe paths override
+#
+# Laravel applications expose a characteristic directory structure.
+# These paths are targeted by automated scanners looking for misconfigurations
+# and accidentally exposed sensitive files.
+#
+# Usage:
+#   Merge detectors.probe.paths into your config.yaml.
+#
+# Apply without restart:
+#   kill -HUP $(pgrep nginx-sentinel)   # or systemctl kill -s HUP nginx-sentinel
+
+detectors:
+  probe:
+    paths:
+      # ── Environment and secrets ────────────────────────────────────────────────────────
+      - /.env                  # database credentials, APP_KEY, mail passwords
+      - /.env.backup
+      - /.env.example          # may contain real secrets copied from production
+      - /.env.local
+      - /.env.production
+      - /.env.staging
+
+      # ── Storage and cache — writable directories, must not be web-accessible ─────────
+      - /storage/
+      - /storage/logs/
+      - /storage/framework/
+      - /bootstrap/cache/
+
+      # ── Artisan CLI — should never be in the web root ─────────────────────────────────
+      - /artisan
+
+      # ── Composer — leaks dependency tree and may reveal vulnerable packages ──────────
+      - /composer.json
+      - /composer.lock
+      - /vendor/               # full dependency source, trivially exploitable if exposed
+
+      # ── VCS — source code exposure ───────────────────────────────────────────────────
+      - /.git/
+      - /.git/config
+      - /.git/HEAD
+
+      # ── Debug and testing endpoints ────────────────────────────────────────────────────
+      - /telescope             # Laravel Telescope — full request log, must be protected
+      - /horizon               # Laravel Horizon — queue manager, admin access
+      - /_debugbar/            # Debugbar leaks SQL queries and environment data

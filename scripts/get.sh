@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# get.sh — universal nginx-sentinel installer.
+# get.sh — universal ArxSentinel installer.
 # Detects OS and architecture, downloads the correct package from GitHub
 # Releases, installs it, and starts the service.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash
 #   sudo bash get.sh
 set -euo pipefail
 
@@ -23,7 +23,7 @@ else
   R='' G='' Y='' B='' C='' M='' W='' DIM='' RESET=''
 fi
 
-REPO="mr-addams/nginx-sentinel"
+REPO="mr-addams/arxsentinel"
 API="https://api.github.com/repos/${REPO}/releases/latest"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -31,8 +31,8 @@ API="https://api.github.com/repos/${REPO}/releases/latest"
 banner() {
   echo
   echo -e "${C}┌─────────────────────────────────────────────┐${RESET}"
-  echo -e "${C}│${W}         nginx-sentinel  installer           ${C}│${RESET}"
-  echo -e "${C}│${DIM}   Real-time nginx threat detection daemon   ${C}│${RESET}"
+  echo -e "${C}│${W}           ArxSentinel  installer             ${C}│${RESET}"
+  echo -e "${C}│${DIM}    Universal HTTP threat detection daemon    ${C}│${RESET}"
   echo -e "${C}└─────────────────────────────────────────────┘${RESET}"
   echo
 }
@@ -214,7 +214,7 @@ install_deps() {
 # ── Install package ───────────────────────────────────────────────────────────
 
 install_package() {
-  section "Installing nginx-sentinel ${VERSION}"
+  section "Installing ArxSentinel ${VERSION}"
 
   case "$PKG_MGR" in
     apt)
@@ -234,7 +234,7 @@ install_package() {
       ;;
   esac
 
-  ok "nginx-sentinel ${VERSION} installed"
+  ok "ArxSentinel ${VERSION} installed"
 }
 
 # ── Post-install config ───────────────────────────────────────────────────────
@@ -274,7 +274,7 @@ start_service() {
   section "Starting service"
 
   if ! command -v systemctl &>/dev/null; then
-    warn "systemd not found — start nginx-sentinel manually."
+    warn "systemd not found — start the service manually."
     return
   fi
 
@@ -285,7 +285,7 @@ start_service() {
   sleep 1
 
   if systemctl is-active --quiet nginx-sentinel; then
-    ok "${G}nginx-sentinel is running${RESET}"
+    ok "${G}ArxSentinel is running${RESET}"
   else
     warn "Service did not start. Check: ${W}journalctl -u nginx-sentinel -n 30${RESET}"
   fi
@@ -308,7 +308,7 @@ summary() {
   echo -e "  ${B}→${RESET}  Review config:   ${C}sudo nano /etc/nginx-sentinel/config.yaml${RESET}"
   echo -e "  ${B}→${RESET}  Watch live logs: ${C}sudo journalctl -u nginx-sentinel -f${RESET}"
   echo -e "  ${B}→${RESET}  Reload config:   ${C}sudo systemctl kill -s HUP nginx-sentinel${RESET}"
-  echo -e "  ${B}→${RESET}  Docs:            ${C}https://mr-addams.github.io/nginx-sentinel/${RESET}"
+  echo -e "  ${B}→${RESET}  Docs:            ${C}https://mr-addams.github.io/arxsentinel/${RESET}"
   echo
 }
 

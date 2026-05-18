@@ -23,6 +23,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -59,13 +60,23 @@ type Config struct {
 	Detectors DetectorsConfig `yaml:"detectors"`
 	Whitelist WhitelistConfig `yaml:"whitelist"`
 	Output    OutputConfig    `yaml:"output"`
+	Metrics   MetricsConfig   `yaml:"metrics"`
+	Streams   []StreamConfig  `yaml:"streams"` // YAML: streams — multi-stream mode; mutually exclusive with general.log_file
+}
+
+// StreamConfig defines one log-watching pipeline.
+// Each stream has its own tracker, scorer, whitelist, and threat log — full isolation.
+type StreamConfig struct {
+	Name      string `yaml:"name"`       // YAML: streams[].name — label used in metrics and log output
+	LogFile   string `yaml:"log_file"`   // YAML: streams[].log_file — path to the access log to watch
+	ThreatLog string `yaml:"threat_log"` // YAML: streams[].threat_log — path to the per-stream threat log (Fail2Ban reads this)
 }
 
 // ++++++++++++++++++++++++++ Section: general +++++++++++++++++++++++++++++++++++++++++++
 
 type GeneralConfig struct {
 	LogFile           string   `yaml:"log_file"`            // YAML: general.log_file, default "/var/log/nginx/access.log" — path to nginx access.log. Consumer: utils.TailReader
-	PIDFile           string   `yaml:"pid_file"`            // YAML: general.pid_file, default "/var/run/nginx-sentinel.pid" — daemon PID file. Consumer: main.go
+	PIDFile           string   `yaml:"pid_file"`            // YAML: general.pid_file, default "/var/run/arxsentinel.pid" — daemon PID file. Consumer: main.go
 	LinesBufSize      int      `yaml:"lines_buf_size"`      // YAML: general.lines_buf_size, default 1000 — channel buffer between TailReader and line processor; increase for burst >1000 lines/sec. Consumer: main.go
 	TailRetryInterval Duration `yaml:"tail_retry_interval"` // YAML: general.tail_retry_interval, default "5s" — retry interval when log_file is unavailable. Consumer: utils.TailReader
 	StatsInterval     Duration `yaml:"stats_interval"`      // YAML: general.stats_interval, default "300s" — period for STATS output to operational.log. Consumer: main.go stats goroutine. Takes effect only on restart (goroutine starts once).
@@ -82,8 +93,25 @@ type LoggingConfig struct {
 // ++++++++++++++++++++++++++ Section: parser +++++++++++++++++++++++++++++++++++++++++++++
 
 type ParserConfig struct {
-	LogFormat string `yaml:"log_format"` // YAML: parser.log_format, default "combined" — reserved, only "combined" is supported. Consumer: not connected
-	Timezone  string `yaml:"timezone"`   // YAML: parser.timezone, default "UTC" — reserved; parser reads timezone from offset in log line (+0000). Consumer: not connected
+	Profile      string           `yaml:"profile"`       // YAML: parser.profile — built-in server profile: "apache" | "caddy" | "traefik" | "haproxy-http". Takes priority over log_format.
+	LogFormat    string           `yaml:"log_format"`    // YAML: parser.log_format, default "combined" — "combined" | "json" | "regex". Consumer: main.go buildParser
+	RegexPattern string           `yaml:"regex_pattern"` // YAML: parser.regex_pattern — Go regex with named groups; required when log_format = "regex"
+	Timezone     string           `yaml:"timezone"`      // YAML: parser.timezone, default "UTC" — reserved; parser reads timezone from offset in log line (+0000). Consumer: not connected
+	JSONFields   JSONFieldsConfig `yaml:"json_fields"`   // YAML: parser.json_fields — field name mapping for JSON log format. Consumer: JSONParser
+}
+
+// JSONFieldsConfig maps LogEntry fields to the actual JSON key names in the nginx log.
+// Allows users to customize nginx log_format json without changing sentinel config structure.
+// All fields default to standard nginx variable names.
+type JSONFieldsConfig struct {
+	RemoteAddr string `yaml:"remote_addr"`  // default "remote_addr"
+	Time       string `yaml:"time"`         // default "time_iso8601"
+	Request    string `yaml:"request"`      // default "request" — "METHOD /uri PROTO" string
+	Status     string `yaml:"status"`       // default "status"
+	BytesSent  string `yaml:"bytes_sent"`   // default "bytes_sent"
+	Referer    string `yaml:"referer"`      // default "http_referer"
+	UserAgent  string `yaml:"user_agent"`   // default "http_user_agent"
+	RealIP     string `yaml:"real_ip"`      // default "real_ip"
 }
 
 // ++++++++++++++++++++++++++ Section: scoring +++++++++++++++++++++++++++++++++++++++++++
@@ -213,8 +241,18 @@ type DNSCacheConfig struct {
 // ++++++++++++++++++++++++++ Section: output ++++++++++++++++++++++++++++++++++++++++++++
 
 type OutputConfig struct {
-	ThreatLog      string `yaml:"threat_log"`      // YAML: output.threat_log, default "/var/log/nginx-sentinel/threats.log" — threat log for Fail2Ban. Consumer: output.Logger
-	OperationalLog string `yaml:"operational_log"` // YAML: output.operational_log, default "/var/log/nginx-sentinel/sentinel.log" — daemon operational log. Consumer: utils.Init
+	ThreatLog      string `yaml:"threat_log"`      // YAML: output.threat_log, default "/var/log/arxsentinel/threats.log" — threat log for Fail2Ban. Consumer: output.Logger
+	OperationalLog string `yaml:"operational_log"` // YAML: output.operational_log, default "/var/log/arxsentinel/sentinel.log" — daemon operational log. Consumer: utils.Init
+}
+
+// ++++++++++++++++++++++++++ Section: metrics ++++++++++++++++++++++++++++++++++++++++++++
+
+// MetricsConfig holds Prometheus /metrics endpoint settings.
+type MetricsConfig struct {
+	Enabled      bool   `yaml:"enabled"`       // YAML: metrics.enabled, default false — enable Prometheus /metrics endpoint. Consumer: main.go metrics server
+	ListenAddr   string `yaml:"listen_addr"`   // YAML: metrics.listen_addr, default ":9117" — address for the metrics HTTP server. Consumer: main.go metrics server
+	Username     string `yaml:"username"`      // YAML: metrics.username — basic auth username; empty disables auth. Consumer: main.go metrics server
+	PasswordHash string `yaml:"password_hash"` // YAML: metrics.password_hash — bcrypt hash of the password (cost ≥ 10). Consumer: main.go metrics server
 }
 
 // ========================== Config loading ============================================
@@ -247,6 +285,27 @@ func LoadConfig(path string) (Config, error) {
 
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parsing config %q: %w", path, err)
+	}
+
+	// Normalize log_format to lowercase so buildParser() can compare without case sensitivity.
+	cfg.Parser.LogFormat = strings.ToLower(cfg.Parser.LogFormat)
+
+	// Backward compat: single general.log_file → synthesize a single unnamed stream.
+	// Mutually exclusive with streams: — operator must not specify both.
+	if cfg.General.LogFile != "" && len(cfg.Streams) > 0 {
+		return cfg, fmt.Errorf("invalid config %q: general.log_file and streams: are mutually exclusive — use one or the other", path)
+	}
+	if len(cfg.Streams) == 0 {
+		// Apply the log_file default only in single-stream mode so it does not
+		// trigger the mutual-exclusion check when streams: is explicitly set.
+		if cfg.General.LogFile == "" {
+			cfg.General.LogFile = "/var/log/nginx/access.log"
+		}
+		cfg.Streams = []StreamConfig{{
+			Name:      "",
+			LogFile:   cfg.General.LogFile,
+			ThreatLog: cfg.Output.ThreatLog,
+		}}
 	}
 
 	if err := validateConfig(&cfg); err != nil {
@@ -294,6 +353,17 @@ func validateConfig(cfg *Config) error {
 		return fmt.Errorf("detectors.overflow.max_url_length must be > 0, got %d",
 			cfg.Detectors.Overflow.MaxURLLength)
 	}
+	if cfg.Metrics.Username != "" && cfg.Metrics.PasswordHash == "" {
+		return fmt.Errorf("metrics.password_hash must be set when metrics.username is configured")
+	}
+	for i, s := range cfg.Streams {
+		if s.LogFile == "" {
+			return fmt.Errorf("streams[%d].log_file must not be empty", i)
+		}
+		if s.ThreatLog == "" {
+			return fmt.Errorf("streams[%d].threat_log must not be empty", i)
+		}
+	}
 	return nil
 }
 
@@ -305,8 +375,9 @@ func validateConfig(cfg *Config) error {
 func defaultConfig() Config {
 	return Config{
 		General: GeneralConfig{
-			LogFile:           "/var/log/nginx/access.log",
-			PIDFile:           "/var/run/nginx-sentinel.pid",
+			// LogFile default is applied lazily in the backward-compat block below
+			// so it does not conflict with streams: when streams: is explicitly set.
+			PIDFile:           "/var/run/arxsentinel.pid",
 			LinesBufSize:      1000,
 			TailRetryInterval: Duration(5 * time.Second),
 			StatsInterval:     Duration(300 * time.Second),
@@ -318,6 +389,16 @@ func defaultConfig() Config {
 		Parser: ParserConfig{
 			LogFormat: "combined",
 			Timezone:  "UTC",
+			JSONFields: JSONFieldsConfig{
+				RemoteAddr: "remote_addr",
+				Time:       "time_iso8601",
+				Request:    "request",
+				Status:     "status",
+				BytesSent:  "bytes_sent",
+				Referer:    "http_referer",
+				UserAgent:  "http_user_agent",
+				RealIP:     "real_ip",
+			},
 		},
 		Scoring: ScoringConfig{
 			AlertThreshold:    50,
@@ -385,8 +466,12 @@ func defaultConfig() Config {
 			},
 		},
 		Output: OutputConfig{
-			ThreatLog:      "/var/log/nginx-sentinel/threats.log",
-			OperationalLog: "/var/log/nginx-sentinel/sentinel.log",
+			ThreatLog:      "/var/log/arxsentinel/threats.log",
+			OperationalLog: "/var/log/arxsentinel/sentinel.log",
+		},
+		Metrics: MetricsConfig{
+			Enabled:    false,
+			ListenAddr: ":9117",
 		},
 	}
 }

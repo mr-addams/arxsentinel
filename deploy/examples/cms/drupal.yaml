@@ -1,0 +1,35 @@
+# nginx-sentinel — Drupal-specific probe paths override
+#
+# Drupal uses /user/login, /admin, and settings.php — different from WordPress.
+# These paths are targeted by Drupalgeddon and similar exploit kits.
+#
+# Usage:
+#   Merge detectors.probe.paths into your config.yaml.
+#
+# Apply without restart:
+#   kill -HUP $(pgrep nginx-sentinel)   # or systemctl kill -s HUP nginx-sentinel
+
+detectors:
+  probe:
+    paths:
+      # ── Admin and auth ─────────────────────────────────────────────────────────────────
+      - /user/login            # primary brute-force target
+      - /user/register         # registration abuse / CAPTCHA bypass attempts
+      - /admin/               # admin dashboard
+
+      # ── Configuration — must never be web-accessible ─────────────────────────────────
+      - /sites/default/settings.php        # database credentials
+      - /sites/default/settings.local.php
+
+      # ── Core update endpoints ──────────────────────────────────────────────────────────
+      - /update.php           # database schema updates — must be protected post-install
+      - /install.php          # reinstallation endpoint
+
+      # ── Known exploit targets ──────────────────────────────────────────────────────────
+      - /xmlrpc.php           # Drupal 6/7 legacy endpoint
+      - /cron.php             # manual cron trigger, exposes timing info
+
+      # ── VCS and environment ───────────────────────────────────────────────────────────
+      - /.git/config
+      - /.git/HEAD
+      - /.env

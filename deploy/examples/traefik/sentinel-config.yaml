@@ -1,0 +1,12 @@
+# nginx-sentinel config for Traefik v2/v3.
+# Uses the built-in "traefik" profile (Traefik CLF format, default accessLog).
+# No Traefik configuration changes are required — just enable accessLog with a file path.
+
+parser:
+  profile: "traefik"
+
+general:
+  log_file: /var/log/traefik/access.log
+
+output:
+  threat_log: /var/log/nginx-sentinel/threats.log

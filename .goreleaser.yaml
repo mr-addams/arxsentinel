@@ -5,7 +5,7 @@ before:
     - go mod tidy
 
 builds:
-  - binary: nginx-sentinel
+  - binary: arxsentinel
     goos:
       - linux
     goarch:
@@ -18,10 +18,10 @@ builds:
       - -s -w -X main.version={{.Version}}
 
 nfpms:
-  - id: nginx-sentinel-deb
-    package_name: nginx-sentinel
+  - id: arxsentinel-deb
+    package_name: arxsentinel
     vendor: mr-addams
-    homepage: https://github.com/mr-addams/nginx-sentinel
+    homepage: https://github.com/mr-addams/arxsentinel
     maintainer: mr.addams <mr.addams@gmail.com>
     description: nginx access log analyzer with automatic Fail2Ban integration
     license: MIT
@@ -45,30 +45,30 @@ nfpms:
     contents:
       # type: config prevents apt from overwriting the example on upgrade.
       - src: config.yaml
-        dst: /etc/nginx-sentinel/config.yaml.example
+        dst: /etc/arxsentinel/config.yaml.example
         type: config
 
       # Systemd unit uses /usr/bin/ (differs from deploy/ scripts which use /usr/local/bin/).
-      - src: packaging/nginx-sentinel.service
-        dst: /lib/systemd/system/nginx-sentinel.service
+      - src: packaging/arxsentinel.service
+        dst: /lib/systemd/system/arxsentinel.service
 
       # type: config causes apt to offer a merge prompt when these files are modified locally.
-      - src: deploy/fail2ban/filter.d/nginx-sentinel.conf
-        dst: /etc/fail2ban/filter.d/nginx-sentinel.conf
+      - src: deploy/fail2ban/filter.d/arxsentinel.conf
+        dst: /etc/fail2ban/filter.d/arxsentinel.conf
         type: config
 
-      - src: deploy/fail2ban/jail.d/nginx-sentinel.conf
-        dst: /etc/fail2ban/jail.d/nginx-sentinel.conf
+      - src: deploy/fail2ban/jail.d/arxsentinel.conf
+        dst: /etc/fail2ban/jail.d/arxsentinel.conf
         type: config
 
-      - src: deploy/logrotate/nginx-sentinel
-        dst: /etc/logrotate.d/nginx-sentinel
+      - src: deploy/logrotate/arxsentinel
+        dst: /etc/logrotate.d/arxsentinel
         type: config
 
-  - id: nginx-sentinel-rpm
-    package_name: nginx-sentinel
+  - id: arxsentinel-rpm
+    package_name: arxsentinel
     vendor: mr-addams
-    homepage: https://github.com/mr-addams/nginx-sentinel
+    homepage: https://github.com/mr-addams/arxsentinel
     maintainer: mr.addams <mr.addams@gmail.com>
     description: nginx access log analyzer with automatic Fail2Ban integration
     license: MIT
@@ -90,29 +90,29 @@ nfpms:
 
     contents:
       - src: config.yaml
-        dst: /etc/nginx-sentinel/config.yaml.example
+        dst: /etc/arxsentinel/config.yaml.example
         type: config
 
       # RPM/systemd convention: /usr/lib/systemd/system/ (not /lib/)
-      - src: packaging/nginx-sentinel.service
-        dst: /usr/lib/systemd/system/nginx-sentinel.service
+      - src: packaging/arxsentinel.service
+        dst: /usr/lib/systemd/system/arxsentinel.service
 
-      - src: deploy/fail2ban/filter.d/nginx-sentinel.conf
-        dst: /etc/fail2ban/filter.d/nginx-sentinel.conf
+      - src: deploy/fail2ban/filter.d/arxsentinel.conf
+        dst: /etc/fail2ban/filter.d/arxsentinel.conf
         type: config
 
-      - src: deploy/fail2ban/jail.d/nginx-sentinel.conf
-        dst: /etc/fail2ban/jail.d/nginx-sentinel.conf
+      - src: deploy/fail2ban/jail.d/arxsentinel.conf
+        dst: /etc/fail2ban/jail.d/arxsentinel.conf
         type: config
 
-      - src: deploy/logrotate/nginx-sentinel
-        dst: /etc/logrotate.d/nginx-sentinel
+      - src: deploy/logrotate/arxsentinel
+        dst: /etc/logrotate.d/arxsentinel
         type: config
 
-  - id: nginx-sentinel-pacman
-    package_name: nginx-sentinel
+  - id: arxsentinel-pacman
+    package_name: arxsentinel
     vendor: mr-addams
-    homepage: https://github.com/mr-addams/nginx-sentinel
+    homepage: https://github.com/mr-addams/arxsentinel
     maintainer: mr.addams <mr.addams@gmail.com>
     description: nginx access log analyzer with automatic Fail2Ban integration
     license: MIT
@@ -134,29 +134,29 @@ nfpms:
 
     contents:
       - src: config.yaml
-        dst: /etc/nginx-sentinel/config.yaml.example
+        dst: /etc/arxsentinel/config.yaml.example
         type: config
 
       # Arch Linux systemd convention: /usr/lib/systemd/system/
-      - src: packaging/nginx-sentinel.service
-        dst: /usr/lib/systemd/system/nginx-sentinel.service
+      - src: packaging/arxsentinel.service
+        dst: /usr/lib/systemd/system/arxsentinel.service
 
-      - src: deploy/fail2ban/filter.d/nginx-sentinel.conf
-        dst: /etc/fail2ban/filter.d/nginx-sentinel.conf
+      - src: deploy/fail2ban/filter.d/arxsentinel.conf
+        dst: /etc/fail2ban/filter.d/arxsentinel.conf
         type: config
 
-      - src: deploy/fail2ban/jail.d/nginx-sentinel.conf
-        dst: /etc/fail2ban/jail.d/nginx-sentinel.conf
+      - src: deploy/fail2ban/jail.d/arxsentinel.conf
+        dst: /etc/fail2ban/jail.d/arxsentinel.conf
         type: config
 
-      - src: deploy/logrotate/nginx-sentinel
-        dst: /etc/logrotate.d/nginx-sentinel
+      - src: deploy/logrotate/arxsentinel
+        dst: /etc/logrotate.d/arxsentinel
         type: config
 
 release:
   github:
     owner: mr-addams
-    name: nginx-sentinel
+    name: arxsentinel
   prerelease: auto
   replace_existing_artifacts: true
   # nfpm .deb artifacts are attached to the release automatically — extra_files not needed.
