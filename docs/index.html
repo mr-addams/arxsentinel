@@ -657,7 +657,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </div>
 
         <div class="install-note">
-            <strong>After installation:</strong> open <code>/etc/arxsentinel/config.yaml</code>, select a server profile and set your log path. Then start the service. Config reloads on <code>SIGHUP</code> — no restart needed.
+            <strong>After installation:</strong> open <code>/etc/arxsentinel/config.yaml</code> and set your log path. nginx works without any profile. For Apache, Traefik, Caddy or HAProxy — set <code>parser.profile</code> to the server name. Config reloads on <code>SIGHUP</code> — no restart needed.
         </div>
     </section>
 
@@ -669,7 +669,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
         <div class="whitelist-grid">
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🌐</span> Multi-server support</h3>
-                <p>Works with nginx, Apache, Caddy, Traefik and HAProxy out of the box. Profile system maps any log format to the same detection pipeline.</p>
+                <p>Works with nginx, Apache, Caddy, Traefik and HAProxy. nginx, Apache and Traefik work out of the box — no configuration needed. Caddy requires xcaddy + transform-encoder plugin; HAProxy requires <code>option httplog</code> and rsyslog. Profile system maps any log format to the same detection pipeline.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">📂</span> Multi-stream parsing</h3>

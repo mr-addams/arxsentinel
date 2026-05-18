@@ -605,7 +605,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </div>
 
         <div class="install-note">
-            <strong>Після встановлення:</strong> відкрийте <code>/etc/arxsentinel/config.yaml</code>, оберіть профіль сервера та вкажіть шлях до access.log. Запустіть сервіс. Конфіг перезавантажується по <code>SIGHUP</code> — перезапуск не потрібен.
+            <strong>Після встановлення:</strong> відкрийте <code>/etc/arxsentinel/config.yaml</code> та вкажіть шлях до access.log. nginx працює без профілю. Для Apache, Traefik, Caddy або HAProxy вкажіть <code>parser.profile</code> з назвою сервера. Конфіг перезавантажується по <code>SIGHUP</code> — перезапуск не потрібен.
         </div>
     </section>
 
@@ -617,7 +617,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
         <div class="whitelist-grid">
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🌐</span> Підтримка кількох серверів</h3>
-                <p>Працює з nginx, Apache, Caddy, Traefik та HAProxy з коробки. Система профілів маппить будь-який формат логів на єдиний пайплайн виявлення.</p>
+                <p>Працює з nginx, Apache, Caddy, Traefik та HAProxy. nginx, Apache і Traefik працюють з коробки — налаштування не потрібне. Caddy потребує xcaddy + плагін transform-encoder; HAProxy потребує <code>option httplog</code> та rsyslog. Система профілів маппить будь-який формат логів на єдиний пайплайн виявлення.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">📂</span> Кілька потоків логів</h3>
