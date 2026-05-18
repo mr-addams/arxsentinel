@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# get.sh — universal nginx-sentinel installer.
+# get.sh — universal ArxSentinel installer.
 # Detects OS and architecture, downloads the correct package from GitHub
 # Releases, installs it, and starts the service.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash
 #   sudo bash get.sh
 set -euo pipefail
 
@@ -23,7 +23,7 @@ else
   R='' G='' Y='' B='' C='' M='' W='' DIM='' RESET=''
 fi
 
-REPO="mr-addams/nginx-sentinel"
+REPO="mr-addams/arxsentinel"
 API="https://api.github.com/repos/${REPO}/releases/latest"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -31,8 +31,8 @@ API="https://api.github.com/repos/${REPO}/releases/latest"
 banner() {
   echo
   echo -e "${C}┌─────────────────────────────────────────────┐${RESET}"
-  echo -e "${C}│${W}         nginx-sentinel  installer           ${C}│${RESET}"
-  echo -e "${C}│${DIM}   Real-time nginx threat detection daemon   ${C}│${RESET}"
+  echo -e "${C}│${W}           ArxSentinel  installer             ${C}│${RESET}"
+  echo -e "${C}│${DIM}    Universal HTTP threat detection daemon    ${C}│${RESET}"
   echo -e "${C}└─────────────────────────────────────────────┘${RESET}"
   echo
 }
