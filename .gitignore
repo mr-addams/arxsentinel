@@ -45,3 +45,4 @@ logs/
 # Editor/IDE
 # .idea/
 # .vscode/
+.claude/settings.json
