@@ -19,7 +19,10 @@ nginx access.log → TailReader → whitelist → tracker → scorer → threats
 - **Bot DNS verification:** Googlebot, Bingbot, Yandex, DuckDuckGo and others are verified via rDNS/fDNS — legitimate crawlers are never banned
 - **Whitelist:** IPs, CIDRs, UA substrings — configurable exclusion lists
 - **Linear score decay:** points decay over `observation_window`, no false bans from old traffic
-- **SIGHUP reload:** config, scorer and whitelist are rebuilt without restarting the daemon
+- **Prometheus metrics:** `/metrics` on configurable port (default `:9117`), optional bcrypt basic auth; Grafana dashboard included
+- **Health endpoint:** `/health` always returns `200 {"status":"ok"}` — no credentials required; ready for Docker `HEALTHCHECK`, k8s probes, and load balancers
+- **JSON log format:** switch nginx-sentinel to JSON log parsing via `parser.log_format: "json"` — no recompilation needed
+- **SIGHUP reload:** config, scorer, parser and whitelist are rebuilt without restarting the daemon
 - **Graceful shutdown:** line buffer is drained on SIGTERM
 - **Systemd + logrotate + Fail2Ban:** ready-to-use deploy configs included
 
@@ -34,7 +37,7 @@ nginx access.log → TailReader → whitelist → tracker → scorer → threats
 ### Quick install — any distro (recommended)
 
 Auto-detects your distro and architecture, downloads the correct package from GitHub Releases,
-installs it with your package manager, and starts the service:
+installs it with your package manager, enables and starts the service:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | sudo bash
@@ -43,11 +46,11 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scrip
 Works on Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, and Arch Linux.
 Requires `curl` and `sudo`. Fail2Ban is installed automatically if missing.
 
-After installation, edit the config and enable the service:
+The service starts immediately with default settings. To apply your config:
 
 ```bash
 sudo nano /etc/nginx-sentinel/config.yaml
-sudo systemctl enable --now nginx-sentinel
+sudo systemctl kill -s HUP nginx-sentinel   # reload without restart
 ```
 
 ---
@@ -403,7 +406,7 @@ Background goroutines:
 **Operational log** (`/var/log/nginx-sentinel/sentinel.log`) — daemon's working log:
 
 ```
-2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.2 started
+2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.3 started
 2026-04-02 14:33:12 [THREAT] 45.134.26.8 score=85 modules=probe,rate reason="..."
 2026-04-02 14:38:10 [STATS] processed=14320 tracked=87 threats=3 suspicious=12
 ```
@@ -450,23 +453,44 @@ It also supports JSON log format — switch via `config.yaml` without recompilat
 
 ### Step 1 — Configure nginx
 
-Add a JSON log format to `nginx.conf`:
+Add the appropriate `log_format` to your `nginx.conf` (`http {}` block).
+Ready-to-use configs are also in [`deploy/examples/nginx-json-logformat.conf`](deploy/examples/nginx-json-logformat.conf).
+
+**Direct nginx (no reverse proxy)** — `$remote_addr` is the real client IP:
 
 ```nginx
-log_format json_log escape=json
-  '{"remote_addr":"$remote_addr",'
-  '"time_iso8601":"$time_iso8601",'
-  '"request":"$request",'
-  '"status":"$status",'
-  '"bytes_sent":"$bytes_sent",'
-  '"http_referer":"$http_referer",'
-  '"http_user_agent":"$http_user_agent",'
-  '"real_ip":"$real_ip"}';
+log_format sentinel_json_direct escape=json
+    '{'
+        '"remote_addr":"$remote_addr",'
+        '"time_iso8601":"$time_iso8601",'
+        '"request":"$request",'
+        '"status":"$status",'
+        '"bytes_sent":"$bytes_sent",'
+        '"http_referer":"$http_referer",'
+        '"http_user_agent":"$http_user_agent"'
+    '}';
 
-access_log /var/log/nginx/access.log json_log;
+access_log /var/log/nginx/access.log sentinel_json_direct;
 ```
 
-> `$real_ip` requires `ngx_http_realip_module`. If you don't use a reverse proxy, replace it with `$remote_addr`.
+**Behind a reverse proxy** — use `$real_ip` populated by `ngx_http_realip_module`
+(see [`deploy/examples/reverse-proxy/`](deploy/examples/reverse-proxy/) for per-proxy setup):
+
+```nginx
+log_format sentinel_json_proxy escape=json
+    '{'
+        '"remote_addr":"$remote_addr",'
+        '"real_ip":"$real_ip",'
+        '"time_iso8601":"$time_iso8601",'
+        '"request":"$request",'
+        '"status":"$status",'
+        '"bytes_sent":"$bytes_sent",'
+        '"http_referer":"$http_referer",'
+        '"http_user_agent":"$http_user_agent"'
+    '}';
+
+access_log /var/log/nginx/access.log sentinel_json_proxy;
+```
 
 ### Step 2 — Update sentinel config
 
@@ -603,6 +627,192 @@ Ready-made `probe.paths` overrides for the most common PHP stacks are in
 
 The paths **extend** (not replace) the built-in sensitive-path list by default.
 To use only your custom list, set `detectors.probe.paths:` to exactly the paths you want.
+
+---
+
+## Supported HTTP servers
+
+nginx-sentinel includes built-in profiles for popular HTTP servers.
+Set `parser.profile` to the server name — no regex or field mapping required.
+
+| Profile | Server | Log format |
+|---------|--------|------------|
+| `apache` | Apache httpd 2.4+ | Combined Log Format (default) |
+| `caddy` | Caddy v2 | Apache CLF via transform-encoder |
+| `traefik` | Traefik v2/v3 | Common Log Format (default accessLog) |
+| `haproxy-http` | HAProxy | HTTP log (`option httplog`) |
+
+**Example:**
+
+```yaml
+parser:
+  profile: "apache"
+
+general:
+  log_file: /var/log/apache2/access.log
+
+output:
+  threat_log: /var/log/nginx-sentinel/threats.log
+```
+
+Ready-made configs for each server are in [`deploy/examples/`](deploy/examples/):
+
+```
+deploy/examples/
+├── apache/      httpd.conf + sentinel-config.yaml
+├── caddy/       Caddyfile + sentinel-config.yaml
+├── traefik/     traefik.yml + sentinel-config.yaml
+└── haproxy/     haproxy.cfg + sentinel-config.yaml
+```
+
+> **Note — HAProxy timestamps:** HAProxy includes milliseconds in the timestamp
+> (`14:30:00.123`), which does not match the expected time format. Sentinel falls
+> back to `time.Time{}` for that field. Rate-window detection uses wall-clock time
+> regardless, so all detectors work correctly.
+
+> **Note — Caddy:** Caddy v2's built-in JSON encoder outputs nested objects. The
+> `caddy` profile requires the
+> [caddy-transform-encoder](https://github.com/caddyserver/transform-encoder) plugin
+> to produce CLF output. See `deploy/examples/caddy/Caddyfile` for the setup.
+
+## Custom log format (regex)
+
+Use any text log format by supplying a Go regex with named capture groups.
+
+```yaml
+parser:
+  log_format: "regex"
+  regex_pattern: '(?P<remote_addr>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] "(?P<request>[^"]*)" (?P<status>\d+) (?P<bytes_sent>\d+) "(?P<http_referer>[^"]*)" "(?P<http_user_agent>[^"]*)"'
+```
+
+### Named groups
+
+| Group | Required | Description |
+|-------|----------|-------------|
+| `remote_addr` | ✅ | Client or proxy IP address |
+| `time` | ✅ | Request time (`02/Jan/2006:15:04:05 -0700` format) |
+| `request` | ✅ | Full request line: `METHOD /path HTTP/x.x` |
+| `status` | ✅ | HTTP response code |
+| `bytes_sent` | ✅ | Response size in bytes |
+| `http_referer` | optional | Referer header value |
+| `http_user_agent` | optional | User-Agent header value |
+| `real_ip` | optional | Real client IP from a trusted proxy header |
+
+Missing optional groups produce empty fields in the parsed entry — sentinel still works, just without referer/UA/real-IP data.
+
+### Example: HAProxy HTTP log
+
+```yaml
+parser:
+  log_format: "regex"
+  regex_pattern: '(?P<remote_addr>\S+):\d+ \S+ \S+/\S+ \d+/\d+/\d+/\d+/\d+ (?P<status>\d+) (?P<bytes_sent>\d+) .* "(?P<request>[^"]*)"'
+```
+
+### Common mistakes
+
+- **Missing mandatory group** — sentinel exits at startup with a clear error message listing the missing group name.
+- **Unanchored pattern** — the regex is applied with `FindStringSubmatch`, so it matches anywhere in the line. Anchor with `^` / `$` if needed.
+- **Wrong time format** — only `02/Jan/2006:15:04:05 -0700` (nginx `$time_local`) is parsed. ISO 8601 timestamps are not parsed; time-based features still work with zero time.
+
+---
+
+## Multi-stream monitoring
+
+Run one sentinel process that watches multiple log files simultaneously — one pipeline per domain, full isolation.
+
+### Config
+
+```yaml
+streams:
+  - name: site1
+    log_file: /var/log/nginx/site1.access.log
+    threat_log: /var/log/nginx-sentinel/site1.threats.log
+  - name: site2
+    log_file: /var/log/nginx/site2.access.log
+    threat_log: /var/log/nginx-sentinel/site2.threats.log
+```
+
+> **Note:** `streams:` and `general.log_file` are mutually exclusive. Use one or the other.
+
+Each stream gets its own tracker, scorer, whitelist state, and threat log. A crash or slow scan on one stream does not affect others.
+
+### Backward compatibility
+
+The classic single-file config (`general.log_file`) keeps working — it is silently converted to a single unnamed stream (`stream=""` label on metrics). No config migration needed.
+
+### Fail2Ban multi-stream
+
+Each stream writes its own `threat_log` file. Create one Fail2Ban jail per file:
+
+```ini
+# /etc/fail2ban/jail.d/nginx-sentinel-site1.conf
+[nginx-sentinel-site1]
+enabled  = true
+filter   = nginx-sentinel
+logpath  = /var/log/nginx-sentinel/site1.threats.log
+maxretry = 1
+bantime  = 86400
+
+[nginx-sentinel-site2]
+enabled  = true
+filter   = nginx-sentinel
+logpath  = /var/log/nginx-sentinel/site2.threats.log
+maxretry = 1
+bantime  = 86400
+```
+
+### Grafana
+
+The dashboard includes a **Stream** variable. Select one or multiple streams to filter all panels. Import `deploy/grafana/nginx-sentinel-dashboard.json` (v2).
+
+---
+
+## Prometheus metrics
+
+Enable in `config.yaml`:
+
+```yaml
+metrics:
+  enabled: true
+  listen_addr: ":9117"   # port for the metrics HTTP server
+  # Optional basic auth — leave username empty to disable:
+  username: ""
+  password_hash: ""      # bcrypt hash; see deploy/grafana/README.md for generation
+```
+
+### Endpoints
+
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `/metrics` | optional basic auth | Prometheus scrape endpoint |
+| `/health` | none | Liveness probe — always returns `200 {"status":"ok"}` |
+
+The `/health` endpoint requires no credentials and is safe to expose to load balancers,
+Docker `HEALTHCHECK`, and k8s liveness/readiness probes.
+
+### Available metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `nginx_sentinel_lines_processed_total` | Counter | Log lines processed |
+| `nginx_sentinel_threats_total{level}` | Counter | Threats by level (`THREAT` / `WARN`) |
+| `nginx_sentinel_detector_hits_total{detector}` | Counter | Hits per detector name |
+| `nginx_sentinel_tracked_ips` | Gauge | Currently tracked IPs |
+| `nginx_sentinel_suspicious_ips` | Gauge | IPs with score above alert threshold |
+
+### Prometheus scrape config
+
+```yaml
+scrape_configs:
+  - job_name: "nginx-sentinel"
+    static_configs:
+      - targets: ["localhost:9117"]
+    # basic_auth:          # only if auth is enabled in sentinel config
+    #   username: "prometheus"
+    #   password: "your-plaintext-password"
+```
+
+For Grafana dashboard setup see [`deploy/grafana/README.md`](deploy/grafana/README.md).
 
 ---
 

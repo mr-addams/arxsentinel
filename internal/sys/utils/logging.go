@@ -154,15 +154,18 @@ func Init(debug, consoleColor bool, operationalLogPath, threatLogPath string) er
 		}
 	}
 
-	// Threat log — critical: Fail2Ban cannot receive data without it
-	if err := ensureDir(threatLogPath); err != nil {
-		return fmt.Errorf("threat log directory: %w", err)
+	// Threat log — skipped in multi-stream mode (each stream manages its own file).
+	// When non-empty, it is critical: Fail2Ban cannot receive data without it.
+	if threatLogPath != "" {
+		if err := ensureDir(threatLogPath); err != nil {
+			return fmt.Errorf("threat log directory: %w", err)
+		}
+		tf, err := os.OpenFile(threatLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("threat log unavailable (%s): %w", threatLogPath, err)
+		}
+		threatWriter = tf
 	}
-	tf, err := os.OpenFile(threatLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("threat log unavailable (%s): %w", threatLogPath, err)
-	}
-	threatWriter = tf
 
 	return nil
 }
@@ -184,18 +187,22 @@ func Reload(debug, consoleColor bool, operationalLogPath, threatLogPath string) 
 		fmt.Fprintf(os.Stderr, "[WARN] Reload: operational log unavailable: %v\n", err)
 	}
 
-	if err := ensureDir(threatLogPath); err != nil {
-		if newOperWriter != nil {
-			newOperWriter.Close()
+	var newThreatWriter *os.File
+	if threatLogPath != "" {
+		if err := ensureDir(threatLogPath); err != nil {
+			if newOperWriter != nil {
+				newOperWriter.Close()
+			}
+			return fmt.Errorf("Reload: threat log directory: %w", err)
 		}
-		return fmt.Errorf("Reload: threat log directory: %w", err)
-	}
-	newThreatWriter, err := os.OpenFile(threatLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		if newOperWriter != nil {
-			newOperWriter.Close()
+		tf, err := os.OpenFile(threatLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			if newOperWriter != nil {
+				newOperWriter.Close()
+			}
+			return fmt.Errorf("Reload: threat log unavailable (%s): %w", threatLogPath, err)
 		}
-		return fmt.Errorf("Reload: threat log unavailable (%s): %w", threatLogPath, err)
+		newThreatWriter = tf
 	}
 
 	// Update flags only after files are successfully opened —
@@ -368,4 +375,22 @@ func LogThreat(ip string, score int, threatLevel string, modules []string, reaso
 
 	// Mirror to console as [THREAT] for real-time monitoring
 	Log("THREAT", fmt.Sprintf("%s score=%d modules=%s reason=%q", ip, score, modulesStr, reason), "warning")
+}
+
+// ========================== Per-stream threat log helpers =============================
+
+// OpenThreatLog opens (or creates) a threat log file for a single stream.
+// Used by runStream() in multi-stream mode — each stream owns its file descriptor.
+func OpenThreatLog(path string) (*os.File, error) {
+	if path == "" {
+		return nil, fmt.Errorf("threat log path is empty")
+	}
+	if err := ensureDir(path); err != nil {
+		return nil, fmt.Errorf("threat log directory: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("threat log unavailable (%s): %w", path, err)
+	}
+	return f, nil
 }

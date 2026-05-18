@@ -61,6 +61,15 @@ type Config struct {
 	Whitelist WhitelistConfig `yaml:"whitelist"`
 	Output    OutputConfig    `yaml:"output"`
 	Metrics   MetricsConfig   `yaml:"metrics"`
+	Streams   []StreamConfig  `yaml:"streams"` // YAML: streams — multi-stream mode; mutually exclusive with general.log_file
+}
+
+// StreamConfig defines one log-watching pipeline.
+// Each stream has its own tracker, scorer, whitelist, and threat log — full isolation.
+type StreamConfig struct {
+	Name      string `yaml:"name"`       // YAML: streams[].name — label used in metrics and log output
+	LogFile   string `yaml:"log_file"`   // YAML: streams[].log_file — path to the access log to watch
+	ThreatLog string `yaml:"threat_log"` // YAML: streams[].threat_log — path to the per-stream threat log (Fail2Ban reads this)
 }
 
 // ++++++++++++++++++++++++++ Section: general +++++++++++++++++++++++++++++++++++++++++++
@@ -84,9 +93,11 @@ type LoggingConfig struct {
 // ++++++++++++++++++++++++++ Section: parser +++++++++++++++++++++++++++++++++++++++++++++
 
 type ParserConfig struct {
-	LogFormat  string           `yaml:"log_format"`  // YAML: parser.log_format, default "combined" — "combined" | "json". Consumer: main.go buildParser
-	Timezone   string           `yaml:"timezone"`    // YAML: parser.timezone, default "UTC" — reserved; parser reads timezone from offset in log line (+0000). Consumer: not connected
-	JSONFields JSONFieldsConfig `yaml:"json_fields"` // YAML: parser.json_fields — field name mapping for JSON log format. Consumer: JSONParser
+	Profile      string           `yaml:"profile"`       // YAML: parser.profile — built-in server profile: "apache" | "caddy" | "traefik" | "haproxy-http". Takes priority over log_format.
+	LogFormat    string           `yaml:"log_format"`    // YAML: parser.log_format, default "combined" — "combined" | "json" | "regex". Consumer: main.go buildParser
+	RegexPattern string           `yaml:"regex_pattern"` // YAML: parser.regex_pattern — Go regex with named groups; required when log_format = "regex"
+	Timezone     string           `yaml:"timezone"`      // YAML: parser.timezone, default "UTC" — reserved; parser reads timezone from offset in log line (+0000). Consumer: not connected
+	JSONFields   JSONFieldsConfig `yaml:"json_fields"`   // YAML: parser.json_fields — field name mapping for JSON log format. Consumer: JSONParser
 }
 
 // JSONFieldsConfig maps LogEntry fields to the actual JSON key names in the nginx log.
@@ -279,6 +290,24 @@ func LoadConfig(path string) (Config, error) {
 	// Normalize log_format to lowercase so buildParser() can compare without case sensitivity.
 	cfg.Parser.LogFormat = strings.ToLower(cfg.Parser.LogFormat)
 
+	// Backward compat: single general.log_file → synthesize a single unnamed stream.
+	// Mutually exclusive with streams: — operator must not specify both.
+	if cfg.General.LogFile != "" && len(cfg.Streams) > 0 {
+		return cfg, fmt.Errorf("invalid config %q: general.log_file and streams: are mutually exclusive — use one or the other", path)
+	}
+	if len(cfg.Streams) == 0 {
+		// Apply the log_file default only in single-stream mode so it does not
+		// trigger the mutual-exclusion check when streams: is explicitly set.
+		if cfg.General.LogFile == "" {
+			cfg.General.LogFile = "/var/log/nginx/access.log"
+		}
+		cfg.Streams = []StreamConfig{{
+			Name:      "",
+			LogFile:   cfg.General.LogFile,
+			ThreatLog: cfg.Output.ThreatLog,
+		}}
+	}
+
 	if err := validateConfig(&cfg); err != nil {
 		return cfg, fmt.Errorf("invalid config %q: %w", path, err)
 	}
@@ -327,6 +356,14 @@ func validateConfig(cfg *Config) error {
 	if cfg.Metrics.Username != "" && cfg.Metrics.PasswordHash == "" {
 		return fmt.Errorf("metrics.password_hash must be set when metrics.username is configured")
 	}
+	for i, s := range cfg.Streams {
+		if s.LogFile == "" {
+			return fmt.Errorf("streams[%d].log_file must not be empty", i)
+		}
+		if s.ThreatLog == "" {
+			return fmt.Errorf("streams[%d].threat_log must not be empty", i)
+		}
+	}
 	return nil
 }
 
@@ -338,7 +375,8 @@ func validateConfig(cfg *Config) error {
 func defaultConfig() Config {
 	return Config{
 		General: GeneralConfig{
-			LogFile:           "/var/log/nginx/access.log",
+			// LogFile default is applied lazily in the backward-compat block below
+			// so it does not conflict with streams: when streams: is explicitly set.
 			PIDFile:           "/var/run/nginx-sentinel.pid",
 			LinesBufSize:      1000,
 			TailRetryInterval: Duration(5 * time.Second),

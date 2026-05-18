@@ -33,6 +33,15 @@ Verify the target is up: `http://localhost:9090/targets`
 
 ---
 
+## Available endpoints
+
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `/metrics` | optional basic auth | Prometheus scrape endpoint |
+| `/health` | none | Liveness probe — always returns `200 {"status":"ok"}` |
+
+---
+
 ## Step 2 — Enable metrics in sentinel config (optional: basic auth)
 
 In `config.yaml`:

@@ -19,7 +19,10 @@ nginx access.log → TailReader → whitelist → tracker → scorer → threats
 - **DNS-верификация ботов:** Googlebot, Bingbot, Yandex, DuckDuckGo и другие верифицируются по rDNS/fDNS — легитимные краулеры в бан не попадают
 - **Whitelist:** IP, CIDR, UA-подстроки — конфигурируемые списки исключений
 - **Линейный decay score:** очки затухают за `observation_window`, нет ложных банов от старого трафика
-- **SIGHUP reload:** конфиг, scorer и whitelist пересоздаются без перезапуска демона
+- **Prometheus-метрики:** `/metrics` на настраиваемом порту (по умолчанию `:9117`), опциональная basic auth с bcrypt; дашборд Grafana в комплекте
+- **Health endpoint:** `/health` всегда возвращает `200 {"status":"ok"}` без авторизации — готов для Docker `HEALTHCHECK`, k8s probes и балансировщиков
+- **JSON-формат логов:** переключение на JSON-парсинг через `parser.log_format: "json"` без перекомпиляции
+- **SIGHUP reload:** конфиг, scorer, парсер и whitelist пересоздаются без перезапуска демона
 - **Graceful shutdown:** дренирование буфера строк при SIGTERM
 - **Systemd + logrotate + Fail2Ban:** готовые deploy-конфиги в комплекте
 
@@ -34,7 +37,7 @@ nginx access.log → TailReader → whitelist → tracker → scorer → threats
 ### Быстрая установка — любой дистрибутив (рекомендуется)
 
 Скрипт автоматически определяет дистрибутив и архитектуру, скачивает нужный пакет из GitHub Releases,
-устанавливает его через штатный менеджер пакетов и запускает сервис:
+устанавливает его через штатный менеджер пакетов, добавляет в автозагрузку и запускает сервис:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scripts/get.sh | sudo bash
@@ -43,11 +46,11 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/nginx-sentinel/main/scrip
 Работает на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux и Arch Linux.
 Требует `curl` и `sudo`. Fail2Ban устанавливается автоматически, если отсутствует.
 
-После установки отредактируйте конфиг и включите сервис:
+Сервис запускается сразу с настройками по умолчанию. Чтобы применить свой конфиг:
 
 ```bash
 sudo nano /etc/nginx-sentinel/config.yaml
-sudo systemctl enable --now nginx-sentinel
+sudo systemctl kill -s HUP nginx-sentinel   # перезагрузка без рестарта
 ```
 
 ---
@@ -403,7 +406,7 @@ nginx access.log
 **Operational log** (`/var/log/nginx-sentinel/sentinel.log`) — рабочий лог демона:
 
 ```
-2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.2 запуск
+2026-04-02 14:33:10 [STARTUP] nginx-sentinel v0.3 запуск
 2026-04-02 14:33:12 [THREAT] 45.134.26.8 score=85 modules=probe,rate reason="..."
 2026-04-02 14:38:10 [STATS] processed=14320 tracked=87 threats=3 suspicious=12
 ```
@@ -545,6 +548,272 @@ http {
 
 Пути **дополняют** (а не заменяют) встроенный список sensitive-путей по умолчанию.
 Чтобы использовать только свой список, задайте в `detectors.probe.paths:` ровно те пути, которые нужны.
+
+---
+
+## JSON-формат логов
+
+По умолчанию nginx-sentinel ожидает combined-формат nginx.
+Поддерживается также JSON-формат — переключается через `config.yaml` без перекомпиляции.
+
+### Шаг 1 — Настройка nginx
+
+Добавьте нужный `log_format` в блок `http {}` файла `nginx.conf`.
+Готовые конфиги также в [`deploy/examples/nginx-json-logformat.conf`](deploy/examples/nginx-json-logformat.conf).
+
+**Прямой nginx (без прокси)** — `$remote_addr` содержит реальный IP клиента:
+
+```nginx
+log_format sentinel_json_direct escape=json
+    '{'
+        '"remote_addr":"$remote_addr",'
+        '"time_iso8601":"$time_iso8601",'
+        '"request":"$request",'
+        '"status":"$status",'
+        '"bytes_sent":"$bytes_sent",'
+        '"http_referer":"$http_referer",'
+        '"http_user_agent":"$http_user_agent"'
+    '}';
+
+access_log /var/log/nginx/access.log sentinel_json_direct;
+```
+
+**За обратным прокси** — используйте `$real_ip`, заполняемый модулем `ngx_http_realip_module`
+(конфиги прокси — в [`deploy/examples/reverse-proxy/`](deploy/examples/reverse-proxy/)):
+
+```nginx
+log_format sentinel_json_proxy escape=json
+    '{'
+        '"remote_addr":"$remote_addr",'
+        '"real_ip":"$real_ip",'
+        '"time_iso8601":"$time_iso8601",'
+        '"request":"$request",'
+        '"status":"$status",'
+        '"bytes_sent":"$bytes_sent",'
+        '"http_referer":"$http_referer",'
+        '"http_user_agent":"$http_user_agent"'
+    '}';
+
+access_log /var/log/nginx/access.log sentinel_json_proxy;
+```
+
+### Шаг 2 — Обновить конфиг sentinel
+
+```yaml
+parser:
+  log_format: "json"   # "combined" (по умолчанию) | "json"
+```
+
+Изменение вступает в силу после **SIGHUP** — рестарт не нужен:
+
+```bash
+kill -HUP $(cat /var/run/nginx-sentinel.pid)
+```
+
+### Кастомные имена полей
+
+Если в вашем `log_format` используются другие ключи — переопределите маппинг:
+
+```yaml
+parser:
+  log_format: "json"
+  json_fields:
+    remote_addr: "client"
+    time:        "ts"
+    request:     "req"
+    status:      "code"
+    bytes_sent:  "size"
+    referer:     "ref"
+    user_agent:  "ua"
+    real_ip:     "ip"
+```
+
+Неизвестные поля в JSON-строке игнорируются — потребляются только поля из маппинга.
+
+---
+
+## Поддерживаемые HTTP-серверы
+
+nginx-sentinel содержит встроенные профили для популярных HTTP-серверов.
+Укажите `parser.profile` с именем сервера — настройка regex или маппинга полей не требуется.
+
+| Профиль | Сервер | Формат логов |
+|---------|--------|--------------|
+| `apache` | Apache httpd 2.4+ | Combined Log Format (по умолчанию) |
+| `caddy` | Caddy v2 | Apache CLF через transform-encoder |
+| `traefik` | Traefik v2/v3 | Common Log Format (accessLog по умолчанию) |
+| `haproxy-http` | HAProxy | HTTP log (`option httplog`) |
+
+**Пример:**
+
+```yaml
+parser:
+  profile: "apache"
+
+general:
+  log_file: /var/log/apache2/access.log
+
+output:
+  threat_log: /var/log/nginx-sentinel/threats.log
+```
+
+Готовые конфиги для каждого сервера находятся в [`deploy/examples/`](deploy/examples/):
+
+```
+deploy/examples/
+├── apache/      httpd.conf + sentinel-config.yaml
+├── caddy/       Caddyfile + sentinel-config.yaml
+├── traefik/     traefik.yml + sentinel-config.yaml
+└── haproxy/     haproxy.cfg + sentinel-config.yaml
+```
+
+> **Замечание — HAProxy:** HAProxy включает миллисекунды в временную метку
+> (`14:30:00.123`), что не соответствует ожидаемому формату. Sentinel использует
+> `time.Time{}` для этого поля. Обнаружение rate-окон работает по системному
+> времени, поэтому все детекторы функционируют корректно.
+
+> **Замечание — Caddy:** Встроенный JSON-энкодер Caddy v2 выводит вложенные объекты.
+> Профиль `caddy` требует плагина
+> [caddy-transform-encoder](https://github.com/caddyserver/transform-encoder)
+> для вывода CLF. Смотрите `deploy/examples/caddy/Caddyfile` для настройки.
+
+## Произвольный формат логов (regex)
+
+Используйте любой текстовый формат логов, указав Go-регулярное выражение с именованными группами.
+
+```yaml
+parser:
+  log_format: "regex"
+  regex_pattern: '(?P<remote_addr>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] "(?P<request>[^"]*)" (?P<status>\d+) (?P<bytes_sent>\d+) "(?P<http_referer>[^"]*)" "(?P<http_user_agent>[^"]*)"'
+```
+
+### Именованные группы
+
+| Группа | Обязательная | Описание |
+|--------|-------------|----------|
+| `remote_addr` | ✅ | IP-адрес клиента или прокси |
+| `time` | ✅ | Время запроса (формат `02/Jan/2006:15:04:05 -0700`) |
+| `request` | ✅ | Строка запроса: `METHOD /path HTTP/x.x` |
+| `status` | ✅ | HTTP-код ответа |
+| `bytes_sent` | ✅ | Размер ответа в байтах |
+| `http_referer` | опциональная | Значение заголовка Referer |
+| `http_user_agent` | опциональная | Значение заголовка User-Agent |
+| `real_ip` | опциональная | Реальный IP клиента из заголовка доверенного прокси |
+
+Отсутствующие опциональные группы дают пустые поля — sentinel продолжает работу.
+
+### Пример: HAProxy HTTP log
+
+```yaml
+parser:
+  log_format: "regex"
+  regex_pattern: '(?P<remote_addr>\S+):\d+ \S+ \S+/\S+ \d+/\d+/\d+/\d+/\d+ (?P<status>\d+) (?P<bytes_sent>\d+) .* "(?P<request>[^"]*)"'
+```
+
+### Типичные ошибки
+
+- **Отсутствует обязательная группа** — sentinel завершается при старте с понятным сообщением об ошибке.
+- **Неверный формат времени** — поддерживается только `02/Jan/2006:15:04:05 -0700` (nginx `$time_local`). ISO 8601 не парсится; детекторы без временны́х зависимостей работают в любом случае.
+
+---
+
+## Мониторинг нескольких потоков
+
+Запустите один процесс sentinel, который наблюдает за несколькими лог-файлами одновременно — один конвейер на домен, полная изоляция.
+
+### Конфигурация
+
+```yaml
+streams:
+  - name: site1
+    log_file: /var/log/nginx/site1.access.log
+    threat_log: /var/log/nginx-sentinel/site1.threats.log
+  - name: site2
+    log_file: /var/log/nginx/site2.access.log
+    threat_log: /var/log/nginx-sentinel/site2.threats.log
+```
+
+> **Важно:** `streams:` и `general.log_file` взаимно исключают друг друга. Используйте одно или другое.
+
+Каждый поток имеет собственный трекер, scorer, whitelist и лог угроз. Медленная атака или сбой в одном потоке не влияет на остальные.
+
+### Обратная совместимость
+
+Классическая конфигурация с `general.log_file` продолжает работать — она автоматически конвертируется в один безымянный поток (метка `stream=""` в Prometheus). Миграция конфига не требуется.
+
+### Fail2Ban при нескольких потоках
+
+Каждый поток записывает в свой `threat_log`. Создайте отдельную ловушку Fail2Ban для каждого файла:
+
+```ini
+# /etc/fail2ban/jail.d/nginx-sentinel-site1.conf
+[nginx-sentinel-site1]
+enabled  = true
+filter   = nginx-sentinel
+logpath  = /var/log/nginx-sentinel/site1.threats.log
+maxretry = 1
+bantime  = 86400
+
+[nginx-sentinel-site2]
+enabled  = true
+filter   = nginx-sentinel
+logpath  = /var/log/nginx-sentinel/site2.threats.log
+maxretry = 1
+bantime  = 86400
+```
+
+### Grafana
+
+Дашборд включает переменную **Stream** для фильтрации панелей по потоку. Импортируйте `deploy/grafana/nginx-sentinel-dashboard.json` (v2).
+
+---
+
+## Prometheus-метрики
+
+Включить в `config.yaml`:
+
+```yaml
+metrics:
+  enabled: true
+  listen_addr: ":9117"   # порт HTTP-сервера метрик
+  # Опциональная basic auth — оставьте username пустым для отключения:
+  username: ""
+  password_hash: ""      # bcrypt-хеш; генерацию см. в deploy/grafana/README.md
+```
+
+### Эндпоинты
+
+| Эндпоинт | Авторизация | Описание |
+|----------|-------------|----------|
+| `/metrics` | опциональная basic auth | Scrape-эндпоинт Prometheus |
+| `/health` | нет | Liveness probe — всегда возвращает `200 {"status":"ok"}` |
+
+`/health` не требует учётных данных и безопасно открывается для балансировщиков,
+Docker `HEALTHCHECK` и k8s liveness/readiness probes.
+
+### Доступные метрики
+
+| Метрика | Тип | Описание |
+|---------|-----|----------|
+| `nginx_sentinel_lines_processed_total` | Counter | Обработано строк лога |
+| `nginx_sentinel_threats_total{level}` | Counter | Угрозы по уровню (`THREAT` / `WARN`) |
+| `nginx_sentinel_detector_hits_total{detector}` | Counter | Срабатывания по детектору |
+| `nginx_sentinel_tracked_ips` | Gauge | Текущее количество отслеживаемых IP |
+| `nginx_sentinel_suspicious_ips` | Gauge | IP с score выше alert threshold |
+
+### Конфиг scrape для Prometheus
+
+```yaml
+scrape_configs:
+  - job_name: "nginx-sentinel"
+    static_configs:
+      - targets: ["localhost:9117"]
+    # basic_auth:          # только если авторизация включена в конфиге sentinel
+    #   username: "prometheus"
+    #   password: "ваш-пароль-открытым-текстом"
+```
+
+Настройка дашборда Grafana — в [`deploy/grafana/README.md`](deploy/grafana/README.md).
 
 ---
 

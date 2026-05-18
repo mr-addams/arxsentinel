@@ -1,0 +1,41 @@
+# Traefik v2/v3 static configuration for nginx-sentinel integration.
+#
+# nginx-sentinel's "traefik" profile expects Apache CLF format (Common Log Format).
+# Traefik's default accessLog format is CLF — no format change is needed.
+# Additional fields (duration, router, service) appended by Traefik are silently ignored.
+
+# ── Access log configuration ───────────────────────────────────────────────────────────
+
+accessLog:
+  filePath: /var/log/traefik/access.log
+  # Default format is "common" (CLF) — compatible with sentinel's "traefik" profile.
+  # Do NOT set format: json — the JSON format splits method/path/proto into separate
+  # fields and is not supported by the traefik profile.
+  bufferingSize: 100
+
+# ── Example: Real client IP behind a cloud load balancer ──────────────────────────────
+#
+# If Traefik sits behind a trusted proxy (e.g., Cloudflare, AWS ALB):
+#
+#   entryPoints:
+#     web:
+#       address: ":80"
+#       forwardedHeaders:
+#         trustedIPs:
+#           - 103.21.244.0/22  # Cloudflare CIDRs
+#           - 103.22.200.0/22
+#
+# With trustedIPs set, Traefik uses X-Forwarded-For to determine the real client IP,
+# and the CLF log line reflects the correct IP in the first field.
+
+# ── Minimal entrypoints for reference ────────────────────────────────────────────────
+
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+api:
+  dashboard: true
+  insecure: false
