@@ -294,6 +294,11 @@ func LoadConfig(path string) (Config, error) {
 		return cfg, fmt.Errorf("invalid config %q: general.log_file and streams: are mutually exclusive — use one or the other", path)
 	}
 	if len(cfg.Streams) == 0 {
+		// Apply the log_file default only in single-stream mode so it does not
+		// trigger the mutual-exclusion check when streams: is explicitly set.
+		if cfg.General.LogFile == "" {
+			cfg.General.LogFile = "/var/log/nginx/access.log"
+		}
 		cfg.Streams = []StreamConfig{{
 			Name:      "",
 			LogFile:   cfg.General.LogFile,
@@ -368,7 +373,8 @@ func validateConfig(cfg *Config) error {
 func defaultConfig() Config {
 	return Config{
 		General: GeneralConfig{
-			LogFile:           "/var/log/nginx/access.log",
+			// LogFile default is applied lazily in the backward-compat block below
+			// so it does not conflict with streams: when streams: is explicitly set.
 			PIDFile:           "/var/run/nginx-sentinel.pid",
 			LinesBufSize:      1000,
 			TailRetryInterval: Duration(5 * time.Second),

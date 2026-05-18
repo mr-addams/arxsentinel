@@ -267,6 +267,109 @@ func TestLoadConfig_StderrOnMissingFile(t *testing.T) {
 	}
 }
 
+// ========================== Tests: multi-stream config ================================
+
+func TestLoadConfig_BackwardCompat_SingleStream(t *testing.T) {
+	// Classic general.log_file must be converted to a single unnamed stream.
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+output:
+  threat_log: /var/log/nginx-sentinel/threats.log
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if len(cfg.Streams) != 1 {
+		t.Fatalf("Streams: want 1, got %d", len(cfg.Streams))
+	}
+	s := cfg.Streams[0]
+	if s.Name != "" {
+		t.Errorf("Streams[0].Name: want empty string, got %q", s.Name)
+	}
+	if s.LogFile != "/var/log/nginx/access.log" {
+		t.Errorf("Streams[0].LogFile: want %q, got %q", "/var/log/nginx/access.log", s.LogFile)
+	}
+	if s.ThreatLog != "/var/log/nginx-sentinel/threats.log" {
+		t.Errorf("Streams[0].ThreatLog: want %q, got %q", "/var/log/nginx-sentinel/threats.log", s.ThreatLog)
+	}
+}
+
+func TestLoadConfig_MultiStream(t *testing.T) {
+	// Explicit streams: block must produce one StreamConfig per entry.
+	path := writeTempYAML(t, `
+streams:
+  - name: site1
+    log_file: /var/log/nginx/site1.access.log
+    threat_log: /var/log/nginx-sentinel/site1.threats.log
+  - name: site2
+    log_file: /var/log/nginx/site2.access.log
+    threat_log: /var/log/nginx-sentinel/site2.threats.log
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if len(cfg.Streams) != 2 {
+		t.Fatalf("Streams: want 2, got %d", len(cfg.Streams))
+	}
+	if cfg.Streams[0].Name != "site1" {
+		t.Errorf("Streams[0].Name: want %q, got %q", "site1", cfg.Streams[0].Name)
+	}
+	if cfg.Streams[1].LogFile != "/var/log/nginx/site2.access.log" {
+		t.Errorf("Streams[1].LogFile: want %q, got %q",
+			"/var/log/nginx/site2.access.log", cfg.Streams[1].LogFile)
+	}
+}
+
+func TestLoadConfig_MutualExclusion(t *testing.T) {
+	// Combining general.log_file and streams: must return an error.
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+streams:
+  - name: site1
+    log_file: /var/log/nginx/site1.access.log
+    threat_log: /var/log/nginx-sentinel/site1.threats.log
+output:
+  threat_log: /var/log/nginx-sentinel/threats.log
+`)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("LoadConfig: want error for combining general.log_file and streams:, got nil")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error must mention 'mutually exclusive', got: %v", err)
+	}
+}
+
+func TestLoadConfig_StreamMissingLogFile(t *testing.T) {
+	// A stream without log_file must fail validation.
+	path := writeTempYAML(t, `
+streams:
+  - name: site1
+    threat_log: /var/log/nginx-sentinel/site1.threats.log
+`)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("LoadConfig: want error for missing log_file, got nil")
+	}
+}
+
+func TestLoadConfig_StreamMissingThreatLog(t *testing.T) {
+	// A stream without threat_log must fail validation.
+	path := writeTempYAML(t, `
+streams:
+  - name: site1
+    log_file: /var/log/nginx/site1.access.log
+`)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("LoadConfig: want error for missing threat_log, got nil")
+	}
+}
+
 // ========================== Helper ====================================================
 
 // writeTempYAML creates a temporary file with the given content and returns its path.
