@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — installs nginx-sentinel on the system.
+# install.sh — installs arxsentinel on the system.
 # Idempotent: safe to run multiple times.
 #   Updated on every run: binary, systemd unit, fail2ban configs, logrotate.
 #   Not overwritten: config.yaml (to preserve production settings).
@@ -31,15 +31,15 @@ fi
 
 # ── Check for deploy files and config ────────────────────────────────────────────────
 for f in config.yaml \
-          deploy/nginx-sentinel.service deploy/logrotate/nginx-sentinel \
-          deploy/fail2ban/filter.d/nginx-sentinel.conf \
-          deploy/fail2ban/jail.d/nginx-sentinel.conf; do
+          deploy/arxsentinel.service deploy/logrotate/arxsentinel \
+          deploy/fail2ban/filter.d/arxsentinel.conf \
+          deploy/fail2ban/jail.d/arxsentinel.conf; do
     [ -f "$f" ] || { echo "[ERROR] missing file: $f"; exit 1; }
 done
 
-BINARY=/usr/local/bin/nginx-sentinel
-CONFIG=/etc/nginx-sentinel/config.yaml
-LOG_DIR=/var/log/nginx-sentinel
+BINARY=/usr/local/bin/arxsentinel
+CONFIG=/etc/arxsentinel/config.yaml
+LOG_DIR=/var/log/arxsentinel
 
 # ── 1. Build binary ───────────────────────────────────────────────────────────────────
 echo "[1/6] Building..."
@@ -47,27 +47,27 @@ go build -o "$BINARY" .
 
 # ── 2. System user ────────────────────────────────────────────────────────────────────
 # || true: user may already exist on repeated runs — do not abort the script.
-echo "[2/6] User nginx-sentinel..."
-useradd --system --no-create-home --shell /usr/sbin/nologin nginx-sentinel 2>/dev/null || true
+echo "[2/6] User arxsentinel..."
+useradd --system --no-create-home --shell /usr/sbin/nologin arxsentinel 2>/dev/null || true
 
 # ── 3. Directories and config ─────────────────────────────────────────────────────────
 echo "[3/6] Directories and config..."
-install -d -o nginx-sentinel -g nginx-sentinel "$LOG_DIR"
-install -d /etc/nginx-sentinel
+install -d -o arxsentinel -g arxsentinel "$LOG_DIR"
+install -d /etc/arxsentinel
 # Config is copied only if it does not yet exist — do not overwrite production settings.
 [ -f "$CONFIG" ] || install -m 644 config.yaml "$CONFIG"
 
 # ── 4. systemd unit ───────────────────────────────────────────────────────────────────
 echo "[4/6] systemd..."
-install -m 644 deploy/nginx-sentinel.service /etc/systemd/system/
+install -m 644 deploy/arxsentinel.service /etc/systemd/system/arxsentinel.service
 systemctl daemon-reload
-systemctl enable nginx-sentinel
+systemctl enable arxsentinel
 
 # ── 5. Fail2Ban ───────────────────────────────────────────────────────────────────────
 if $HAS_FAIL2BAN; then
     echo "[5/6] Fail2Ban..."
-    install -m 644 deploy/fail2ban/filter.d/nginx-sentinel.conf /etc/fail2ban/filter.d/
-    install -m 644 deploy/fail2ban/jail.d/nginx-sentinel.conf   /etc/fail2ban/jail.d/
+    install -m 644 deploy/fail2ban/filter.d/arxsentinel.conf /etc/fail2ban/filter.d/
+    install -m 644 deploy/fail2ban/jail.d/arxsentinel.conf   /etc/fail2ban/jail.d/
     # || true: fail2ban may not be running at install time — do not abort the script.
     systemctl reload fail2ban 2>/dev/null || true
 else
@@ -76,8 +76,8 @@ fi
 
 # ── 6. Logrotate ──────────────────────────────────────────────────────────────────────
 echo "[6/6] Logrotate..."
-install -m 644 deploy/logrotate/nginx-sentinel /etc/logrotate.d/
+install -m 644 deploy/logrotate/arxsentinel /etc/logrotate.d/
 
 echo ""
-echo "Installation complete. Start with: systemctl start nginx-sentinel"
-echo "Status:                            systemctl status nginx-sentinel"
+echo "Installation complete. Start with: systemctl start arxsentinel"
+echo "Status:                            systemctl status arxsentinel"

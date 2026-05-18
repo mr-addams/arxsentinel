@@ -1,5 +1,5 @@
 // ========================== Module sys/metrics =========================================
-//   Prometheus metrics for nginx-sentinel.
+//   Prometheus metrics for ArxSentinel.
 //
 //   WHAT IS HERE:
 //     - Metrics struct — holds all registered prometheus collectors
@@ -34,7 +34,7 @@ const (
 	LevelWarn   = "WARN"
 )
 
-// Metrics holds all Prometheus collectors for nginx-sentinel.
+// Metrics holds all Prometheus collectors for ArxSentinel.
 type Metrics struct {
 	linesProcessed *prometheus.CounterVec
 	threats        *prometheus.CounterVec
@@ -48,23 +48,23 @@ type Metrics struct {
 func New(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
 		linesProcessed: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "nginx_sentinel_lines_processed_total",
+			Name: "arx_sentinel_lines_processed_total",
 			Help: "Total number of log lines processed.",
 		}, []string{"stream"}),
 		threats: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "nginx_sentinel_threats_total",
+			Name: "arx_sentinel_threats_total",
 			Help: "Total threat log entries written, by severity level.",
 		}, []string{"stream", "level"}),
 		detectorHits: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "nginx_sentinel_detector_hits_total",
+			Name: "arx_sentinel_detector_hits_total",
 			Help: "Total detector hits, by detector name.",
 		}, []string{"stream", "detector"}),
 		trackedIPs: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "nginx_sentinel_tracked_ips",
+			Name: "arx_sentinel_tracked_ips",
 			Help: "Current number of IPs tracked in memory.",
 		}, []string{"stream"}),
 		suspiciousIPs: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "nginx_sentinel_suspicious_ips",
+			Name: "arx_sentinel_suspicious_ips",
 			Help: "Current number of IPs with a non-zero suspicion score.",
 		}, []string{"stream"}),
 	}
