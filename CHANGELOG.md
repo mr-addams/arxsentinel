@@ -7,6 +7,78 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.0.0] — 2026-05-18
+
+### Added
+
+- **ArxSentinel branding** — project renamed from `nginx-sentinel` to `arxsentinel`;
+  binary, service unit, config paths, and Fail2Ban filter all updated accordingly
+- **Universal web server support** — documented profiles for Apache, Caddy, Traefik,
+  and HAProxy; nginx is now "first example" rather than the only supported target
+- **Migration script** — `scripts/migrate.sh` automates upgrade from `nginx-sentinel`:
+  stops the old service, copies config to new path, enables `arxsentinel.service`,
+  updates Fail2Ban jail; idempotent with dry-run mode
+- **Grafana legacy dashboard** — `deploy/grafana/nginx-sentinel-dashboard-legacy.json`
+  preserved for users who need to migrate dashboards manually
+- **Updated landing pages** — EN/RU/UK versions rebranded to ArxSentinel with
+  multi-stream and server profile highlights; SEO metadata and hreflang updated
+
+### Changed
+
+- **Binary name**: `nginx-sentinel` → `arxsentinel`
+- **Systemd unit**: `nginx-sentinel.service` → `arxsentinel.service`
+- **Default config directory**: `/etc/nginx-sentinel/` → `/etc/arxsentinel/`
+- **Default log directory**: `/var/log/nginx-sentinel/` → `/var/log/arxsentinel/`
+- **Fail2Ban filter file**: `nginx-sentinel.conf` → `arxsentinel.conf`
+- **Prometheus metric prefix**: `nginx_sentinel_*` → `arx_sentinel_*` (all metrics)
+- **Grafana dashboard**: all panels updated to `arx_sentinel_*` metric names;
+  `$stream` multi-select variable retained from v0.3.0
+
+### Breaking Changes
+
+- All Prometheus metric names changed: `nginx_sentinel_*` → `arx_sentinel_*`
+- Service unit and binary renamed — existing init scripts, cron jobs, and monitoring
+  rules referencing `nginx-sentinel` must be updated
+- Config path changed — the old `/etc/nginx-sentinel/config.yaml` is not read
+  automatically; use `scripts/migrate.sh` or copy manually
+
+---
+
+### Upgrading from 0.x to 1.0.0
+
+Run `scripts/migrate.sh` for an automated upgrade, or follow the table below.
+
+| What changed | Before (0.x) | After (1.0.0) | Action |
+|---|---|---|---|
+| Binary name | `nginx-sentinel` | `arxsentinel` | Update shell scripts and cron jobs |
+| Systemd unit | `nginx-sentinel.service` | `arxsentinel.service` | `systemctl disable nginx-sentinel && systemctl enable arxsentinel` |
+| Config directory | `/etc/nginx-sentinel/` | `/etc/arxsentinel/` | `cp /etc/nginx-sentinel/config.yaml /etc/arxsentinel/config.yaml` |
+| Log directory | `/var/log/nginx-sentinel/` | `/var/log/arxsentinel/` | Update `general.log_file` in config if overridden |
+| Fail2Ban filter | `nginx-sentinel.conf` | `arxsentinel.conf` | Update `/etc/fail2ban/jail.local`: `filter = arxsentinel` |
+| Metric prefix | `nginx_sentinel_*` | `arx_sentinel_*` | Update all PromQL queries and alert rules (see below) |
+| Grafana dashboard | v0.3 JSON | v1.0 JSON | Re-import `deploy/grafana/arxsentinel-dashboard.json` |
+
+**Prometheus migration — metric rename examples:**
+
+```promql
+# Before (0.x)
+nginx_sentinel_threats_total{level="THREAT"}
+nginx_sentinel_lines_processed_total
+nginx_sentinel_tracked_ips
+nginx_sentinel_detector_hits_total{detector="bruteforce"}
+
+# After (1.0.0)
+arx_sentinel_threats_total{level="THREAT"}
+arx_sentinel_lines_processed_total
+arx_sentinel_tracked_ips
+arx_sentinel_detector_hits_total{detector="bruteforce"}
+```
+
+All metric names follow the pattern: replace `nginx_sentinel_` prefix with `arx_sentinel_`.
+The `stream` label introduced in v0.3.0 is unchanged.
+
+---
+
 ## [0.3.0] — 2026-05-18
 
 ### Added
@@ -139,8 +211,9 @@ breakdown until re-imported.
   Fail2Ban filter/jail included
 - Fail2Ban integration: `failregex` matching the threat-log format
 
-[0.3.0]: https://github.com/mr-addams/nginx-sentinel/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/mr-addams/nginx-sentinel/compare/v0.1.3...v0.2.0
-[0.1.3]: https://github.com/mr-addams/nginx-sentinel/compare/v0.1.1...v0.1.3
-[0.1.1]: https://github.com/mr-addams/nginx-sentinel/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/mr-addams/nginx-sentinel/releases/tag/v0.1.0
+[1.0.0]: https://github.com/mr-addams/arxsentinel/compare/v0.3.0...v1.0.0
+[0.3.0]: https://github.com/mr-addams/arxsentinel/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/mr-addams/arxsentinel/compare/v0.1.3...v0.2.0
+[0.1.3]: https://github.com/mr-addams/arxsentinel/compare/v0.1.1...v0.1.3
+[0.1.1]: https://github.com/mr-addams/arxsentinel/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/mr-addams/arxsentinel/releases/tag/v0.1.0
