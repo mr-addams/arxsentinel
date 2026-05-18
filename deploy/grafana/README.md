@@ -1,4 +1,4 @@
-# nginx-sentinel — Grafana Dashboard
+# ArxSentinel — Grafana Dashboard
 
 ## Requirements
 
@@ -13,7 +13,7 @@ Add to `prometheus.yml`:
 
 ```yaml
 scrape_configs:
-  - job_name: "nginx-sentinel"
+  - job_name: "arxsentinel"
     static_configs:
       - targets: ["localhost:9117"]
     # If basic auth is enabled (see Step 2):
@@ -95,7 +95,7 @@ metrics:
 ### Via Grafana UI
 
 1. Open Grafana → **Dashboards → Import**
-2. Upload `nginx-sentinel-dashboard.json`
+2. Upload `arxsentinel-dashboard.json`
 3. Select your Prometheus datasource when prompted
 4. Click **Import**
 
@@ -104,15 +104,15 @@ metrics:
 Copy the dashboard file to Grafana's provisioning directory:
 
 ```bash
-cp nginx-sentinel-dashboard.json /etc/grafana/provisioning/dashboards/
+cp arxsentinel-dashboard.json /etc/grafana/provisioning/dashboards/
 ```
 
-Create or update `/etc/grafana/provisioning/dashboards/nginx-sentinel.yaml`:
+Create or update `/etc/grafana/provisioning/dashboards/arxsentinel.yaml`:
 
 ```yaml
 apiVersion: 1
 providers:
-  - name: nginx-sentinel
+  - name: arxsentinel
     type: file
     options:
       path: /etc/grafana/provisioning/dashboards
@@ -130,13 +130,22 @@ systemctl restart grafana-server
 
 | Panel | Type | Metric |
 |-------|------|--------|
-| Tracked IPs / Suspicious IPs | Stat | `nginx_sentinel_tracked_ips`, `nginx_sentinel_suspicious_ips` |
-| Threat Rate (THREAT/min) | Stat | `nginx_sentinel_threats_total{level="THREAT"}` |
-| Lines/s | Stat | `nginx_sentinel_lines_processed_total` |
-| Total THREATs | Stat | `nginx_sentinel_threats_total{level="THREAT"}` |
-| Threat Rate over Time | Timeseries | `nginx_sentinel_threats_total` |
-| Log Lines Processed | Timeseries | `nginx_sentinel_lines_processed_total` |
-| Detector Hits | Bar chart | `nginx_sentinel_detector_hits_total` |
-| WARN / THREAT Split | Pie chart | `nginx_sentinel_threats_total` |
+| Tracked IPs / Suspicious IPs | Stat | `arx_sentinel_tracked_ips`, `arx_sentinel_suspicious_ips` |
+| Threat Rate (THREAT/min) | Stat | `arx_sentinel_threats_total{level="THREAT"}` |
+| Lines/s | Stat | `arx_sentinel_lines_processed_total` |
+| Total THREATs | Stat | `arx_sentinel_threats_total{level="THREAT"}` |
+| Threat Rate over Time | Timeseries | `arx_sentinel_threats_total` |
+| Log Lines Processed | Timeseries | `arx_sentinel_lines_processed_total` |
+| Detector Hits | Bar chart | `arx_sentinel_detector_hits_total` |
+| WARN / THREAT Split | Pie chart | `arx_sentinel_threats_total` |
 
 The `$job` variable at the top filters by Prometheus job label — useful when running multiple sentinel instances.
+
+---
+
+## Migrating from nginx-sentinel
+
+The legacy dashboard (`nginx-sentinel-dashboard-legacy.json`) is kept for reference.
+It queries the old `nginx_sentinel_*` metric names and can be used during the transition period.
+
+After upgrading to ArxSentinel, import `arxsentinel-dashboard.json` which queries `arx_sentinel_*` metrics.
