@@ -9,8 +9,9 @@ permissions:
 
 jobs:
   integration:
-    name: Pre-release integration tests (all server profiles)
+    name: Integration tests (55 checks — 5 servers × 7 detectors + 4 proxies × 5 backends)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -20,13 +21,6 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-
-      - name: Cache Docker layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ hashFiles('tests/integration/dockerfiles/**') }}
-          restore-keys: ${{ runner.os }}-buildx-
 
       - name: Run integration tests
         run: bash tests/integration/run.sh
