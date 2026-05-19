@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Integration test runner.
-# Builds arxsentinel, spins up 5 server containers, fires attack scenarios,
-# and verifies each server's threat log.
+# Builds arxsentinel, spins up 6 direct-test server containers + nginx-rp as proxy,
+# fires attack scenarios, and verifies each server's threat log.
 #
 # Usage:
 #   bash tests/integration/run.sh            # run from repo root
@@ -28,7 +28,7 @@ cleanup() {
     for pid in "${SENTINEL_PIDS[@]:-}"; do
         kill "$pid" 2>/dev/null || true
     done
-    rm -f /tmp/arxsentinel-{nginx,apache,traefik,caddy,haproxy}.pid
+    rm -f /tmp/arxsentinel-{nginx,apache,traefik,caddy,haproxy,litespeed}.pid
     rm -f /tmp/arxsentinel-{nginx-proxy,apache-proxy,traefik-proxy,caddy-proxy,haproxy-proxy}.pid
 
     # Stop HAProxy log capture (proxy and backend).
@@ -57,6 +57,7 @@ mkdir -p \
     "$LOGS_DIR/traefik" \
     "$LOGS_DIR/caddy" \
     "$LOGS_DIR/haproxy" \
+    "$LOGS_DIR/litespeed" \
     "$LOGS_DIR/apache-proxy" \
     "$LOGS_DIR/traefik-proxy" \
     "$LOGS_DIR/caddy-proxy" \
@@ -67,6 +68,8 @@ mkdir -p \
 for f in nginx apache traefik caddy haproxy; do
     touch "$LOGS_DIR/$f/access.log"
 done
+# OLS writes to localhost.access.log (docker vhost template naming).
+touch "$LOGS_DIR/litespeed/localhost.access.log"
 # Proxy-chain backend log files.
 touch "$LOGS_DIR/nginx/access-proxy.log"
 touch "$LOGS_DIR/apache-proxy/access.log"
@@ -103,11 +106,11 @@ docker compose -f "$INT_DIR/docker-compose.yml" logs -f --no-log-prefix haproxy-
     >> "$LOGS_DIR/haproxy-proxy/access.log" 2>/dev/null &
 HAPROXY_BACKEND_LOG_PID=$!
 
-# ── Step 5: start 5 arxsentinel instances ────────────────────────────────────────────
+# ── Step 5: start 6 arxsentinel instances ────────────────────────────────────────────
 
 echo "[run] starting arxsentinel instances..."
 
-SERVERS=(nginx apache traefik caddy haproxy)
+SERVERS=(nginx apache traefik caddy haproxy litespeed)
 
 SENTINEL_PIDS=()
 for server in "${SERVERS[@]}"; do

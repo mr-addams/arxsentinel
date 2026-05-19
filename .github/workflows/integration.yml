@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   integration:
-    name: Integration tests (55 checks — 5 servers × 7 detectors + 4 proxies × 5 backends)
+    name: Integration tests (62 checks — 6 servers × 7 detectors + 4 proxies × 5 backends)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -60,6 +60,11 @@ jobs:
             v=$(docker run --rm integration-caddy caddy version 2>&1 \
               | grep -oP 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "?")
             echo "| caddy | Caddy | $v | \`caddy:latest\` (custom build) |"
+
+            v=$(docker run --rm --entrypoint="" litespeedtech/openlitespeed:latest \
+              /usr/local/lsws/bin/lshttpd -v 2>&1 \
+              | grep -oP 'LiteSpeed[/ ]\K[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "?")
+            echo "| litespeed | OpenLiteSpeed | $v | \`litespeedtech/openlitespeed:latest\` |"
 
           } > "$out"
           cat "$out" >> "$GITHUB_STEP_SUMMARY"
@@ -117,7 +122,7 @@ jobs:
           # Failures grouped by product — all-product-X failures strongly suggest upstream change.
           echo "### Failures by product" >> "$summary"
           echo "" >> "$summary"
-          for product in nginx apache traefik caddy haproxy; do
+          for product in nginx apache traefik caddy haproxy litespeed; do
             direct=$(grep -cE "^FAIL \[$product/" "$verify" 2>/dev/null || echo 0)
             chain=$(grep -cE "^FAIL \[chain/[^]]+→$product\]" "$verify" 2>/dev/null || echo 0)
             [ "$((direct + chain))" -gt 0 ] && \

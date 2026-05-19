@@ -87,6 +87,18 @@ services:
       - caddy-backend
       - haproxy-backend
 
+  # litespeed: OpenLiteSpeed serving the webapp.
+  # OLS docker template uses /var/www/vhosts/localhost/html as docRoot and writes
+  # access logs to logs/localhost.access.log — no config override needed.
+  # PHP is served via the built-in lsphp LSAPI handler.
+  litespeed:
+    image: litespeedtech/openlitespeed:latest
+    ports:
+      - "8087:80"
+    volumes:
+      - ./webapp:/var/www/vhosts/localhost/html:ro
+      - ./logs/litespeed:/usr/local/lsws/logs
+
   # ── Proxy-chain backends ───────────────────────────────────────────────────────────────
   # Each backend trusts X-Forwarded-For from the Docker proxy subnet (172.16.0.0/12)
   # and logs the real attacker IP.
