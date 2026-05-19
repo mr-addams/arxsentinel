@@ -1,0 +1,42 @@
+{
+    # Disable automatic HTTPS for local testing.
+    auto_https off
+    admin off
+}
+
+:80 {
+    # Path-based routing for proxy-chain tests.
+    # handle_path strips the matched prefix before forwarding.
+    handle_path /backend-nginx/* {
+        reverse_proxy nginx:8080
+    }
+
+    handle_path /backend-apache/* {
+        reverse_proxy apache-proxy:80
+    }
+
+    handle_path /backend-traefik/* {
+        reverse_proxy traefik-backend:80
+    }
+
+    handle_path /backend-caddy/* {
+        reverse_proxy caddy-backend:80
+    }
+
+    handle_path /backend-haproxy/* {
+        reverse_proxy haproxy-backend:80
+    }
+
+    # Default: proxy to nginx backend — real 200/404 responses for direct tests.
+    handle {
+        reverse_proxy nginx:80
+    }
+
+    log {
+        output file /var/log/caddy/access.log
+        # transform-encoder outputs Apache CLF — required by the "caddy" sentinel profile.
+        format transform `{request>remote_addr} - {user_id} [{ts}] "{request>method} {request>uri} {request>proto}" {status} {size} "{>Referer}" "{>User-Agent}"` {
+            time_format "02/Jan/2006:15:04:05 -0700"
+        }
+    }
+}

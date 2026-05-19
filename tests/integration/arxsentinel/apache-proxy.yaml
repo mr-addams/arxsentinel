@@ -1,0 +1,14 @@
+general:
+  log_file: logs/apache-proxy/access.log
+  pid_file: /tmp/arxsentinel-apache-proxy.pid
+  tail_retry_interval: "2s"
+
+parser:
+  profile: apache
+
+output:
+  threat_log: logs/threats/apache-proxy.log
+  operational_log: logs/threats/sentinel-apache-proxy.log
+
+logging:
+  console_color: false

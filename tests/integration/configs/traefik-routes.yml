@@ -1,0 +1,69 @@
+# Dynamic config for traefik proxy (proxy-chain integration tests).
+# Path-based routing: /backend-<name>/ → corresponding backend service.
+# StripPrefix middleware removes the routing prefix before forwarding.
+# Default route: all other traffic → nginx:80 (existing direct tests).
+http:
+  routers:
+    backend-nginx:
+      rule: "PathPrefix(`/backend-nginx`)"
+      middlewares: ["strip-nginx"]
+      service: svc-nginx-backend
+      entryPoints: [web]
+    backend-apache:
+      rule: "PathPrefix(`/backend-apache`)"
+      middlewares: ["strip-apache"]
+      service: svc-apache-proxy
+      entryPoints: [web]
+    backend-traefik:
+      rule: "PathPrefix(`/backend-traefik`)"
+      middlewares: ["strip-traefik"]
+      service: svc-traefik-backend
+      entryPoints: [web]
+    backend-caddy:
+      rule: "PathPrefix(`/backend-caddy`)"
+      middlewares: ["strip-caddy"]
+      service: svc-caddy-backend
+      entryPoints: [web]
+    backend-haproxy:
+      rule: "PathPrefix(`/backend-haproxy`)"
+      middlewares: ["strip-haproxy"]
+      service: svc-haproxy-backend
+      entryPoints: [web]
+    default:
+      rule: "PathPrefix(`/`)"
+      service: svc-nginx-direct
+      entryPoints: [web]
+
+  middlewares:
+    strip-nginx:
+      stripPrefix: { prefixes: ["/backend-nginx"] }
+    strip-apache:
+      stripPrefix: { prefixes: ["/backend-apache"] }
+    strip-traefik:
+      stripPrefix: { prefixes: ["/backend-traefik"] }
+    strip-caddy:
+      stripPrefix: { prefixes: ["/backend-caddy"] }
+    strip-haproxy:
+      stripPrefix: { prefixes: ["/backend-haproxy"] }
+
+  services:
+    # Proxy-chain backends (trust X-Forwarded-For).
+    svc-nginx-backend:
+      loadBalancer:
+        servers: [{ url: "http://nginx:8080" }]
+    svc-apache-proxy:
+      loadBalancer:
+        servers: [{ url: "http://apache-proxy:80" }]
+    svc-traefik-backend:
+      loadBalancer:
+        servers: [{ url: "http://traefik-backend:80" }]
+    svc-caddy-backend:
+      loadBalancer:
+        servers: [{ url: "http://caddy-backend:80" }]
+    svc-haproxy-backend:
+      loadBalancer:
+        servers: [{ url: "http://haproxy-backend:80" }]
+    # Default: direct nginx backend (existing tests).
+    svc-nginx-direct:
+      loadBalancer:
+        servers: [{ url: "http://nginx:80" }]

@@ -1,0 +1,129 @@
+services:
+
+  # php-fpm: processes .php requests forwarded from nginx.
+  php-fpm:
+    image: php:8-fpm-alpine
+    volumes:
+      - ./webapp:/var/www/html:ro
+
+  # Backend: nginx serves real 200/404 responses with static + PHP content.
+  # Also acts as upstream for traefik, caddy, and haproxy.
+  nginx:
+    image: nginx:latest
+    ports:
+      - "8081:80"
+    volumes:
+      - ./configs/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./webapp:/var/www/html:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - php-fpm
+
+  apache:
+    image: httpd:latest
+    ports:
+      - "8082:80"
+    volumes:
+      - ./configs/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro
+      - ./logs/apache:/var/log/apache2
+
+  traefik:
+    image: traefik:latest
+    ports:
+      - "8083:80"
+    volumes:
+      - ./configs/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./configs/traefik-routes.yml:/etc/traefik/routes.yml:ro
+      - ./logs/traefik:/var/log/traefik
+    depends_on:
+      - nginx
+      - apache-proxy
+      - traefik-backend
+      - caddy-backend
+      - haproxy-backend
+
+  caddy:
+    build:
+      context: .
+      dockerfile: dockerfiles/Caddy.Dockerfile
+    ports:
+      - "8084:80"
+    volumes:
+      - ./configs/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./logs/caddy:/var/log/caddy
+    depends_on:
+      - nginx
+      - apache-proxy
+      - traefik-backend
+      - caddy-backend
+      - haproxy-backend
+
+  haproxy:
+    image: haproxy:latest
+    ports:
+      - "8085:80"
+    volumes:
+      - ./configs/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - nginx
+      - apache-proxy
+      - traefik-backend
+      - caddy-backend
+      - haproxy-backend
+    # stdout captured by run.sh → logs/haproxy/access.log
+
+  # nginx-rp: nginx acting as a reverse proxy (4th proxy for proxy-chain tests).
+  # Routes /backend-<name>/ to each trusted backend; sets X-Forwarded-For.
+  nginx-rp:
+    image: nginx:latest
+    ports:
+      - "8086:80"
+    volumes:
+      - ./configs/nginx-rp.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - nginx
+      - apache-proxy
+      - traefik-backend
+      - caddy-backend
+      - haproxy-backend
+
+  # ── Proxy-chain backends ───────────────────────────────────────────────────────────────
+  # Each backend trusts X-Forwarded-For from the Docker proxy subnet (172.16.0.0/12)
+  # and logs the real attacker IP.
+
+  # apache-proxy: Apache with mod_remoteip — %h resolves to the XFF client IP.
+  apache-proxy:
+    image: httpd:latest
+    volumes:
+      - ./configs/httpd-proxy.conf:/usr/local/apache2/conf/httpd.conf:ro
+      - ./logs/apache-proxy:/var/log/apache2
+
+  # traefik-backend: Traefik with forwardedHeaders.trustedIPs — logs real client IP in CLF.
+  traefik-backend:
+    image: traefik:latest
+    volumes:
+      - ./configs/traefik-backend.yml:/etc/traefik/traefik.yml:ro
+      - ./configs/traefik-backend-routes.yml:/etc/traefik/routes.yml:ro
+      - ./logs/traefik-proxy:/var/log/traefik
+    depends_on:
+      - nginx
+
+  # caddy-backend: Caddy logging X-Forwarded-For header as client IP field in CLF.
+  caddy-backend:
+    build:
+      context: .
+      dockerfile: dockerfiles/Caddy.Dockerfile
+    volumes:
+      - ./configs/Caddyfile-backend:/etc/caddy/Caddyfile:ro
+      - ./logs/caddy-proxy:/var/log/caddy
+    depends_on:
+      - nginx
+
+  # haproxy-backend: HAProxy with custom log-format using XFF instead of %ci.
+  # stdout captured by run.sh → logs/haproxy-proxy/access.log
+  haproxy-backend:
+    image: haproxy:latest
+    volumes:
+      - ./configs/haproxy-backend.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - nginx

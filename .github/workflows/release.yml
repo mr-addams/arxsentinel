@@ -9,9 +9,13 @@ permissions:
   contents: write
 
 jobs:
+  integration:
+    uses: ./.github/workflows/integration.yml
+
   release:
     name: Build & publish stable release
     runs-on: ubuntu-latest
+    needs: integration
 
     steps:
       - name: Checkout
@@ -61,3 +65,23 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download tested versions
+        if: steps.tag.outputs.skip != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: integration-versions
+          path: .
+        continue-on-error: true
+
+      - name: Append tested versions to release notes
+        if: success() && steps.tag.outputs.skip != 'true'
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          if [ -f tested-versions.md ]; then
+            current=$(gh release view "$tag" --json body -q '.body')
+            gh release edit "$tag" \
+              --notes "$(printf '%s\n\n---\n\n%s' "$current" "$(cat tested-versions.md)")"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,14 @@
+general:
+  log_file: logs/caddy-proxy/access-proxy.log
+  pid_file: /tmp/arxsentinel-caddy-proxy.pid
+  tail_retry_interval: "2s"
+
+parser:
+  profile: caddy
+
+output:
+  threat_log: logs/threats/caddy-proxy.log
+  operational_log: logs/threats/sentinel-caddy-proxy.log
+
+logging:
+  console_color: false

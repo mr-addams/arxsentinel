@@ -1,0 +1,14 @@
+general:
+  log_file: logs/nginx/access-proxy.log
+  pid_file: /tmp/arxsentinel-nginx-proxy.pid
+  tail_retry_interval: "2s"
+
+parser:
+  log_format: combined
+
+output:
+  threat_log: logs/threats/nginx-proxy.log
+  operational_log: logs/threats/sentinel-nginx-proxy.log
+
+logging:
+  console_color: false

@@ -1,0 +1,15 @@
+# Dynamic config for traefik-backend (proxy-chain test).
+# Routes all traffic to nginx:80 so probe paths return real 404s.
+http:
+  routers:
+    default:
+      rule: "PathPrefix(`/`)"
+      service: nginx-upstream
+      entryPoints:
+        - web
+
+  services:
+    nginx-upstream:
+      loadBalancer:
+        servers:
+          - url: "http://nginx:80"

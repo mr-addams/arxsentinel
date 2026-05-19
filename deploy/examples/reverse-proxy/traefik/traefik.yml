@@ -1,16 +1,33 @@
-# Traefik static configuration for use with nginx-sentinel.
+# Traefik static configuration for use with arxsentinel.
 #
 # Traefik passes the real client IP to upstream via X-Forwarded-For.
-# The trustedIPs list tells Traefik which proxy addresses to trust when
-# reading the incoming X-Forwarded-For chain — prevents IP spoofing.
+# forwardedHeaders.trustedIPs tells Traefik which incoming proxy addresses
+# are trusted to have already set a valid X-Forwarded-For — prevents spoofing.
 #
-# Tested with: Traefik v2.x / v3.x
+# Tested with: Traefik v3.x
 
 entryPoints:
   web:
     address: ":80"
+    # forwardedHeaders: list of upstream proxy CIDRs whose X-Forwarded-For
+    # Traefik should trust. Traefik always appends the real client IP to
+    # X-Forwarded-For before forwarding; trustedIPs only affects whether
+    # Traefik trusts a pre-existing XFF from those addresses.
+    forwardedHeaders:
+      # Adjust to your actual upstream proxy IP or CIDR.
+      trustedIPs:
+        - "127.0.0.1/32"
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
   websecure:
     address: ":443"
+    forwardedHeaders:
+      trustedIPs:
+        - "127.0.0.1/32"
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
 
 providers:
   docker:
@@ -26,19 +43,5 @@ certificatesResolvers:
       httpChallenge:
         entryPoint: web
 
-# forwardedHeaders tells Traefik which upstream IPs are trusted to set
-# X-Forwarded-For. Traefik then writes the real client IP into
-# X-Forwarded-For before forwarding to nginx.
-#
-# insecure: true is NOT recommended for production — use trustedIPs.
 api:
   insecure: false
-
-serversTransport:
-  forwardedHeaders:
-    # Adjust to your actual Traefik host IP or CIDR.
-    trustedIPs:
-      - "127.0.0.1/32"
-      - "10.0.0.0/8"
-      - "172.16.0.0/12"
-      - "192.168.0.0/16"
