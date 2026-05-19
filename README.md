@@ -851,4 +851,4 @@ Reduce `state.max_tracked_ips` (default 100000; each IP ≈ 2.5 KB → 100k ≈ 
 
 ---
 
-[Русская документация →  README.ru.md](README.ru.md)
+[Русская документация → README.ru.md](README.ru.md) | [Українська документація → README.uk.md](README.uk.md)

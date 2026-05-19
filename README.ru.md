@@ -850,4 +850,4 @@ logging:
 
 ---
 
-[English documentation → README.md](README.md)
+[English documentation → README.md](README.md) | [Українська документація → README.uk.md](README.uk.md)
