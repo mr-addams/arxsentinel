@@ -1,0 +1,45 @@
+# Build artifacts
+bin/
+dist/
+
+# Git and CI
+.git/
+.github/
+.gitignore
+.goreleaser.yaml
+
+# Documentation and landing pages
+docs/
+*.md
+CHANGELOG.md
+CONTRIBUTING.md
+SECURITY.md
+ROADMAP.md
+LICENSE
+
+# Test data (not needed in image)
+testdata/
+tests/
+e2e_test.go
+
+# Deploy (exclude all except the Docker-specific config baked into the image)
+deploy/
+!deploy/docker/config.docker.yaml
+
+# Packaging
+packaging/
+scripts/
+
+# Reference logs
+reference/
+
+# Local dev artifacts
+logs/
+*.pid
+*.log
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo

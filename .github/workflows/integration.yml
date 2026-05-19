@@ -10,6 +10,10 @@ permissions:
   contents: read
 
 jobs:
+  container:
+    name: Container build & tests
+    uses: ./.github/workflows/container.yml
+
   integration:
     name: Integration tests (62 checks — 6 servers × 7 detectors + 4 proxies × 5 backends)
     runs-on: ubuntu-latest
