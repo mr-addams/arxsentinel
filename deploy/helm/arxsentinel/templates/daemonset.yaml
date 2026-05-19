@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "arxsentinel.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "arxsentinel.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "arxsentinel.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "arxsentinel.labels" . | nindent 8 }}
+      annotations:
+        # Force pod restart when config changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "arxsentinel.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      containers:
+        - name: arxsentinel
+          image: {{ include "arxsentinel.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+          env:
+            {{- range $key, $val := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            # Derived from Helm values — ensure config matches the mounted log path.
+            - name: ARXSENTINEL_GENERAL_LOG_FILE
+              value: /var/log/nginx/{{ .Values.logFile }}
+            {{- if .Values.threatLog.hostPath }}
+            - name: ARXSENTINEL_OUTPUT_THREAT_LOG
+              value: /var/log/arxsentinel/threats.log
+            {{- end }}
+            {{- if .Values.metrics.enabled }}
+            - name: ARXSENTINEL_METRICS_ENABLED
+              value: "true"
+            - name: ARXSENTINEL_METRICS_LISTEN_ADDR
+              value: ":{{ .Values.metrics.port }}"
+            {{- end }}
+
+          ports:
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+
+          volumeMounts:
+            - name: config
+              mountPath: /etc/arxsentinel
+              readOnly: true
+            - name: log
+              mountPath: /var/log/nginx
+              readOnly: true
+            {{- if .Values.threatLog.hostPath }}
+            - name: threatlog
+              mountPath: /var/log/arxsentinel
+            {{- end }}
+            # /tmp for pid file — read-only root FS requires an explicit tmpfs mount.
+            - name: tmp
+              mountPath: /tmp
+
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "arxsentinel.fullname" . }}
+        - name: log
+          hostPath:
+            path: {{ .Values.logVolume.hostPath }}
+            type: DirectoryOrCreate
+        {{- if .Values.threatLog.hostPath }}
+        - name: threatlog
+          hostPath:
+            path: {{ .Values.threatLog.hostPath }}
+            type: DirectoryOrCreate
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
