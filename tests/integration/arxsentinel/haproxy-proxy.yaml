@@ -1,0 +1,14 @@
+general:
+  log_file: logs/haproxy-proxy/access.log
+  pid_file: /tmp/arxsentinel-haproxy-proxy.pid
+  tail_retry_interval: "2s"
+
+parser:
+  profile: haproxy-http
+
+output:
+  threat_log: logs/threats/haproxy-proxy.log
+  operational_log: logs/threats/sentinel-haproxy-proxy.log
+
+logging:
+  console_color: false

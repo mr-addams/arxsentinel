@@ -14,7 +14,8 @@ example.com {
     trusted_proxies static 127.0.0.1/32 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
 
     reverse_proxy 127.0.0.1:8080 {
-        # Caddy automatically sets X-Forwarded-For, X-Real-IP, and X-Forwarded-Proto.
-        # header_up can be used to add or override headers if needed.
+        # Caddy automatically sets X-Forwarded-For and X-Forwarded-Proto.
+        # X-Real-IP is NOT set automatically — use header_up if your backend needs it.
+        # header_up X-Real-IP {remote_host}
     }
 }

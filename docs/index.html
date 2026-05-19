@@ -702,7 +702,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🌐</span> Cloudflare support</h3>
-                <p>Reads the <code>$real_ip</code> field set by <code>ngx_http_realip_module</code> (<code>CF-Connecting-IP</code> or <code>X-Forwarded-For</code>), so detectors always score the actual attacker instead of the proxy.</p>
+                <p><code>ngx_http_realip_module</code> replaces <code>$remote_addr</code> with the real client IP from <code>CF-Connecting-IP</code> or <code>X-Forwarded-For</code> — detectors always score the actual attacker, never the proxy.</p>
             </div>
         </div>
     </section>

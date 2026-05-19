@@ -1,0 +1,14 @@
+general:
+  log_file: logs/nginx/access.log
+  pid_file: /tmp/arxsentinel-nginx.pid
+  tail_retry_interval: "2s"
+
+parser:
+  log_format: combined
+
+output:
+  threat_log: logs/threats/nginx.log
+  operational_log: logs/threats/sentinel-nginx.log
+
+logging:
+  console_color: false

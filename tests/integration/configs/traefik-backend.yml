@@ -1,0 +1,22 @@
+# Traefik static config for proxy-chain integration tests (backend role).
+# forwardedHeaders.trustedIPs: trust X-Forwarded-For from the Docker proxy subnet
+# so Traefik logs the real client IP instead of the intermediate proxy IP.
+# Without trustedIPs, Traefik ignores incoming XFF and logs the proxy IP.
+
+accessLog:
+  filePath: /var/log/traefik/access-proxy.log
+  bufferingSize: 0
+
+entryPoints:
+  web:
+    address: ":80"
+    forwardedHeaders:
+      trustedIPs:
+        - "172.16.0.0/12"
+
+providers:
+  file:
+    filename: /etc/traefik/routes.yml
+
+api:
+  dashboard: false

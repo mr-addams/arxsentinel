@@ -1,0 +1,14 @@
+general:
+  log_file: logs/traefik-proxy/access-proxy.log
+  pid_file: /tmp/arxsentinel-traefik-proxy.pid
+  tail_retry_interval: "2s"
+
+parser:
+  profile: traefik
+
+output:
+  threat_log: logs/threats/traefik-proxy.log
+  operational_log: logs/threats/sentinel-traefik-proxy.log
+
+logging:
+  console_color: false

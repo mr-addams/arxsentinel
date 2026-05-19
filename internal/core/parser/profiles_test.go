@@ -187,9 +187,10 @@ func TestHAProxyHTTPProfile_HTTPLogLine(t *testing.T) {
 	}
 }
 
-func TestHAProxyHTTPProfile_TimeZeroOnMilliseconds(t *testing.T) {
-	// HAProxy time format includes milliseconds (.123) which does not match
-	// nginxTimeLayout — time.Time{} is expected (zero value, non-fatal).
+func TestHAProxyHTTPProfile_TimeWithMilliseconds(t *testing.T) {
+	// HAProxy time format includes milliseconds (.000) without timezone.
+	// haproxyTimeLayout ("02/Jan/2006:15:04:05.000") must parse it correctly
+	// so the rate detector receives a non-zero timestamp.
 	p, err := haproxyHTTPProfile()
 	if err != nil {
 		t.Fatalf("haproxyHTTPProfile: %v", err)
@@ -200,8 +201,12 @@ func TestHAProxyHTTPProfile_TimeZeroOnMilliseconds(t *testing.T) {
 	if !ok {
 		t.Fatal("haproxy time: expected parse success, got false")
 	}
-	if !e.Time.IsZero() {
-		t.Errorf("Time: want zero (milliseconds make layout mismatch), got %v", e.Time)
+	if e.Time.IsZero() {
+		t.Error("Time: want parsed timestamp, got zero — haproxyTimeLayout fallback not working")
+	}
+	want := "2024-01-01 00:00:00 +0000 UTC"
+	if got := e.Time.UTC().String(); got != want {
+		t.Errorf("Time: want %q, got %q", want, got)
 	}
 }
 

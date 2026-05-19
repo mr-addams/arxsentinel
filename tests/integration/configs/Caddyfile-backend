@@ -1,0 +1,20 @@
+{
+    # Disable automatic HTTPS for local testing.
+    auto_https off
+    admin off
+}
+
+:80 {
+    # Proxy requests to nginx — real 404s for probe paths.
+    reverse_proxy nginx:80
+
+    log {
+        output file /var/log/caddy/access-proxy.log
+        # Log X-Forwarded-For as the client IP field — the value set by the upstream
+        # proxy contains the real attacker IP. transform-encoder outputs Apache CLF
+        # compatible with the "caddy" sentinel profile.
+        format transform `{http.request.header.X-Forwarded-For} - {user_id} [{ts}] "{request>method} {request>uri} {request>proto}" {status} {size} "{>Referer}" "{>User-Agent}"` {
+            time_format "02/Jan/2006:15:04:05 -0700"
+        }
+    }
+}

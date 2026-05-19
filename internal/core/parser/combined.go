@@ -48,6 +48,11 @@ var logLineRe = regexp.MustCompile(
 // Example: 02/Apr/2026:00:26:49 +0000
 const nginxTimeLayout = "02/Jan/2006:15:04:05 -0700"
 
+// haproxyTimeLayout — HAProxy time format: milliseconds, no timezone offset.
+// Example: 18/May/2026:21:23:08.151
+// Used as fallback in RegexParser when nginxTimeLayout fails (profiles.go haproxy-http).
+const haproxyTimeLayout = "02/Jan/2006:15:04:05.000"
+
 // ========================== CombinedParser ==========================================
 
 // CombinedParser parses nginx combined log format lines with the real_ip field appended.
