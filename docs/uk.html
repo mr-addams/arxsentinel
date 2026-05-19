@@ -6,9 +6,9 @@
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ArxSentinel — Пильний вартовий вашого веб-сервера</title>
-    <meta name="description" content="Сім поведінкових детекторів аналізують кожен HTTP-запит у реальному часі та передають підтверджених нападників напряму до Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy.">
+    <meta name="description" content="Сім поведінкових детекторів аналізують кожен HTTP-запит у реальному часі та передають підтверджених нападників напряму до Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed. Підтримка Cloudflare.">
     <meta property="og:title" content="ArxSentinel — Пильний вартовий вашого веб-сервера">
-    <meta property="og:description" content="Сім поведінкових детекторів аналізують кожен HTTP-запит у реальному часі та передають підтверджених нападників напряму до Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy.">
+    <meta property="og:description" content="Сім поведінкових детекторів аналізують кожен HTTP-запит у реальному часі та передають підтверджених нападників напряму до Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed. Підтримка Cloudflare.">
     <meta property="og:url" content="https://mr-addams.github.io/arxsentinel/uk.html">
     <meta property="og:type" content="website">
     <meta property="og:image" content="https://opengraph.githubassets.com/1/mr-addams/arxsentinel">
@@ -16,7 +16,7 @@
     <meta property="og:site_name" content="ArxSentinel">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="ArxSentinel — Пильний вартовий вашого веб-сервера">
-    <meta name="twitter:description" content="Сім поведінкових детекторів аналізують кожен HTTP-запит у реальному часі та передають підтверджених нападників напряму до Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy.">
+    <meta name="twitter:description" content="Сім поведінкових детекторів аналізують кожен HTTP-запит у реальному часі та передають підтверджених нападників напряму до Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed. Підтримка Cloudflare.">
     <meta name="twitter:image" content="https://opengraph.githubassets.com/1/mr-addams/arxsentinel">
     <link rel="canonical" href="https://mr-addams.github.io/arxsentinel/uk.html">
     <link rel="alternate" hreflang="en"        href="https://mr-addams.github.io/arxsentinel/">
@@ -31,12 +31,12 @@
       "name": "ArxSentinel",
       "applicationCategory": "SecurityApplication",
       "operatingSystem": "Linux",
-      "description": "Сім поведінкових детекторів аналізують кожен HTTP-запит у реальному часі та передають підтверджених нападників напряму до Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy.",
+      "description": "Сім поведінкових детекторів аналізують кожен HTTP-запит у реальному часі та передають підтверджених нападників напряму до Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed. Підтримка Cloudflare.",
       "url": "https://mr-addams.github.io/arxsentinel/uk.html",
       "downloadUrl": "https://github.com/mr-addams/arxsentinel/releases/latest",
       "codeRepository": "https://github.com/mr-addams/arxsentinel",
       "license": "https://opensource.org/licenses/MIT",
-      "softwareVersion": "1.0.0",
+      "softwareVersion": "1.0.1",
       "author": { "@type": "Person", "name": "mr-addams" }
     }
     </script>
@@ -439,6 +439,35 @@
             .stat-card { flex: 1 1 100%; }
             .tab-btn { padding: 0.5rem 0.75rem; }
         }
+
+        /* ── Servers section ────────────────────────────────────────────────────── */
+        .servers-section { max-width: 1200px; margin: 6rem auto; padding: 0 2rem; }
+        .servers-mini-stats { display: flex; justify-content: center; gap: 4rem; margin-bottom: 3rem; flex-wrap: wrap; }
+        .servers-mini-stat { text-align: center; }
+        .servers-mini-stat .s-num { font-family: var(--font-cyber); font-size: 3.5rem; font-weight: 900; color: var(--accent-blue); line-height: 1; text-shadow: 0 0 25px rgba(0,240,255,0.5); }
+        .servers-mini-stat .s-label { font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 0.3rem; }
+        .servers-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+        .server-card { background: var(--bg-panel); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 1.5rem; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: flex; flex-direction: column; gap: 0.6rem; transition: all 0.3s ease; }
+        .server-card:hover { border-color: rgba(0,240,255,0.2); transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,240,255,0.07); }
+        .server-badge { display: inline-block; font-family: var(--font-mono); font-size: 0.68rem; padding: 0.2rem 0.55rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 1px; align-self: flex-start; }
+        .badge-zero  { background: rgba(0,255,100,0.08); border: 1px solid rgba(0,255,100,0.3); color: #00e55a; }
+        .badge-one   { background: rgba(0,240,255,0.08); border: 1px solid rgba(0,240,255,0.3); color: var(--accent-blue); }
+        .badge-setup { background: rgba(189,0,255,0.08); border: 1px solid rgba(189,0,255,0.3); color: var(--accent-purple); }
+        .server-name { font-family: var(--font-cyber); font-size: 1rem; color: #fff; }
+        .server-profile { font-family: var(--font-mono); font-size: 0.78rem; color: var(--accent-blue); background: rgba(0,0,0,0.3); padding: 0.25rem 0.5rem; border-radius: 3px; align-self: flex-start; }
+        .server-note { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+        .server-note code { font-family: var(--font-mono); color: var(--accent-purple); background: rgba(0,0,0,0.2); padding: 0.1rem 0.3rem; border-radius: 2px; font-size: 0.75rem; }
+        .proxy-chain-callout { background: rgba(13,13,31,0.6); border: 1px solid rgba(189,0,255,0.2); border-radius: 8px; padding: 2rem 2rem 1.75rem; }
+        .proxy-chain-title { font-family: var(--font-cyber); color: var(--accent-purple); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 1.5rem; text-align: center; }
+        .proxy-chain-flow { display: flex; align-items: center; justify-content: center; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+        .chain-node { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 0.35rem 0.75rem; font-family: var(--font-mono); font-size: 0.8rem; color: #fff; white-space: nowrap; }
+        .chain-node.cf    { border-color: rgba(249,130,49,0.5); color: #f98231; background: rgba(249,130,49,0.06); }
+        .chain-node.proxy { border-color: rgba(189,0,255,0.3); color: var(--accent-purple); background: rgba(189,0,255,0.06); }
+        .chain-node.arx   { border-color: rgba(0,240,255,0.3); color: var(--accent-blue); background: rgba(0,240,255,0.06); }
+        .proxy-chain-tags { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+        .chain-tag { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); padding: 0.2rem 0.55rem; border: 1px solid rgba(255,255,255,0.07); border-radius: 3px; }
+        @media (max-width: 768px) { .servers-grid { grid-template-columns: 1fr 1fr; } .servers-mini-stats { gap: 2rem; } .servers-mini-stat .s-num { font-size: 2.5rem; } .chain-node { font-size: 0.72rem; padding: 0.3rem 0.55rem; } }
+        @media (max-width: 480px) { .servers-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -465,7 +494,7 @@
 
     <section class="hero">
         <div class="badge-container">
-            <span class="badge badge-version">v1.0.0</span>
+            <span class="badge badge-version">v1.0.1</span>
             <span class="badge">Open Source</span>
             <span class="badge">Go</span>
             <span class="badge">Linux</span>
@@ -475,7 +504,7 @@
             бачить те, чого<br>
             не помічає сервер
         </h1>
-        <p>Сім поведінкових детекторів аналізують кожен HTTP-запит у реальному часі та передають підтверджених нападників напряму до Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy.</p>
+        <p>Сім поведінкових детекторів аналізують кожен HTTP-запит у реальному часі та передають підтверджених нападників напряму до Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed. Підтримка Cloudflare.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Встановити</a>
             <a href="https://github.com/mr-addams/arxsentinel/releases" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Релізи</a>
@@ -488,7 +517,7 @@
             <div class="box-scanline"></div>
             <div class="pipeline-flow">
                 <div class="flow-line"></div>
-                <div class="pipeline-node">nginx / Apache / Caddy / Traefik / HAProxy access.log</div>
+                <div class="pipeline-node">nginx / Apache / Traefik / Caddy / HAProxy / LiteSpeed access.log</div>
                 <div class="pipeline-node">Profile (формат логу · маппінг полів · тип сервера)</div>
                 <div class="pipeline-node">TailReader × N потоків (inotify · підтримка logrotate)</div>
                 <div class="pipeline-node">Parser (ngx_http_realip · CF-Connecting-IP · XFF ланцюжок)</div>
@@ -503,9 +532,92 @@
 
     <section class="stats-grid">
         <div class="stat-card"><div class="stat-number">7</div><div class="stat-label">Поведінкових детекторів</div></div>
+        <div class="stat-card"><div class="stat-number">6</div><div class="stat-label">Профілів серверів</div></div>
         <div class="stat-card"><div class="stat-number">11</div><div class="stat-label">Родин ботів</div></div>
         <div class="stat-card"><div class="stat-number">3</div><div class="stat-label">Формати пакетів</div></div>
         <div class="stat-card"><div class="stat-number">2</div><div class="stat-label">Архітектури (amd64 · arm64)</div></div>
+    </section>
+
+    <section class="servers-section">
+        <div class="section-header">
+            <span class="section-tag">З коробки</span>
+            <h2 class="section-title">Будь-який сервер. Будь-який проксі. Реальний IP.</h2>
+            <p style="color: var(--text-muted); max-width: 640px; margin: 1rem auto 0;">Шість серверів підтримується нативно — nginx працює без налаштування. Кожен інший сервер вмикається одним рядком профілю. Працює за будь-яким проксі або Cloudflare — завжди фіксує реального нападника, а не CDN чи балансувальник.</p>
+        </div>
+
+        <div class="servers-mini-stats">
+            <div class="servers-mini-stat">
+                <div class="s-num">6</div>
+                <div class="s-label">Профілів серверів</div>
+            </div>
+            <div class="servers-mini-stat">
+                <div class="s-num">1</div>
+                <div class="s-label">Рядок конфігу</div>
+            </div>
+            <div class="servers-mini-stat">
+                <div class="s-num">0</div>
+                <div class="s-label">Regex писати</div>
+            </div>
+        </div>
+
+        <div class="servers-grid">
+            <div class="server-card">
+                <span class="server-badge badge-zero">Без налаштування</span>
+                <div class="server-name">nginx</div>
+                <span class="server-profile">default parser</span>
+                <p class="server-note">nginx combined log format працює з коробки — профіль не потрібен.</p>
+            </div>
+            <div class="server-card">
+                <span class="server-badge badge-one">Один рядок</span>
+                <div class="server-name">Apache</div>
+                <span class="server-profile">profile: "apache"</span>
+                <p class="server-note">Стандартний CLF — змін на сервері не потрібно.</p>
+            </div>
+            <div class="server-card">
+                <span class="server-badge badge-one">Один рядок</span>
+                <div class="server-name">Traefik</div>
+                <span class="server-profile">profile: "traefik"</span>
+                <p class="server-note">Стандартний access log (CLF) — налаштування не потрібне.</p>
+            </div>
+            <div class="server-card">
+                <span class="server-badge badge-one">Один рядок</span>
+                <div class="server-name">LiteSpeed / OpenLiteSpeed</div>
+                <span class="server-profile">profile: "litespeed"</span>
+                <p class="server-note">Apache CLF за замовчуванням — змін на сервері не потрібно.</p>
+            </div>
+            <div class="server-card">
+                <span class="server-badge badge-setup">Плагін</span>
+                <div class="server-name">Caddy</div>
+                <span class="server-profile">profile: "caddy"</span>
+                <p class="server-note">Потребує xcaddy + плагін <code>transform-encoder</code> для CLF-виводу.</p>
+            </div>
+            <div class="server-card">
+                <span class="server-badge badge-setup">rsyslog</span>
+                <div class="server-name">HAProxy</div>
+                <span class="server-profile">profile: "haproxy-http"</span>
+                <p class="server-note">Потребує <code>option httplog</code> у haproxy.cfg + rsyslog для запису у файл.</p>
+            </div>
+        </div>
+
+        <div class="proxy-chain-callout">
+            <div class="proxy-chain-title">За проксі? Реальний IP завжди доходить до детектора.</div>
+            <div class="proxy-chain-flow">
+                <div class="chain-node cf">Cloudflare</div>
+                <span class="chain-arrow">→</span>
+                <div class="chain-node proxy">Traefik · Caddy · HAProxy · nginx</div>
+                <span class="chain-arrow">→</span>
+                <div class="chain-node">ваш сервер</div>
+                <span class="chain-arrow">→</span>
+                <div class="chain-node arx">ArxSentinel</div>
+            </div>
+            <div class="proxy-chain-tags">
+                <span class="chain-tag">XFF chain unwrapped</span>
+                <span class="chain-tag">CF-Connecting-IP</span>
+                <span class="chain-tag">ngx_http_realip</span>
+                <span class="chain-tag">trusted proxy CIDR</span>
+                <span class="chain-tag">реальний нападник · завжди</span>
+            </div>
+        </div>
     </section>
 
     <section id="detectors" class="detectors-section">
@@ -605,7 +717,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </div>
 
         <div class="install-note">
-            <strong>Після встановлення:</strong> відкрийте <code>/etc/arxsentinel/config.yaml</code> та вкажіть шлях до access.log. nginx працює без профілю. Для Apache, Traefik, Caddy або HAProxy вкажіть <code>parser.profile</code> з назвою сервера. Конфіг перезавантажується по <code>SIGHUP</code> — перезапуск не потрібен.
+            <strong>Після встановлення:</strong> відкрийте <code>/etc/arxsentinel/config.yaml</code> та вкажіть шлях до access.log. nginx працює без профілю. Для Apache, Traefik, Caddy, HAProxy або LiteSpeed вкажіть <code>parser.profile</code> з назвою сервера. Конфіг перезавантажується по <code>SIGHUP</code> — перезапуск не потрібен.
         </div>
     </section>
 
@@ -616,8 +728,8 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </div>
         <div class="whitelist-grid">
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🌐</span> Підтримка кількох серверів</h3>
-                <p>Працює з nginx, Apache, Caddy, Traefik та HAProxy. nginx, Apache і Traefik працюють з коробки — налаштування не потрібне. Caddy потребує xcaddy + плагін transform-encoder; HAProxy потребує <code>option httplog</code> та rsyslog. Система профілів маппить будь-який формат логів на єдиний пайплайн виявлення.</p>
+                <h3><span style="color: var(--accent-blue)">📐</span> Довільний формат логів</h3>
+                <p>Немає підходящого профілю? Опишіть власний regex з іменованими групами або переключіться на JSON-парсинг — без перекомпіляції. Будь-який формат, що захоплює IP, timestamp, метод, шлях, статус і байти, підключається до повного пайплайну виявлення.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">📂</span> Кілька потоків логів</h3>
