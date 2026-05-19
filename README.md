@@ -7,9 +7,9 @@
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
-A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 7 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy.
+A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 7 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, and OpenLiteSpeed.
 
-Supports **nginx, Apache, Caddy, Traefik, and HAProxy** via built-in profiles. nginx works out of the box with no profile needed. Caddy and HAProxy require minimal one-time setup. Custom log formats supported via regex. Watch multiple log files in a single process.
+Supports **nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, and OpenLiteSpeed** via built-in profiles. nginx works out of the box with no profile needed. Caddy and HAProxy require minimal one-time setup. Custom log formats supported via regex. Watch multiple log files in a single process.
 
 ```
 access.log → TailReader → whitelist → tracker → scorer → threats.log → Fail2Ban → iptables
@@ -24,6 +24,7 @@ access.log → TailReader → whitelist → tracker → scorer → threats.log �
 | nginx | *(default — no profile needed)* | None — nginx combined log format works out of the box |
 | Apache | `apache` | None — default CLF format |
 | Traefik | `traefik` | None — default access log (CLF) |
+| LiteSpeed / OpenLiteSpeed | `litespeed` | None — default CLF format |
 | Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + [transform-encoder](https://github.com/caddyserver/transform-encoder) plugin |
 | HAProxy | `haproxy-http` | `option httplog` in haproxy.cfg + rsyslog to write to file |
 
@@ -31,7 +32,7 @@ access.log → TailReader → whitelist → tracker → scorer → threats.log �
 
 > **nginx:** no `profile:` setting is needed. The default CombinedParser handles nginx combined log format out of the box. Set only `general.log_file` pointing to your access log.
 
-Built-in profiles — no regex or field mapping required. Set `parser.profile` to the server name for Apache, Traefik, Caddy, or HAProxy:
+Built-in profiles — no regex or field mapping required. Set `parser.profile` to the server name for Apache, Traefik, Caddy, HAProxy, LiteSpeed, or OpenLiteSpeed:
 
 **Example — Apache:**
 
@@ -53,13 +54,20 @@ deploy/examples/
 ├── apache/      httpd.conf + sentinel-config.yaml
 ├── caddy/       Caddyfile + sentinel-config.yaml
 ├── traefik/     traefik.yml + sentinel-config.yaml
-└── haproxy/     haproxy.cfg + sentinel-config.yaml
+├── haproxy/     haproxy.cfg + sentinel-config.yaml
+└── litespeed/   httpd_config.conf + sentinel-config.yaml
 ```
 
 > **Note — HAProxy timestamps:** HAProxy includes milliseconds in the timestamp
 > (`14:30:00.123`), which does not match the expected time format. Sentinel falls
 > back to `time.Time{}` for that field. Rate-window detection uses wall-clock time
 > regardless, so all detectors work correctly.
+
+> **Note — LiteSpeed / OpenLiteSpeed:** Both LSWS and OLS emit Apache CLF by default —
+> no server-side changes required. Log path: `/usr/local/lsws/logs/access.log`
+> (server-wide) or `/usr/local/lsws/logs/<vhostname>/access.log` (per virtual host).
+> Behind a reverse proxy: enable "Use Client IP in Header" in WebAdmin so `%h` logs
+> the real client IP. See `deploy/examples/litespeed/` for the full config.
 
 > **Note — Caddy:** Caddy v2's built-in JSON encoder outputs nested objects. The
 > `caddy` profile requires the
@@ -84,7 +92,7 @@ deploy/examples/
 
 - Linux x86_64 or arm64 with systemd
 - Fail2Ban
-- An HTTP server writing access logs in a supported format (nginx, Apache, Caddy, Traefik, HAProxy — or custom regex)
+- An HTTP server writing access logs in a supported format (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — or custom regex)
 
 ## Installation
 
@@ -100,7 +108,7 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/
 Works on Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, and Arch Linux.
 Requires `curl` and `sudo`. Fail2Ban is installed automatically if missing.
 
-The service starts immediately and works with nginx out of the box — no profile needed. Edit the config to switch to another server (apache, caddy, traefik, haproxy-http, or a custom regex):
+The service starts immediately and works with nginx out of the box — no profile needed. Edit the config to switch to another server (apache, caddy, traefik, haproxy-http, litespeed, or a custom regex):
 
 ```bash
 sudo nano /etc/arxsentinel/config.yaml
@@ -201,7 +209,7 @@ general:
   stats_interval: 300s                  # STATS output interval to operational log
 
 parser:
-  # profile: "apache"  # set for non-nginx servers: apache | caddy | traefik | haproxy-http
+  # profile: "apache"  # set for non-nginx servers: apache | caddy | traefik | haproxy-http | litespeed
   #                     # nginx combined log format works without any profile setting
 
 scoring:
@@ -429,7 +437,7 @@ whitelist:
 ## Architecture
 
 ```
-access.log (nginx / apache / caddy / traefik / haproxy)
+access.log (nginx / apache / caddy / traefik / haproxy / litespeed)
        │
   TailReader (inotify, logrotate-aware)
        │
@@ -558,7 +566,7 @@ fail2ban-client set arxsentinel unbanip 1.2.3.4
 
 ## JSON log format
 
-By default ArxSentinel parses nginx combined log format (no profile needed) or the format defined by the active profile (apache, caddy, traefik, or haproxy-http).  
+By default ArxSentinel parses nginx combined log format (no profile needed) or the format defined by the active profile (apache, caddy, traefik, haproxy-http, or litespeed).  
 It also supports JSON log format — switch via `config.yaml` without recompilation.
 
 The examples below use nginx. For other servers, adapt the `log_format` directive to your server's equivalent.

@@ -222,11 +222,106 @@ func TestHAProxyHTTPProfile_InvalidLine(t *testing.T) {
 	}
 }
 
+// ========================== litespeed ===============================================
+
+func TestLiteSpeedProfile_CombinedLine(t *testing.T) {
+	// Standard OLS / LSWS CLF line — format is byte-identical to Apache CLF.
+	p, err := litespeedProfile()
+	if err != nil {
+		t.Fatalf("litespeedProfile: %v", err)
+	}
+
+	line := `203.0.113.42 - - [19/May/2026:10:30:00 +0000] "GET /index.html HTTP/1.1" 200 4096 "https://example.com/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"`
+	e, ok := p.Parse(line)
+	if !ok {
+		t.Fatal("litespeed: expected parse success, got false")
+	}
+
+	if e.RemoteAddr != "203.0.113.42" {
+		t.Errorf("RemoteAddr: want 203.0.113.42, got %q", e.RemoteAddr)
+	}
+	// No real_ip field in CLF — RealIP falls back to RemoteAddr.
+	if e.RealIP != "203.0.113.42" {
+		t.Errorf("RealIP: want 203.0.113.42, got %q", e.RealIP)
+	}
+	if e.Method != "GET" {
+		t.Errorf("Method: want GET, got %q", e.Method)
+	}
+	if e.Path != "/index.html" {
+		t.Errorf("Path: want /index.html, got %q", e.Path)
+	}
+	if e.Status != 200 {
+		t.Errorf("Status: want 200, got %d", e.Status)
+	}
+	if e.BytesSent != 4096 {
+		t.Errorf("BytesSent: want 4096, got %d", e.BytesSent)
+	}
+	if e.Referer != "https://example.com/" {
+		t.Errorf("Referer: want https://example.com/, got %q", e.Referer)
+	}
+	if e.Time.IsZero() {
+		t.Error("Time: want non-zero")
+	}
+}
+
+func TestLiteSpeedProfile_BytesDash(t *testing.T) {
+	// OLS logs bytes_sent as "-" for HEAD and 304 responses, same as Apache.
+	p, err := litespeedProfile()
+	if err != nil {
+		t.Fatalf("litespeedProfile: %v", err)
+	}
+
+	line := `198.51.100.7 - - [19/May/2026:11:00:00 +0000] "HEAD /favicon.ico HTTP/1.1" 200 -`
+	e, ok := p.Parse(line)
+	if !ok {
+		t.Fatal("litespeed bytes_dash: expected parse success, got false")
+	}
+	if e.BytesSent != 0 {
+		t.Errorf("BytesSent: want 0 (from '-'), got %d", e.BytesSent)
+	}
+}
+
+func TestLiteSpeedProfile_ProxyRealIP(t *testing.T) {
+	// When UseIpInProxyHeader is enabled, OLS substitutes the real client IP
+	// into %h directly. The CLF line already contains the client IP — no extra
+	// real_ip field. RealIP == RemoteAddr is the expected result.
+	p, err := litespeedProfile()
+	if err != nil {
+		t.Fatalf("litespeedProfile: %v", err)
+	}
+
+	// 185.220.101.5 is the real attacker; 10.0.0.1 is the proxy — but OLS has
+	// already replaced %h with the XFF value, so the log shows the real IP.
+	line := `185.220.101.5 - - [19/May/2026:12:00:00 +0000] "GET /wp-login.php HTTP/1.1" 404 196 "-" "python-requests/2.28"`
+	e, ok := p.Parse(line)
+	if !ok {
+		t.Fatal("litespeed proxy real ip: expected parse success, got false")
+	}
+	if e.RemoteAddr != "185.220.101.5" {
+		t.Errorf("RemoteAddr: want 185.220.101.5, got %q", e.RemoteAddr)
+	}
+	if e.RealIP != "185.220.101.5" {
+		t.Errorf("RealIP: want 185.220.101.5, got %q", e.RealIP)
+	}
+}
+
+func TestLiteSpeedProfile_InvalidLine(t *testing.T) {
+	p, err := litespeedProfile()
+	if err != nil {
+		t.Fatalf("litespeedProfile: %v", err)
+	}
+
+	_, ok := p.Parse("not a litespeed log line at all")
+	if ok {
+		t.Error("litespeed invalid: expected false, got true")
+	}
+}
+
 // ========================== Profiles map ============================================
 
 func TestProfilesMap_AllKnown(t *testing.T) {
 	// All expected profiles must be present and constructible without error.
-	expected := []string{"apache", "caddy", "traefik", "haproxy-http"}
+	expected := []string{"apache", "caddy", "traefik", "haproxy-http", "litespeed"}
 	for _, name := range expected {
 		factory, ok := Profiles[name]
 		if !ok {
@@ -239,14 +334,14 @@ func TestProfilesMap_AllKnown(t *testing.T) {
 	}
 }
 
-func TestAvailableProfiles_ContainsAllFour(t *testing.T) {
+func TestAvailableProfiles_ContainsAllKnown(t *testing.T) {
 	available := AvailableProfiles()
 	parts := strings.Split(available, ", ")
 	idx := make(map[string]bool, len(parts))
 	for _, p := range parts {
 		idx[p] = true
 	}
-	for _, name := range []string{"apache", "caddy", "haproxy-http", "traefik"} {
+	for _, name := range []string{"apache", "caddy", "haproxy-http", "litespeed", "traefik"} {
 		if !idx[name] {
 			t.Errorf("AvailableProfiles: %q not found in %q", name, available)
 		}

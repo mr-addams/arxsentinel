@@ -7,9 +7,9 @@
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
-Бдительный страж вашего веб-сервера: читает HTTP access-логи в реальном времени, оценивает каждый IP через 7 поведенческих детекторов и блокирует атакующих через Fail2Ban. Работает с nginx, Apache, Caddy, Traefik, HAProxy.
+Бдительный страж вашего веб-сервера: читает HTTP access-логи в реальном времени, оценивает каждый IP через 7 поведенческих детекторов и блокирует атакующих через Fail2Ban. Работает с nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed и OpenLiteSpeed.
 
-Поддерживает **nginx, Apache, Caddy, Traefik и HAProxy** через встроенные профили. nginx работает из коробки без настройки профиля. Caddy и HAProxy требуют минимальной однократной настройки. Произвольные форматы логов — через regex. Несколько лог-файлов в одном процессе.
+Поддерживает **nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed и OpenLiteSpeed** через встроенные профили. nginx работает из коробки без настройки профиля. Caddy и HAProxy требуют минимальной однократной настройки. Произвольные форматы логов — через regex. Несколько лог-файлов в одном процессе.
 
 ```
 access.log → TailReader → whitelist → tracker → scorer → threats.log → Fail2Ban → iptables
@@ -26,12 +26,13 @@ access.log → TailReader → whitelist → tracker → scorer → threats.log �
 | Traefik | `traefik` | Нет — стандартный access log (CLF) |
 | Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + плагин [transform-encoder](https://github.com/caddyserver/transform-encoder) |
 | HAProxy | `haproxy-http` | `option httplog` в haproxy.cfg + rsyslog для записи в файл |
+| LiteSpeed / OpenLiteSpeed | `litespeed` | Нет — стандартный CLF |
 
 > В каждом релизе публикуется таблица **Tested product versions** с точными версиями серверов, на которых валидировалась сборка — см. [GitHub Releases](https://github.com/mr-addams/arxsentinel/releases).
 
 > **nginx:** настройка `profile:` не нужна. Стандартный CombinedParser обрабатывает nginx combined log format из коробки. Укажите только `general.log_file` с путём к вашему access.log.
 
-Встроенные профили — настройка regex и маппинга полей не требуется. Укажите `parser.profile` с именем сервера для Apache, Traefik, Caddy или HAProxy:
+Встроенные профили — настройка regex и маппинга полей не требуется. Укажите `parser.profile` с именем сервера для Apache, Traefik, Caddy, HAProxy, LiteSpeed или OpenLiteSpeed:
 
 **Пример — Apache:**
 
@@ -53,7 +54,8 @@ deploy/examples/
 ├── apache/      httpd.conf + sentinel-config.yaml
 ├── caddy/       Caddyfile + sentinel-config.yaml
 ├── traefik/     traefik.yml + sentinel-config.yaml
-└── haproxy/     haproxy.cfg + sentinel-config.yaml
+├── haproxy/     haproxy.cfg + sentinel-config.yaml
+└── litespeed/   httpd_config.conf + sentinel-config.yaml
 ```
 
 > **Замечание — HAProxy:** HAProxy включает миллисекунды в временную метку
@@ -65,6 +67,11 @@ deploy/examples/
 > Профиль `caddy` требует плагина
 > [caddy-transform-encoder](https://github.com/caddyserver/transform-encoder)
 > для вывода в формате CLF. Смотрите `deploy/examples/caddy/Caddyfile` для настройки.
+
+> **Замечание — LiteSpeed / OpenLiteSpeed:** Оба сервера (LSWS и OLS) по умолчанию пишут Apache CLF —
+> настройка формата лога не требуется. Если sentinel стоит за прокси, включите «Use Client IP in Header»
+> в WebAdmin («Server Configuration → Use Client IP in Header»), чтобы реальный IP клиента писался
+> в `%h` напрямую. Смотрите `deploy/examples/litespeed/` для полного конфига.
 
 ## Возможности
 
@@ -84,7 +91,7 @@ deploy/examples/
 
 - Linux x86_64 или arm64 с systemd
 - Fail2Ban
-- HTTP-сервер, пишущий access.log в поддерживаемом формате (nginx, Apache, Caddy, Traefik, HAProxy — или произвольный regex)
+- HTTP-сервер, пишущий access.log в поддерживаемом формате (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — или произвольный regex)
 
 ## Установка
 
@@ -100,7 +107,7 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/
 Работает на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux и Arch Linux.
 Требует `curl` и `sudo`. Fail2Ban устанавливается автоматически, если отсутствует.
 
-Сервис запускается сразу и работает с nginx из коробки — профиль не нужен. Чтобы переключиться на другой сервер (apache, caddy, traefik, haproxy-http или произвольный regex):
+Сервис запускается сразу и работает с nginx из коробки — профиль не нужен. Чтобы переключиться на другой сервер (apache, caddy, traefik, haproxy-http, litespeed или произвольный regex):
 
 ```bash
 sudo nano /etc/arxsentinel/config.yaml
@@ -201,7 +208,7 @@ general:
   stats_interval: 300s                  # период вывода STATS в operational.log
 
 parser:
-  # profile: "apache"  # укажите для не-nginx серверов: apache | caddy | traefik | haproxy-http
+  # profile: "apache"  # укажите для не-nginx серверов: apache | caddy | traefik | haproxy-http | litespeed
   #                     # nginx combined log format работает без настройки профиля
 
 scoring:
@@ -429,7 +436,7 @@ whitelist:
 ## Архитектура
 
 ```
-access.log (nginx / apache / caddy / traefik / haproxy)
+access.log (nginx / apache / caddy / traefik / haproxy / litespeed)
        │
   TailReader (inotify, logrotate-aware)
        │
@@ -558,7 +565,7 @@ fail2ban-client set arxsentinel unbanip 1.2.3.4
 
 ## JSON-формат логов
 
-По умолчанию ArxSentinel парсит nginx combined log format (профиль не требуется) или формат, определённый активным профилем (apache, caddy, traefik или haproxy-http).  
+По умолчанию ArxSentinel парсит nginx combined log format (профиль не требуется) или формат, определённый активным профилем (apache, caddy, traefik, haproxy-http или litespeed).  
 Поддерживается также JSON-формат — переключается через `config.yaml` без перекомпиляции.
 
 Примеры ниже используют nginx. Для других серверов адаптируйте директиву `log_format` к вашему серверу.

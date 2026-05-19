@@ -1,0 +1,18 @@
+# ArxSentinel config for LiteSpeed Web Server (LSWS) and OpenLiteSpeed (OLS).
+# Both servers emit Apache Combined Log Format by default — no log format changes required.
+
+parser:
+  profile: "litespeed"
+
+general:
+  # Server-wide access log (default location):
+  log_file: /usr/local/lsws/logs/access.log
+  #
+  # Virtual-host log (if per-vhost logging is enabled in WebAdmin):
+  # log_file: /usr/local/lsws/logs/<vhostname>/access.log
+
+output:
+  threat_log: /var/log/arxsentinel/threats.log
+
+# All other settings use defaults.
+# Full reference: https://github.com/mr-addams/arxsentinel#configuration

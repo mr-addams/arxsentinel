@@ -18,8 +18,8 @@ set -euo pipefail
 NETWORK="integration_default"
 IMAGE="curlimages/curl"   # Alpine-based, tiny, has /bin/sh
 
-# Internal hostnames of the 5 servers (from inside the Docker network).
-SERVERS=(nginx apache traefik caddy haproxy)
+# Internal hostnames of the 6 servers (from inside the Docker network).
+SERVERS=(nginx apache traefik caddy haproxy litespeed)
 
 # Pull the attacker image once before the scenarios start.
 docker pull -q "$IMAGE"
