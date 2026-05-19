@@ -56,10 +56,6 @@ jobs:
               | grep -oP 'HAProxy version \K[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
             echo "| haproxy | HAProxy | $v | \`haproxy:latest\` |"
 
-            v=$(docker run --rm php:8-fpm-alpine php -v 2>&1 \
-              | grep -oP 'PHP \K[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "?")
-            echo "| php-fpm | PHP | $v | \`php:8-fpm-alpine\` |"
-
             # caddy: custom build — query the locally built image directly.
             v=$(docker run --rm integration-caddy caddy version 2>&1 \
               | grep -oP 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "?")
