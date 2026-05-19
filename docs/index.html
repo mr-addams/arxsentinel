@@ -588,6 +588,48 @@
         @media (max-width: 480px) {
             .servers-grid { grid-template-columns: 1fr; }
         }
+
+        /* ── Performance section ─────────────────────────────────────────── */
+        .performance-section { max-width: 1200px; margin: 0 auto 6rem; padding: 0 2rem; }
+        .perf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+        .perf-metrics-block {
+            background: rgba(0,255,100,0.03); border: 1px solid rgba(0,255,100,0.15);
+            border-radius: 12px; padding: 2rem;
+            display: flex; flex-direction: column; justify-content: center;
+        }
+        .perf-metrics-title {
+            font-family: var(--font-cyber); font-size: 0.75rem; color: #00e55a;
+            text-transform: uppercase; letter-spacing: 2px; margin-bottom: 1.75rem;
+        }
+        .perf-metrics-row { display: flex; gap: 2.5rem; flex-wrap: wrap; }
+        .perf-metric .p-num {
+            font-family: var(--font-cyber); font-size: 2.8rem; color: #00e55a;
+            line-height: 1;
+        }
+        .perf-metric .p-label {
+            font-size: 0.75rem; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 1px; margin-top: 0.4rem;
+        }
+        .perf-callout-block {
+            background: rgba(13,13,31,0.6); border: 1px solid rgba(0,240,255,0.12);
+            border-radius: 12px; padding: 2rem;
+            display: flex; flex-direction: column; justify-content: space-between;
+        }
+        .perf-callout-title {
+            font-family: var(--font-cyber); font-size: 1.05rem;
+            color: var(--text-primary); line-height: 1.4; margin-bottom: 1rem;
+        }
+        .perf-callout-body { font-size: 0.9rem; color: var(--text-muted); line-height: 1.65; }
+        .perf-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.5rem; }
+        .perf-tag {
+            background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px; padding: 0.3rem 0.85rem;
+            font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted);
+        }
+        @media (max-width: 768px) {
+            .perf-grid { grid-template-columns: 1fr; }
+            .perf-metric .p-num { font-size: 2.2rem; }
+        }
     </style>
 </head>
 <body>
@@ -656,6 +698,7 @@
         <div class="stat-card"><div class="stat-number">11</div><div class="stat-label">Verified bot families</div></div>
         <div class="stat-card"><div class="stat-number">3</div><div class="stat-label">Package formats</div></div>
         <div class="stat-card"><div class="stat-number">2</div><div class="stat-label">Architectures (amd64 · arm64)</div></div>
+        <div class="stat-card"><div class="stat-number">4 MB</div><div class="stat-label">Single binary · arm64 ready</div></div>
     </section>
 
     <section class="servers-section">
@@ -795,6 +838,48 @@
                     <p class="detector-desc">URLs longer than 2048 characters, or containing known WAF evasion keywords: <code>bypass</code>, <code>shell</code>, <code>cmd</code>, <code>eval</code>, <code>exec</code>... Targets buffer overflows and code injections.</p>
                 </div>
                 <span class="detector-score">+30</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="performance-section">
+        <div class="perf-grid">
+            <div class="perf-metrics-block">
+                <div class="perf-metrics-title">Performance footprint</div>
+                <div class="perf-metrics-row">
+                    <div class="perf-metric">
+                        <div class="p-num">4 MB</div>
+                        <div class="p-label">Binary size</div>
+                    </div>
+                    <div class="perf-metric">
+                        <div class="p-num">&lt; 30 MB</div>
+                        <div class="p-label">RAM on Raspberry Pi</div>
+                    </div>
+                    <div class="perf-metric">
+                        <div class="p-num">0</div>
+                        <div class="p-label">Runtime dependencies</div>
+                    </div>
+                </div>
+            </div>
+            <div class="perf-callout-block">
+                <div>
+                    <div class="perf-callout-title">Enterprise threats.<br>Even on Raspberry Pi hardware.</div>
+                    <div class="perf-callout-body">
+                        Pure Go binary — no JVM, no Python runtime, no memory bloat.
+                        Drops in as a systemd service, reads your log tail, bans attackers.
+                        Configurable RAM ceiling: from 20 MB on a Pi to any scale on a server.<br><br>
+                        No black box. Deterministic scoring — every ban has a reason
+                        you can read in structured JSON logs.
+                    </div>
+                </div>
+                <div class="perf-tags">
+                    <span class="perf-tag">YAML config</span>
+                    <span class="perf-tag">SIGHUP reload</span>
+                    <span class="perf-tag">JSON logs</span>
+                    <span class="perf-tag">Prometheus metrics</span>
+                    <span class="perf-tag">arm64 native</span>
+                    <span class="perf-tag">systemd unit</span>
+                </div>
             </div>
         </div>
     </section>
