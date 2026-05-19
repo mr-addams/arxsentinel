@@ -33,7 +33,7 @@ jobs:
         run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
 
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
