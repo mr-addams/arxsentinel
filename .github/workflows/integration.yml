@@ -10,8 +10,12 @@ permissions:
   contents: read
 
 jobs:
+  container:
+    name: Container build & tests
+    uses: ./.github/workflows/container.yml
+
   integration:
-    name: Integration tests (62 checks — 6 servers × 7 detectors + 4 proxies × 5 backends)
+    name: Integration tests (66 checks — 6 servers × 7 detectors + 4 proxies × 6 backends)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -151,3 +155,6 @@ jobs:
           name: integration-logs
           path: tests/integration/logs/
           retention-days: 30
+          # OLS containers write stderr.log owned by root — skip to avoid EACCES.
+          exclude: |
+            tests/integration/logs/**/stderr.log

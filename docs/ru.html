@@ -36,7 +36,7 @@
       "downloadUrl": "https://github.com/mr-addams/arxsentinel/releases/latest",
       "codeRepository": "https://github.com/mr-addams/arxsentinel",
       "license": "https://opensource.org/licenses/MIT",
-      "softwareVersion": "1.0.2",
+      "softwareVersion": "1.0.3",
       "author": { "@type": "Person", "name": "mr-addams" }
     }
     </script>
@@ -508,7 +508,7 @@
 
     <section class="hero">
         <div class="badge-container">
-            <span class="badge badge-version">v1.0.2</span>
+            <span class="badge badge-version">v1.0.3</span>
             <span class="badge">Open Source</span>
             <span class="badge">Go</span>
             <span class="badge">Linux</span>
@@ -746,6 +746,7 @@
         <ul class="tabs-nav">
             <li><button class="tab-btn active" onclick="switchTab(event, 'script-install')">Установка скриптом</button></li>
             <li><button class="tab-btn" onclick="switchTab(event, 'source-install')">Из исходников</button></li>
+            <li><button class="tab-btn" onclick="switchTab(event, 'container-install')">Контейнер</button></li>
         </ul>
 
         <div class="terminal-container">
@@ -771,6 +772,21 @@ cd arxsentinel
 sudo ./scripts/install.sh
 sudo systemctl enable --now arxsentinel</span></pre>
             </div>
+
+            <div id="container-install" class="tab-content">
+                <pre><span class="comment"># Docker — дистроблесс-образ (~12 МБ), uid 65532, amd64 + arm64</span>
+<span class="command">docker run -d \
+  -v /var/log/nginx/access.log:/var/log/nginx/access.log:ro \
+  -v /var/log/arxsentinel:/var/log/arxsentinel \
+  -p 127.0.0.1:9117:9117 \
+  ghcr.io/mr-addams/arxsentinel:latest</span></pre>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">
+                    Метрики Prometheus доступны на <code>:9117/metrics</code> сразу после старта.
+                    Docker Compose и Kubernetes (Helm DaemonSet) — подробные руководства:
+                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/README.docker.md" style="color: var(--accent-blue);">README.docker.md</a> ·
+                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/README.helm.md" style="color: var(--accent-blue);">README.helm.md</a>
+                </p>
+            </div>
         </div>
 
         <div class="install-note">
@@ -780,7 +796,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
 
     <section class="whitelist-section">
         <div class="section-header">
-            <span class="section-tag">Возможности v1.0.2</span>
+            <span class="section-tag">Возможности v1.0.3</span>
             <h2 class="section-title">Универсальность по умолчанию</h2>
         </div>
         <div class="whitelist-grid">

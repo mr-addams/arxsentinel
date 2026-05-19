@@ -1,0 +1,23 @@
+# ArxSentinel — Prometheus scrape configuration snippet
+#
+# Paste this job into your prometheus.yml scrape_configs section.
+# Adjust host and port if you changed METRICS_PORT in your .env.
+#
+# Prerequisite: ArxSentinel must be running with metrics.enabled: true
+# (enabled by default in the Docker image via config.docker.yaml).
+
+scrape_configs:
+  - job_name: arxsentinel
+    static_configs:
+      - targets:
+          - "localhost:9117"   # adjust if METRICS_PORT is different
+    # Optional: basic auth (requires metrics.username and metrics.password_hash in config).
+    # basic_auth:
+    #   username: prometheus
+    #   password: your-plaintext-password-here
+
+    # Optional: relabel to add an instance label
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: arxsentinel

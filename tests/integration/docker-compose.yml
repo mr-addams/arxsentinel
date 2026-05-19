@@ -41,6 +41,7 @@ services:
       - traefik-backend
       - caddy-backend
       - haproxy-backend
+      - litespeed-backend
 
   caddy:
     build:
@@ -57,6 +58,7 @@ services:
       - traefik-backend
       - caddy-backend
       - haproxy-backend
+      - litespeed-backend
 
   haproxy:
     image: haproxy:latest
@@ -70,6 +72,7 @@ services:
       - traefik-backend
       - caddy-backend
       - haproxy-backend
+      - litespeed-backend
     # stdout captured by run.sh → logs/haproxy/access.log
 
   # nginx-rp: nginx acting as a reverse proxy (4th proxy for proxy-chain tests).
@@ -86,6 +89,7 @@ services:
       - traefik-backend
       - caddy-backend
       - haproxy-backend
+      - litespeed-backend
 
   # litespeed: OpenLiteSpeed serving the webapp.
   # OLS docker template uses /var/www/vhosts/localhost/html as docRoot and writes
@@ -139,3 +143,14 @@ services:
       - ./configs/haproxy-backend.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     depends_on:
       - nginx
+
+  # litespeed-backend: OpenLiteSpeed with useIpInHeader enabled so the access log
+  # records the real attacker IP from X-Forwarded-For, not the proxy container IP.
+  # Dockerfile patches /usr/local/lsws/conf/httpd_config.conf at build time.
+  litespeed-backend:
+    build:
+      context: .
+      dockerfile: dockerfiles/LiteSpeedBackend.Dockerfile
+    volumes:
+      - ./webapp:/var/www/vhosts/localhost/html:ro
+      - ./logs/litespeed-proxy:/usr/local/lsws/logs

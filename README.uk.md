@@ -194,6 +194,32 @@ sudo ./scripts/install.sh
 sudo systemctl enable --now arxsentinel
 ```
 
+### Docker
+
+Дистроблес-образ (~12 МБ), запускається від користувача з uid 65532, надає метрики Prometheus на `:9117`.
+
+```bash
+docker run -d \
+  -v /var/log/nginx/access.log:/var/log/nginx/access.log:ro \
+  -v /var/log/arxsentinel:/var/log/arxsentinel \
+  -p 127.0.0.1:9117:9117 \
+  ghcr.io/mr-addams/arxsentinel:latest
+```
+
+Детальніше: [README.docker.md](README.docker.md) — Docker Compose, монтування томів, змінні середовища, інтеграція з Fail2Ban.
+
+### Kubernetes (Helm)
+
+Топологія DaemonSet — один pod на вузол, читає access.log через `hostPath`.
+
+```bash
+helm install arxsentinel ./deploy/helm/arxsentinel \
+  --set logVolume.hostPath=/var/log/nginx \
+  --set threatLog.hostPath=/var/log/arxsentinel
+```
+
+Детальніше: [README.helm.md](README.helm.md) — опис values, Prometheus Operator, деплой у хмару.
+
 ## Конфігурація
 
 Конфіг: `/etc/arxsentinel/config.yaml` (створюється з `config.yaml` при встановленні).  

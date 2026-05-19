@@ -1,0 +1,114 @@
+# ========================== ArxSentinel — Docker Compose ================================
+#
+#   Minimal production setup: ArxSentinel watches a bind-mounted nginx access log
+#   and writes threat events to a host directory readable by Fail2Ban.
+#
+#   Prerequisites:
+#     1. Copy and edit the env file:
+#          cp .env.example .env
+#     2. Create the threat log directory (writable by uid 65532):
+#          sudo mkdir -p /var/log/arxsentinel
+#          sudo chown 65532:65532 /var/log/arxsentinel
+#     3. Start:
+#          docker compose up -d
+#
+#   Prometheus scraping: see prometheus-scrape.yml for a ready-to-paste job config.
+#
+#   Multi-stream: for multiple log files, replace general.log_file with the streams:
+#   section in your mounted config.yaml. Each stream gets its own threat log.
+#
+# =========================================================================================
+
+services:
+  arxsentinel:
+    image: ghcr.io/mr-addams/arxsentinel:latest
+    restart: unless-stopped
+
+    volumes:
+      # nginx access log — read-only; sentinel never writes to it.
+      - ${LOG_FILE:-/var/log/nginx/access.log}:/var/log/nginx/access.log:ro
+
+      # Threat log directory — writable by nonroot uid 65532.
+      # Fail2Ban on the host watches threats.log here via its jail config.
+      - ${THREAT_LOG_DIR:-/var/log/arxsentinel}:/var/log/arxsentinel
+
+      # Optional: mount your own config to override the image defaults.
+      # Uncomment and adjust the path if you need custom scoring, detectors, etc.
+      # - ./config.yaml:/etc/arxsentinel/config.yaml:ro
+
+      # /tmp is needed for the pid file (distroless nonroot cannot write elsewhere).
+      # Declared as a named tmpfs so docker compose tracks it explicitly.
+      - arxsentinel-tmp:/tmp
+
+    ports:
+      # Prometheus /metrics endpoint — bound to localhost only.
+      # Remove "127.0.0.1:" prefix to expose externally (set up auth first).
+      - "127.0.0.1:${METRICS_PORT:-9117}:9117"
+
+    # Environment variable overrides — highest priority, wins over mounted config.yaml.
+    # Uncomment and set values to tune ArxSentinel without editing config.yaml.
+    environment:
+      # ARXSENTINEL_SCORING_ALERT_THRESHOLD: "50"
+      # ARXSENTINEL_SCORING_BAN_THRESHOLD: "80"
+      # ARXSENTINEL_METRICS_ENABLED: "true"
+      # ARXSENTINEL_LOGGING_DEBUG: "false"
+      # Full list: see README.docker.md §Environment variables
+      ARXSENTINEL_GENERAL_LOG_FILE: /var/log/nginx/access.log
+      ARXSENTINEL_OUTPUT_THREAT_LOG: /var/log/arxsentinel/threats.log
+      ARXSENTINEL_OUTPUT_OPERATIONAL_LOG: /var/log/arxsentinel/sentinel.log
+
+    security_opt:
+      # Prevent privilege escalation via setuid binaries (distroless has none, but belt-and-suspenders).
+      - no-new-privileges:true
+
+    read_only: true   # root filesystem is read-only; all writes go through named volumes / tmpfs
+
+    # Constrain resources — ArxSentinel is designed to run within these limits.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+        reservations:
+          cpus: "0.05"
+          memory: 32M
+
+    # Healthcheck via Prometheus metrics endpoint.
+    # Requires curl in the container — distroless has none. Use a TCP probe instead:
+    # Docker Engine 25+ supports TCP healthchecks without curl.
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/arxsentinel.pid"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Optional example: nginx co-located on the same host ─────────────────────
+  # Start with: docker compose --profile example up -d
+  # Omit this block if you bring your own nginx.
+  nginx:
+    profiles: [example]
+    image: nginx:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Bind-mount the access log so both nginx and arxsentinel see the same file.
+      - /var/log/nginx:/var/log/nginx
+    depends_on:
+      - arxsentinel
+
+volumes:
+  # Named tmpfs for the PID file — keeps the root FS read-only.
+  arxsentinel-tmp:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=16m,uid=65532,gid=65532"

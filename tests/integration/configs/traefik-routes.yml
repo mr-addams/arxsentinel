@@ -29,6 +29,11 @@ http:
       middlewares: ["strip-haproxy"]
       service: svc-haproxy-backend
       entryPoints: [web]
+    backend-litespeed:
+      rule: "PathPrefix(`/backend-litespeed`)"
+      middlewares: ["strip-litespeed"]
+      service: svc-litespeed-backend
+      entryPoints: [web]
     default:
       rule: "PathPrefix(`/`)"
       service: svc-nginx-direct
@@ -45,6 +50,8 @@ http:
       stripPrefix: { prefixes: ["/backend-caddy"] }
     strip-haproxy:
       stripPrefix: { prefixes: ["/backend-haproxy"] }
+    strip-litespeed:
+      stripPrefix: { prefixes: ["/backend-litespeed"] }
 
   services:
     # Proxy-chain backends (trust X-Forwarded-For).
@@ -63,6 +70,9 @@ http:
     svc-haproxy-backend:
       loadBalancer:
         servers: [{ url: "http://haproxy-backend:80" }]
+    svc-litespeed-backend:
+      loadBalancer:
+        servers: [{ url: "http://litespeed-backend:80" }]
     # Default: direct nginx backend (existing tests).
     svc-nginx-direct:
       loadBalancer:

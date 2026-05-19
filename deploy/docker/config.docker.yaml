@@ -1,0 +1,63 @@
+# ========================== ArxSentinel — container defaults ==============================
+#
+#   This file is baked into the Docker image at /etc/arxsentinel/config.yaml.
+#   Override it by bind-mounting your own config:
+#
+#     docker run -v ./my-config.yaml:/etc/arxsentinel/config.yaml:ro ...
+#   or:
+#     ARXSENTINEL_CONFIG=/custom/path/config.yaml arxsentinel
+#
+#   Differences from bare-metal defaults:
+#     - pid_file:        /tmp/arxsentinel.pid  (distroless:nonroot uid=65532 cannot write /var/run)
+#     - console_color:   false                 (no terminal in container, avoid ANSI noise)
+#     - metrics.enabled: true                  (primary value-add in container mode)
+#     - output paths:    /var/log/arxsentinel/ (mount writable volume here for Fail2Ban)
+#
+# =========================================================================================
+
+# ── general ───────────────────────────────────────────────────────────────────────────────
+general:
+  log_file: /var/log/nginx/access.log   # bind-mount nginx log here (read-only)
+  pid_file: /tmp/arxsentinel.pid        # /var/run not writable for nonroot uid=65532
+
+  lines_buf_size: 1000
+  tail_retry_interval: "5s"
+  stats_interval: "300s"
+
+# ── logging ───────────────────────────────────────────────────────────────────────────────
+logging:
+  debug: false
+  console_color: false   # no terminal — plain text for log drivers (journald, fluentd, etc.)
+
+# ── parser ────────────────────────────────────────────────────────────────────────────────
+parser:
+  log_format: combined
+  timezone: UTC
+
+# ── scoring ───────────────────────────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: "300s"
+  decay: "linear"
+
+# ── state ─────────────────────────────────────────────────────────────────────────────────
+state:
+  gc_interval: "60s"
+  max_tracked_ips: 100000
+
+# ── metrics ───────────────────────────────────────────────────────────────────────────────
+# Enabled by default in container mode — expose port 9117 for Prometheus scraping.
+# Set metrics.username + metrics.password_hash to enable basic auth.
+metrics:
+  enabled: true
+  listen_addr: ":9117"
+  username: ""
+  password_hash: ""
+
+# ── output ────────────────────────────────────────────────────────────────────────────────
+# Mount /var/log/arxsentinel as a writable volume.
+# For Fail2Ban integration: host Fail2Ban reads threats.log via bind-mount or hostPath.
+output:
+  threat_log: /var/log/arxsentinel/threats.log
+  operational_log: /var/log/arxsentinel/sentinel.log

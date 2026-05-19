@@ -27,6 +27,10 @@
         reverse_proxy haproxy-backend:80
     }
 
+    handle_path /backend-litespeed/* {
+        reverse_proxy litespeed-backend:80
+    }
+
     # Default: proxy to nginx backend — real 200/404 responses for direct tests.
     handle {
         reverse_proxy nginx:80

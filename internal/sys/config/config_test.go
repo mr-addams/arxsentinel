@@ -431,6 +431,204 @@ streams:
 	}
 }
 
+// ========================== Tests: env var overrides =================================
+
+func TestEnvOverride_StringAndInt(t *testing.T) {
+	// String and int fields are overridden by env vars.
+	t.Setenv("ARXSENTINEL_GENERAL_PID_FILE", "/tmp/test.pid")
+	t.Setenv("ARXSENTINEL_SCORING_ALERT_THRESHOLD", "65")
+	t.Setenv("ARXSENTINEL_SCORING_BAN_THRESHOLD", "95")
+	t.Setenv("ARXSENTINEL_METRICS_LISTEN_ADDR", ":9999")
+
+	cfg, err := LoadConfig("/nonexistent/env-override-test.yaml")
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if cfg.General.PIDFile != "/tmp/test.pid" {
+		t.Errorf("PIDFile: want /tmp/test.pid, got %q", cfg.General.PIDFile)
+	}
+	if cfg.Scoring.AlertThreshold != 65 {
+		t.Errorf("AlertThreshold: want 65, got %d", cfg.Scoring.AlertThreshold)
+	}
+	if cfg.Scoring.BanThreshold != 95 {
+		t.Errorf("BanThreshold: want 95, got %d", cfg.Scoring.BanThreshold)
+	}
+	if cfg.Metrics.ListenAddr != ":9999" {
+		t.Errorf("ListenAddr: want :9999, got %q", cfg.Metrics.ListenAddr)
+	}
+}
+
+func TestEnvOverride_Bool(t *testing.T) {
+	// Boolean env vars accept "true"/"false"/"1"/"0".
+	t.Setenv("ARXSENTINEL_LOGGING_DEBUG", "true")
+	t.Setenv("ARXSENTINEL_LOGGING_CONSOLE_COLOR", "0")
+	t.Setenv("ARXSENTINEL_METRICS_ENABLED", "1")
+
+	cfg, err := LoadConfig("/nonexistent/env-bool-test.yaml")
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if !cfg.Logging.Debug {
+		t.Error("Logging.Debug: want true")
+	}
+	if cfg.Logging.ConsoleColor {
+		t.Error("Logging.ConsoleColor: want false")
+	}
+	if !cfg.Metrics.Enabled {
+		t.Error("Metrics.Enabled: want true")
+	}
+}
+
+func TestEnvOverride_Duration(t *testing.T) {
+	// Duration fields accept Go duration strings (e.g. "2m", "45s").
+	t.Setenv("ARXSENTINEL_SCORING_OBSERVATION_WINDOW", "10m")
+	t.Setenv("ARXSENTINEL_STATE_GC_INTERVAL", "45s")
+	t.Setenv("ARXSENTINEL_WHITELIST_DNS_VERIFY_TIMEOUT", "5s")
+
+	cfg, err := LoadConfig("/nonexistent/env-dur-test.yaml")
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if time.Duration(cfg.Scoring.ObservationWindow) != 10*time.Minute {
+		t.Errorf("ObservationWindow: want 10m, got %v", time.Duration(cfg.Scoring.ObservationWindow))
+	}
+	if time.Duration(cfg.State.GCInterval) != 45*time.Second {
+		t.Errorf("GCInterval: want 45s, got %v", time.Duration(cfg.State.GCInterval))
+	}
+	if time.Duration(cfg.Whitelist.DNSVerifyTimeout) != 5*time.Second {
+		t.Errorf("DNSVerifyTimeout: want 5s, got %v", time.Duration(cfg.Whitelist.DNSVerifyTimeout))
+	}
+}
+
+func TestEnvOverride_CSV(t *testing.T) {
+	// Comma-separated env vars replace the corresponding slice.
+	t.Setenv("ARXSENTINEL_WHITELIST_CUSTOM_IPS", "1.2.3.4, 5.6.7.8")
+	t.Setenv("ARXSENTINEL_WHITELIST_CUSTOM_CIDRS", "10.0.0.0/8,192.168.0.0/16")
+
+	cfg, err := LoadConfig("/nonexistent/env-csv-test.yaml")
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if len(cfg.Whitelist.Custom.IPs) != 2 {
+		t.Fatalf("Custom.IPs: want 2 entries, got %d: %v", len(cfg.Whitelist.Custom.IPs), cfg.Whitelist.Custom.IPs)
+	}
+	if cfg.Whitelist.Custom.IPs[0] != "1.2.3.4" || cfg.Whitelist.Custom.IPs[1] != "5.6.7.8" {
+		t.Errorf("Custom.IPs: want [1.2.3.4 5.6.7.8], got %v", cfg.Whitelist.Custom.IPs)
+	}
+	if len(cfg.Whitelist.Custom.CIDRs) != 2 {
+		t.Fatalf("Custom.CIDRs: want 2 entries, got %d: %v", len(cfg.Whitelist.Custom.CIDRs), cfg.Whitelist.Custom.CIDRs)
+	}
+}
+
+func TestEnvOverride_EmptyEnvLeavesYAMLIntact(t *testing.T) {
+	// Both "not set" and "explicitly empty" env vars must leave YAML values unchanged.
+	// ARXSENTINEL_SCORING_ALERT_THRESHOLD is explicitly set to "" — must not zero the field.
+	t.Setenv("ARXSENTINEL_SCORING_ALERT_THRESHOLD", "")
+
+	path := writeTempYAML(t, `
+scoring:
+  alert_threshold: 70
+  ban_threshold: 100
+  observation_window: "15m"
+  decay: "linear"
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if cfg.Scoring.AlertThreshold != 70 {
+		t.Errorf("AlertThreshold: want 70 (from YAML), got %d", cfg.Scoring.AlertThreshold)
+	}
+	if cfg.Scoring.BanThreshold != 100 {
+		t.Errorf("BanThreshold: want 100 (from YAML), got %d", cfg.Scoring.BanThreshold)
+	}
+}
+
+func TestEnvOverride_EnvWinsOverYAML(t *testing.T) {
+	// Env vars take priority over YAML values.
+	t.Setenv("ARXSENTINEL_SCORING_ALERT_THRESHOLD", "55")
+	t.Setenv("ARXSENTINEL_SCORING_BAN_THRESHOLD", "88")
+
+	path := writeTempYAML(t, `
+scoring:
+  alert_threshold: 70
+  ban_threshold: 100
+  observation_window: "15m"
+  decay: "linear"
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	// Env overrides YAML.
+	if cfg.Scoring.AlertThreshold != 55 {
+		t.Errorf("AlertThreshold: want 55 (from env), got %d", cfg.Scoring.AlertThreshold)
+	}
+	if cfg.Scoring.BanThreshold != 88 {
+		t.Errorf("BanThreshold: want 88 (from env), got %d", cfg.Scoring.BanThreshold)
+	}
+	// Unset env var → YAML value preserved.
+	if time.Duration(cfg.Scoring.ObservationWindow) != 15*time.Minute {
+		t.Errorf("ObservationWindow: want 15m (from YAML), got %v", time.Duration(cfg.Scoring.ObservationWindow))
+	}
+}
+
+func TestEnvOverride_InvalidIP(t *testing.T) {
+	// An invalid IP address in ARXSENTINEL_WHITELIST_CUSTOM_IPS must return an error.
+	t.Setenv("ARXSENTINEL_WHITELIST_CUSTOM_IPS", "1.2.3.4,not-an-ip")
+
+	_, err := LoadConfig("/nonexistent/env-bad-ip.yaml")
+	if err == nil {
+		t.Error("expected error for invalid IP address, got nil")
+	}
+}
+
+func TestEnvOverride_InvalidCIDR(t *testing.T) {
+	// An invalid CIDR block in ARXSENTINEL_WHITELIST_CUSTOM_CIDRS must return an error.
+	t.Setenv("ARXSENTINEL_WHITELIST_CUSTOM_CIDRS", "10.0.0.0/8,not-a-cidr")
+
+	_, err := LoadConfig("/nonexistent/env-bad-cidr.yaml")
+	if err == nil {
+		t.Error("expected error for invalid CIDR, got nil")
+	}
+}
+
+func TestEnvOverride_InvalidBool(t *testing.T) {
+	// An unrecognized boolean value must return an error.
+	t.Setenv("ARXSENTINEL_LOGGING_DEBUG", "yes")
+
+	_, err := LoadConfig("/nonexistent/env-bad-bool.yaml")
+	if err == nil {
+		t.Error("expected error for invalid bool env var, got nil")
+	}
+}
+
+func TestEnvOverride_InvalidInt(t *testing.T) {
+	// A non-integer value for an int field must return an error.
+	t.Setenv("ARXSENTINEL_SCORING_ALERT_THRESHOLD", "abc")
+
+	_, err := LoadConfig("/nonexistent/env-bad-int.yaml")
+	if err == nil {
+		t.Error("expected error for invalid int env var, got nil")
+	}
+}
+
+func TestEnvOverride_InvalidDuration(t *testing.T) {
+	// An unparsable duration must return an error.
+	t.Setenv("ARXSENTINEL_STATE_GC_INTERVAL", "notaduration")
+
+	_, err := LoadConfig("/nonexistent/env-bad-dur.yaml")
+	if err == nil {
+		t.Error("expected error for invalid duration env var, got nil")
+	}
+}
+
 // ========================== Helper ====================================================
 
 // writeTempYAML creates a temporary file with the given content and returns its path.
