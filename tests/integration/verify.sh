@@ -16,7 +16,7 @@ LOGS_DIR="${1:-logs}"
 PASS=0
 FAIL=0
 
-SERVERS=(nginx apache traefik caddy haproxy)
+SERVERS=(nginx apache traefik caddy haproxy litespeed)
 MODULES=(probe ua bruteforce crawler noasset rate overflow)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -24,12 +24,13 @@ MODULES=(probe ua bruteforce crawler noasset rate overflow)
 # image_for_server: maps service name to its Docker image reference.
 image_for_server() {
     case "${1:-}" in
-        nginx|nginx-rp)                        echo "nginx:latest"   ;;
-        apache|apache-proxy)                   echo "httpd:latest"   ;;
-        traefik|traefik-proxy|traefik-backend) echo "traefik:latest" ;;
-        caddy|caddy-proxy|caddy-backend)       echo "caddy:latest"   ;;
-        haproxy|haproxy-proxy|haproxy-backend) echo "haproxy:latest" ;;
-        *)                                     echo "unknown"        ;;
+        nginx|nginx-rp)                        echo "nginx:latest"                           ;;
+        apache|apache-proxy)                   echo "httpd:latest"                           ;;
+        traefik|traefik-proxy|traefik-backend) echo "traefik:latest"                         ;;
+        caddy|caddy-proxy|caddy-backend)       echo "caddy:latest"                           ;;
+        haproxy|haproxy-proxy|haproxy-backend) echo "haproxy:latest"                         ;;
+        litespeed)                             echo "litespeedtech/openlitespeed:latest"     ;;
+        *)                                     echo "unknown"                                ;;
     esac
 }
 
@@ -50,6 +51,15 @@ img_line() {
     local img; img=$(image_for_server "$1")
     local hash; hash=$(digest_for_image "$img")
     echo "  image: $img (${hash:-no-digest})"
+}
+
+# server_access_log SERVER — returns the direct access log path for a server.
+# Most servers write to access.log; OLS uses localhost.access.log (docker vhost template).
+server_access_log() {
+    case "${1:-}" in
+        litespeed) echo "$LOGS_DIR/litespeed/localhost.access.log" ;;
+        *)         echo "$LOGS_DIR/${1}/access.log"                ;;
+    esac
 }
 
 # backend_access_log BACKEND — returns the proxy-chain access log path for a backend.
@@ -86,7 +96,7 @@ assert_module() {
     local server=$1
     local module=$2
     local threat_log="$LOGS_DIR/threats/${server}.log"
-    local access_log="$LOGS_DIR/${server}/access.log"
+    local access_log; access_log=$(server_access_log "$server")
 
     # grep -w matches whole words — commas act as word boundaries in CLF lines.
     if grep -qw "$module" "$threat_log" 2>/dev/null; then
