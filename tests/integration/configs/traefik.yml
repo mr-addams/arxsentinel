@@ -1,0 +1,19 @@
+# Minimal Traefik static config for integration tests.
+# accessLog writes CLF to a file — compatible with the "traefik" sentinel profile.
+# No provider needed: Traefik logs all requests including 404s from unresolved routes.
+
+accessLog:
+  filePath: /var/log/traefik/access.log
+  bufferingSize: 0
+
+entryPoints:
+  web:
+    address: ":80"
+
+# File provider: routes.yml proxies all traffic to the nginx backend.
+providers:
+  file:
+    filename: /etc/traefik/routes.yml
+
+api:
+  dashboard: false

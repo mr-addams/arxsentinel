@@ -81,10 +81,13 @@ func (p *RegexParser) Parse(line string) (*LogEntry, bool) {
 		return ""
 	}
 
-	// time — parsed with nginxTimeLayout; zero value on mismatch (non-fatal)
+	// time — try nginxTimeLayout first, then haproxyTimeLayout (milliseconds, no tz).
+	// Zero value on mismatch is non-fatal — detectors that skip time (probe, ua, etc.) still work.
 	var t time.Time
 	if raw := get("time"); raw != "" {
-		t, _ = time.Parse(nginxTimeLayout, raw)
+		if t, _ = time.Parse(nginxTimeLayout, raw); t.IsZero() {
+			t, _ = time.Parse(haproxyTimeLayout, raw)
+		}
 	}
 
 	method, rawURI, proto := splitRequest(get("request"))

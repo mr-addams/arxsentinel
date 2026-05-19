@@ -40,8 +40,7 @@ const apacheCLFPattern = `^(?P<remote_addr>\S+) \S+ (?P<remote_user>\S+) \[(?P<t
 // haproxyHTTPPattern matches HAProxy access logs produced by "option httplog" (no syslog prefix).
 //
 // HAProxy time includes milliseconds: "01/Nov/2022:10:11:12.456"
-// This does not match nginxTimeLayout; time.Parse fails silently → time.Time{} (non-fatal).
-// Detectors that do not inspect timestamp still work correctly.
+// Parsed via haproxyTimeLayout fallback in RegexParser — all detectors including rate work.
 //
 // Format after time: frontend~ backend/server timers status bytes req_cookie resp_cookie
 //                    term_state actconn queue "request"
