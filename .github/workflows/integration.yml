@@ -155,3 +155,6 @@ jobs:
           name: integration-logs
           path: tests/integration/logs/
           retention-days: 30
+          # OLS containers write stderr.log owned by root — skip to avoid EACCES.
+          exclude: |
+            tests/integration/logs/**/stderr.log
