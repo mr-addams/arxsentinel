@@ -137,7 +137,9 @@ run_scenario "rate" "$(attack_all '
 # Single request with URL path > 2048 bytes — fires immediately.
 # Generate a 2200-char alphanumeric path.
 # /dev/urandom is ~24% alphanumeric, so we read 20000 bytes to guarantee 2200 clean chars.
-LONG_PATH="/$(head -c 20000 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 2200)"
+# pipefail is disabled inside $() because head -c 2200 closes stdin before tr finishes
+# reading — SIGPIPE on tr is expected and benign. 2>/dev/null suppresses the stderr message.
+LONG_PATH="/$(set +o pipefail; head -c 20000 /dev/urandom | tr -dc 'a-zA-Z0-9' 2>/dev/null | head -c 2200)"
 run_scenario "overflow" "$(attack_all "
     curl -sf -o /dev/null 'http://__SRV__${LONG_PATH}' || true
 ")"
