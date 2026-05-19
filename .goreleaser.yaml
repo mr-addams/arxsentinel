@@ -163,6 +163,10 @@ dockers_v2:
     platforms:
       - linux/amd64
       - linux/arm64
+    # extra_files are copied into the build context preserving their relative path from the project root.
+    # Required because dockers_v2 uses a temp dir (not project root) as the build context.
+    extra_files:
+      - deploy/docker/config.docker.yaml
     labels:
       "org.opencontainers.image.title": "arxsentinel"
       "org.opencontainers.image.description": "nginx access log analyzer with Fail2Ban integration"
