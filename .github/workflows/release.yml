@@ -4,9 +4,11 @@ on:
   push:
     branches: [main]
 
-# contents:write is required to create a tag and a GitHub Release.
+# contents:write — create tag and GitHub Release.
+# pull-requests:write — open auto VERSION-bump PR to dev after stable release.
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   integration:
@@ -83,5 +85,26 @@ jobs:
             gh release edit "$tag" \
               --notes "$(printf '%s\n\n---\n\n%s' "$current" "$(cat tested-versions.md)")"
           fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump VERSION for next development cycle
+        if: success() && steps.tag.outputs.skip != 'true'
+        run: |
+          current=$(cat VERSION)
+          IFS='.' read -r major minor patch <<< "$current"
+          next="${major}.${minor}.$((patch + 1))"
+
+          branch="chore/bump-version-${next}"
+          git checkout -b "$branch"
+          echo "$next" > VERSION
+          git add VERSION
+          git commit -m "chore: bump VERSION to ${next}"
+          git push origin "$branch"
+
+          gh pr create \
+            --title "chore: bump VERSION to ${next}" \
+            --body "Automatic version bump after stable release v${current}. Next dev cycle: v${next}-dev.1" \
+            --base dev
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
