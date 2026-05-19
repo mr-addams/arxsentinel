@@ -5,14 +5,14 @@
 //   WHAT IS HERE:
 //     - Profiles map: profile name → factory function
 //     - AvailableProfiles(): sorted list for error messages
-//     - Four profiles: apache, caddy, traefik, haproxy-http
+//     - Five profiles: apache, caddy, traefik, haproxy-http, litespeed
 //
 //   Design note (Decision 2 deviation):
 //     DECISIONS.md planned caddy and traefik as JSONParser profiles.
 //     In practice, Caddy v2 JSON uses nested objects and Traefik JSON splits
 //     the request into method/path/proto — neither maps cleanly to JSONParser's
 //     single-field "request" contract.
-//     All four profiles use RegexParser instead.
+//     All five profiles use RegexParser instead.
 //     Deploy examples (deploy/examples/<server>/) show the server-side config
 //     that produces logs matching the profile's pattern.
 //
@@ -28,7 +28,7 @@ import (
 )
 
 // apacheCLFPattern matches Apache Combined Log Format.
-// Also used for Caddy (configured to emit CLF) and Traefik (CLF default).
+// Also used for Caddy (configured to emit CLF), Traefik (CLF default), and LiteSpeed / OpenLiteSpeed.
 //
 // bytes_sent captured as \S+ — Apache logs "-" for zero-body responses;
 // strconv.ParseInt ignores the error and returns 0.
@@ -54,6 +54,7 @@ var Profiles = map[string]func() (Parser, error){
 	"caddy":        caddyProfile,
 	"traefik":      traefikProfile,
 	"haproxy-http": haproxyHTTPProfile,
+	"litespeed":    litespeedProfile,
 }
 
 func apacheProfile() (Parser, error) {
@@ -77,6 +78,20 @@ func traefikProfile() (Parser, error) {
 
 func haproxyHTTPProfile() (Parser, error) {
 	return NewRegexParser(haproxyHTTPPattern)
+}
+
+// litespeedProfile uses Apache CLF pattern.
+// Both LiteSpeed Web Server (LSWS) and OpenLiteSpeed (OLS) emit Apache CLF by default —
+// no server-side log format changes required.
+//
+// Real IP behind a proxy: enable "Use Client IP in Header" in the WebAdmin panel
+// (or <useIpInProxyHeader>1</useIpInProxyHeader> in httpd_config.xml).
+// The server then writes the client IP into %h directly — RealIP == RemoteAddr in sentinel.
+//
+// Default log path: /usr/local/lsws/logs/access.log
+// VirtualHost log:  /usr/local/lsws/logs/<vhostname>/access.log
+func litespeedProfile() (Parser, error) {
+	return NewRegexParser(apacheCLFPattern)
 }
 
 // AvailableProfiles returns a sorted, comma-separated list of known profile names.
