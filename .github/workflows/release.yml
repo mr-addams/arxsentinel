@@ -68,7 +68,7 @@ jobs:
 
       - name: Download tested versions
         if: steps.tag.outputs.skip != 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: integration-versions
           path: .
