@@ -27,6 +27,8 @@ access.log → TailReader → whitelist → tracker → scorer → threats.log �
 | Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + [transform-encoder](https://github.com/caddyserver/transform-encoder) plugin |
 | HAProxy | `haproxy-http` | `option httplog` in haproxy.cfg + rsyslog to write to file |
 
+> Each release includes a **Tested product versions** table with the exact server versions the build was validated against — see [GitHub Releases](https://github.com/mr-addams/arxsentinel/releases).
+
 > **nginx:** no `profile:` setting is needed. The default CombinedParser handles nginx combined log format out of the box. Set only `general.log_file` pointing to your access log.
 
 Built-in profiles — no regex or field mapping required. Set `parser.profile` to the server name for Apache, Traefik, Caddy, or HAProxy:
