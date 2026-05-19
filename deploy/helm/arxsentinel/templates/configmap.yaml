@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "arxsentinel.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "arxsentinel.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    # ArxSentinel config rendered by Helm — override values via values.yaml env section.
+    general:
+      log_file: /var/log/nginx/{{ .Values.logFile }}
+      pid_file: /tmp/arxsentinel.pid
+
+    logging:
+      debug: false
+      console_color: false
+
+    parser:
+      log_format: combined
+      timezone: UTC
+
+    scoring:
+      alert_threshold: 50
+      ban_threshold: 80
+      observation_window: "300s"
+      decay: "linear"
+
+    state:
+      gc_interval: "60s"
+      max_tracked_ips: 100000
+
+    metrics:
+      enabled: {{ .Values.metrics.enabled }}
+      listen_addr: ":{{ .Values.metrics.port }}"
+      username: ""
+      password_hash: ""
+
+    output:
+      {{- if .Values.threatLog.hostPath }}
+      threat_log: /var/log/arxsentinel/threats.log
+      {{- else }}
+      # No threatLog.hostPath set — threat log goes to stdout-visible temp location.
+      # In managed cloud environments, use an Output Plugin (future) to send threats
+      # to a database, queue, or webhook instead of Fail2Ban.
+      threat_log: /tmp/threats.log
+      {{- end }}
+      operational_log: /tmp/sentinel.log

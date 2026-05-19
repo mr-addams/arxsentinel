@@ -745,6 +745,7 @@
         <ul class="tabs-nav">
             <li><button class="tab-btn active" onclick="switchTab(event, 'script-install')">Встановлення скриптом</button></li>
             <li><button class="tab-btn" onclick="switchTab(event, 'source-install')">З вихідного коду</button></li>
+            <li><button class="tab-btn" onclick="switchTab(event, 'container-install')">Контейнер</button></li>
         </ul>
 
         <div class="terminal-container">
@@ -769,6 +770,21 @@
 cd arxsentinel
 sudo ./scripts/install.sh
 sudo systemctl enable --now arxsentinel</span></pre>
+            </div>
+
+            <div id="container-install" class="tab-content">
+                <pre><span class="comment"># Docker — дистроблес-образ (~12 МБ), uid 65532, amd64 + arm64</span>
+<span class="command">docker run -d \
+  -v /var/log/nginx/access.log:/var/log/nginx/access.log:ro \
+  -v /var/log/arxsentinel:/var/log/arxsentinel \
+  -p 127.0.0.1:9117:9117 \
+  ghcr.io/mr-addams/arxsentinel:latest</span></pre>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">
+                    Метрики Prometheus доступні на <code>:9117/metrics</code> одразу після запуску.
+                    Docker Compose та Kubernetes (Helm DaemonSet) — докладні посібники:
+                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/README.docker.md" style="color: var(--accent-blue);">README.docker.md</a> ·
+                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/README.helm.md" style="color: var(--accent-blue);">README.helm.md</a>
+                </p>
             </div>
         </div>
 

@@ -157,7 +157,7 @@ CHAIN_PROXIES=(
     "haproxy:80"
     "nginx-rp:80"
 )
-CHAIN_BACKENDS=(nginx apache traefik caddy haproxy)
+CHAIN_BACKENDS=(nginx apache traefik caddy haproxy litespeed)
 
 for proxy_spec in "${CHAIN_PROXIES[@]}"; do
     proxy_name="${proxy_spec%%:*}"

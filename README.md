@@ -196,6 +196,32 @@ sudo ./scripts/install.sh
 sudo systemctl enable --now arxsentinel
 ```
 
+### Docker
+
+Distroless image (~12 MB), runs as non-root uid 65532, exposes Prometheus metrics on `:9117`.
+
+```bash
+docker run -d \
+  -v /var/log/nginx/access.log:/var/log/nginx/access.log:ro \
+  -v /var/log/arxsentinel:/var/log/arxsentinel \
+  -p 127.0.0.1:9117:9117 \
+  ghcr.io/mr-addams/arxsentinel:latest
+```
+
+See [README.docker.md](README.docker.md) for Docker Compose setup, volume mounts, env var overrides, and Fail2Ban integration.
+
+### Kubernetes (Helm)
+
+DaemonSet topology — one pod per node, reads the node's access log via `hostPath`.
+
+```bash
+helm install arxsentinel ./deploy/helm/arxsentinel \
+  --set logVolume.hostPath=/var/log/nginx \
+  --set threatLog.hostPath=/var/log/arxsentinel
+```
+
+See [README.helm.md](README.helm.md) for values reference, Prometheus Operator integration, and cloud deployment notes.
+
 ## Configuration
 
 Config file: `/etc/arxsentinel/config.yaml` (created from `config.yaml` during installation).  

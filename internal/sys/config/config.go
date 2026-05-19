@@ -22,7 +22,9 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -259,8 +261,13 @@ type MetricsConfig struct {
 
 // LoadConfig reads config from path and overlays it on top of Go defaults.
 //
+// Load order (highest priority wins):
+//   1. Go defaults (defaultConfig)
+//   2. YAML file (if present)
+//   3. ARXSENTINEL_* environment variables
+//
 // Behavior when file is missing:
-//   - File not found (os.IsNotExist) → returns defaultConfig() without error.
+//   - File not found (os.IsNotExist) → uses defaults; env overrides still apply.
 //     The daemon works "out of the box" with sensible defaults.
 //
 // Behavior when file exists:
@@ -274,17 +281,22 @@ func LoadConfig(path string) (Config, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			// File not found — defaults are sufficient to start.
-			// Print to stderr: the operator should know they are running on defaults.
-			fmt.Fprintf(os.Stderr, "[INFO] config %q not found, using defaults\n", path)
-			return cfg, nil
+		if !os.IsNotExist(err) {
+			return cfg, fmt.Errorf("reading config %q: %w", path, err)
 		}
-		return cfg, fmt.Errorf("reading config %q: %w", path, err)
+		// File not found — defaults are sufficient to start.
+		// Print to stderr: the operator should know they are running on defaults.
+		fmt.Fprintf(os.Stderr, "[INFO] config %q not found, using defaults\n", path)
+	} else {
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return cfg, fmt.Errorf("parsing config %q: %w", path, err)
+		}
 	}
 
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return cfg, fmt.Errorf("parsing config %q: %w", path, err)
+	// Env vars overlay YAML (or defaults when file is absent).
+	// Return an empty Config on error — partial overrides are not a valid state.
+	if err := applyEnvOverrides(&cfg); err != nil {
+		return Config{}, err
 	}
 
 	// Normalize log_format to lowercase so buildParser() can compare without case sensitivity.
@@ -313,6 +325,329 @@ func LoadConfig(path string) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// ========================== Env var overrides =========================================
+
+// applyEnvOverrides overlays ARXSENTINEL_* environment variables on top of cfg.
+// Convention: ARXSENTINEL_<SECTION>_<FIELD> (uppercase, underscores).
+// An empty or unset variable leaves the corresponding field unchanged.
+//
+// Not overridable via env vars (complex types — configure via YAML):
+//   detectors.probe.paths, detectors.noasset.asset_extensions,
+//   detectors.overflow.suspicious_params, detectors.useragent.extra_*_patterns,
+//   whitelist.bots, whitelist.custom.ua_substrings, streams
+func applyEnvOverrides(cfg *Config) error {
+	// ── general ───────────────────────────────────────────────────────────────────────
+	envStr("ARXSENTINEL_GENERAL_LOG_FILE", &cfg.General.LogFile)
+	envStr("ARXSENTINEL_GENERAL_PID_FILE", &cfg.General.PIDFile)
+	if err := envInt("ARXSENTINEL_GENERAL_LINES_BUF_SIZE", &cfg.General.LinesBufSize); err != nil {
+		return err
+	}
+	if err := envDur("ARXSENTINEL_GENERAL_TAIL_RETRY_INTERVAL", &cfg.General.TailRetryInterval); err != nil {
+		return err
+	}
+	if err := envDur("ARXSENTINEL_GENERAL_STATS_INTERVAL", &cfg.General.StatsInterval); err != nil {
+		return err
+	}
+
+	// ── logging ───────────────────────────────────────────────────────────────────────
+	if err := envBool("ARXSENTINEL_LOGGING_DEBUG", &cfg.Logging.Debug); err != nil {
+		return err
+	}
+	if err := envBool("ARXSENTINEL_LOGGING_CONSOLE_COLOR", &cfg.Logging.ConsoleColor); err != nil {
+		return err
+	}
+
+	// ── parser ────────────────────────────────────────────────────────────────────────
+	envStr("ARXSENTINEL_PARSER_PROFILE", &cfg.Parser.Profile)
+	envStr("ARXSENTINEL_PARSER_LOG_FORMAT", &cfg.Parser.LogFormat)
+	envStr("ARXSENTINEL_PARSER_REGEX_PATTERN", &cfg.Parser.RegexPattern)
+	envStr("ARXSENTINEL_PARSER_TIMEZONE", &cfg.Parser.Timezone)
+	envStr("ARXSENTINEL_PARSER_JSON_REMOTE_ADDR", &cfg.Parser.JSONFields.RemoteAddr)
+	envStr("ARXSENTINEL_PARSER_JSON_TIME", &cfg.Parser.JSONFields.Time)
+	envStr("ARXSENTINEL_PARSER_JSON_REQUEST", &cfg.Parser.JSONFields.Request)
+	envStr("ARXSENTINEL_PARSER_JSON_STATUS", &cfg.Parser.JSONFields.Status)
+	envStr("ARXSENTINEL_PARSER_JSON_BYTES_SENT", &cfg.Parser.JSONFields.BytesSent)
+	envStr("ARXSENTINEL_PARSER_JSON_REFERER", &cfg.Parser.JSONFields.Referer)
+	envStr("ARXSENTINEL_PARSER_JSON_USER_AGENT", &cfg.Parser.JSONFields.UserAgent)
+	envStr("ARXSENTINEL_PARSER_JSON_REAL_IP", &cfg.Parser.JSONFields.RealIP)
+
+	// ── scoring ───────────────────────────────────────────────────────────────────────
+	if err := envInt("ARXSENTINEL_SCORING_ALERT_THRESHOLD", &cfg.Scoring.AlertThreshold); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_SCORING_BAN_THRESHOLD", &cfg.Scoring.BanThreshold); err != nil {
+		return err
+	}
+	if err := envDur("ARXSENTINEL_SCORING_OBSERVATION_WINDOW", &cfg.Scoring.ObservationWindow); err != nil {
+		return err
+	}
+	envStr("ARXSENTINEL_SCORING_DECAY", &cfg.Scoring.Decay)
+
+	// ── state ─────────────────────────────────────────────────────────────────────────
+	if err := envDur("ARXSENTINEL_STATE_GC_INTERVAL", &cfg.State.GCInterval); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_STATE_MAX_TRACKED_IPS", &cfg.State.MaxTrackedIPs); err != nil {
+		return err
+	}
+
+	// ── detectors.probe ───────────────────────────────────────────────────────────────
+	if err := envBool("ARXSENTINEL_DETECTORS_PROBE_ENABLED", &cfg.Detectors.Probe.Enabled); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_PROBE_SCORE", &cfg.Detectors.Probe.Score); err != nil {
+		return err
+	}
+
+	// ── detectors.bruteforce ──────────────────────────────────────────────────────────
+	if err := envBool("ARXSENTINEL_DETECTORS_BRUTEFORCE_ENABLED", &cfg.Detectors.Bruteforce.Enabled); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_BRUTEFORCE_MIN_REQUESTS", &cfg.Detectors.Bruteforce.MinRequests); err != nil {
+		return err
+	}
+	if err := envFloat("ARXSENTINEL_DETECTORS_BRUTEFORCE_RATIO_THRESHOLD", &cfg.Detectors.Bruteforce.RatioThreshold); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_BRUTEFORCE_SCORE", &cfg.Detectors.Bruteforce.Score); err != nil {
+		return err
+	}
+
+	// ── detectors.crawler ─────────────────────────────────────────────────────────────
+	if err := envBool("ARXSENTINEL_DETECTORS_CRAWLER_ENABLED", &cfg.Detectors.Crawler.Enabled); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_CRAWLER_MIN_SEQUENTIAL", &cfg.Detectors.Crawler.MinSequential); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_CRAWLER_SCORE", &cfg.Detectors.Crawler.Score); err != nil {
+		return err
+	}
+
+	// ── detectors.noasset ─────────────────────────────────────────────────────────────
+	if err := envBool("ARXSENTINEL_DETECTORS_NOASSET_ENABLED", &cfg.Detectors.NoAsset.Enabled); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_NOASSET_MIN_PAGE_REQUESTS", &cfg.Detectors.NoAsset.MinPageRequests); err != nil {
+		return err
+	}
+	if err := envFloat("ARXSENTINEL_DETECTORS_NOASSET_ASSET_RATIO_THRESHOLD", &cfg.Detectors.NoAsset.AssetRatioThreshold); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_NOASSET_SCORE", &cfg.Detectors.NoAsset.Score); err != nil {
+		return err
+	}
+
+	// ── detectors.rate ────────────────────────────────────────────────────────────────
+	if err := envBool("ARXSENTINEL_DETECTORS_RATE_ENABLED", &cfg.Detectors.Rate.Enabled); err != nil {
+		return err
+	}
+	if err := envDur("ARXSENTINEL_DETECTORS_RATE_WINDOW", &cfg.Detectors.Rate.Window); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_RATE_THRESHOLD", &cfg.Detectors.Rate.Threshold); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_RATE_SCORE", &cfg.Detectors.Rate.Score); err != nil {
+		return err
+	}
+
+	// ── detectors.useragent ───────────────────────────────────────────────────────────
+	if err := envBool("ARXSENTINEL_DETECTORS_USERAGENT_ENABLED", &cfg.Detectors.UserAgent.Enabled); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_USERAGENT_SCANNER_SCORE", &cfg.Detectors.UserAgent.ScannerScore); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_USERAGENT_GRABBER_SCORE", &cfg.Detectors.UserAgent.GrabberScore); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_USERAGENT_AUTOMATION_SCORE", &cfg.Detectors.UserAgent.AutomationScore); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_USERAGENT_EMPTY_UA_SCORE", &cfg.Detectors.UserAgent.EmptyUAScore); err != nil {
+		return err
+	}
+
+	// ── detectors.overflow ────────────────────────────────────────────────────────────
+	if err := envBool("ARXSENTINEL_DETECTORS_OVERFLOW_ENABLED", &cfg.Detectors.Overflow.Enabled); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_OVERFLOW_MAX_URL_LENGTH", &cfg.Detectors.Overflow.MaxURLLength); err != nil {
+		return err
+	}
+	if err := envInt("ARXSENTINEL_DETECTORS_OVERFLOW_SCORE", &cfg.Detectors.Overflow.Score); err != nil {
+		return err
+	}
+
+	// ── whitelist ─────────────────────────────────────────────────────────────────────
+	if err := envInt("ARXSENTINEL_WHITELIST_FAKE_BOT_SCORE", &cfg.Whitelist.FakeBotScore); err != nil {
+		return err
+	}
+	if err := envDur("ARXSENTINEL_WHITELIST_DNS_VERIFY_TIMEOUT", &cfg.Whitelist.DNSVerifyTimeout); err != nil {
+		return err
+	}
+	if err := envDur("ARXSENTINEL_WHITELIST_DNS_CACHE_POSITIVE_TTL", &cfg.Whitelist.DNSCache.PositiveTTL); err != nil {
+		return err
+	}
+	if err := envDur("ARXSENTINEL_WHITELIST_DNS_CACHE_NEGATIVE_TTL", &cfg.Whitelist.DNSCache.NegativeTTL); err != nil {
+		return err
+	}
+	if err := envDur("ARXSENTINEL_WHITELIST_DNS_CACHE_IP_LIST_REFRESH", &cfg.Whitelist.DNSCache.IPListRefresh); err != nil {
+		return err
+	}
+	// Comma-separated IP/CIDR lists — replaces (does not extend) the existing slice.
+	// Validated at parse time so misconfigured addresses fail fast on startup.
+	if err := envIPList("ARXSENTINEL_WHITELIST_CUSTOM_IPS", &cfg.Whitelist.Custom.IPs); err != nil {
+		return err
+	}
+	if err := envCIDRList("ARXSENTINEL_WHITELIST_CUSTOM_CIDRS", &cfg.Whitelist.Custom.CIDRs); err != nil {
+		return err
+	}
+
+	// ── output ────────────────────────────────────────────────────────────────────────
+	envStr("ARXSENTINEL_OUTPUT_THREAT_LOG", &cfg.Output.ThreatLog)
+	envStr("ARXSENTINEL_OUTPUT_OPERATIONAL_LOG", &cfg.Output.OperationalLog)
+
+	// ── metrics ───────────────────────────────────────────────────────────────────────
+	if err := envBool("ARXSENTINEL_METRICS_ENABLED", &cfg.Metrics.Enabled); err != nil {
+		return err
+	}
+	envStr("ARXSENTINEL_METRICS_LISTEN_ADDR", &cfg.Metrics.ListenAddr)
+	envStr("ARXSENTINEL_METRICS_USERNAME", &cfg.Metrics.Username)
+	envStr("ARXSENTINEL_METRICS_PASSWORD_HASH", &cfg.Metrics.PasswordHash)
+
+	return nil
+}
+
+// ── env helpers ───────────────────────────────────────────────────────────────────────
+
+// envStr sets *dst to the env value if the variable is set and non-empty.
+func envStr(key string, dst *string) {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		*dst = v
+	}
+}
+
+// envBool parses "true"/"false"/"1"/"0"; returns an error on unrecognized values.
+func envBool(key string, dst *bool) error {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fmt.Errorf("env %s=%q: expected true/false/1/0", key, v)
+	}
+	*dst = b
+	return nil
+}
+
+// envInt parses a base-10 integer; returns an error on invalid input.
+func envInt(key string, dst *int) error {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fmt.Errorf("env %s=%q: expected integer", key, v)
+	}
+	*dst = n
+	return nil
+}
+
+// envFloat parses a 64-bit float; returns an error on invalid input.
+func envFloat(key string, dst *float64) error {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return nil
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return fmt.Errorf("env %s=%q: expected float", key, v)
+	}
+	*dst = f
+	return nil
+}
+
+// envDur parses a Go duration string (e.g. "30s", "2m"); returns an error on invalid input.
+func envDur(key string, dst *Duration) error {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fmt.Errorf("env %s=%q: expected duration (e.g. 30s, 2m)", key, v)
+	}
+	*dst = Duration(d)
+	return nil
+}
+
+// envCSV splits a comma-separated env value into a string slice.
+// Empty parts are dropped; the existing slice is replaced, not extended.
+func envCSV(key string, dst *[]string) {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return
+	}
+	parts := strings.Split(v, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	*dst = result
+}
+
+// envIPList parses a comma-separated list of IP addresses.
+// Each entry is validated with net.ParseIP; returns an error on invalid input.
+func envIPList(key string, dst *[]string) error {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
+			continue
+		}
+		if net.ParseIP(trimmed) == nil {
+			return fmt.Errorf("env %s: %q is not a valid IP address", key, trimmed)
+		}
+		result = append(result, trimmed)
+	}
+	*dst = result
+	return nil
+}
+
+// envCIDRList parses a comma-separated list of CIDR blocks.
+// Each entry is validated with net.ParseCIDR; returns an error on invalid input.
+func envCIDRList(key string, dst *[]string) error {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(trimmed); err != nil {
+			return fmt.Errorf("env %s: %q is not a valid CIDR block", key, trimmed)
+		}
+		result = append(result, trimmed)
+	}
+	*dst = result
+	return nil
 }
 
 // validateConfig checks critical fields after yaml.Unmarshal.

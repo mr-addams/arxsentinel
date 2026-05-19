@@ -153,6 +153,24 @@ nfpms:
         dst: /etc/logrotate.d/arxsentinel
         type: config
 
+dockers_v2:
+  - dockerfile: Dockerfile.goreleaser
+    images:
+      - "ghcr.io/mr-addams/arxsentinel"
+    tags:
+      - "{{ .Tag }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      "org.opencontainers.image.title": "arxsentinel"
+      "org.opencontainers.image.description": "nginx access log analyzer with Fail2Ban integration"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.revision": "{{ .Commit }}"
+      "org.opencontainers.image.source": "https://github.com/mr-addams/arxsentinel"
+      "org.opencontainers.image.licenses": "MIT"
+
 release:
   github:
     owner: mr-addams

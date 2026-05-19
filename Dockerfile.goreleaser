@@ -1,0 +1,23 @@
+# ========================== ArxSentinel — GoReleaser image ===============================
+#
+#   Used exclusively by GoReleaser (dockers_v2). GoReleaser pre-builds the binary for
+#   each platform and places it in the build context at linux/amd64/ or linux/arm64/.
+#   Docker buildx selects the correct binary via $TARGETPLATFORM.
+#
+#   For local builds and CI container tests use the regular Dockerfile (multi-stage).
+#
+# =========================================================================================
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+ARG TARGETPLATFORM
+
+# GoReleaser places pre-built binaries in linux/{arch}/ inside the build context.
+COPY ${TARGETPLATFORM}/arxsentinel /arxsentinel
+COPY deploy/docker/config.docker.yaml /etc/arxsentinel/config.yaml
+
+EXPOSE 9117
+
+USER nonroot:nonroot
+
+ENTRYPOINT ["/arxsentinel"]

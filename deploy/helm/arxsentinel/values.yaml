@@ -1,0 +1,118 @@
+# ========================== ArxSentinel Helm values =====================================
+#
+#   DaemonSet topology: one pod per node, reads the node's access log via hostPath.
+#   Each pod writes threats.log to a configurable hostPath for Fail2Ban on that node.
+#
+#   Minimal install:
+#     helm install arxsentinel ./deploy/helm/arxsentinel \
+#       --set logVolume.hostPath=/var/log/nginx
+#
+#   Full install with Fail2Ban on bare-metal / k3s:
+#     helm install arxsentinel ./deploy/helm/arxsentinel \
+#       --set logVolume.hostPath=/var/log/nginx \
+#       --set threatLog.hostPath=/var/log/arxsentinel
+#
+# =========================================================================================
+
+image:
+  repository: ghcr.io/mr-addams/arxsentinel
+  tag: ""          # defaults to Chart.AppVersion when empty
+  pullPolicy: IfNotPresent
+
+# ── Log volume (required) ─────────────────────────────────────────────────────────────────
+# hostPath directory on each node containing the access log.
+# Mounted read-only into the container at /var/log/nginx.
+logVolume:
+  hostPath: /var/log/nginx   # override with actual log directory on your nodes
+
+# Access log filename inside logVolume.hostPath.
+# Combined with logVolume.hostPath to form the full path for general.log_file.
+logFile: access.log
+
+# ── Threat log (optional) ─────────────────────────────────────────────────────────────────
+# hostPath for the threat log directory. When set, ArxSentinel writes threats.log here
+# and the host's Fail2Ban can read it.
+# Leave empty in managed cloud environments where Fail2Ban is not available.
+# See README.helm.md for cloud-native alternatives (future Output Plugins).
+threatLog:
+  hostPath: ""   # e.g. /var/log/arxsentinel for bare-metal / k3s setups
+
+# ── Metrics ───────────────────────────────────────────────────────────────────────────────
+metrics:
+  enabled: true
+  port: 9117
+
+# ── Prometheus Operator ServiceMonitor ────────────────────────────────────────────────────
+serviceMonitor:
+  enabled: false
+  namespace: monitoring    # namespace where the Prometheus Operator is installed
+  interval: 30s
+  scrapeTimeout: 10s
+  # Additional labels to add to the ServiceMonitor (for Prometheus label selectors).
+  additionalLabels: {}
+  # release: prometheus
+
+# ── Service ───────────────────────────────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 9117
+
+# ── Security context ──────────────────────────────────────────────────────────────────────
+# Matches the distroless:nonroot image uid/gid.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# ── Resources ─────────────────────────────────────────────────────────────────────────────
+# ArxSentinel is designed to run within these limits on a busy server.
+resources:
+  limits:
+    cpu: 200m
+    memory: 128Mi
+  requests:
+    cpu: 20m
+    memory: 32Mi
+
+# ── Service account ───────────────────────────────────────────────────────────────────────
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# ── Node scheduling ───────────────────────────────────────────────────────────────────────
+# Add tolerations to watch control-plane nodes as well:
+#   tolerations:
+#     - key: node-role.kubernetes.io/control-plane
+#       operator: Exists
+#       effect: NoSchedule
+tolerations: []
+nodeSelector: {}
+affinity: {}
+
+# ── ArxSentinel config overrides via env vars ─────────────────────────────────────────────
+# These map to ARXSENTINEL_* environment variables (highest priority — override config.yaml).
+# See README.helm.md for the full list of available variables.
+env:
+  ARXSENTINEL_SCORING_ALERT_THRESHOLD: "50"
+  ARXSENTINEL_SCORING_BAN_THRESHOLD: "80"
+  ARXSENTINEL_LOGGING_DEBUG: "false"
+  # ARXSENTINEL_METRICS_USERNAME: ""
+  # ARXSENTINEL_METRICS_PASSWORD_HASH: ""
+
+# ── Extra env vars (arbitrary key/value pairs) ────────────────────────────────────────────
+extraEnv: []
+# - name: ARXSENTINEL_SCORING_DECAY
+#   value: "linear"
+
+# ── Naming ────────────────────────────────────────────────────────────────────────────────
+nameOverride: ""
+fullnameOverride: ""

@@ -1,0 +1,14 @@
+general:
+  log_file: logs/litespeed-proxy/localhost.access.log
+  pid_file: /tmp/arxsentinel-litespeed-proxy.pid
+  tail_retry_interval: "2s"
+
+parser:
+  profile: litespeed
+
+output:
+  threat_log: logs/threats/litespeed-proxy.log
+  operational_log: logs/threats/sentinel-litespeed-proxy.log
+
+logging:
+  console_color: false

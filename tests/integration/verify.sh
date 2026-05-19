@@ -29,7 +29,7 @@ image_for_server() {
         traefik|traefik-proxy|traefik-backend) echo "traefik:latest"                         ;;
         caddy|caddy-proxy|caddy-backend)       echo "caddy:latest"                           ;;
         haproxy|haproxy-proxy|haproxy-backend) echo "haproxy:latest"                         ;;
-        litespeed)                             echo "litespeedtech/openlitespeed:latest"     ;;
+        litespeed|litespeed-backend)           echo "litespeedtech/openlitespeed:latest"     ;;
         *)                                     echo "unknown"                                ;;
     esac
 }
@@ -70,8 +70,9 @@ backend_access_log() {
         apache)  echo "$LOGS_DIR/apache-proxy/access.log"         ;;
         traefik) echo "$LOGS_DIR/traefik-proxy/access-proxy.log"  ;;
         caddy)   echo "$LOGS_DIR/caddy-proxy/access-proxy.log"    ;;
-        haproxy) echo "$LOGS_DIR/haproxy-proxy/access.log"        ;;
-        *)       echo ""                                           ;;
+        haproxy)   echo "$LOGS_DIR/haproxy-proxy/access.log"           ;;
+        litespeed) echo "$LOGS_DIR/litespeed-proxy/localhost.access.log" ;;
+        *)         echo ""                                               ;;
     esac
 }
 
@@ -226,7 +227,7 @@ assert_chain() {
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 CHAIN_PROXIES=(traefik caddy haproxy nginx-rp)
-CHAIN_BACKENDS=(nginx apache traefik caddy haproxy)
+CHAIN_BACKENDS=(nginx apache traefik caddy haproxy litespeed)
 
 echo ""
 echo "=== Integration test results ==="
