@@ -583,24 +583,10 @@ log_format sentinel_json_direct escape=json
 access_log /var/log/nginx/access.log sentinel_json_direct;
 ```
 
-**Behind a reverse proxy** — use `$real_ip` populated by `ngx_http_realip_module`
-(see [`deploy/examples/reverse-proxy/`](deploy/examples/reverse-proxy/) for per-proxy setup):
-
-```nginx
-log_format sentinel_json_proxy escape=json
-    '{'
-        '"remote_addr":"$remote_addr",'
-        '"real_ip":"$real_ip",'
-        '"time_iso8601":"$time_iso8601",'
-        '"request":"$request",'
-        '"status":"$status",'
-        '"bytes_sent":"$bytes_sent",'
-        '"http_referer":"$http_referer",'
-        '"http_user_agent":"$http_user_agent"'
-    '}';
-
-access_log /var/log/nginx/access.log sentinel_json_proxy;
-```
+**Behind a reverse proxy** — configure `ngx_http_realip_module` (see
+[Deployment behind a reverse proxy](#deployment-behind-a-reverse-proxy)).
+After realip processing, `$remote_addr` already holds the real client IP,
+so the same `sentinel_json_direct` format works unchanged — no separate proxy variant needed.
 
 ### Step 2 — Update sentinel config
 
@@ -644,15 +630,19 @@ Unknown fields in the JSON log line are silently ignored — only the mapped fie
 ### How it works
 
 ```
-[Client 1.2.3.4] → [Proxy] → (X-Forwarded-For / X-Real-IP header) → [HTTP server]
-                                                                           ↓
-                                               $real_ip variable in log_format
-                                                                           ↓
-                                                                  ArxSentinel
+[Client 1.2.3.4] → [Proxy] → X-Forwarded-For: 1.2.3.4 → [HTTP server]
+                                                                 ↓
+                              ngx_http_realip_module replaces $remote_addr
+                              with the first non-trusted IP in the XFF chain
+                                                                 ↓
+                                                           access.log
+                                                                 ↓
+                                                          ArxSentinel
 ```
 
-nginx's `ngx_http_realip_module` reads the forwarded IP header and exposes it as
-`$real_ip` — the variable ArxSentinel uses for all detection.
+nginx's `ngx_http_realip_module` reads `X-Forwarded-For` from a trusted proxy and
+replaces `$remote_addr` with the real client IP before the log line is written.
+ArxSentinel reads `$remote_addr` from the access log — no extra variable needed.
 
 ### Ready-made configs
 
@@ -666,20 +656,28 @@ Full working examples for each proxy are in `deploy/examples/reverse-proxy/`:
 | **nginx as RP** | [`nginx-rp/nginx-upstream.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-upstream.conf), [`nginx-origin.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-origin.conf) |
 
 Each example includes both the proxy config and the origin nginx config with
-`set_real_ip_from`, `real_ip_header`, and the `combined_realip` log format.
+`set_real_ip_from`, `real_ip_header X-Forwarded-For`, `real_ip_recursive on`,
+and the `combined_realip` log format using `$remote_addr` as the real-IP field.
 
 ### Minimum nginx config (any proxy)
 
 ```nginx
 http {
-    set_real_ip_from  <proxy-ip-or-cidr>;  # trust only your proxy
-    real_ip_header    X-Real-IP;           # or X-Forwarded-For for Traefik
-    real_ip_recursive off;                 # on for X-Forwarded-For chains
+    # Replace with your actual proxy IP or CIDR.
+    # Docker Compose: 172.16.0.0/12    Same host: 127.0.0.1
+    set_real_ip_from  <proxy-ip-or-cidr>;
 
+    # All major proxies (HAProxy, Traefik, Caddy, nginx) set X-Forwarded-For.
+    real_ip_header    X-Forwarded-For;
+
+    # Walk the XFF chain — picks the first non-trusted IP as the real client.
+    real_ip_recursive on;
+
+    # After realip processing, $remote_addr IS the real client IP.
     log_format combined_realip
         '$remote_addr - $remote_user [$time_local] '
         '"$request" $status $body_bytes_sent '
-        '"$http_referer" "$http_user_agent" "$real_ip"';
+        '"$http_referer" "$http_user_agent" "$remote_addr"';
 
     server {
         access_log /var/log/nginx/access.log combined_realip;
