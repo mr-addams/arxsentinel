@@ -57,3 +57,21 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download tested versions
+        uses: actions/download-artifact@v4
+        with:
+          name: integration-versions
+          path: .
+        continue-on-error: true
+
+      - name: Append tested versions to release notes
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          if [ -f tested-versions.md ]; then
+            current=$(gh release view "$tag" --json body -q '.body')
+            gh release edit "$tag" \
+              --notes "$(printf '%s\n\n---\n\n%s' "$current" "$(cat tested-versions.md)")"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

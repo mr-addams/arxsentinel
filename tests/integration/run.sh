@@ -139,5 +139,6 @@ bash "$INT_DIR/scenarios.sh"
 sleep 5
 
 # ── Step 7: verify ────────────────────────────────────────────────────────────────────
+# tee preserves the original exit code via pipefail while saving output for CI analysis.
 
-bash "$INT_DIR/verify.sh" "$LOGS_DIR"
+bash "$INT_DIR/verify.sh" "$LOGS_DIR" | tee "$LOGS_DIR/verify-output.txt"

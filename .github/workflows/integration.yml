@@ -27,10 +27,117 @@ jobs:
       - name: Run integration tests
         run: bash tests/integration/run.sh
 
+      - name: Record tested image versions
+        if: always()
+        run: |
+          mkdir -p tests/integration/logs
+          out="tests/integration/logs/tested-versions.md"
+          {
+            echo "## Tested image versions"
+            echo ""
+            echo "| Service | Image | Digest |"
+            echo "| ------- | ----- | ------ |"
+            # Images stay in the daemon after 'docker compose down' — inspect works post-cleanup.
+            # entry format: "service-name:image:tag" — double-colon lets us split cleanly.
+            for entry in \
+              "nginx:nginx:latest" \
+              "apache:httpd:latest" \
+              "traefik:traefik:latest" \
+              "haproxy:haproxy:latest" \
+              "php-fpm:php:8-fpm-alpine" \
+              "caddy:caddy:latest"
+            do
+              svc="${entry%%:*}"
+              img="${entry#*:}"
+              digest=$(docker inspect "$img" \
+                --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' \
+                2>/dev/null || true)
+              hash="${digest##*@}"
+              [ -z "$hash" ] && hash="—"
+              echo "| \`$svc\` | \`$img\` | \`${hash}\` |"
+            done
+          } > "$out"
+          cat "$out" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Classify failures
+        if: failure()
+        run: |
+          summary="$GITHUB_STEP_SUMMARY"
+          verify="tests/integration/logs/verify-output.txt"
+
+          echo "## Failure analysis" >> "$summary"
+          echo "" >> "$summary"
+
+          # Run unit tests to separate our code regressions from upstream product changes.
+          # A passing unit test suite means the Go binary is correct — failures are then
+          # almost certainly caused by a product image update breaking our integration.
+          if go test ./... > /tmp/unit-tests.txt 2>&1; then
+            echo "**Unit tests:** ✅ PASS — binary is intact" >> "$summary"
+            echo "" >> "$summary"
+            echo "> Integration failures are likely caused by upstream product changes." >> "$summary"
+          else
+            echo "**Unit tests:** ❌ FAIL — code regression" >> "$summary"
+            echo "" >> "$summary"
+            echo '```' >> "$summary"
+            cat /tmp/unit-tests.txt >> "$summary"
+            echo '```' >> "$summary"
+            echo "" >> "$summary"
+            echo "> Fix unit tests before investigating integration failures." >> "$summary"
+          fi
+          echo "" >> "$summary"
+
+          [ -f "$verify" ] || { echo "_verify-output.txt not found — test runner crashed before verification_" >> "$summary"; exit 0; }
+
+          fail_count=$(grep -c "^FAIL" "$verify" 2>/dev/null || echo 0)
+          echo "**Integration failures: $fail_count**" >> "$summary"
+          echo "" >> "$summary"
+
+          # Class summary table — each class maps to a specific component to fix.
+          echo "| Class | Count | Component to investigate |" >> "$summary"
+          echo "| ----- | ----- | ------------------------ |" >> "$summary"
+          declare -A CLASS_MEANING=(
+            [server-silent]="server container: startup failure or log path/volume changed"
+            [parser-miss]="sentinel: parser regex does not match current log format"
+            [detector-miss]="sentinel: specific detector logic or threshold"
+            [backend-silent]="proxy config: routing for /backend-X/ broken or XFF not forwarded"
+            [chain-parser-miss]="sentinel: proxy-chain backend log format not matched"
+            [ip-leak]="backend config: trusted_proxies/RemoteIPInternalProxy not covering proxy CIDR"
+          )
+          for cls in server-silent parser-miss detector-miss backend-silent chain-parser-miss ip-leak; do
+            cnt=$(grep -c "class=$cls" "$verify" 2>/dev/null || echo 0)
+            [ "$cnt" -gt 0 ] && echo "| \`$cls\` | $cnt | ${CLASS_MEANING[$cls]} |" >> "$summary"
+          done
+          echo "" >> "$summary"
+
+          # Failures grouped by product — all-product-X failures strongly suggest upstream change.
+          echo "### Failures by product" >> "$summary"
+          echo "" >> "$summary"
+          for product in nginx apache traefik caddy haproxy; do
+            direct=$(grep -cE "^FAIL \[$product/" "$verify" 2>/dev/null || echo 0)
+            chain=$(grep -cE "^FAIL \[chain/[^]]+→$product\]" "$verify" 2>/dev/null || echo 0)
+            [ "$((direct + chain))" -gt 0 ] && \
+              echo "- **$product**: $direct direct, $chain chain-backend" >> "$summary"
+          done
+          echo "" >> "$summary"
+
+          # Full failure details with diagnostic context (strip PASS lines for brevity).
+          echo "### Failure details" >> "$summary"
+          echo '```' >> "$summary"
+          grep -v "^PASS" "$verify" >> "$summary" || true
+          echo '```' >> "$summary"
+
+      - name: Upload tested versions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-versions
+          path: tests/integration/logs/tested-versions.md
+          retention-days: 30
+
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: integration-logs
           path: tests/integration/logs/
-          retention-days: 7
+          retention-days: 30
