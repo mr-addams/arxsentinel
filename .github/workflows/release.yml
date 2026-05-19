@@ -50,16 +50,26 @@ jobs:
             exit 1
           fi
           TAG="${LAST_DEV%-dev.*}"
-          # Skip if stable tag already published — this push is a doc/chore commit, not a release.
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists — nothing to release"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            git tag "$TAG"
-            git push origin "$TAG"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            # Tag exists — skip only if a real GitHub Release is already published.
+            # An orphaned tag (goreleaser failed mid-run) must be removed so goreleaser
+            # can start clean; otherwise it would skip and leave the release unpublished.
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              echo "Release $TAG already published — nothing to do"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Orphaned tag $TAG found (no GitHub Release) — deleting and re-creating"
+            git push origin --delete "$TAG"
+            git tag -d "$TAG"
           fi
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         if: steps.tag.outputs.skip != 'true'
