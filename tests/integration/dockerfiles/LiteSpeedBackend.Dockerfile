@@ -1,18 +1,22 @@
 FROM litespeedtech/openlitespeed:latest
 
-# Enable useIpInHeader=2 in the docker vhost template so OLS uses the
-# X-Forwarded-For header as the client IP in access logs when sitting behind
-# a proxy. Without this, the log contains the proxy container's IP — the
-# IP leakage class of failures in assert_chain() would always trigger.
+# Patch the OLS docker vhost template to log X-Forwarded-For as the client IP
+# field in the access log. This is required for proxy-chain integration tests:
+# when OLS sits behind a proxy, the access log must record the real attacker IP
+# (from XFF) not the proxy container IP.
 #
-# Value 2 (trust XFF from any source) is required: value 1 requires explicit
-# trusted-proxy ranges which are not configured in the integration test env.
+# Approach: inject a logFormat directive into the accesslog block that puts
+# %{X-Forwarded-For}i in the first (client IP) field position.
+# useIpInHeader is unreliable in the plain-text config path for this OLS
+# Docker image — log format override is the authoritative alternative.
 #
-# useIpInHeader is a virtualhost-level setting in OLS, not listener-level.
-# The docker image serves all traffic via the "docker" vhTemplate whose
-# config lives in conf/templates/docker.conf — that is the correct place.
-#
-# Verify: grep will fail the build if sed matched nothing.
-RUN sed -i '/^virtualHostConfig  {/a\  useIpInHeader           2' \
-    /usr/local/lsws/conf/templates/docker.conf \
-    && grep -q 'useIpInHeader' /usr/local/lsws/conf/templates/docker.conf
+# awk prints the accesslog opening line, then inserts the logFormat line, then
+# continues normally. The verification grep ensures the patch was applied.
+RUN awk '/accesslog \$SERVER_ROOT\/logs\/\$VH_NAME.access.log \{/ { \
+        print; \
+        print "    logFormat             \"%{X-Forwarded-For}i %l %u %t \\\\\"%r\\\\\" %>s %b\""; \
+        next \
+    } 1' /usr/local/lsws/conf/templates/docker.conf \
+    > /tmp/docker.conf.patched \
+    && mv /tmp/docker.conf.patched /usr/local/lsws/conf/templates/docker.conf \
+    && grep -q 'logFormat' /usr/local/lsws/conf/templates/docker.conf
