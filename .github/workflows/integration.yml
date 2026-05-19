@@ -27,35 +27,44 @@ jobs:
       - name: Run integration tests
         run: bash tests/integration/run.sh
 
-      - name: Record tested image versions
+      - name: Record tested product versions
         if: always()
         run: |
           mkdir -p tests/integration/logs
           out="tests/integration/logs/tested-versions.md"
+          # Images remain in the daemon after 'docker compose down' — docker run reuses the
+          # cached layer, adds no pull time, and gives us the real product version string.
           {
-            echo "## Tested image versions"
+            echo "## Tested product versions"
             echo ""
-            echo "| Service | Image | Digest |"
-            echo "| ------- | ----- | ------ |"
-            # Images stay in the daemon after 'docker compose down' — inspect works post-cleanup.
-            # entry format: "service-name:image:tag" — double-colon lets us split cleanly.
-            for entry in \
-              "nginx:nginx:latest" \
-              "apache:httpd:latest" \
-              "traefik:traefik:latest" \
-              "haproxy:haproxy:latest" \
-              "php-fpm:php:8-fpm-alpine" \
-              "caddy:caddy:latest"
-            do
-              svc="${entry%%:*}"
-              img="${entry#*:}"
-              digest=$(docker inspect "$img" \
-                --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' \
-                2>/dev/null || true)
-              hash="${digest##*@}"
-              [ -z "$hash" ] && hash="—"
-              echo "| \`$svc\` | \`$img\` | \`${hash}\` |"
-            done
+            echo "| Service | Product | Version | Image |"
+            echo "| ------- | ------- | ------- | ----- |"
+
+            v=$(docker run --rm nginx:latest nginx -v 2>&1 \
+              | grep -oP '(?<=nginx/)[0-9.]+' || echo "?")
+            echo "| nginx | nginx | $v | \`nginx:latest\` |"
+
+            v=$(docker run --rm httpd:latest httpd -v 2>&1 \
+              | grep -oP '(?<=Apache/)[0-9.]+' || echo "?")
+            echo "| apache | Apache httpd | $v | \`httpd:latest\` |"
+
+            v=$(docker run --rm --entrypoint traefik traefik:latest version 2>&1 \
+              | awk '/^Version:/{print $2}' || echo "?")
+            echo "| traefik | Traefik | $v | \`traefik:latest\` |"
+
+            v=$(docker run --rm haproxy:latest haproxy -v 2>&1 \
+              | grep -oP 'HAProxy version \K[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
+            echo "| haproxy | HAProxy | $v | \`haproxy:latest\` |"
+
+            v=$(docker run --rm php:8-fpm-alpine php -v 2>&1 \
+              | grep -oP 'PHP \K[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "?")
+            echo "| php-fpm | PHP | $v | \`php:8-fpm-alpine\` |"
+
+            # caddy: custom build — query the locally built image directly.
+            v=$(docker run --rm integration-caddy caddy version 2>&1 \
+              | grep -oP 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "?")
+            echo "| caddy | Caddy | $v | \`caddy:latest\` (custom build) |"
+
           } > "$out"
           cat "$out" >> "$GITHUB_STEP_SUMMARY"
 
