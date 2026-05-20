@@ -166,3 +166,56 @@ services:
     volumes:
       - ./webapp:/var/www/vhosts/localhost/html:ro
       - ./logs/litespeed-proxy:/usr/local/lsws/logs
+
+  # ── Chain guard test infrastructure ───────────────────────────────────────────────────
+
+  # cloudflare-sim: simulates Cloudflare edge node behavior.
+  # Replaces X-Forwarded-For with $remote_addr (Cloudflare replaces, not appends).
+  # Adds CF-Connecting-IP header. Routes to backends and existing proxies.
+  cloudflare-sim:
+    image: nginx:latest
+    ports:
+      - "8089:80"
+    volumes:
+      - ./configs/nginx-cf-sim.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - nginx
+      - apache-proxy
+      - traefik-backend
+      - caddy-backend
+      - haproxy-backend
+      - litespeed-backend
+      - traefik
+      - caddy
+      - haproxy
+      - nginx-rp
+      - nginx-bare
+
+  # nginx-bare: nginx without real_ip extraction — logs the proxy IP, not the attacker IP.
+  # Used for the "broken chain" test: cloudflare-sim IP appears as client in access log.
+  # The chain_guard cloudflare-leak check must fire on these entries.
+  nginx-bare:
+    image: nginx:latest
+    volumes:
+      - ./configs/nginx-bare.conf:/etc/nginx/nginx.conf:ro
+      - ./webapp:/var/www/html:ro
+      - ./logs/nginx-bare:/var/log/nginx
+
+  # bogon-injector: simulates an uncontrolled proxy that injects a bogon IP in X-Forwarded-For.
+  # Routes all traffic to nginx-bogon-victim with XFF forced to 10.0.0.1.
+  bogon-injector:
+    image: nginx:latest
+    volumes:
+      - ./configs/nginx-bogon-injector.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - nginx-bogon-victim
+
+  # nginx-bogon-victim: nginx that trusts XFF from Docker subnet.
+  # When bogon-injector sets XFF=10.0.0.1, this server logs 10.0.0.1 as client IP.
+  # The chain_guard bogon check must fire on these entries.
+  nginx-bogon-victim:
+    image: nginx:latest
+    volumes:
+      - ./configs/nginx-bogon-victim.conf:/etc/nginx/nginx.conf:ro
+      - ./webapp:/var/www/html:ro
+      - ./logs/nginx-bogon-victim:/var/log/nginx
