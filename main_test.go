@@ -1,9 +1,20 @@
 package main
 
 import (
+	"context"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/mr-addams/nginx-sentinel/internal/core/output"
+	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
+	"github.com/mr-addams/nginx-sentinel/internal/core/scorer"
+	"github.com/mr-addams/nginx-sentinel/internal/core/state"
+	"github.com/mr-addams/nginx-sentinel/internal/core/whitelist"
+	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
+	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
 )
 
 // TestStartupShutdownInvariants enforces the mandatory startup/shutdown specification
@@ -86,4 +97,72 @@ func TestStartupShutdownInvariants(t *testing.T) {
 
 	check("stream goroutines tracked in wg",
 		"wg.Wait()")
+}
+
+// TestProcessLine_ChainGuardNilSafe verifies that processLine does not panic when
+// SharedResources.ChainChecker and WarningsWriter are nil (chain_guard disabled).
+// This is the normal state for configs that do not set chain_guard.enabled = true.
+func TestProcessLine_ChainGuardNilSafe(t *testing.T) {
+	// Initialise utils logger (no-op output) so processLine can call utils.Log safely.
+	if err := utils.Init(false, false, "", ""); err != nil {
+		t.Fatalf("utils.Init: %v", err)
+	}
+	defer utils.Close()
+
+	// Load from an empty YAML — LoadConfig fills all fields from internal defaults.
+	// Using a temp file avoids a dependency on unexported defaultConfig().
+	tmp, err := os.CreateTemp(t.TempDir(), "cfg-*.yaml")
+	if err != nil {
+		t.Fatalf("create temp config: %v", err)
+	}
+	// Minimal valid config: one stream, no chain_guard section.
+	_, _ = tmp.WriteString(`
+general:
+  log_file: /dev/null
+  threat_log: /dev/null
+`)
+	_ = tmp.Close()
+
+	cfg, loadErr := config.LoadConfig(tmp.Name())
+	if loadErr != nil {
+		t.Fatalf("config.LoadConfig: %v", loadErr)
+	}
+
+	tracker := state.NewTracker(cfg, func(tag, msg, level string) {})
+	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
+	if err != nil {
+		t.Fatalf("whitelist.NewMatcher: %v", err)
+	}
+
+	var count atomic.Int64
+	// ThreatLogger with a no-op write function — we do not assert on threat output here.
+	tl := output.NewThreatLogger(func(ip string, score int, level string, modules []string, reason string) {})
+
+	pipe := &PipelineContext{
+		StreamName:     "test",
+		processedCount: &count,
+		Tracker:        tracker,
+		Scorer:         scorer.NewScorer(cfg.Scoring, nil, func(tag, msg, level string) {}),
+		ThreatLogger:   tl,
+		Matcher:        matcher,
+		Verifier:       whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, func(tag, msg, level string) {}),
+		Parser:         &parser.CombinedParser{},
+		FakeBotScore:   cfg.Whitelist.FakeBotScore,
+		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
+		// Shared is zero-value: ChainChecker == nil, WarningsWriter == nil.
+		// This simulates chain_guard.enabled = false (the default).
+		Shared:  SharedResources{},
+		LogFile: "/var/log/nginx/access.log",
+	}
+
+	// A valid nginx combined + real_ip log line (the format CombinedParser expects).
+	// Format: $remote_addr ... "$http_user_agent" "$real_ip"
+	line := `203.0.113.1 - - [20/May/2026:10:00:00 +0000] "GET /wp-login.php HTTP/1.1" 200 512 "-" "curl/7.88" "203.0.113.1"`
+
+	// Must not panic.
+	processLine(context.Background(), line, pipe)
+
+	if count.Load() == 0 {
+		t.Error("processLine returned without incrementing processedCount for a valid log line")
+	}
 }
