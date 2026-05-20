@@ -29,6 +29,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/mr-addams/nginx-sentinel/internal/core/blocklist"
 )
 
 // ========================== Duration helper type =======================================
@@ -63,6 +65,7 @@ type Config struct {
 	Whitelist WhitelistConfig `yaml:"whitelist"`
 	Output    OutputConfig    `yaml:"output"`
 	Metrics   MetricsConfig   `yaml:"metrics"`
+	Blocklist blocklist.Config `yaml:"blocklist"` // YAML: blocklist — lists managed by blocklist.Manager (sources, refresh, bbolt). Consumer: main.go NewManager
 	Streams   []StreamConfig  `yaml:"streams"` // YAML: streams — multi-stream mode; mutually exclusive with general.log_file
 }
 
@@ -213,21 +216,14 @@ type OverflowConfig struct {
 
 // -------------------------- Community Bad Bot Blocklist ------------------------------
 
-// BadBotSource defines one upstream blocklist to fetch.
-type BadBotSource struct {
-	Name   string `yaml:"name"`    // YAML: detectors.badbot.sources[].name — label for logs
-	UAURL  string `yaml:"ua_url"`  // YAML: detectors.badbot.sources[].ua_url — URL to User-Agent list (plain text)
-	RefURL string `yaml:"ref_url"` // YAML: detectors.badbot.sources[].ref_url — URL to bad referrer words list (plain text); optional
-}
-
+// BadBotConfig controls the badbot detector.
+// Sources, refresh intervals, and storage are now managed by blocklist.Manager
+// via the top-level blocklist: config section. See D6 — Flow #025.
 type BadBotConfig struct {
-	Enabled         bool          `yaml:"enabled"`          // YAML: detectors.badbot.enabled, default true. Consumer: detector.BadBot
-	Score           int           `yaml:"score"`            // YAML: detectors.badbot.score, default 60 — points per match. Consumer: detector.BadBot
-	CheckUA         bool          `yaml:"check_ua"`         // YAML: detectors.badbot.check_ua, default true — match User-Agent against ua_url lists. Consumer: detector.BadBot
-	CheckReferrer   bool          `yaml:"check_referrer"`   // YAML: detectors.badbot.check_referrer, default false — match Referer against ref_url lists. Consumer: detector.BadBot
-	RefreshInterval Duration      `yaml:"refresh_interval"` // YAML: detectors.badbot.refresh_interval, default "24h" — how often to re-fetch lists. Consumer: detector.BadBot
-	Storage         string        `yaml:"storage"`          // YAML: detectors.badbot.storage, default "" — "" = in-memory only; file path = bbolt persistence. Consumer: detector.BadBot
-	Sources         []BadBotSource `yaml:"sources"`          // YAML: detectors.badbot.sources — upstream blocklist URLs. Consumer: detector.BadBot
+	Enabled       bool `yaml:"enabled"`        // YAML: detectors.badbot.enabled, default true. Consumer: detector.BadBot
+	Score         int  `yaml:"score"`          // YAML: detectors.badbot.score, default 60 — points per match. Consumer: detector.BadBot
+	CheckUA       bool `yaml:"check_ua"`       // YAML: detectors.badbot.check_ua, default true — match UA against "badbot-ua" list. Consumer: detector.BadBot
+	CheckReferrer bool `yaml:"check_referrer"` // YAML: detectors.badbot.check_referrer, default false — match Referer against "badbot-ref" list. Consumer: detector.BadBot
 }
 
 // ++++++++++++++++++++++++++ Section: whitelist ++++++++++++++++++++++++++++++++++++++++
@@ -515,10 +511,10 @@ func applyEnvOverrides(cfg *Config) error {
 	if err := envBool("ARXSENTINEL_DETECTORS_BADBOT_CHECK_REFERRER", &cfg.Detectors.BadBot.CheckReferrer); err != nil {
 		return err
 	}
-	if err := envDur("ARXSENTINEL_DETECTORS_BADBOT_REFRESH_INTERVAL", &cfg.Detectors.BadBot.RefreshInterval); err != nil {
-		return err
-	}
-	envStr("ARXSENTINEL_DETECTORS_BADBOT_STORAGE", &cfg.Detectors.BadBot.Storage)
+	// ── blocklist ─────────────────────────────────────────────────────────────────────
+	// Detailed source overrides (URLs, refresh intervals) are configured via YAML.
+	// Only the storage path can be overridden via env for Docker/container deployments.
+	envStr("ARXSENTINEL_BLOCKLIST_STORAGE", &cfg.Blocklist.Storage)
 
 	// ── whitelist ─────────────────────────────────────────────────────────────────────
 	if err := envInt("ARXSENTINEL_WHITELIST_FAKE_BOT_SCORE", &cfg.Whitelist.FakeBotScore); err != nil {
@@ -730,12 +726,23 @@ func validateConfig(cfg *Config) error {
 		if cfg.Detectors.BadBot.Score <= 0 {
 			return fmt.Errorf("detectors.badbot.score must be > 0, got %d", cfg.Detectors.BadBot.Score)
 		}
-		if time.Duration(cfg.Detectors.BadBot.RefreshInterval) <= 0 {
-			// RefreshInterval=0 causes time.NewTicker(0) to panic.
-			return fmt.Errorf("detectors.badbot.refresh_interval must be > 0")
+	}
+	// Blocklist lists validation: each configured list must have a name, refresh_interval > 0,
+	// and at least one source with a non-empty URL.
+	for i, l := range cfg.Blocklist.Lists {
+		if l.Name == "" {
+			return fmt.Errorf("blocklist.lists[%d].name must not be empty", i)
 		}
-		if len(cfg.Detectors.BadBot.Sources) == 0 {
-			return fmt.Errorf("detectors.badbot.sources must not be empty when badbot is enabled")
+		if time.Duration(l.RefreshInterval) <= 0 {
+			return fmt.Errorf("blocklist.lists[%d] (%q): refresh_interval must be > 0", i, l.Name)
+		}
+		if len(l.Sources) == 0 {
+			return fmt.Errorf("blocklist.lists[%d] (%q): must have at least one source", i, l.Name)
+		}
+		for j, src := range l.Sources {
+			if src.URL == "" {
+				return fmt.Errorf("blocklist.lists[%d] (%q) sources[%d]: url must not be empty", i, l.Name, j)
+			}
 		}
 	}
 	if cfg.Metrics.Username != "" && cfg.Metrics.PasswordHash == "" {
@@ -839,17 +846,10 @@ func defaultConfig() Config {
 				Score:            30,
 			},
 			BadBot: BadBotConfig{
-				Enabled:         true,
-				Score:           60,
-				CheckUA:         true,
-				CheckReferrer:   false,
-				RefreshInterval: Duration(24 * time.Hour),
-				Storage:         "",
-				Sources: []BadBotSource{{
-					Name:   "mitchellkrogza",
-					UAURL:  "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list",
-					RefURL: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list",
-				}},
+				Enabled:       true,
+				Score:         60,
+				CheckUA:       true,
+				CheckReferrer: false,
 			},
 		},
 		Whitelist: WhitelistConfig{
@@ -870,6 +870,30 @@ func defaultConfig() Config {
 		Metrics: MetricsConfig{
 			Enabled:    false,
 			ListenAddr: ":9117",
+		},
+		// Blocklist defaults provide the mitchellkrogza community lists out of the box.
+		// Sources and refresh schedule are separate from badbot detector config (D6, Flow #025):
+		// the detector only decides *what* to match; the manager decides *where* to fetch from.
+		Blocklist: blocklist.Config{
+			Storage: "",
+			Lists: []blocklist.ListConfig{
+				{
+					Name:            "badbot-ua",
+					RefreshInterval: blocklist.Duration(24 * time.Hour),
+					Sources: []blocklist.SourceConfig{{
+						URL:    "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list",
+						Format: "plain_text",
+					}},
+				},
+				{
+					Name:            "badbot-ref",
+					RefreshInterval: blocklist.Duration(24 * time.Hour),
+					Sources: []blocklist.SourceConfig{{
+						URL:    "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list",
+						Format: "plain_text",
+					}},
+				},
+			},
 		},
 	}
 }

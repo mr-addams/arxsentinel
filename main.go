@@ -69,6 +69,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/mr-addams/nginx-sentinel/internal/core/blocklist"
 	"github.com/mr-addams/nginx-sentinel/internal/core/detector"
 	"github.com/mr-addams/nginx-sentinel/internal/core/output"
 	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
@@ -99,6 +100,14 @@ type PipelineContext struct {
 	Parser           parser.Parser
 	FakeBotScore     int
 	DNSVerifyTimeout time.Duration
+}
+
+// SharedResources holds singleton dependencies shared across all streams.
+// Created once in main() before streams are launched; passed to buildDetectors.
+// Manager.Update() is called on SIGHUP from the fan-out goroutine — per-stream
+// SIGHUP handlers only rebuild the pipeline, not the shared blocklist state.
+type SharedResources struct {
+	BlocklistManager *blocklist.Manager
 }
 
 // configPath — default path to the config file.
@@ -226,6 +235,15 @@ func main() {
 	signal.Notify(sigHUP, syscall.SIGHUP)
 	defer signal.Stop(sigHUP)
 
+	// ── Blocklist Manager ─────────────────────────────────────────────────────────────────
+	// Created before streams so all detectors share the same pattern automata.
+	// Uses appCtx — refresh goroutines stop on SIGTERM alongside streams.
+	// Manager.Update() is called from the SIGHUP fan-out below, not per-stream.
+	shared := SharedResources{
+		BlocklistManager: blocklist.NewManager(ctx, cfg.Blocklist),
+	}
+	defer shared.BlocklistManager.Close()
+
 	reloadChs := make([]chan struct{}, len(cfg.Streams))
 	for i := range reloadChs {
 		reloadChs[i] = make(chan struct{}, 1)
@@ -243,6 +261,14 @@ func main() {
 					if reloadErr := utils.Reload(newCfg.Logging.Debug, newCfg.Logging.ConsoleColor,
 						newCfg.Output.OperationalLog, ""); reloadErr != nil {
 						utils.Log("CONFIG", "SIGHUP: logger reload error: "+reloadErr.Error(), "warn")
+					}
+					// Update blocklist Manager once for all streams — streams do not call Update
+					// themselves; they rebuild their pipeline using the updated shared automata.
+					// Guard: if SIGTERM and SIGHUP arrive in the same select tick, ctx may
+					// already be cancelled. Starting new per-list goroutines with a cancelled
+					// context is harmless but wasteful — skip the update entirely.
+					if ctx.Err() == nil {
+						shared.BlocklistManager.Update(ctx, newCfg.Blocklist)
 					}
 				}
 				// Notify each stream (non-blocking: skip if channel is full,
@@ -262,7 +288,7 @@ func main() {
 	var wg sync.WaitGroup
 	for i, streamCfg := range cfg.Streams {
 		wg.Add(1)
-		go runStream(ctx, path, cfg, streamCfg, ipCache, resolver, reloadChs[i], &wg)
+		go runStream(ctx, path, cfg, streamCfg, ipCache, resolver, reloadChs[i], &wg, shared)
 	}
 
 	metricsWg.Wait()
@@ -283,6 +309,7 @@ func runStream(
 	resolver *net.Resolver,
 	reloadCh <-chan struct{},
 	wg *sync.WaitGroup,
+	shared SharedResources,
 ) {
 	defer wg.Done()
 	// Recover from panics so one stream crashing does not take down all other streams.
@@ -345,7 +372,7 @@ func runStream(
 		StreamName:       streamCfg.Name,
 		processedCount:   &processedCount,
 		Tracker:          tracker,
-		Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(ctx, cfg), utils.Log),
+		Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg, shared), utils.Log),
 		ThreatLogger:     makeThreatLogger(threatFile),
 		Matcher:          matcher,
 		Verifier:         verifier,
@@ -458,7 +485,7 @@ func runStream(
 				StreamName:       streamCfg.Name,
 				processedCount:   &processedCount,
 				Tracker:          tracker,
-				Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(ctx, cfg), utils.Log),
+				Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg, shared), utils.Log),
 				ThreatLogger:     makeThreatLogger(threatFile),
 				Matcher:          newMatcher,
 				Verifier:         verifier,
@@ -481,7 +508,7 @@ func runStream(
 // detectorFactories — registry of all available detectors.
 // Each factory returns nil when the detector is disabled in config.
 // To add a new detector: append one entry here + write a newXxxDetector function below.
-var detectorFactories = []func(config.Config) detector.Detector{
+var detectorFactories = []func(config.Config, SharedResources) detector.Detector{
 	newProbeDetector,
 	newRateDetector,
 	newUADetector,
@@ -489,34 +516,20 @@ var detectorFactories = []func(config.Config) detector.Detector{
 	newCrawlerDetector,
 	newNoAssetDetector,
 	newOverflowDetector,
-	// newBadBotDetector is called explicitly in buildDetectors — it needs appCtx.
-	// Will be redesigned via SharedResources in Flow #025 Task 5.
+	newBadBotDetector,
 }
-
-// badBotMu protects badBotCancel across SIGHUP reloads.
-// On each reload newBadBotDetector cancels the previous goroutine before starting a new one.
-var (
-	badBotMu     sync.Mutex
-	badBotCancel context.CancelFunc
-)
 
 // buildDetectors assembles the list of active detectors from config.
 // Iterates detectorFactories; nil returns (disabled) are filtered out.
-// ctx must be appCtx (or derived from it) so goroutine-starting detectors
-// stop on SIGTERM. context.Background() here would cause goroutine leaks.
-func buildDetectors(ctx context.Context, cfg config.Config) []detector.Detector {
+// No goroutines are started here — goroutine-owning resources live in SharedResources.
+func buildDetectors(cfg config.Config, shared SharedResources) []detector.Detector {
 	var detectors []detector.Detector
 	var names []string
 	for _, f := range detectorFactories {
-		if d := f(cfg); d != nil {
+		if d := f(cfg, shared); d != nil {
 			detectors = append(detectors, d)
 			names = append(names, d.Name())
 		}
-	}
-	// BadBot starts its own goroutine and must receive appCtx so it stops on SIGTERM.
-	if d := newBadBotDetector(ctx, cfg); d != nil {
-		detectors = append(detectors, d)
-		names = append(names, d.Name())
 	}
 	utils.Log("CONFIG", fmt.Sprintf("detectors: %d active (%s)",
 		len(detectors), strings.Join(names, " ")), "info")
@@ -548,73 +561,62 @@ func buildParser(cfg config.Config) (parser.Parser, error) {
 
 // ── Detector factories ─────────────────────────────────────────────────────────────────
 
-func newProbeDetector(cfg config.Config) detector.Detector {
+func newProbeDetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.Probe.Enabled {
 		return nil
 	}
 	return detector.NewProbeDetector(cfg.Detectors.Probe)
 }
 
-func newRateDetector(cfg config.Config) detector.Detector {
+func newRateDetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.Rate.Enabled {
 		return nil
 	}
 	return detector.NewRateDetector(cfg.Detectors.Rate)
 }
 
-func newUADetector(cfg config.Config) detector.Detector {
+func newUADetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.UserAgent.Enabled {
 		return nil
 	}
 	return detector.NewUADetector(cfg.Detectors.UserAgent)
 }
 
-func newBruteforceDetector(cfg config.Config) detector.Detector {
+func newBruteforceDetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.Bruteforce.Enabled {
 		return nil
 	}
 	return detector.NewBruteforceDetector(cfg.Detectors.Bruteforce)
 }
 
-func newCrawlerDetector(cfg config.Config) detector.Detector {
+func newCrawlerDetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.Crawler.Enabled {
 		return nil
 	}
 	return detector.NewCrawlerDetector(cfg.Detectors.Crawler)
 }
 
-func newNoAssetDetector(cfg config.Config) detector.Detector {
+func newNoAssetDetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.NoAsset.Enabled {
 		return nil
 	}
 	return detector.NewNoAssetDetector(cfg.Detectors.NoAsset)
 }
 
-func newOverflowDetector(cfg config.Config) detector.Detector {
+func newOverflowDetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.Overflow.Enabled {
 		return nil
 	}
 	return detector.NewOverflowDetector(cfg.Detectors.Overflow)
 }
 
-// newBadBotDetector starts a refresh goroutine that must stop on SIGTERM.
-// ctx must be appCtx (or derived) — context.Background() would leak the goroutine.
-// Will be redesigned in Flow #025 Task 5 (SharedResources, Manager.Update on SIGHUP).
-func newBadBotDetector(ctx context.Context, cfg config.Config) detector.Detector {
-	badBotMu.Lock()
-	if badBotCancel != nil {
-		// Cancel previous goroutine before creating a new instance on SIGHUP.
-		badBotCancel()
-	}
+// newBadBotDetector creates a BadBotDetector backed by the shared blocklist Manager.
+// No goroutines — all refresh logic is owned by shared.BlocklistManager.
+func newBadBotDetector(cfg config.Config, shared SharedResources) detector.Detector {
 	if !cfg.Detectors.BadBot.Enabled {
-		badBotCancel = nil
-		badBotMu.Unlock()
 		return nil
 	}
-	detectorCtx, cancel := context.WithCancel(ctx)
-	badBotCancel = cancel
-	badBotMu.Unlock()
-	return detector.NewBadBotDetector(detectorCtx, cfg.Detectors.BadBot)
+	return detector.NewBadBotDetector(cfg.Detectors.BadBot, shared.BlocklistManager)
 }
 
 // ========================== PID file ====================================================
