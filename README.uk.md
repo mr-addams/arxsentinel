@@ -74,7 +74,7 @@ deploy/examples/
 
 ## Можливості
 
-- **7 детекторів:** probe-сканування, rate-аномалія, підозрілий User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass
+- **8 детекторів:** probe-сканування, rate-аномалія, підозрілий User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
 - **DNS-верифікація ботів:** Googlebot, Bingbot, Yandex, DuckDuckGo та інші верифікуються через rDNS/fDNS — легітимні краулери не потрапляють у бан
 - **Multi-stream:** декілька лог-файлів в одному процесі — повна ізоляція конвеєра на потік
 - **Whitelist:** IP, CIDR, UA-підрядки — конфігуровані списки винятків
@@ -309,6 +309,7 @@ output:
 | **crawler** | ≥5 послідовних числових URL (/page/1..N) | 20 |
 | **noasset** | <10% запитів до статики при ≥3 сторінках | 20 |
 | **overflow** | URL >2048 символів або WAF bypass keywords | 30 |
+| **badbot** | UA (або Referer) збігається з community-blocklist (~685 паттернів). Дані: [nginx-ultimate-bad-bot-blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker) | 60 |
 
 Score накопичується з лінійним decay за `observation_window`. При досягненні `alert_threshold` — запис WARN, при `ban_threshold` — THREAT + Fail2Ban.
 
@@ -478,7 +479,7 @@ access.log (nginx / apache / caddy / traefik / haproxy / litespeed)
        │
   scorer.Evaluate(ipState, entry)
     ├── decay накопиченого score
-    ├── запуск 7 детекторів
+    ├── запуск 8 детекторів
     └── винесення вердикту (score → level)
        │
   output.ThreatLogger ──→ threats.log ──→ Fail2Ban ──→ iptables ban
@@ -881,6 +882,16 @@ logging:
 
 **Високе споживання пам'яті:**  
 Зменшіть `state.max_tracked_ips` (дефолт 100000; кожен IP ≈ 2.5 KB → 100k ≈ 250 MB).
+
+---
+
+## Сторонні дані
+
+Детектор **badbot** отримує свої списки з проекту [nginx-ultimate-bad-bot-blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker), створеного **[Mitchell Krog (@mitchellkrogza)](https://github.com/mitchellkrogza)** та командою супроводжувачів. Це масштабний community-проект, що підтримує актуальні blocklists для ~685 поганих User-Agent та ~7108 небажаних доменів-реферерів, які оновлюються практично щодня.
+
+Ліцензія: [MIT](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/blob/master/LICENSE.md). Списки завантажуються ArxSentinel при запуску в режимі реального часу та не входять до складу дистрибутиву.
+
+Величезна вдячність Mitchell Krog та всім контриб'юторам проекту за їхню невтомну працю з підтримки та оновлення цих баз даних — ваша робота робить інтернет трохи безпечнішим для всіх.
 
 ---
 

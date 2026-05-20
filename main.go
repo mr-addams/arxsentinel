@@ -450,7 +450,15 @@ var detectorFactories = []func(config.Config) detector.Detector{
 	newCrawlerDetector,
 	newNoAssetDetector,
 	newOverflowDetector,
+	newBadBotDetector,
 }
+
+// badBotMu protects badBotCancel across SIGHUP reloads.
+// On each reload newBadBotDetector cancels the previous goroutine before starting a new one.
+var (
+	badBotMu     sync.Mutex
+	badBotCancel context.CancelFunc
+)
 
 // buildDetectors assembles the list of active detectors from config.
 // Iterates detectorFactories; nil returns (disabled) are filtered out.
@@ -540,6 +548,23 @@ func newOverflowDetector(cfg config.Config) detector.Detector {
 		return nil
 	}
 	return detector.NewOverflowDetector(cfg.Detectors.Overflow)
+}
+
+func newBadBotDetector(cfg config.Config) detector.Detector {
+	badBotMu.Lock()
+	if badBotCancel != nil {
+		// Cancel previous goroutine before creating a new instance on SIGHUP.
+		badBotCancel()
+	}
+	if !cfg.Detectors.BadBot.Enabled {
+		badBotCancel = nil
+		badBotMu.Unlock()
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	badBotCancel = cancel
+	badBotMu.Unlock()
+	return detector.NewBadBotDetector(ctx, cfg.Detectors.BadBot)
 }
 
 // ========================== PID file ====================================================
