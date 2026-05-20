@@ -189,4 +189,56 @@ curl -sf -o /dev/null 'http://${proxy_name}:${proxy_port}/backend-${backend}/xml
     done
 done
 
+# ── 10. Cloudflare Case 1: CF → product directly ─────────────────────────────────────────
+# cloudflare-sim acts as Cloudflare edge: replaces X-Forwarded-For with $remote_addr and
+# adds CF-Connecting-IP. Each backend must extract the real IP from these headers.
+# Uses the same *-backend services as proxy-chain tests (nginx:8080, apache-proxy:80, etc.)
+# so the proxy-chain sentinels capture the entries — no new sentinels needed.
+CF_BACKENDS=(nginx apache traefik caddy haproxy litespeed)
+
+for backend in "${CF_BACKENDS[@]}"; do
+    run_scenario "cf-direct-${backend}" "
+        curl -sf -o /dev/null 'http://cloudflare-sim:80/cf-${backend}/wp-login.php'    || true
+        curl -sf -o /dev/null 'http://cloudflare-sim:80/cf-${backend}/.env'            || true
+        curl -sf -o /dev/null 'http://cloudflare-sim:80/cf-${backend}/.git/config'     || true
+        curl -sf -o /dev/null 'http://cloudflare-sim:80/cf-${backend}/admin/login.php' || true
+        curl -sf -o /dev/null 'http://cloudflare-sim:80/cf-${backend}/xmlrpc.php'      || true
+    "
+done
+
+# ── 11. Cloudflare Case 2: CF → our proxy → product ─────────────────────────────────────
+# Two-hop chain: cloudflare-sim sets CF headers, then one of our configured proxies
+# forwards the request to the backend. The backend must survive both hops and log the
+# original attacker IP rather than the cloudflare-sim or proxy IP.
+CF_CHAIN_PROXIES=(traefik caddy haproxy nginx-rp)
+CF_CHAIN_BACKENDS=(nginx apache traefik caddy haproxy litespeed)
+
+for proxy in "${CF_CHAIN_PROXIES[@]}"; do
+    for backend in "${CF_CHAIN_BACKENDS[@]}"; do
+        run_scenario "cf-chain-${proxy}-${backend}" "
+            curl -sf -o /dev/null 'http://cloudflare-sim:80/cf-chain-${proxy}/backend-${backend}/wp-login.php' || true
+            curl -sf -o /dev/null 'http://cloudflare-sim:80/cf-chain-${proxy}/backend-${backend}/.env'        || true
+            curl -sf -o /dev/null 'http://cloudflare-sim:80/cf-chain-${proxy}/backend-${backend}/xmlrpc.php'  || true
+        "
+    done
+done
+
+# ── 12. Chain guard: broken chain + bogon injection (Case 3) ─────────────────────────────
+# 3A: cloudflare-sim → nginx-bare (nginx-bare has no real_ip_header — logs cloudflare-sim
+#     container IP). The cf-broken sentinel must detect that IP as Cloudflare range and
+#     write cloudflare-ip-as-client to warnings/cf-broken.log.
+run_scenario "cf-broken" "
+    curl -sf -o /dev/null 'http://cloudflare-sim:80/cf-bare/wp-login.php' || true
+    curl -sf -o /dev/null 'http://cloudflare-sim:80/cf-bare/.env'         || true
+"
+
+# 3B: bogon-injector sets X-Forwarded-For: 10.0.0.1 before forwarding to nginx-bogon-victim.
+#     nginx-bogon-victim trusts XFF from the Docker subnet and logs 10.0.0.1 as client IP.
+#     The bogon-victim sentinel must detect 10.0.0.1 as RFC 1918 bogon and write
+#     bogon-ip-as-client to warnings/bogon-victim.log.
+run_scenario "bogon-injection" "
+    curl -sf -o /dev/null 'http://bogon-injector:80/wp-login.php' || true
+    curl -sf -o /dev/null 'http://bogon-injector:80/.env'         || true
+"
+
 echo "[scenarios] all scenarios done"
