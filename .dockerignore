@@ -43,3 +43,6 @@ logs/
 .vscode/
 *.swp
 *.swo
+
+# Local Claude context (never goes into image)
+.claude/

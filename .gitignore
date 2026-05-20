@@ -52,4 +52,6 @@ tests/integration/logs/
 # Editor/IDE
 # .idea/
 # .vscode/
-.claude/settings.json
+
+# Локальный контекст Claude (TECH_DEBT, флоу, правила, настройки — не коммитить)
+.claude/
