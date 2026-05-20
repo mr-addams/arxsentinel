@@ -5,6 +5,12 @@
 accessLog:
   filePath: /var/log/traefik/access.log
   bufferingSize: 0
+  fields:
+    headers:
+      defaultMode: drop
+      names:
+        User-Agent: keep
+        Referer: keep
 
 entryPoints:
   web:

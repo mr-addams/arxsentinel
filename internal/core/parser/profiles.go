@@ -37,14 +37,16 @@ import (
 // after the User-Agent; the trailing content is safely ignored.
 const apacheCLFPattern = `^(?P<remote_addr>\S+) \S+ (?P<remote_user>\S+) \[(?P<time>[^\]]+)\] "(?P<request>[^"]*)" (?P<status>\d+) (?P<bytes_sent>\S+)(?: "(?P<http_referer>[^"]*)" "(?P<http_user_agent>[^"]*)")?`
 
-// haproxyHTTPPattern matches HAProxy access logs produced by "option httplog" (no syslog prefix).
+// haproxyHTTPPattern matches HAProxy access logs in the httplog-derived format.
+// The format ends with a quoted request; an optional quoted User-Agent field follows
+// when HAProxy is configured with http-request capture + log-format UA extension.
 //
 // HAProxy time includes milliseconds: "01/Nov/2022:10:11:12.456"
 // Parsed via haproxyTimeLayout fallback in RegexParser — all detectors including rate work.
 //
 // Format after time: frontend~ backend/server timers status bytes req_cookie resp_cookie
-//                    term_state actconn queue "request"
-const haproxyHTTPPattern = `^(?P<remote_addr>[^:]+):\d+ \[(?P<time>[^\]]+)\] \S+ \S+ \S+ (?P<status>\d+) (?P<bytes_sent>\d+) \S+ \S+ \S+ \S+ \S+ "(?P<request>[^"]*)"`
+//                    term_state actconn queue "request" ["user-agent"]
+const haproxyHTTPPattern = `^(?P<remote_addr>[^:]+):\d+ \[(?P<time>[^\]]+)\] \S+ \S+ \S+ (?P<status>\d+) (?P<bytes_sent>\d+) \S+ \S+ \S+ \S+ \S+ "(?P<request>[^"]*)"(?: "(?P<http_user_agent>[^"]*)")?`
 
 // Profiles maps built-in profile names to parser factory functions.
 // Priority in buildParser: profile → log_format → default combined (Decision 1).

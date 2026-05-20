@@ -1,8 +1,14 @@
-# Traefik v2/v3 static configuration for nginx-sentinel integration.
+# Traefik v2/v3 static configuration for ArxSentinel integration.
 #
-# nginx-sentinel's "traefik" profile expects Apache CLF format (Common Log Format).
-# Traefik's default accessLog format is CLF — no format change is needed.
-# Additional fields (duration, router, service) appended by Traefik are silently ignored.
+# ArxSentinel's "traefik" profile expects Apache Combined Log Format (CLF with Referer
+# and User-Agent fields). Traefik outputs these headers only when explicitly kept via
+# fields.headers.names — without this block both fields default to "-".
+#
+# The badbot detector requires a real User-Agent value in the log to match blocklist
+# patterns. All other detectors work regardless of header capture settings.
+#
+# Additional fields (duration, router, service) appended by Traefik after the UA field
+# are silently ignored — the sentinel regex has no end anchor.
 
 # ── Access log configuration ───────────────────────────────────────────────────────────
 
@@ -12,6 +18,13 @@ accessLog:
   # Do NOT set format: json — the JSON format splits method/path/proto into separate
   # fields and is not supported by the traefik profile.
   bufferingSize: 100
+  fields:
+    headers:
+      # Drop all headers by default; keep only those needed for threat detection.
+      defaultMode: drop
+      names:
+        User-Agent: keep   # required for badbot detector
+        Referer: keep      # used by badbot ref-match
 
 # ── Example: Real client IP behind a cloud load balancer ──────────────────────────────
 #

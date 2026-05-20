@@ -23,10 +23,10 @@ access.log → TailReader → whitelist → tracker → scorer → threats.log �
 |--------|---------|----------------|
 | nginx | *(default — no profile needed)* | None — nginx combined log format works out of the box |
 | Apache | `apache` | None — default CLF format |
-| Traefik | `traefik` | None — default access log (CLF) |
+| Traefik | `traefik` | Add `fields.headers.names.User-Agent/Referer: keep` to accessLog — see [`deploy/examples/traefik/`](deploy/examples/traefik/) |
 | LiteSpeed / OpenLiteSpeed | `litespeed` | None — default CLF format |
-| Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + [transform-encoder](https://github.com/caddyserver/transform-encoder) plugin |
-| HAProxy | `haproxy-http` | `option httplog` in haproxy.cfg + rsyslog to write to file |
+| Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + [transform-encoder](https://github.com/caddyserver/transform-encoder) plugin — see [`deploy/examples/caddy/`](deploy/examples/caddy/) |
+| HAProxy | `haproxy-http` | `http-request capture` + custom `log-format` with UA — see [`deploy/examples/haproxy/`](deploy/examples/haproxy/) |
 
 > Each release includes a **Tested product versions** table with the exact server versions the build was validated against — see [GitHub Releases](https://github.com/mr-addams/arxsentinel/releases).
 
@@ -57,11 +57,6 @@ deploy/examples/
 ├── haproxy/     haproxy.cfg + sentinel-config.yaml
 └── litespeed/   httpd_config.conf + sentinel-config.yaml
 ```
-
-> **Note — HAProxy timestamps:** HAProxy includes milliseconds in the timestamp
-> (`14:30:00.123`), which does not match the expected time format. Sentinel falls
-> back to `time.Time{}` for that field. Rate-window detection uses wall-clock time
-> regardless, so all detectors work correctly.
 
 > **Note — LiteSpeed / OpenLiteSpeed:** Both LSWS and OLS emit Apache CLF by default —
 > no server-side changes required. Log path: `/usr/local/lsws/logs/access.log`
@@ -820,11 +815,20 @@ Missing optional groups produce empty fields in the parsed entry — sentinel st
 
 ### Example: HAProxy HTTP log
 
+Use the built-in `haproxy-http` profile with a custom `log-format` that captures the User-Agent header. The required HAProxy configuration is in [`deploy/examples/haproxy/haproxy.cfg`](deploy/examples/haproxy/haproxy.cfg); the sentinel config needs only:
+
 ```yaml
 parser:
-  log_format: "regex"
-  regex_pattern: '(?P<remote_addr>\S+):\d+ \S+ \S+/\S+ \d+/\d+/\d+/\d+/\d+ (?P<status>\d+) (?P<bytes_sent>\d+) .* "(?P<request>[^"]*)"'
+  profile: "haproxy-http"
 ```
+
+The `haproxy-http` profile matches lines produced by the log-format in the deploy example:
+
+```
+172.18.0.1:54321 [20/May/2026:12:34:56 +0000] http-in backend/server 0/0/2/8/10 200 1234 - - ---- 5/4/0/1/0 0/0 "GET /index.html HTTP/1.1" "Mozilla/5.0"
+```
+
+The trailing User-Agent field is optional — old-style logs without it are also accepted.
 
 ### Common mistakes
 

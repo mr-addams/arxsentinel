@@ -20,9 +20,10 @@ SERVERS=(nginx apache traefik caddy haproxy litespeed)
 MODULES=(probe ua bruteforce crawler noasset rate overflow)
 
 # Servers that log User-Agent in their access log — badbot detector can fire only here.
-# Traefik uses common CLF (no UA field); HAProxy's httplog format has no UA capture.
-# Caddy uses transform-encoder with {<User-Agent} (request header accessor).
-BADBOT_SERVERS=(nginx apache caddy litespeed)
+# All 6 servers are configured to emit UA: nginx/apache/caddy/litespeed natively;
+# traefik via fields.headers.names.User-Agent: keep;
+# haproxy via http-request capture req.hdr(user-agent) + log-format extension.
+BADBOT_SERVERS=(nginx apache traefik caddy haproxy litespeed)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
