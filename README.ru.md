@@ -284,6 +284,26 @@ detectors:
     suspicious_params: [bypass, shell, cmd, exec, eval]
     score: 30
 
+  badbot:
+    enabled: true
+    score: 60
+    check_ua: true
+    check_referrer: false   # opt-in: проверять также заголовок Referer (~7108 паттернов)
+
+blocklist:
+  storage: ""              # "" = только в памяти; путь к файлу = bbolt (сохраняется между запусками)
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text
+    - name: badbot-ref
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list"
+          format: plain_text
+
 whitelist:
   fake_bot_score: 35      # штраф за UA легитимного бота без подтверждения DNS
   dns_verify_timeout: 2s  # таймаут DNS-верификации бота в pipeline

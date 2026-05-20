@@ -649,23 +649,39 @@ func TestBadBotConfig_Defaults(t *testing.T) {
 	if bb.CheckReferrer {
 		t.Error("BadBot.CheckReferrer: want false")
 	}
-	if time.Duration(bb.RefreshInterval) != 24*time.Hour {
-		t.Errorf("BadBot.RefreshInterval: want 24h, got %v", time.Duration(bb.RefreshInterval))
+}
+
+func TestBlocklistConfig_Defaults(t *testing.T) {
+	// Sources, refresh intervals and storage live in the blocklist: section (D6, Flow #025).
+	cfg, err := LoadConfig("/nonexistent/blocklist-defaults-test.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if bb.Storage != "" {
-		t.Errorf("BadBot.Storage: want empty, got %q", bb.Storage)
+	bl := cfg.Blocklist
+	if bl.Storage != "" {
+		t.Errorf("Blocklist.Storage: want empty (in-memory), got %q", bl.Storage)
 	}
-	if len(bb.Sources) != 1 {
-		t.Fatalf("BadBot.Sources: want 1, got %d", len(bb.Sources))
+	if len(bl.Lists) != 2 {
+		t.Fatalf("Blocklist.Lists: want 2 default lists, got %d", len(bl.Lists))
 	}
-	if bb.Sources[0].Name != "mitchellkrogza" {
-		t.Errorf("BadBot.Sources[0].Name: want mitchellkrogza, got %q", bb.Sources[0].Name)
+	// badbot-ua list
+	uaList := bl.Lists[0]
+	if uaList.Name != "badbot-ua" {
+		t.Errorf("Lists[0].Name: want badbot-ua, got %q", uaList.Name)
 	}
-	if bb.Sources[0].UAURL == "" {
-		t.Error("BadBot.Sources[0].UAURL: want non-empty")
+	if time.Duration(uaList.RefreshInterval) != 24*time.Hour {
+		t.Errorf("Lists[0].RefreshInterval: want 24h, got %v", time.Duration(uaList.RefreshInterval))
 	}
-	if bb.Sources[0].RefURL == "" {
-		t.Error("BadBot.Sources[0].RefURL: want non-empty")
+	if len(uaList.Sources) != 1 || uaList.Sources[0].URL == "" {
+		t.Error("Lists[0].Sources: want one non-empty URL")
+	}
+	if uaList.Sources[0].Format != "plain_text" {
+		t.Errorf("Lists[0].Sources[0].Format: want plain_text, got %q", uaList.Sources[0].Format)
+	}
+	// badbot-ref list
+	refList := bl.Lists[1]
+	if refList.Name != "badbot-ref" {
+		t.Errorf("Lists[1].Name: want badbot-ref, got %q", refList.Name)
 	}
 }
 
@@ -674,8 +690,6 @@ func TestBadBotConfig_EnvOverride(t *testing.T) {
 	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_SCORE", "99")
 	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_CHECK_UA", "false")
 	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_CHECK_REFERRER", "true")
-	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_REFRESH_INTERVAL", "12h")
-	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_STORAGE", "/tmp/badbot.db")
 
 	cfg, err := LoadConfig("/nonexistent/badbot-env-test.yaml")
 	if err != nil {
@@ -694,62 +708,100 @@ func TestBadBotConfig_EnvOverride(t *testing.T) {
 	if !bb.CheckReferrer {
 		t.Error("BadBot.CheckReferrer: want true")
 	}
-	if time.Duration(bb.RefreshInterval) != 12*time.Hour {
-		t.Errorf("BadBot.RefreshInterval: want 12h, got %v", time.Duration(bb.RefreshInterval))
+}
+
+func TestBlocklistConfig_EnvStorageOverride(t *testing.T) {
+	// ARXSENTINEL_BLOCKLIST_STORAGE overrides the bbolt storage path for container deployments.
+	t.Setenv("ARXSENTINEL_BLOCKLIST_STORAGE", "/tmp/custom-blocklist.db")
+
+	cfg, err := LoadConfig("/nonexistent/blocklist-env-test.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if bb.Storage != "/tmp/badbot.db" {
-		t.Errorf("BadBot.Storage: want /tmp/badbot.db, got %q", bb.Storage)
+	if cfg.Blocklist.Storage != "/tmp/custom-blocklist.db" {
+		t.Errorf("Blocklist.Storage: want /tmp/custom-blocklist.db, got %q", cfg.Blocklist.Storage)
 	}
 }
 
 // ── BadBot: validateConfig ────────────────────────────────────────────────────────────
 
 func TestBadBotConfig_ValidateZeroScore(t *testing.T) {
-	yaml := writeTempYAML(t, `
+	// score=0 must fail validation even though sources/refresh now live in blocklist:.
+	path := writeTempYAML(t, `
 detectors:
   badbot:
     enabled: true
     score: 0
-    refresh_interval: 24h
-    sources:
-      - name: test
-        ua_url: http://example.com/ua.list
 `)
-	_, err := LoadConfig(yaml)
+	_, err := LoadConfig(path)
 	if err == nil || !strings.Contains(err.Error(), "badbot.score") {
 		t.Errorf("want error about badbot.score, got: %v", err)
 	}
 }
 
-func TestBadBotConfig_ValidateZeroRefreshInterval(t *testing.T) {
-	yaml := writeTempYAML(t, `
-detectors:
-  badbot:
-    enabled: true
-    score: 60
-    refresh_interval: 0s
-    sources:
-      - name: test
-        ua_url: http://example.com/ua.list
+func TestBlocklistConfig_ValidateZeroRefreshInterval(t *testing.T) {
+	// A list with refresh_interval=0 must fail validation (causes ticker panic).
+	path := writeTempYAML(t, `
+blocklist:
+  lists:
+    - name: test-list
+      refresh_interval: 0s
+      sources:
+        - url: http://example.com/list.txt
+          format: plain_text
 `)
-	_, err := LoadConfig(yaml)
+	_, err := LoadConfig(path)
 	if err == nil || !strings.Contains(err.Error(), "refresh_interval") {
 		t.Errorf("want error about refresh_interval, got: %v", err)
 	}
 }
 
-func TestBadBotConfig_ValidateEmptySources(t *testing.T) {
-	yaml := writeTempYAML(t, `
-detectors:
-  badbot:
-    enabled: true
-    score: 60
-    refresh_interval: 24h
-    sources: []
+func TestBlocklistConfig_ValidateEmptySources(t *testing.T) {
+	// A list without sources must fail validation.
+	path := writeTempYAML(t, `
+blocklist:
+  lists:
+    - name: test-list
+      refresh_interval: 24h
+      sources: []
 `)
-	_, err := LoadConfig(yaml)
-	if err == nil || !strings.Contains(err.Error(), "sources") {
-		t.Errorf("want error about sources, got: %v", err)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "source") {
+		t.Errorf("want error about missing sources, got: %v", err)
+	}
+}
+
+func TestBlocklistConfig_ValidateEmptyListName(t *testing.T) {
+	// A list with empty name must fail validation.
+	path := writeTempYAML(t, `
+blocklist:
+  lists:
+    - name: ""
+      refresh_interval: 24h
+      sources:
+        - url: http://example.com/list.txt
+          format: plain_text
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "name") {
+		t.Errorf("want error about empty name, got: %v", err)
+	}
+}
+
+func TestBlocklistConfig_ValidateEmptySourceURL(t *testing.T) {
+	// A source with empty URL must fail validation.
+	path := writeTempYAML(t, `
+blocklist:
+  lists:
+    - name: test-list
+      refresh_interval: 24h
+      sources:
+        - url: ""
+          format: plain_text
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "url") {
+		t.Errorf("want error about empty source URL, got: %v", err)
 	}
 }
 

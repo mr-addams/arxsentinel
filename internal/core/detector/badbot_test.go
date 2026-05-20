@@ -1,10 +1,6 @@
 package detector
 
 import (
-	"context"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -12,35 +8,56 @@ import (
 	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
 )
 
-// ── Helpers ───────────────────────────────────────────────────────────────────────────
+// ── Stub Matcher ──────────────────────────────────────────────────────────────────────
 
-// newTestDetector creates a BadBotDetector with pre-loaded patterns (no network, no goroutine).
-func newTestDetector(t *testing.T, ua, ref []string, checkRef bool) *BadBotDetector {
-	t.Helper()
-	cfg := config.BadBotConfig{
-		Enabled:       true,
-		Score:         60,
-		CheckUA:       true,
-		CheckReferrer: checkRef,
-	}
-	d := &BadBotDetector{cfg: cfg, store: &MemoryStore{}}
-	d.rebuild(ua, ref)
-	return d
+// stubMatcher implements Matcher for testing.
+// matchUA controls whether Match("badbot-ua", ...) returns true.
+// matchRef controls whether Match("badbot-ref", ...) returns true.
+type stubMatcher struct {
+	matchUA  bool
+	matchRef bool
 }
+
+func (s *stubMatcher) Match(list string, _ string) bool {
+	switch list {
+	case "badbot-ua":
+		return s.matchUA
+	case "badbot-ref":
+		return s.matchRef
+	}
+	return false
+}
+
+// ── Stub IPView ───────────────────────────────────────────────────────────────────────
 
 // stubIPView satisfies the IPView interface with zero values.
 type stubIPView struct{}
 
-func (s stubIPView) GetIP() string             { return "1.2.3.4" }
-func (s stubIPView) GetTotalRequests() int      { return 0 }
-func (s stubIPView) GetRequests404() int        { return 0 }
-func (s stubIPView) RecentPaths() []string      { return nil }
+func (s stubIPView) GetIP() string                  { return "1.2.3.4" }
+func (s stubIPView) GetTotalRequests() int           { return 0 }
+func (s stubIPView) GetRequests404() int             { return 0 }
+func (s stubIPView) RecentPaths() []string           { return nil }
 func (s stubIPView) ApproxRate(_ time.Duration) float64 { return 0 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────────────
+
+func newTestDetector(cfg config.BadBotConfig, mgr Matcher) *BadBotDetector {
+	return NewBadBotDetector(cfg, mgr)
+}
+
+func defaultCfg() config.BadBotConfig {
+	return config.BadBotConfig{
+		Enabled:       true,
+		Score:         60,
+		CheckUA:       true,
+		CheckReferrer: false,
+	}
+}
 
 // ── Detect: UA matching ───────────────────────────────────────────────────────────────
 
 func TestDetect_UA_Match(t *testing.T) {
-	d := newTestDetector(t, []string{"ahrefsbot", "semrushbot"}, nil, false)
+	d := newTestDetector(defaultCfg(), &stubMatcher{matchUA: true})
 	entry := &parser.LogEntry{UserAgent: "Mozilla/5.0 (compatible; AhrefsBot/7.0)"}
 
 	res := d.Detect(stubIPView{}, entry)
@@ -51,13 +68,13 @@ func TestDetect_UA_Match(t *testing.T) {
 	if res.Module != "badbot" {
 		t.Errorf("Module: want badbot, got %q", res.Module)
 	}
-	if !strings.HasPrefix(res.Reason, "ua:") {
-		t.Errorf("Reason: want ua:..., got %q", res.Reason)
+	if res.Reason != "ua-match" {
+		t.Errorf("Reason: want ua-match, got %q", res.Reason)
 	}
 }
 
 func TestDetect_UA_NoMatch(t *testing.T) {
-	d := newTestDetector(t, []string{"ahrefsbot", "semrushbot"}, nil, false)
+	d := newTestDetector(defaultCfg(), &stubMatcher{matchUA: false})
 	entry := &parser.LogEntry{UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120"}
 
 	res := d.Detect(stubIPView{}, entry)
@@ -68,25 +85,44 @@ func TestDetect_UA_NoMatch(t *testing.T) {
 }
 
 func TestDetect_UA_CaseInsensitive(t *testing.T) {
-	// Patterns are stored lowercase; UA matching must be case-insensitive.
-	d := newTestDetector(t, []string{"ahrefsbot"}, nil, false)
+	// Verify that Detect lowercases the UA before passing it to Match.
+	// The stub records the text it receives so we can check it.
+	var received string
+	mgr := &captureMatcher{fn: func(list, text string) bool {
+		if list == "badbot-ua" {
+			received = text
+		}
+		return false
+	}}
+
+	d := newTestDetector(defaultCfg(), mgr)
 	entry := &parser.LogEntry{UserAgent: "AHREFSBOT/7.0"}
+	d.Detect(stubIPView{}, entry)
 
-	res := d.Detect(stubIPView{}, entry)
-
-	if res.Score != 60 {
-		t.Errorf("Score: want 60 (case-insensitive match), got %d", res.Score)
+	if received != "ahrefsbot/7.0" {
+		t.Errorf("UA passed to Match: want %q (lowercase), got %q", "ahrefsbot/7.0", received)
 	}
 }
 
 func TestDetect_UA_Empty(t *testing.T) {
-	d := newTestDetector(t, []string{"ahrefsbot"}, nil, false)
+	// Empty or "-" UA must be skipped — Match must not be called.
+	called := false
+	mgr := &captureMatcher{fn: func(_, _ string) bool {
+		called = true
+		return false
+	}}
+
+	d := newTestDetector(defaultCfg(), mgr)
 
 	for _, ua := range []string{"", "-"} {
+		called = false
 		entry := &parser.LogEntry{UserAgent: ua}
 		res := d.Detect(stubIPView{}, entry)
 		if res.Score != 0 {
 			t.Errorf("UA=%q: want Score=0, got %d", ua, res.Score)
+		}
+		if called {
+			t.Errorf("UA=%q: Match must not be called for empty/dash UA", ua)
 		}
 	}
 }
@@ -94,7 +130,10 @@ func TestDetect_UA_Empty(t *testing.T) {
 // ── Detect: Referrer matching ─────────────────────────────────────────────────────────
 
 func TestDetect_Referrer_Match(t *testing.T) {
-	d := newTestDetector(t, nil, []string{"semalt"}, true)
+	cfg := defaultCfg()
+	cfg.CheckReferrer = true
+	// UA does not match so the referrer path is reached.
+	d := newTestDetector(cfg, &stubMatcher{matchUA: false, matchRef: true})
 	entry := &parser.LogEntry{
 		UserAgent: "Mozilla/5.0",
 		Referer:   "http://semalt.com/",
@@ -105,14 +144,16 @@ func TestDetect_Referrer_Match(t *testing.T) {
 	if res.Score != 60 {
 		t.Errorf("Score: want 60, got %d", res.Score)
 	}
-	if !strings.HasPrefix(res.Reason, "ref:") {
-		t.Errorf("Reason: want ref:..., got %q", res.Reason)
+	if res.Reason != "ref-match" {
+		t.Errorf("Reason: want ref-match, got %q", res.Reason)
 	}
 }
 
 func TestDetect_Referrer_Disabled(t *testing.T) {
-	// check_referrer=false → referrer must never trigger even with matching patterns.
-	d := newTestDetector(t, nil, []string{"semalt"}, false)
+	// check_referrer=false — referrer must never trigger even if Match would return true.
+	cfg := defaultCfg()
+	cfg.CheckReferrer = false
+	d := newTestDetector(cfg, &stubMatcher{matchUA: false, matchRef: true})
 	entry := &parser.LogEntry{
 		UserAgent: "Mozilla/5.0",
 		Referer:   "http://semalt.com/",
@@ -126,211 +167,54 @@ func TestDetect_Referrer_Disabled(t *testing.T) {
 }
 
 func TestDetect_Referrer_Empty(t *testing.T) {
-	d := newTestDetector(t, nil, []string{"semalt"}, true)
+	// Empty or "-" referrer must be skipped.
+	cfg := defaultCfg()
+	cfg.CheckReferrer = true
+	refCalled := false
+	mgr := &captureMatcher{fn: func(list, _ string) bool {
+		if list == "badbot-ref" {
+			refCalled = true
+		}
+		return false
+	}}
+
+	d := newTestDetector(cfg, mgr)
 
 	for _, ref := range []string{"", "-"} {
+		refCalled = false
 		entry := &parser.LogEntry{UserAgent: "Mozilla/5.0", Referer: ref}
 		res := d.Detect(stubIPView{}, entry)
 		if res.Score != 0 {
 			t.Errorf("Referer=%q: want Score=0, got %d", ref, res.Score)
 		}
+		if refCalled {
+			t.Errorf("Referer=%q: Match(badbot-ref) must not be called for empty/dash referer", ref)
+		}
 	}
 }
 
-// ── Detect: nil automaton ─────────────────────────────────────────────────────────────
+// ── Detect: graceful degradation ──────────────────────────────────────────────────────
 
-func TestDetect_NilMatcher_NoScore(t *testing.T) {
-	// Before patterns are loaded the automaton is nil — must return Score=0, no panic.
-	d := &BadBotDetector{
-		cfg: config.BadBotConfig{Enabled: true, Score: 60, CheckUA: true},
-	}
+func TestDetect_MatcherReturnsFalse_NoScore(t *testing.T) {
+	// When the Manager has not loaded patterns yet, Match returns false.
+	// Detector must return Score=0 without panic.
+	d := newTestDetector(defaultCfg(), &stubMatcher{matchUA: false})
 	entry := &parser.LogEntry{UserAgent: "AhrefsBot/7.0"}
 
 	res := d.Detect(stubIPView{}, entry)
 
 	if res.Score != 0 {
-		t.Errorf("Score: want 0 (nil matcher), got %d", res.Score)
+		t.Errorf("Score: want 0 (matcher returns false), got %d", res.Score)
 	}
 }
 
-// ── Parse: plain-text format ──────────────────────────────────────────────────────────
+// ── captureMatcher helper ─────────────────────────────────────────────────────────────
 
-func TestParseList_Basic(t *testing.T) {
-	input := []byte("AhrefsBot\nSemrushBot\nMJ12bot\n")
-	got := parseList(input)
-	want := []string{"ahrefsbot", "semrushbot", "mj12bot"}
-	if !strSliceEqual(got, want) {
-		t.Errorf("want %v, got %v", want, got)
-	}
+// captureMatcher calls fn for every Match invocation, allowing tests to inspect arguments.
+type captureMatcher struct {
+	fn func(list, text string) bool
 }
 
-func TestParseList_SkipsCommentsAndEmpty(t *testing.T) {
-	input := []byte("# comment\nAhrefsBot\n\n  \nMJ12bot\n# another comment\n")
-	got := parseList(input)
-	want := []string{"ahrefsbot", "mj12bot"}
-	if !strSliceEqual(got, want) {
-		t.Errorf("want %v, got %v", want, got)
-	}
-}
-
-func TestParseList_Lowercase(t *testing.T) {
-	input := []byte("AhrefsBot\nSEMRUSHBOT\n")
-	got := parseList(input)
-	for _, p := range got {
-		if p != strings.ToLower(p) {
-			t.Errorf("pattern %q is not lowercase", p)
-		}
-	}
-}
-
-func TestParseList_Empty(t *testing.T) {
-	if got := parseList([]byte("")); len(got) != 0 {
-		t.Errorf("want empty, got %v", got)
-	}
-}
-
-// ── Parse: nginx map format ───────────────────────────────────────────────────────────
-
-func TestParseNginxMap_Basic(t *testing.T) {
-	input := []byte(`"~*(?:\b)AhrefsBot(?:\b)"    3;` + "\n" +
-		`"~*(?:\b)SemrushBot(?:\b)"   3;`)
-	got := parseNginxMap(input)
-	want := []string{"ahrefsbot", "semrushbot"}
-	if !strSliceEqual(got, want) {
-		t.Errorf("want %v, got %v", want, got)
-	}
-}
-
-func TestParseNginxMap_NoMatch(t *testing.T) {
-	// Plain-text input — nginx regex must not match anything.
-	input := []byte("AhrefsBot\nSemrushBot\n")
-	got := parseNginxMap(input)
-	if len(got) != 0 {
-		t.Errorf("want empty for plain-text input, got %v", got)
-	}
-}
-
-// ── Fetch and rebuild via httptest ────────────────────────────────────────────────────
-
-func TestFetchAndRebuild_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ahrefsbot\nsemrushbot\nmj12bot\n"))
-	}))
-	defer srv.Close()
-
-	cfg := config.BadBotConfig{
-		Enabled: true,
-		Score:   60,
-		CheckUA: true,
-		Sources: []config.BadBotSource{{Name: "test", UAURL: srv.URL}},
-	}
-	d := &BadBotDetector{cfg: cfg, store: &MemoryStore{}}
-
-	d.fetchAndRebuild(context.Background())
-
-	d.mu.RLock()
-	hasUA := d.uaMatcher != nil
-	d.mu.RUnlock()
-
-	if !hasUA {
-		t.Fatal("uaMatcher must be non-nil after successful fetch")
-	}
-
-	// Verify match works.
-	entry := &parser.LogEntry{UserAgent: "AhrefsBot/7.0"}
-	res := d.Detect(stubIPView{}, entry)
-	if res.Score != 60 {
-		t.Errorf("Score after fetch: want 60, got %d", res.Score)
-	}
-}
-
-func TestFetchAndRebuild_KeepsOldOnHTTPError(t *testing.T) {
-	// First build automata with known patterns.
-	uaPatterns := []string{"ahrefsbot"}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-
-	cfg := config.BadBotConfig{
-		Enabled: true,
-		Score:   60,
-		CheckUA: true,
-		Sources: []config.BadBotSource{{Name: "test", UAURL: srv.URL}},
-	}
-	d := &BadBotDetector{cfg: cfg, store: &MemoryStore{}}
-	d.rebuild(uaPatterns, nil)
-
-	d.fetchAndRebuild(context.Background())
-
-	// Old automata must still be in place.
-	entry := &parser.LogEntry{UserAgent: "AhrefsBot/7.0"}
-	res := d.Detect(stubIPView{}, entry)
-	if res.Score != 60 {
-		t.Errorf("Score after HTTP error: want 60 (old automata kept), got %d", res.Score)
-	}
-}
-
-func TestFetchAndRebuild_KeepsOldOnNetworkError(t *testing.T) {
-	uaPatterns := []string{"ahrefsbot"}
-
-	cfg := config.BadBotConfig{
-		Enabled: true,
-		Score:   60,
-		CheckUA: true,
-		Sources: []config.BadBotSource{{Name: "test", UAURL: "http://127.0.0.1:1"}}, // unreachable
-	}
-	d := &BadBotDetector{cfg: cfg, store: &MemoryStore{}}
-	d.rebuild(uaPatterns, nil)
-
-	d.fetchAndRebuild(context.Background())
-
-	entry := &parser.LogEntry{UserAgent: "AhrefsBot/7.0"}
-	res := d.Detect(stubIPView{}, entry)
-	if res.Score != 60 {
-		t.Errorf("Score after network error: want 60 (old automata kept), got %d", res.Score)
-	}
-}
-
-// ── Integration: goroutine lifecycle ──────────────────────────────────────────────────
-
-func TestNewBadBotDetector_CancelStopsGoroutine(t *testing.T) {
-	// Serve a known UA list so the goroutine can complete its first fetch.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ahrefsbot\n"))
-	}))
-	defer srv.Close()
-
-	cfg := config.BadBotConfig{
-		Enabled:         true,
-		Score:           60,
-		CheckUA:         true,
-		RefreshInterval: config.Duration(time.Hour),
-		Sources:         []config.BadBotSource{{Name: "test", UAURL: srv.URL}},
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	d := NewBadBotDetector(ctx, cfg)
-
-	// Wait for first fetch to complete.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		d.mu.RLock()
-		loaded := d.uaMatcher != nil
-		d.mu.RUnlock()
-		if loaded {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	// Cancel context — goroutine must exit (store.Close is called).
-	cancel()
-
-	// Detector still works after cancel (automata are in memory).
-	entry := &parser.LogEntry{UserAgent: "AhrefsBot/7.0"}
-	res := d.Detect(stubIPView{}, entry)
-	if res.Score != 60 {
-		t.Errorf("Score after cancel: want 60, got %d", res.Score)
-	}
+func (c *captureMatcher) Match(list, text string) bool {
+	return c.fn(list, text)
 }
