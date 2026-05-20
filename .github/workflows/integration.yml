@@ -34,10 +34,11 @@ jobs:
       - name: Dump caddy access log sample
         if: always()
         run: |
-          echo "=== caddy/access.log (last 5 lines) ==="
-          tail -5 tests/integration/logs/caddy/access.log 2>/dev/null || echo "(empty)"
-          echo "=== caddy/access.log (line count) ==="
-          wc -l tests/integration/logs/caddy/access.log 2>/dev/null || echo "(missing)"
+          f=tests/integration/logs/caddy/access.log
+          echo "lines: $(wc -l < "$f" 2>/dev/null || echo 0)"
+          echo "first-line-bytes: $(head -1 "$f" 2>/dev/null | wc -c)"
+          echo "first-100-chars: $(head -1 "$f" 2>/dev/null | cut -c1-100)"
+          echo "first-char-hex: $(head -1 "$f" 2>/dev/null | cut -c1 | xxd | head -1)"
 
       - name: Record tested product versions
         if: always()
