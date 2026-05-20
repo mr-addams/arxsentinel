@@ -12,9 +12,11 @@
 #   noasset    — page requests without loading CSS/JS assets
 #   rate       — > 100 req/60s from one IP (requests span multiple log seconds)
 #   overflow   — URL length > 2048 bytes
+#   badbot     — community blocklist UA (mitchellkrogza real pattern, fetched by run.sh)
 
 set -euo pipefail
 
+INT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NETWORK="integration_default"
 IMAGE="curlimages/curl"   # Alpine-based, tiny, has /bin/sh
 
@@ -144,7 +146,18 @@ run_scenario "overflow" "$(attack_all "
     curl -sf -o /dev/null 'http://__SRV__${LONG_PATH}' || true
 ")"
 
-# ── 8. proxy-chain ───────────────────────────────────────────────────────────────────────
+# ── 8. badbot ────────────────────────────────────────────────────────────────────────
+# Request with a real bad-bot User-Agent fetched from upstream by run.sh.
+# The blocklist automaton is built from the same file, so the match is guaranteed.
+# Placed last among direct-server scenarios to give sentinels time to load patterns
+# from the local blocklist-server container before the request arrives.
+BADBOT_UA=$(cat "$INT_DIR/blocklist/test-ua.txt" 2>/dev/null || echo "AhrefsBot")
+run_scenario "badbot" "$(attack_all "
+    curl -sf -o /dev/null -A '${BADBOT_UA}/1.0' http://__SRV__/ || true
+    curl -sf -o /dev/null -A '${BADBOT_UA}/1.0' http://__SRV__/ || true
+")"
+
+# ── 9. proxy-chain ───────────────────────────────────────────────────────────────────────
 # For each proxy × backend combination: send probe requests through the proxy.
 # Each run_scenario call = new Docker container = unique attacker IP.
 # Verifies that sentinel's threat log shows the attacker IP, not the proxy IP.

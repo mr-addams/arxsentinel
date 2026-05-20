@@ -40,8 +40,9 @@ logs/
 /nginx-sentinel
 /bin/
 
-# Интеграционные тесты — runtime-артефакты (логи серверов, threat-логи)
+# Интеграционные тесты — runtime-артефакты (логи серверов, threat-логи, загружаемые блеклисты)
 tests/integration/logs/
+tests/integration/blocklist/
 
 # Артефакты goreleaser
 /dist/

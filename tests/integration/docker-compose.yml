@@ -1,5 +1,15 @@
 services:
 
+  # blocklist-server: lighttpd serving pattern files fetched from real upstream sources.
+  # Built by run.sh after fetching fresh patterns — image contains real bot names.
+  # Sentinels run on the host, so port 8090 is exposed on localhost.
+  blocklist-server:
+    build:
+      context: .
+      dockerfile: dockerfiles/Blocklist.Dockerfile
+    ports:
+      - "8090:80"
+
   # php-fpm: processes .php requests forwarded from nginx.
   php-fpm:
     image: php:8-fpm-alpine
