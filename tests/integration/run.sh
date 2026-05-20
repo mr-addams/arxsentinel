@@ -20,6 +20,10 @@ for arg in "$@"; do
 done
 
 # ── Cleanup on exit ───────────────────────────────────────────────────────────────────
+# Initialize PID variables before trap so cleanup() never sees unbound variables
+# even if the script exits early (e.g. build failure before docker compose up).
+HAPROXY_LOG_PID=""
+HAPROXY_BACKEND_LOG_PID=""
 
 cleanup() {
     echo "[run] cleaning up..."
@@ -49,7 +53,54 @@ if [ "$SKIP_BUILD" = false ]; then
     echo "[run] build done"
 fi
 
-# ── Step 2: prepare log directories ──────────────────────────────────────────────────
+# ── Step 2: fetch blocklist patterns for the badbot integration test ─────────────────
+# Downloads 20 real patterns from upstream sources and saves them for:
+#   a) the lighttpd Dockerfile (COPY at docker build time)
+#   b) scenarios.sh — to pick a test UA that is guaranteed to be in the loaded list
+#
+# Fails fast on network error — testing "patterns load and apply" requires real data.
+
+BLOCKLIST_DIR="$INT_DIR/blocklist"
+mkdir -p "$BLOCKLIST_DIR"
+
+UA_URL="https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+REF_URL="https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrers.list"
+
+echo "[run] fetching blocklist patterns from upstream..."
+# pipefail disabled per-pipeline: head -20 closes stdin before grep/curl finish reading
+# all ~685/7108 lines — SIGPIPE on grep is expected and benign.
+# Content is verified by checking the output file size afterward.
+# The same pattern is used in scenarios.sh for the LONG_PATH variable.
+(set +o pipefail; curl -fsSL --max-time 30 "$UA_URL" \
+    | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' \
+    | head -20) > "$BLOCKLIST_DIR/badbot-ua.list" 2>/dev/null || true
+if [ ! -s "$BLOCKLIST_DIR/badbot-ua.list" ]; then
+    echo "[run] ERROR: failed to fetch UA patterns from $UA_URL" >&2
+    exit 1
+fi
+
+(set +o pipefail; curl -fsSL --max-time 30 "$REF_URL" \
+    | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' \
+    | head -20) > "$BLOCKLIST_DIR/badbot-ref.list" 2>/dev/null || true
+if [ ! -s "$BLOCKLIST_DIR/badbot-ref.list" ]; then
+    echo "[run] ERROR: failed to fetch referrer patterns from $REF_URL" >&2
+    exit 1
+fi
+
+# Save the first UA pattern so scenarios.sh can send a request we know will match.
+BADBOT_TEST_UA=$(head -1 "$BLOCKLIST_DIR/badbot-ua.list")
+if [ -z "$BADBOT_TEST_UA" ]; then
+    echo "[run] ERROR: badbot-ua.list is empty after fetch" >&2
+    exit 1
+fi
+echo "$BADBOT_TEST_UA" > "$BLOCKLIST_DIR/test-ua.txt"
+
+UA_COUNT=$(wc -l < "$BLOCKLIST_DIR/badbot-ua.list")
+REF_COUNT=$(wc -l < "$BLOCKLIST_DIR/badbot-ref.list")
+echo "[run] blocklist fetched: ${UA_COUNT} UA patterns, ${REF_COUNT} referrer patterns"
+echo "[run] test UA for badbot scenario: ${BADBOT_TEST_UA}"
+
+# ── Step 3: prepare log directories ──────────────────────────────────────────────────
 
 mkdir -p \
     "$LOGS_DIR/nginx" \
@@ -83,7 +134,7 @@ touch "$LOGS_DIR/litespeed-proxy/localhost.access.log"
 # stale entries with proxy IPs from earlier runs would cause false "IP leaked" failures.
 rm -f "$LOGS_DIR/threats"/*.log
 
-# ── Step 3: start containers ──────────────────────────────────────────────────────────
+# ── Step 4: start containers ──────────────────────────────────────────────────────────
 
 echo "[run] starting server containers..."
 # --force-recreate: restart containers even if nothing changed — ensures fresh file descriptors
@@ -94,7 +145,7 @@ docker compose -f "$INT_DIR/docker-compose.yml" up -d --build --force-recreate
 # Give containers time to initialise and start serving.
 sleep 5
 
-# ── Step 4: capture HAProxy stdout → log file ─────────────────────────────────────────
+# ── Step 5: capture HAProxy stdout → log file ─────────────────────────────────────────
 #
 # HAProxy logs to stdout (format raw — no syslog prefix).
 # docker compose logs captures the stream and appends to access.log.
@@ -108,7 +159,7 @@ docker compose -f "$INT_DIR/docker-compose.yml" logs -f --no-log-prefix haproxy-
     >> "$LOGS_DIR/haproxy-proxy/access.log" 2>/dev/null &
 HAPROXY_BACKEND_LOG_PID=$!
 
-# ── Step 5: start 6 arxsentinel instances ────────────────────────────────────────────
+# ── Step 6: start 6 arxsentinel instances ────────────────────────────────────────────
 
 echo "[run] starting arxsentinel instances..."
 
@@ -135,7 +186,7 @@ done
 # Give sentinels time to open and begin tailing log files.
 sleep 3
 
-# ── Step 6: run attack scenarios ─────────────────────────────────────────────────────
+# ── Step 7: run attack scenarios ─────────────────────────────────────────────────────
 
 echo "[run] running attack scenarios..."
 bash "$INT_DIR/scenarios.sh"
@@ -143,7 +194,7 @@ bash "$INT_DIR/scenarios.sh"
 # Give sentinels time to process the last log lines.
 sleep 5
 
-# ── Step 7: verify ────────────────────────────────────────────────────────────────────
+# ── Step 8: verify ────────────────────────────────────────────────────────────────────
 # tee preserves the original exit code via pipefail while saving output for CI analysis.
 
 bash "$INT_DIR/verify.sh" "$LOGS_DIR" | tee "$LOGS_DIR/verify-output.txt"

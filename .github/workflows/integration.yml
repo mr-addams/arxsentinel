@@ -15,7 +15,7 @@ jobs:
     uses: ./.github/workflows/container.yml
 
   integration:
-    name: Integration tests (66 checks — 6 servers × 7 detectors + 4 proxies × 6 backends)
+    name: Integration tests (78 checks — 6 servers × 7 detectors + 6 servers × badbot + 6 blocklist + 4 proxies × 6 backends)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 

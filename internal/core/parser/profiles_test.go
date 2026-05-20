@@ -107,13 +107,14 @@ func TestCaddyProfile_CLFLine(t *testing.T) {
 // ========================== traefik =================================================
 
 func TestTraefikProfile_CLFLine(t *testing.T) {
-	// Traefik with accessLog (default common/CLF format).
+	// Traefik with accessLog and fields.headers.names.User-Agent/Referer: keep.
+	// The format is Combined Log Format — UA and Referer are populated, not "-".
 	p, err := traefikProfile()
 	if err != nil {
 		t.Fatalf("traefikProfile: %v", err)
 	}
 
-	line := `192.168.100.5 - alice [20/Apr/2023:08:00:00 +0000] "POST /api/login HTTP/1.1" 200 250 "-" "Mozilla/5.0"`
+	line := `192.168.100.5 - alice [20/Apr/2023:08:00:00 +0000] "POST /api/login HTTP/1.1" 200 250 "http://example.com/" "Mozilla/5.0"`
 	e, ok := p.Parse(line)
 	if !ok {
 		t.Fatal("traefik: expected parse success, got false")
@@ -131,47 +132,70 @@ func TestTraefikProfile_CLFLine(t *testing.T) {
 	if e.Status != 200 {
 		t.Errorf("Status: want 200, got %d", e.Status)
 	}
+	if e.BytesSent != 250 {
+		t.Errorf("BytesSent: want 250, got %d", e.BytesSent)
+	}
+	if e.Referer != "http://example.com/" {
+		t.Errorf("Referer: want http://example.com/, got %q", e.Referer)
+	}
+	if e.UserAgent != "Mozilla/5.0" {
+		t.Errorf("UserAgent: want Mozilla/5.0, got %q", e.UserAgent)
+	}
+	if e.Time.IsZero() {
+		t.Error("Time: want non-zero")
+	}
 }
 
 func TestTraefikProfile_ExtraTrailingFields(t *testing.T) {
 	// Traefik CLF format appends extra fields (duration, router, service, retries).
 	// Pattern has no end anchor — extra fields must be silently ignored.
+	// Real log line from Traefik container in integration tests.
 	p, err := traefikProfile()
 	if err != nil {
 		t.Fatalf("traefikProfile: %v", err)
 	}
 
-	// Traefik CLF with all extra fields appended
-	line := `10.10.0.1 - - [15/Jul/2023:10:00:00 +0000] "GET / HTTP/1.1" 302 0 "-" "curl/7.52.1" 5432 "-" "frontend@docker" "backend@docker" 0`
+	line := `172.18.0.1 - - [20/May/2026:16:24:34 +0000] "GET /wp-login.php HTTP/1.1" 404 153 "http://evil.com" "AhrefsBot/7.0" 1 "default@file" "http://nginx:80" 8ms`
 	e, ok := p.Parse(line)
 	if !ok {
 		t.Fatal("traefik trailing fields: expected parse success, got false")
 	}
-	if e.Status != 302 {
-		t.Errorf("Status: want 302, got %d", e.Status)
+	if e.RemoteAddr != "172.18.0.1" {
+		t.Errorf("RemoteAddr: want 172.18.0.1, got %q", e.RemoteAddr)
 	}
-	if e.Path != "/" {
-		t.Errorf("Path: want /, got %q", e.Path)
+	if e.Status != 404 {
+		t.Errorf("Status: want 404, got %d", e.Status)
+	}
+	if e.Path != "/wp-login.php" {
+		t.Errorf("Path: want /wp-login.php, got %q", e.Path)
+	}
+	if e.Referer != "http://evil.com" {
+		t.Errorf("Referer: want http://evil.com, got %q", e.Referer)
+	}
+	if e.UserAgent != "AhrefsBot/7.0" {
+		t.Errorf("UserAgent: want AhrefsBot/7.0, got %q", e.UserAgent)
 	}
 }
 
 // ========================== haproxy-http ============================================
 
 func TestHAProxyHTTPProfile_HTTPLogLine(t *testing.T) {
-	// HAProxy "option httplog" format without syslog prefix.
+	// HAProxy log-format with captured User-Agent appended — real line from integration container.
+	// Produced by: http-request capture req.hdr(user-agent) len 200
+	//              log-format "... %{+Q}r \"%[capture.req.hdr(0)]\""
 	p, err := haproxyHTTPProfile()
 	if err != nil {
 		t.Fatalf("haproxyHTTPProfile: %v", err)
 	}
 
-	line := `10.20.30.40:54321 [05/Mar/2024:14:30:00.123] http-in~ be_web/web01 0/0/2/8/10 200 3456 - - ---- 7/6/0/1/0 0/0 "GET /dashboard HTTP/2.0"`
+	line := `172.18.0.1:58186 [20/May/2026:16:24:34 +0000] http-in nginx-backend/nginx 0/0/0/0/0 200 506 - - ---- 1/1/0/0/0 0/0 "GET /dashboard HTTP/1.1" "AhrefsBot/7.0"`
 	e, ok := p.Parse(line)
 	if !ok {
 		t.Fatal("haproxy: expected parse success, got false")
 	}
 
-	if e.RemoteAddr != "10.20.30.40" {
-		t.Errorf("RemoteAddr: want 10.20.30.40, got %q", e.RemoteAddr)
+	if e.RemoteAddr != "172.18.0.1" {
+		t.Errorf("RemoteAddr: want 172.18.0.1, got %q", e.RemoteAddr)
 	}
 	if e.Method != "GET" {
 		t.Errorf("Method: want GET, got %q", e.Method)
@@ -182,8 +206,14 @@ func TestHAProxyHTTPProfile_HTTPLogLine(t *testing.T) {
 	if e.Status != 200 {
 		t.Errorf("Status: want 200, got %d", e.Status)
 	}
-	if e.BytesSent != 3456 {
-		t.Errorf("BytesSent: want 3456, got %d", e.BytesSent)
+	if e.BytesSent != 506 {
+		t.Errorf("BytesSent: want 506, got %d", e.BytesSent)
+	}
+	if e.UserAgent != "AhrefsBot/7.0" {
+		t.Errorf("UserAgent: want AhrefsBot/7.0, got %q", e.UserAgent)
+	}
+	if e.Time.IsZero() {
+		t.Error("Time: want non-zero")
 	}
 }
 
@@ -207,6 +237,45 @@ func TestHAProxyHTTPProfile_TimeWithMilliseconds(t *testing.T) {
 	want := "2024-01-01 00:00:00 +0000 UTC"
 	if got := e.Time.UTC().String(); got != want {
 		t.Errorf("Time: want %q, got %q", want, got)
+	}
+}
+
+func TestHAProxyHTTPProfile_WithUserAgent(t *testing.T) {
+	// HAProxy log-format with captured User-Agent appended after the request field.
+	// Produced by: http-request capture req.hdr(user-agent) len 200
+	//              log-format "... %{+Q}r \"%[capture.req.hdr(0)]\""
+	p, err := haproxyHTTPProfile()
+	if err != nil {
+		t.Fatalf("haproxyHTTPProfile: %v", err)
+	}
+
+	line := `10.20.30.40:54321 [05/Mar/2024:14:30:00.123] http-in~ be_web/web01 0/0/2/8/10 200 3456 - - ---- 7/6/0/1/0 0/0 "GET /dashboard HTTP/2.0" "AhrefsBot/7.0"`
+	e, ok := p.Parse(line)
+	if !ok {
+		t.Fatal("haproxy with UA: expected parse success, got false")
+	}
+	if e.RemoteAddr != "10.20.30.40" {
+		t.Errorf("RemoteAddr: want 10.20.30.40, got %q", e.RemoteAddr)
+	}
+	if e.UserAgent != "AhrefsBot/7.0" {
+		t.Errorf("UserAgent: want AhrefsBot/7.0, got %q", e.UserAgent)
+	}
+}
+
+func TestHAProxyHTTPProfile_WithoutUserAgent(t *testing.T) {
+	// Old-style HAProxy log without UA field — optional group must be absent, not fail.
+	p, err := haproxyHTTPProfile()
+	if err != nil {
+		t.Fatalf("haproxyHTTPProfile: %v", err)
+	}
+
+	line := `10.20.30.40:54321 [05/Mar/2024:14:30:00.123] http-in~ be_web/web01 0/0/2/8/10 200 3456 - - ---- 7/6/0/1/0 0/0 "GET /dashboard HTTP/2.0"`
+	e, ok := p.Parse(line)
+	if !ok {
+		t.Fatal("haproxy without UA: expected parse success, got false")
+	}
+	if e.UserAgent != "" {
+		t.Errorf("UserAgent: want empty string, got %q", e.UserAgent)
 	}
 }
 

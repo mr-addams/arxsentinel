@@ -12,3 +12,17 @@ output:
 
 logging:
   console_color: false
+
+blocklist:
+  storage: ""
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "http://localhost:8090/badbot-ua.list"
+          format: plain_text
+    - name: badbot-ref
+      refresh_interval: 24h
+      sources:
+        - url: "http://localhost:8090/badbot-ref.list"
+          format: plain_text
