@@ -269,23 +269,45 @@ detectors:
       - "passthru"
     score: 30
 
-  # BadBot detector: community-curated blocklist (UA and optionally Referer).
-  # Fetches lists from upstream sources at startup and refreshes on schedule.
-  # Data: github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker (MIT License)
-  # Детектор badbot: актуальный community-список плохих ботов, загружается при старте.
+  # BadBot detector: scores requests matching the community-curated blocklist.
+  # Sources and refresh schedule are configured in the top-level blocklist: section.
+  # Детектор badbot: выставляет score запросам из community-списка плохих ботов.
+  # Источники и расписание обновления — в секции blocklist: выше.
   badbot:
     enabled: true
     score: 60
     check_ua: true
     check_referrer: false     # enable to also match the Referer header / включить для проверки Referer
-    refresh_interval: 24h     # how often to re-fetch lists / интервал обновления списков
-    storage: ""               # "" = in-memory only; file path = bbolt (persists between restarts)
-                              # "" = только в памяти; путь к файлу = bbolt (сохраняется между перезапусками)
-    sources:
-      # MIT License — https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker
-      - name: mitchellkrogza
-        ua_url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
-        ref_url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list"
+
+# ── blocklist: pattern list management / управление блеклистами ────────────────────────────
+blocklist:
+
+  # bbolt storage path for persisting patterns between restarts.
+  # Путь к bbolt-файлу для хранения паттернов между перезапусками.
+  # "" = in-memory only (patterns re-fetched on every restart).
+  # "" = только в памяти (паттерны перезагружаются при каждом старте).
+  storage: ""
+
+  # Pattern lists: each list has a name, refresh interval, and one or more sources.
+  # Списки паттернов: имя, интервал обновления и один или несколько источников.
+  lists:
+    # User-Agent blocklist: ~685 known bad bots
+    # Список User-Agent: ~685 известных плохих ботов
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        # MIT License — https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text
+
+    # Referrer blocklist: ~7108 spam referrer domains (used when check_referrer: true)
+    # Список реферреров: ~7108 спам-доменов (используется при check_referrer: true)
+    - name: badbot-ref
+      refresh_interval: 24h
+      sources:
+        # MIT License — https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list"
+          format: plain_text
 
 # ── whitelist: legitimate bots and custom entries / легитимные боты и кастомный список ───
 whitelist:

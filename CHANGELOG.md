@@ -16,13 +16,27 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   [nginx-ultimate-bad-bot-blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker)
   (MIT, by [Mitchell Krog @mitchellkrogza](https://github.com/mitchellkrogza) and contributors).
   Patterns are matched via Aho-Corasick automaton (O(text_len) per request).
-  Optional bbolt persistence (`badbot.storage`) enables sub-second automaton rebuild
-  on restart without waiting for the next network fetch.
   - `check_ua: true` — matches User-Agent header (default on)
   - `check_referrer: false` — matches Referer header (opt-in; 7k patterns, higher FP risk)
-  - `refresh_interval: 24h` — re-fetches lists on schedule; configurable
-  - Graceful degradation: nil automata (score=0) until first successful fetch;
-    old automata preserved on fetch error
+  - Graceful degradation: score=0 until first successful fetch; old automata
+    preserved on fetch error
+
+### Changed
+
+- **Internal: `internal/core/blocklist.Manager`** — extracted from BadBotDetector
+  into a standalone package that owns all pattern lists, per-list refresh goroutines,
+  Aho-Corasick automata, and optional bbolt persistence.
+  - `Manager.Match(list, text)` is the single public API; thread-safe, O(text\_len)
+  - `Manager.Update(ctx, cfg)` replaces goroutines on SIGHUP without pointer change
+  - `Manager.Close()` cancels all goroutines and closes bbolt
+  - BadBotDetector is now a thin wrapper; no goroutines, no storage logic
+- **Config: new top-level `blocklist:` section** — separates data management
+  (sources, refresh schedule, bbolt path) from detection policy (`detectors.badbot`).
+  `badbot` no longer has `sources`, `refresh_interval`, or `storage` fields.
+  Pattern lists are named (`badbot-ua`, `badbot-ref`) and configured independently.
+- **Config: optional bbolt persistence** (`blocklist.storage`) — empty string (default)
+  uses in-memory only; a file path enables persistence across restarts for sub-second
+  automaton rebuild without a network fetch.
 - **Dependencies**: `github.com/rrethy/ahocorasick v1.0.0`, `go.etcd.io/bbolt v1.4.3`
 
 ---
