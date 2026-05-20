@@ -17,7 +17,12 @@ PASS=0
 FAIL=0
 
 SERVERS=(nginx apache traefik caddy haproxy litespeed)
-MODULES=(probe ua bruteforce crawler noasset rate overflow badbot)
+MODULES=(probe ua bruteforce crawler noasset rate overflow)
+
+# Servers that log User-Agent in their access log — badbot detector can fire only here.
+# Traefik uses common CLF (no UA field); HAProxy's httplog format has no UA capture.
+# Caddy uses transform-encoder with {<User-Agent} (request header accessor).
+BADBOT_SERVERS=(nginx apache caddy litespeed)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -272,6 +277,16 @@ for srv in "${SERVERS[@]}"; do
     for mod in "${MODULES[@]}"; do
         assert_module "$srv" "$mod"
     done
+
+    # badbot: only on servers whose access log includes the User-Agent field.
+    # Traefik emits common CLF (no UA); HAProxy's httplog has no UA capture group.
+    for badbot_srv in "${BADBOT_SERVERS[@]}"; do
+        if [ "$srv" = "$badbot_srv" ]; then
+            assert_module "$srv" "badbot"
+            break
+        fi
+    done
+
     # Verify the blocklist automaton was actually built (patterns fetched, non-zero count).
     # This is separate from the badbot detector check — it validates the Manager, not just the hit.
     assert_blocklist_loaded "$srv"
@@ -289,13 +304,15 @@ for proxy in "${CHAIN_PROXIES[@]}"; do
 done
 
 DIRECT_TOTAL=$((${#SERVERS[@]} * ${#MODULES[@]}))
+BADBOT_TOTAL=${#BADBOT_SERVERS[@]}
 BLOCKLIST_TOTAL=${#SERVERS[@]}
 CHAIN_TOTAL=$((${#CHAIN_PROXIES[@]} * ${#CHAIN_BACKENDS[@]}))
-TOTAL=$((DIRECT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL))
+TOTAL=$((DIRECT_TOTAL + BADBOT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL))
 
 echo "================================"
 echo "Results: $PASS passed, $FAIL failed"
 echo "(${#SERVERS[@]} servers × ${#MODULES[@]} detectors = ${DIRECT_TOTAL} direct checks)"
+echo "(${#BADBOT_SERVERS[@]} servers × badbot = ${BADBOT_TOTAL} badbot checks — UA-logging servers only)"
 echo "(${#SERVERS[@]} servers × blocklist-loaded = ${BLOCKLIST_TOTAL} blocklist checks)"
 echo "(${#CHAIN_PROXIES[@]} proxies × ${#CHAIN_BACKENDS[@]} backends = ${CHAIN_TOTAL} proxy-chain checks)"
 echo "(total: ${TOTAL} checks)"
