@@ -1,14 +1,16 @@
 services:
 
-  # blocklist-server: lighttpd serving pattern files fetched from real upstream sources.
-  # Built by run.sh after fetching fresh patterns — image contains real bot names.
+  # blocklist-server: nginx serving pattern files fetched from real upstream sources.
+  # Reuses nginx:latest (already pulled for other services — no extra Docker Hub pull).
+  # blocklist/ is created by run.sh before docker compose up; mounted read-only here.
+  # nginx default config serves files from /usr/share/nginx/html at the root path.
   # Sentinels run on the host, so port 8090 is exposed on localhost.
   blocklist-server:
-    build:
-      context: .
-      dockerfile: dockerfiles/Blocklist.Dockerfile
+    image: nginx:latest
     ports:
       - "8090:80"
+    volumes:
+      - ./blocklist:/usr/share/nginx/html:ro
 
   # php-fpm: processes .php requests forwarded from nginx.
   php-fpm:
