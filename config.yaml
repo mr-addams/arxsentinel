@@ -269,6 +269,24 @@ detectors:
       - "passthru"
     score: 30
 
+  # BadBot detector: community-curated blocklist (UA and optionally Referer).
+  # Fetches lists from upstream sources at startup and refreshes on schedule.
+  # Data: github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker (MIT License)
+  # Детектор badbot: актуальный community-список плохих ботов, загружается при старте.
+  badbot:
+    enabled: true
+    score: 60
+    check_ua: true
+    check_referrer: false     # enable to also match the Referer header / включить для проверки Referer
+    refresh_interval: 24h     # how often to re-fetch lists / интервал обновления списков
+    storage: ""               # "" = in-memory only; file path = bbolt (persists between restarts)
+                              # "" = только в памяти; путь к файлу = bbolt (сохраняется между перезапусками)
+    sources:
+      # MIT License — https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker
+      - name: mitchellkrogza
+        ua_url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+        ref_url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list"
+
 # ── whitelist: legitimate bots and custom entries / легитимные боты и кастомный список ───
 whitelist:
 

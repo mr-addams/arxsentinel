@@ -76,7 +76,7 @@ deploy/examples/
 
 ## Features
 
-- **7 detectors:** probe scanning, rate anomaly, suspicious User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass
+- **8 detectors:** probe scanning, rate anomaly, suspicious User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
 - **Bot DNS verification:** Googlebot, Bingbot, Yandex, DuckDuckGo and others are verified via rDNS/fDNS — legitimate crawlers are never banned
 - **Multi-stream:** watch multiple log files in one process — full pipeline isolation per stream
 - **Whitelist:** IPs, CIDRs, UA substrings — configurable exclusion lists
@@ -311,6 +311,7 @@ output:
 | **crawler** | ≥5 sequential numeric URLs (/page/1..N) | 20 |
 | **noasset** | <10% requests to static assets with ≥3 page requests | 20 |
 | **overflow** | URL >2048 chars or WAF bypass keywords | 30 |
+| **badbot** | UA (or Referer) matches community blocklist (~685 patterns) | 60 |
 
 Score accumulates with linear decay over `observation_window`. Reaching `alert_threshold` writes a WARN; reaching `ban_threshold` writes a THREAT and triggers Fail2Ban.
 
@@ -480,7 +481,7 @@ access.log (nginx / apache / caddy / traefik / haproxy / litespeed)
        │
   scorer.Evaluate(ipState, entry)
     ├── decay accumulated score
-    ├── run 7 detectors
+    ├── run 8 detectors
     └── determine verdict (score → level)
        │
   output.ThreatLogger ──→ threats.log ──→ Fail2Ban ──→ iptables ban
@@ -884,6 +885,16 @@ Restart or `kill -HUP`. The operational log will show `[PARSER]`, `[DETECTOR]`, 
 
 **High memory usage:**  
 Reduce `state.max_tracked_ips` (default 100000; each IP ≈ 2.5 KB → 100k ≈ 250 MB).
+
+---
+
+## Third-party data
+
+The **badbot** detector fetches its blocklists from [nginx-ultimate-bad-bot-blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker), an outstanding community project created and maintained by **[Mitchell Krog (@mitchellkrogza)](https://github.com/mitchellkrogza)** and its contributors. The project curates ~685 bad User-Agent patterns and ~7108 bad referrer words, updated almost daily — an enormous effort that benefits the entire web.
+
+Licensed under [MIT](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/blob/master/LICENSE.md). The lists are downloaded at runtime and are not bundled with ArxSentinel.
+
+Heartfelt thanks to Mitchell Krog and every contributor to that project — your dedication makes the web a safer place for everyone.
 
 ---
 

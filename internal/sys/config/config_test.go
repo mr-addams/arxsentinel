@@ -629,6 +629,130 @@ func TestEnvOverride_InvalidDuration(t *testing.T) {
 	}
 }
 
+// ========================== Test: BadBot defaults and env overrides ====================
+
+func TestBadBotConfig_Defaults(t *testing.T) {
+	cfg, err := LoadConfig("/nonexistent/badbot-test.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	bb := cfg.Detectors.BadBot
+	if !bb.Enabled {
+		t.Error("BadBot.Enabled: want true")
+	}
+	if bb.Score != 60 {
+		t.Errorf("BadBot.Score: want 60, got %d", bb.Score)
+	}
+	if !bb.CheckUA {
+		t.Error("BadBot.CheckUA: want true")
+	}
+	if bb.CheckReferrer {
+		t.Error("BadBot.CheckReferrer: want false")
+	}
+	if time.Duration(bb.RefreshInterval) != 24*time.Hour {
+		t.Errorf("BadBot.RefreshInterval: want 24h, got %v", time.Duration(bb.RefreshInterval))
+	}
+	if bb.Storage != "" {
+		t.Errorf("BadBot.Storage: want empty, got %q", bb.Storage)
+	}
+	if len(bb.Sources) != 1 {
+		t.Fatalf("BadBot.Sources: want 1, got %d", len(bb.Sources))
+	}
+	if bb.Sources[0].Name != "mitchellkrogza" {
+		t.Errorf("BadBot.Sources[0].Name: want mitchellkrogza, got %q", bb.Sources[0].Name)
+	}
+	if bb.Sources[0].UAURL == "" {
+		t.Error("BadBot.Sources[0].UAURL: want non-empty")
+	}
+	if bb.Sources[0].RefURL == "" {
+		t.Error("BadBot.Sources[0].RefURL: want non-empty")
+	}
+}
+
+func TestBadBotConfig_EnvOverride(t *testing.T) {
+	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_ENABLED", "false")
+	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_SCORE", "99")
+	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_CHECK_UA", "false")
+	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_CHECK_REFERRER", "true")
+	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_REFRESH_INTERVAL", "12h")
+	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_STORAGE", "/tmp/badbot.db")
+
+	cfg, err := LoadConfig("/nonexistent/badbot-env-test.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	bb := cfg.Detectors.BadBot
+	if bb.Enabled {
+		t.Error("BadBot.Enabled: want false")
+	}
+	if bb.Score != 99 {
+		t.Errorf("BadBot.Score: want 99, got %d", bb.Score)
+	}
+	if bb.CheckUA {
+		t.Error("BadBot.CheckUA: want false")
+	}
+	if !bb.CheckReferrer {
+		t.Error("BadBot.CheckReferrer: want true")
+	}
+	if time.Duration(bb.RefreshInterval) != 12*time.Hour {
+		t.Errorf("BadBot.RefreshInterval: want 12h, got %v", time.Duration(bb.RefreshInterval))
+	}
+	if bb.Storage != "/tmp/badbot.db" {
+		t.Errorf("BadBot.Storage: want /tmp/badbot.db, got %q", bb.Storage)
+	}
+}
+
+// ── BadBot: validateConfig ────────────────────────────────────────────────────────────
+
+func TestBadBotConfig_ValidateZeroScore(t *testing.T) {
+	yaml := writeTempYAML(t, `
+detectors:
+  badbot:
+    enabled: true
+    score: 0
+    refresh_interval: 24h
+    sources:
+      - name: test
+        ua_url: http://example.com/ua.list
+`)
+	_, err := LoadConfig(yaml)
+	if err == nil || !strings.Contains(err.Error(), "badbot.score") {
+		t.Errorf("want error about badbot.score, got: %v", err)
+	}
+}
+
+func TestBadBotConfig_ValidateZeroRefreshInterval(t *testing.T) {
+	yaml := writeTempYAML(t, `
+detectors:
+  badbot:
+    enabled: true
+    score: 60
+    refresh_interval: 0s
+    sources:
+      - name: test
+        ua_url: http://example.com/ua.list
+`)
+	_, err := LoadConfig(yaml)
+	if err == nil || !strings.Contains(err.Error(), "refresh_interval") {
+		t.Errorf("want error about refresh_interval, got: %v", err)
+	}
+}
+
+func TestBadBotConfig_ValidateEmptySources(t *testing.T) {
+	yaml := writeTempYAML(t, `
+detectors:
+  badbot:
+    enabled: true
+    score: 60
+    refresh_interval: 24h
+    sources: []
+`)
+	_, err := LoadConfig(yaml)
+	if err == nil || !strings.Contains(err.Error(), "sources") {
+		t.Errorf("want error about sources, got: %v", err)
+	}
+}
+
 // ========================== Helper ====================================================
 
 // writeTempYAML creates a temporary file with the given content and returns its path.

@@ -7,6 +7,26 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **Detector #8: badbot** — community-curated bad-bot blocklist detector.
+  Fetches ~685 User-Agent patterns and ~7108 bad referrer words from
+  [nginx-ultimate-bad-bot-blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker)
+  (MIT, by [Mitchell Krog @mitchellkrogza](https://github.com/mitchellkrogza) and contributors).
+  Patterns are matched via Aho-Corasick automaton (O(text_len) per request).
+  Optional bbolt persistence (`badbot.storage`) enables sub-second automaton rebuild
+  on restart without waiting for the next network fetch.
+  - `check_ua: true` — matches User-Agent header (default on)
+  - `check_referrer: false` — matches Referer header (opt-in; 7k patterns, higher FP risk)
+  - `refresh_interval: 24h` — re-fetches lists on schedule; configurable
+  - Graceful degradation: nil automata (score=0) until first successful fetch;
+    old automata preserved on fetch error
+- **Dependencies**: `github.com/rrethy/ahocorasick v1.0.0`, `go.etcd.io/bbolt v1.4.3`
+
+---
+
 ## [1.0.0] — 2026-05-18
 
 ### Added
