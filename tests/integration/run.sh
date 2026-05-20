@@ -194,7 +194,15 @@ bash "$INT_DIR/scenarios.sh"
 # Give sentinels time to process the last log lines.
 sleep 5
 
-# ── Step 8: verify ────────────────────────────────────────────────────────────────────
+# ── Step 8: capture Caddy raw JSON stdout for log format diagnostics ──────────────────
+# Caddy writes its own JSON log to stdout (separate from the transform-encoder access.log).
+# This lets us inspect the real field names (e.g. remote_ip vs remote_addr) before the
+# containers are stopped by cleanup().
+
+docker compose -f "$INT_DIR/docker-compose.yml" logs --no-log-prefix caddy 2>/dev/null \
+    | head -3 > "$LOGS_DIR/caddy/stdout-sample.log" || true
+
+# ── Step 9: verify ────────────────────────────────────────────────────────────────────
 # tee preserves the original exit code via pipefail while saving output for CI analysis.
 
 bash "$INT_DIR/verify.sh" "$LOGS_DIR" | tee "$LOGS_DIR/verify-output.txt"
