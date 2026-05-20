@@ -26,6 +26,28 @@
 //
 //   Multi-stream: each stream runs its own goroutine set (runStream).
 //   Backward compat: general.log_file → single unnamed stream, stream="" label on metrics.
+//
+//   STARTUP SEQUENCE (order is mandatory — violations cause panic or data loss):
+//     1. config.LoadConfig()              — must be first; all other components depend on cfg
+//     2. utils.Init()                     — logger must be ready before any Log() call
+//     3. writePID()                       — after logger so failures are logged
+//     4. signal.NotifyContext()           — context before goroutines that check ctx.Done()
+//     5. metrics.Init() + srv.ListenAndServe() — before streams; scraper gets continuous series
+//     6. blocklist.NewManager()           — before buildDetectors(); detectors depend on it
+//     7. runStream() × N                  — last; all shared resources must exist
+//
+//   SHUTDOWN SEQUENCE (SIGTERM/SIGINT → ctx.Done()):
+//     1. tail.Run() exits                — closes lines channel
+//     2. drainLoop completes             — all buffered lines processed
+//     3. runStream returns → wg.Done()  — stream fully done
+//     4. metricsWg.Wait()               — HTTP server Shutdown() completes (5s timeout)
+//     5. wg.Wait() in main()            — all streams confirmed done
+//     6. defers LIFO: cancel() → removePID() → utils.Close()
+//
+//   INVARIANTS:
+//     - No goroutine is started with context.Background() — all use appCtx or derived
+//     - Every goroutine holding resources is tracked in a WaitGroup
+//     - SIGHUP never races with line processing — both in same select goroutine per stream
 
 package main
 
@@ -156,6 +178,11 @@ func main() {
 	// ── Metrics HTTP server ──────────────────────────────────────────────────────────
 	// Started once — intentionally NOT restarted on SIGHUP so Prometheus scraper
 	// keeps continuous counter timeseries (no reset on config reload).
+	//
+	// metricsWg tracks the shutdown goroutine so main() waits for srv.Shutdown() to finish
+	// before exiting. Without it, the process could exit while Shutdown is still draining
+	// in-flight HTTP requests, causing connection resets on the Prometheus scraper side.
+	var metricsWg sync.WaitGroup
 	if cfg.Metrics.Enabled {
 		metrics.Init()
 		mux := http.NewServeMux()
@@ -169,13 +196,24 @@ func main() {
 			Handler:           mux,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
+		// Both goroutines are tracked so metricsWg.Wait() in main() guarantees that
+		// ListenAndServe has returned and all HTTP connections are closed before exit.
+		// Shutdown() closes listeners first (causing ListenAndServe to return ErrServerClosed),
+		// then drains active connections — so ListenAndServe always returns before Shutdown(),
+		// but we track both explicitly to make the guarantee clear and audit-proof.
+		metricsWg.Add(1)
 		go func() {
+			defer metricsWg.Done()
 			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				utils.Log("METRICS", "server error: "+err.Error(), "warn")
 			}
 		}()
+		metricsWg.Add(1)
 		go func() {
+			defer metricsWg.Done()
 			<-ctx.Done()
+			// Fresh context: appCtx is already cancelled here — we need an independent
+			// deadline for the HTTP graceful shutdown, not a context that's already done.
 			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer shutCancel()
 			_ = srv.Shutdown(shutCtx)
@@ -227,6 +265,7 @@ func main() {
 		go runStream(ctx, path, cfg, streamCfg, ipCache, resolver, reloadChs[i], &wg)
 	}
 
+	metricsWg.Wait()
 	wg.Wait()
 	utils.Log("SHUTDOWN", "all streams done", "info")
 }
@@ -306,7 +345,7 @@ func runStream(
 		StreamName:       streamCfg.Name,
 		processedCount:   &processedCount,
 		Tracker:          tracker,
-		Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log),
+		Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(ctx, cfg), utils.Log),
 		ThreatLogger:     makeThreatLogger(threatFile),
 		Matcher:          matcher,
 		Verifier:         verifier,
@@ -419,7 +458,7 @@ func runStream(
 				StreamName:       streamCfg.Name,
 				processedCount:   &processedCount,
 				Tracker:          tracker,
-				Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log),
+				Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(ctx, cfg), utils.Log),
 				ThreatLogger:     makeThreatLogger(threatFile),
 				Matcher:          newMatcher,
 				Verifier:         verifier,
@@ -450,7 +489,8 @@ var detectorFactories = []func(config.Config) detector.Detector{
 	newCrawlerDetector,
 	newNoAssetDetector,
 	newOverflowDetector,
-	newBadBotDetector,
+	// newBadBotDetector is called explicitly in buildDetectors — it needs appCtx.
+	// Will be redesigned via SharedResources in Flow #025 Task 5.
 }
 
 // badBotMu protects badBotCancel across SIGHUP reloads.
@@ -462,7 +502,9 @@ var (
 
 // buildDetectors assembles the list of active detectors from config.
 // Iterates detectorFactories; nil returns (disabled) are filtered out.
-func buildDetectors(cfg config.Config) []detector.Detector {
+// ctx must be appCtx (or derived from it) so goroutine-starting detectors
+// stop on SIGTERM. context.Background() here would cause goroutine leaks.
+func buildDetectors(ctx context.Context, cfg config.Config) []detector.Detector {
 	var detectors []detector.Detector
 	var names []string
 	for _, f := range detectorFactories {
@@ -470,6 +512,11 @@ func buildDetectors(cfg config.Config) []detector.Detector {
 			detectors = append(detectors, d)
 			names = append(names, d.Name())
 		}
+	}
+	// BadBot starts its own goroutine and must receive appCtx so it stops on SIGTERM.
+	if d := newBadBotDetector(ctx, cfg); d != nil {
+		detectors = append(detectors, d)
+		names = append(names, d.Name())
 	}
 	utils.Log("CONFIG", fmt.Sprintf("detectors: %d active (%s)",
 		len(detectors), strings.Join(names, " ")), "info")
@@ -550,7 +597,10 @@ func newOverflowDetector(cfg config.Config) detector.Detector {
 	return detector.NewOverflowDetector(cfg.Detectors.Overflow)
 }
 
-func newBadBotDetector(cfg config.Config) detector.Detector {
+// newBadBotDetector starts a refresh goroutine that must stop on SIGTERM.
+// ctx must be appCtx (or derived) — context.Background() would leak the goroutine.
+// Will be redesigned in Flow #025 Task 5 (SharedResources, Manager.Update on SIGHUP).
+func newBadBotDetector(ctx context.Context, cfg config.Config) detector.Detector {
 	badBotMu.Lock()
 	if badBotCancel != nil {
 		// Cancel previous goroutine before creating a new instance on SIGHUP.
@@ -561,10 +611,10 @@ func newBadBotDetector(cfg config.Config) detector.Detector {
 		badBotMu.Unlock()
 		return nil
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	detectorCtx, cancel := context.WithCancel(ctx)
 	badBotCancel = cancel
 	badBotMu.Unlock()
-	return detector.NewBadBotDetector(ctx, cfg.Detectors.BadBot)
+	return detector.NewBadBotDetector(detectorCtx, cfg.Detectors.BadBot)
 }
 
 // ========================== PID file ====================================================

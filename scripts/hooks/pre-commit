@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# pre-commit — enforces startup/shutdown invariants and runs the full test suite.
+#
+# Install: ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit
+#
+# Checks (in order):
+#   1. TestStartupShutdownInvariants — verifies that main.go satisfies all
+#      startup/shutdown sequence and WaitGroup tracking invariants (see CLAUDE.md).
+#   2. go test ./...                  — full test suite across all packages.
+#   3. go vet ./...                   — catches context misuse, WaitGroup errors,
+#      unreachable code, and other static issues.
+
+set -euo pipefail
+
+echo "[pre-commit] checking startup/shutdown invariants..."
+go test . -run TestStartupShutdownInvariants -count=1 -timeout 30s
+
+echo "[pre-commit] running full test suite..."
+go test ./... -count=1 -timeout 120s
+
+echo "[pre-commit] go vet..."
+go vet ./...
+
+echo "[pre-commit] OK"
