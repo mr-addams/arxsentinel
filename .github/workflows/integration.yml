@@ -31,16 +31,6 @@ jobs:
       - name: Run integration tests
         run: bash tests/integration/run.sh
 
-      - name: Dump caddy log diagnostics
-        if: always()
-        run: |
-          echo "=== access.log first line (CLF) ==="
-          head -1 tests/integration/logs/caddy/access.log 2>/dev/null | cut -c1-120 || echo "(empty)"
-          echo "=== caddy stdout JSON sample (first 500 chars of line 1) ==="
-          head -1 tests/integration/logs/caddy/stdout-sample.log 2>/dev/null | cut -c1-500 || echo "(empty)"
-          echo "=== caddy stdout JSON sample (line 2) ==="
-          sed -n '2p' tests/integration/logs/caddy/stdout-sample.log 2>/dev/null | cut -c1-500 || echo "(empty)"
-
       - name: Record tested product versions
         if: always()
         run: |

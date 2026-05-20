@@ -13,7 +13,7 @@
         # Log X-Forwarded-For as the client IP field — the value set by the upstream
         # proxy contains the real attacker IP. transform-encoder outputs Apache CLF
         # compatible with the "caddy" sentinel profile.
-        format transform `{http.request.header.X-Forwarded-For} - - [{ts}] "{request>method} {request>uri} {request>proto}" {status} {size} "{request>headers>Referer>0}" "{request>headers>User-Agent>0}"` {
+        format transform `{request>headers>X-Forwarded-For>[0]:request>remote_ip} - - [{ts}] "{request>method} {request>uri} {request>proto}" {status} {size} "{request>headers>Referer>[0]}" "{request>headers>User-Agent>[0]}"` {
             time_format "02/Jan/2006:15:04:05 -0700"
         }
     }
