@@ -301,7 +301,7 @@ blocklist:
     - name: badbot-ref
       refresh_interval: 24h
       sources:
-        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrers.list"
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list"
           format: plain_text
 
 whitelist:

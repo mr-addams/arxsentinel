@@ -889,7 +889,7 @@ func defaultConfig() Config {
 					Name:            "badbot-ref",
 					RefreshInterval: blocklist.Duration(24 * time.Hour),
 					Sources: []blocklist.SourceConfig{{
-						URL:    "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrers.list",
+						URL:    "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list",
 						Format: "plain_text",
 					}},
 				},
