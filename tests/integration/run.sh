@@ -64,18 +64,25 @@ BLOCKLIST_DIR="$INT_DIR/blocklist"
 mkdir -p "$BLOCKLIST_DIR"
 
 UA_URL="https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
-REF_URL="https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list"
+REF_URL="https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrers.list"
 
 echo "[run] fetching blocklist patterns from upstream..."
-if ! curl -fsSL --max-time 30 "$UA_URL" \
-        | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' \
-        | head -20 > "$BLOCKLIST_DIR/badbot-ua.list"; then
+# pipefail disabled per-pipeline: head -20 closes stdin before grep/curl finish reading
+# all ~685/7108 lines — SIGPIPE on grep is expected and benign.
+# Content is verified by checking the output file size afterward.
+# The same pattern is used in scenarios.sh for the LONG_PATH variable.
+(set +o pipefail; curl -fsSL --max-time 30 "$UA_URL" \
+    | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' \
+    | head -20) > "$BLOCKLIST_DIR/badbot-ua.list" 2>/dev/null || true
+if [ ! -s "$BLOCKLIST_DIR/badbot-ua.list" ]; then
     echo "[run] ERROR: failed to fetch UA patterns from $UA_URL" >&2
     exit 1
 fi
-if ! curl -fsSL --max-time 30 "$REF_URL" \
-        | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' \
-        | head -20 > "$BLOCKLIST_DIR/badbot-ref.list"; then
+
+(set +o pipefail; curl -fsSL --max-time 30 "$REF_URL" \
+    | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' \
+    | head -20) > "$BLOCKLIST_DIR/badbot-ref.list" 2>/dev/null || true
+if [ ! -s "$BLOCKLIST_DIR/badbot-ref.list" ]; then
     echo "[run] ERROR: failed to fetch referrer patterns from $REF_URL" >&2
     exit 1
 fi
