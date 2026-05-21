@@ -278,12 +278,13 @@ assert_cf_direct() {
     local access_log; access_log=$(backend_access_log "$backend")
     local label="cf-direct/${backend}"
 
-    # Use explicit newline separator so head -1 works correctly when the
-    # container is attached to multiple networks (avoids IP concatenation).
+    # Get cloudflare-sim's IP on the default compose network — that is the IP backends
+    # see as the TCP peer. cloudflare-sim is also on cf_ext_net, but that IP is only
+    # visible to attacker containers; it never appears in backend access logs.
     local cf_ip
     cf_ip=$(docker inspect "integration-cloudflare-sim-1" \
-        --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{"\n"}}{{end}}' \
-        2>/dev/null | grep -v '^$' | head -1 || true)
+        --format '{{(index .NetworkSettings.Networks "integration_default").IPAddress}}' \
+        2>/dev/null || true)
 
     if ! grep -q "THREAT" "$threat_log" 2>/dev/null; then
         FAIL=$((FAIL + 1))
@@ -341,12 +342,13 @@ assert_cf_chain() {
     local threat_log="$LOGS_DIR/threats/${backend}-proxy.log"
     local label="cf-chain/${proxy}/${backend}"
 
-    # Use explicit newline separator so head -1 works correctly when the
-    # container is attached to multiple networks (avoids IP concatenation).
+    # Get cloudflare-sim's IP on the default compose network — that is the IP proxies
+    # see as the TCP peer. cloudflare-sim is also on cf_ext_net, but that IP is only
+    # visible to attacker containers; it never appears in backend access logs.
     local cf_ip
     cf_ip=$(docker inspect "integration-cloudflare-sim-1" \
-        --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{"\n"}}{{end}}' \
-        2>/dev/null | grep -v '^$' | head -1 || true)
+        --format '{{(index .NetworkSettings.Networks "integration_default").IPAddress}}' \
+        2>/dev/null || true)
 
     if ! grep -q "THREAT" "$threat_log" 2>/dev/null; then
         FAIL=$((FAIL + 1))

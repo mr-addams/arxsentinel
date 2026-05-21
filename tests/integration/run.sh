@@ -136,23 +136,28 @@ mkdir -p \
     "$LOGS_DIR/threats" \
     "$LOGS_DIR/warnings"
 
-# Touch log files so tail can start before the first request arrives.
+# Truncate all server access logs from previous runs.
+# --force-recreate below restarts containers with fresh file descriptors, so
+# truncate-in-place (>) is safe — the running process is being replaced anyway.
+# OLS log files may be owned by nobody:nogroup after a prior run; sudo-remove
+# them so the recreated container starts with a fresh file at the correct path.
 for f in nginx apache traefik caddy haproxy; do
-    touch "$LOGS_DIR/$f/access.log"
+    > "$LOGS_DIR/$f/access.log"
 done
-# OLS writes to localhost.access.log (docker vhost template naming).
-touch "$LOGS_DIR/litespeed/localhost.access.log"
+sudo rm -f "$LOGS_DIR/litespeed/localhost.access.log"
+touch       "$LOGS_DIR/litespeed/localhost.access.log"
 # Proxy-chain backend log files.
-touch "$LOGS_DIR/nginx/access-proxy.log"
-touch "$LOGS_DIR/apache-proxy/access.log"
-touch "$LOGS_DIR/traefik-proxy/access-proxy.log"
-touch "$LOGS_DIR/caddy-proxy/access-proxy.log"
-touch "$LOGS_DIR/haproxy-proxy/access.log"
-touch "$LOGS_DIR/litespeed-proxy/localhost.access.log"
+> "$LOGS_DIR/nginx/access-proxy.log"
+> "$LOGS_DIR/apache-proxy/access.log"
+> "$LOGS_DIR/traefik-proxy/access-proxy.log"
+> "$LOGS_DIR/caddy-proxy/access-proxy.log"
+> "$LOGS_DIR/haproxy-proxy/access.log"
+sudo rm -f "$LOGS_DIR/litespeed-proxy/localhost.access.log"
+touch       "$LOGS_DIR/litespeed-proxy/localhost.access.log"
 
-# Touch log files for chain_guard test servers.
-touch "$LOGS_DIR/nginx-bare/access.log"
-touch "$LOGS_DIR/nginx-bogon-victim/access.log"
+# Chain guard test server log files.
+> "$LOGS_DIR/nginx-bare/access.log"
+> "$LOGS_DIR/nginx-bogon-victim/access.log"
 
 # Truncate threat and warning logs from previous runs — verify.sh reads cumulative content, so
 # stale entries from earlier runs would cause false positives or false negatives.
