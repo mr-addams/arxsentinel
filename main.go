@@ -26,6 +26,29 @@
 //
 //   Multi-stream: each stream runs its own goroutine set (runStream).
 //   Backward compat: general.log_file → single unnamed stream, stream="" label on metrics.
+//
+//   STARTUP SEQUENCE (order is mandatory — violations cause panic or data loss):
+//     1. config.LoadConfig()              — must be first; all other components depend on cfg
+//     2. utils.Init()                     — logger must be ready before any Log() call
+//     3. writePID()                       — after logger so failures are logged
+//     4. signal.NotifyContext()           — context before goroutines that check ctx.Done()
+//     5. metrics.Init() + srv.ListenAndServe() — before streams; scraper gets continuous series
+//     6. blocklist.NewManager()           — before buildDetectors(); detectors depend on it
+//     7. chaincheck.NewChecker()          — before streams; checks every log entry from start
+//     8. runStream() × N                  — last; all shared resources must exist
+//
+//   SHUTDOWN SEQUENCE (SIGTERM/SIGINT → ctx.Done()):
+//     1. tail.Run() exits                — closes lines channel
+//     2. drainLoop completes             — all buffered lines processed
+//     3. runStream returns → wg.Done()  — stream fully done
+//     4. metricsWg.Wait()               — HTTP server Shutdown() completes (5s timeout)
+//     5. wg.Wait() in main()            — all streams confirmed done
+//     6. defers LIFO: cancel() → removePID() → utils.Close()
+//
+//   INVARIANTS:
+//     - No goroutine is started with context.Background() — all use appCtx or derived
+//     - Every goroutine holding resources is tracked in a WaitGroup
+//     - SIGHUP never races with line processing — both in same select goroutine per stream
 
 package main
 
@@ -47,6 +70,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/mr-addams/nginx-sentinel/internal/core/blocklist"
+	"github.com/mr-addams/nginx-sentinel/internal/core/chaincheck"
 	"github.com/mr-addams/nginx-sentinel/internal/core/detector"
 	"github.com/mr-addams/nginx-sentinel/internal/core/output"
 	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
@@ -66,9 +91,11 @@ var version = "dev"
 // PipelineContext holds long-lived dependencies shared by processLine.
 // Recreated on SIGHUP reload: Scorer, Matcher, and Parser are replaced; Tracker and
 // Verifier survive. FakeBotScore and DNSVerifyTimeout reflect the current config.
+// Shared is passed by value — SharedResources fields are pointers, so the copy is cheap
+// and any nil-check in processLine correctly reflects the state at pipeline construction.
 type PipelineContext struct {
-	StreamName       string        // empty string for single-stream (backward compat)
-	processedCount   *atomic.Int64 // per-stream counter, owned by runStream
+	StreamName       string           // empty string for single-stream (backward compat)
+	processedCount   *atomic.Int64    // per-stream counter, owned by runStream
 	Tracker          *state.Tracker
 	Scorer           *scorer.Scorer
 	ThreatLogger     *output.ThreatLogger
@@ -77,6 +104,20 @@ type PipelineContext struct {
 	Parser           parser.Parser
 	FakeBotScore     int
 	DNSVerifyTimeout time.Duration
+	Shared           SharedResources  // chain checker, warnings writer — nil-safe when disabled
+	LogFile          string           // stream log file path, used for chain warning context
+}
+
+// SharedResources holds singleton dependencies shared across all streams.
+// Created once in main() before streams are launched; passed to buildDetectors.
+// Manager.Update() is called on SIGHUP from the fan-out goroutine — per-stream
+// SIGHUP handlers only rebuild the pipeline, not the shared blocklist state.
+// ChainChecker and WarningsWriter are nil when chain_guard.enabled == false —
+// all callers must nil-check before use.
+type SharedResources struct {
+	BlocklistManager *blocklist.Manager
+	ChainChecker     *chaincheck.Checker    // nil if chain_guard disabled
+	WarningsWriter   *output.WarningsWriter // nil if chain_guard disabled
 }
 
 // configPath — default path to the config file.
@@ -156,6 +197,11 @@ func main() {
 	// ── Metrics HTTP server ──────────────────────────────────────────────────────────
 	// Started once — intentionally NOT restarted on SIGHUP so Prometheus scraper
 	// keeps continuous counter timeseries (no reset on config reload).
+	//
+	// metricsWg tracks the shutdown goroutine so main() waits for srv.Shutdown() to finish
+	// before exiting. Without it, the process could exit while Shutdown is still draining
+	// in-flight HTTP requests, causing connection resets on the Prometheus scraper side.
+	var metricsWg sync.WaitGroup
 	if cfg.Metrics.Enabled {
 		metrics.Init()
 		mux := http.NewServeMux()
@@ -169,13 +215,24 @@ func main() {
 			Handler:           mux,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
+		// Both goroutines are tracked so metricsWg.Wait() in main() guarantees that
+		// ListenAndServe has returned and all HTTP connections are closed before exit.
+		// Shutdown() closes listeners first (causing ListenAndServe to return ErrServerClosed),
+		// then drains active connections — so ListenAndServe always returns before Shutdown(),
+		// but we track both explicitly to make the guarantee clear and audit-proof.
+		metricsWg.Add(1)
 		go func() {
+			defer metricsWg.Done()
 			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				utils.Log("METRICS", "server error: "+err.Error(), "warn")
 			}
 		}()
+		metricsWg.Add(1)
 		go func() {
+			defer metricsWg.Done()
 			<-ctx.Done()
+			// Fresh context: appCtx is already cancelled here — we need an independent
+			// deadline for the HTTP graceful shutdown, not a context that's already done.
 			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer shutCancel()
 			_ = srv.Shutdown(shutCtx)
@@ -187,6 +244,39 @@ func main() {
 	sigHUP := make(chan os.Signal, 1)
 	signal.Notify(sigHUP, syscall.SIGHUP)
 	defer signal.Stop(sigHUP)
+
+	// ── Blocklist Manager (Step 6) ────────────────────────────────────────────────────────
+	// Created before streams so all detectors share the same pattern automata.
+	// Uses appCtx — refresh goroutines stop on SIGTERM alongside streams.
+	// Manager.Update() is called from the SIGHUP fan-out below, not per-stream.
+	blMgr := blocklist.NewManager(ctx, cfg.Blocklist)
+	defer blMgr.Close()
+
+	// ── Chain Integrity Checker (Step 7) ──────────────────────────────────────────────
+	// Detects Cloudflare or bogon IPs appearing as client IPs in access logs.
+	// Must start before streams — all log entries are checked from the beginning.
+	// Both fields are nil when chain_guard.enabled == false; callers nil-check before use.
+	var chainChecker *chaincheck.Checker
+	var warningsWriter *output.WarningsWriter
+	if cfg.ChainGuard.Enabled {
+		var wErr error
+		warningsWriter, wErr = output.NewWarningsWriter(cfg.ChainGuard.WarningsLog)
+		if wErr != nil {
+			utils.Log("STARTUP", "failed to open warnings log: "+wErr.Error(), "error")
+			return
+		}
+		// warningsWriter deferred before chainChecker so LIFO closes writer last —
+		// any in-flight WriteChainWarning call completes before the file is closed.
+		defer func() { _ = warningsWriter.Close() }()
+		chainChecker = chaincheck.NewChecker(ctx, cfg.ChainGuard.ToChainCheckConfig())
+		defer chainChecker.Close()
+	}
+
+	shared := SharedResources{
+		BlocklistManager: blMgr,
+		ChainChecker:     chainChecker,
+		WarningsWriter:   warningsWriter,
+	}
 
 	reloadChs := make([]chan struct{}, len(cfg.Streams))
 	for i := range reloadChs {
@@ -206,6 +296,24 @@ func main() {
 						newCfg.Output.OperationalLog, ""); reloadErr != nil {
 						utils.Log("CONFIG", "SIGHUP: logger reload error: "+reloadErr.Error(), "warn")
 					}
+					// Update blocklist Manager once for all streams — streams do not call Update
+					// themselves; they rebuild their pipeline using the updated shared automata.
+					// Guard: if SIGTERM and SIGHUP arrive in the same select tick, ctx may
+					// already be cancelled. Starting new per-list goroutines with a cancelled
+					// context is harmless but wasteful — skip the update entirely.
+					if ctx.Err() == nil {
+						shared.BlocklistManager.Update(ctx, newCfg.Blocklist)
+						// Update chain checker with new config (sources, intervals may change).
+						// Same ctx.Err() guard: Update starts a goroutine for CF refresh.
+						if shared.ChainChecker != nil {
+							shared.ChainChecker.Update(ctx, newCfg.ChainGuard.ToChainCheckConfig())
+						}
+					}
+					// WarningsWriter.Reopen() is safe after ctx cancellation:
+					// it only closes/reopens a file, never starts goroutines.
+					if shared.WarningsWriter != nil {
+						_ = shared.WarningsWriter.Reopen()
+					}
 				}
 				// Notify each stream (non-blocking: skip if channel is full,
 				// meaning a previous reload is still pending for that stream).
@@ -224,9 +332,10 @@ func main() {
 	var wg sync.WaitGroup
 	for i, streamCfg := range cfg.Streams {
 		wg.Add(1)
-		go runStream(ctx, path, cfg, streamCfg, ipCache, resolver, reloadChs[i], &wg)
+		go runStream(ctx, path, cfg, streamCfg, ipCache, resolver, reloadChs[i], &wg, shared)
 	}
 
+	metricsWg.Wait()
 	wg.Wait()
 	utils.Log("SHUTDOWN", "all streams done", "info")
 }
@@ -244,6 +353,7 @@ func runStream(
 	resolver *net.Resolver,
 	reloadCh <-chan struct{},
 	wg *sync.WaitGroup,
+	shared SharedResources,
 ) {
 	defer wg.Done()
 	// Recover from panics so one stream crashing does not take down all other streams.
@@ -306,13 +416,15 @@ func runStream(
 		StreamName:       streamCfg.Name,
 		processedCount:   &processedCount,
 		Tracker:          tracker,
-		Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log),
+		Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg, shared), utils.Log),
 		ThreatLogger:     makeThreatLogger(threatFile),
 		Matcher:          matcher,
 		Verifier:         verifier,
 		Parser:           p,
 		FakeBotScore:     cfg.Whitelist.FakeBotScore,
 		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
+		Shared:           shared,
+		LogFile:          streamCfg.LogFile,
 	}
 
 	// GC goroutine — periodic cleanup of inactive IPs.
@@ -419,13 +531,15 @@ func runStream(
 				StreamName:       streamCfg.Name,
 				processedCount:   &processedCount,
 				Tracker:          tracker,
-				Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg), utils.Log),
+				Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg, shared), utils.Log),
 				ThreatLogger:     makeThreatLogger(threatFile),
 				Matcher:          newMatcher,
 				Verifier:         verifier,
 				Parser:           newParser,
 				FakeBotScore:     cfg.Whitelist.FakeBotScore,
 				DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
+				Shared:           shared,
+				LogFile:          streamCfg.LogFile,
 			}
 			utils.Log("CONFIG", fmt.Sprintf("stream %q: SIGHUP config reloaded", streamCfg.Name), "info")
 
@@ -442,7 +556,7 @@ func runStream(
 // detectorFactories — registry of all available detectors.
 // Each factory returns nil when the detector is disabled in config.
 // To add a new detector: append one entry here + write a newXxxDetector function below.
-var detectorFactories = []func(config.Config) detector.Detector{
+var detectorFactories = []func(config.Config, SharedResources) detector.Detector{
 	newProbeDetector,
 	newRateDetector,
 	newUADetector,
@@ -450,15 +564,17 @@ var detectorFactories = []func(config.Config) detector.Detector{
 	newCrawlerDetector,
 	newNoAssetDetector,
 	newOverflowDetector,
+	newBadBotDetector,
 }
 
 // buildDetectors assembles the list of active detectors from config.
 // Iterates detectorFactories; nil returns (disabled) are filtered out.
-func buildDetectors(cfg config.Config) []detector.Detector {
+// No goroutines are started here — goroutine-owning resources live in SharedResources.
+func buildDetectors(cfg config.Config, shared SharedResources) []detector.Detector {
 	var detectors []detector.Detector
 	var names []string
 	for _, f := range detectorFactories {
-		if d := f(cfg); d != nil {
+		if d := f(cfg, shared); d != nil {
 			detectors = append(detectors, d)
 			names = append(names, d.Name())
 		}
@@ -493,53 +609,62 @@ func buildParser(cfg config.Config) (parser.Parser, error) {
 
 // ── Detector factories ─────────────────────────────────────────────────────────────────
 
-func newProbeDetector(cfg config.Config) detector.Detector {
+func newProbeDetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.Probe.Enabled {
 		return nil
 	}
 	return detector.NewProbeDetector(cfg.Detectors.Probe)
 }
 
-func newRateDetector(cfg config.Config) detector.Detector {
+func newRateDetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.Rate.Enabled {
 		return nil
 	}
 	return detector.NewRateDetector(cfg.Detectors.Rate)
 }
 
-func newUADetector(cfg config.Config) detector.Detector {
+func newUADetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.UserAgent.Enabled {
 		return nil
 	}
 	return detector.NewUADetector(cfg.Detectors.UserAgent)
 }
 
-func newBruteforceDetector(cfg config.Config) detector.Detector {
+func newBruteforceDetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.Bruteforce.Enabled {
 		return nil
 	}
 	return detector.NewBruteforceDetector(cfg.Detectors.Bruteforce)
 }
 
-func newCrawlerDetector(cfg config.Config) detector.Detector {
+func newCrawlerDetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.Crawler.Enabled {
 		return nil
 	}
 	return detector.NewCrawlerDetector(cfg.Detectors.Crawler)
 }
 
-func newNoAssetDetector(cfg config.Config) detector.Detector {
+func newNoAssetDetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.NoAsset.Enabled {
 		return nil
 	}
 	return detector.NewNoAssetDetector(cfg.Detectors.NoAsset)
 }
 
-func newOverflowDetector(cfg config.Config) detector.Detector {
+func newOverflowDetector(cfg config.Config, _ SharedResources) detector.Detector {
 	if !cfg.Detectors.Overflow.Enabled {
 		return nil
 	}
 	return detector.NewOverflowDetector(cfg.Detectors.Overflow)
+}
+
+// newBadBotDetector creates a BadBotDetector backed by the shared blocklist Manager.
+// No goroutines — all refresh logic is owned by shared.BlocklistManager.
+func newBadBotDetector(cfg config.Config, shared SharedResources) detector.Detector {
+	if !cfg.Detectors.BadBot.Enabled {
+		return nil
+	}
+	return detector.NewBadBotDetector(cfg.Detectors.BadBot, shared.BlocklistManager)
 }
 
 // ========================== PID file ====================================================
@@ -589,6 +714,23 @@ func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
 	), "debug")
+
+	// ── Chain integrity check ─────────────────────────────────────────────────────────
+	// Runs before detectors. If the client IP is Cloudflare or bogon, the proxy chain
+	// is misconfigured — ArxSentinel cannot identify the real attacker IP. We log the
+	// warning loudly (file + operational log) but do NOT add to threat log or score,
+	// because this is an infrastructure problem, not an attack verdict.
+	// RemoteAddr is checked (not RealIP) — it is the raw TCP peer address, which is
+	// what ArxSentinel actually received from the network stack.
+	if pipe.Shared.ChainChecker != nil && pipe.Shared.WarningsWriter != nil {
+		if result := pipe.Shared.ChainChecker.Check(entry.RemoteAddr); result != nil {
+			_ = pipe.Shared.WarningsWriter.WriteChainWarning(result, pipe.LogFile)
+			utils.Log("CHAIN_WARN",
+				fmt.Sprintf("%s-ip-as-client ip=%s cidr=%s log=%s",
+					result.Kind, result.IP, result.MatchedCIDR, pipe.LogFile),
+				"warning")
+		}
+	}
 
 	// ── Step 1: custom whitelist early-exit ──────────────────────────────────────────
 	// Custom whitelist is checked before tracker.Update — whitelisted traffic does not

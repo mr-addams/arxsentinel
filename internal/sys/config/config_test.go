@@ -629,6 +629,279 @@ func TestEnvOverride_InvalidDuration(t *testing.T) {
 	}
 }
 
+// ========================== Test: BadBot defaults and env overrides ====================
+
+func TestBadBotConfig_Defaults(t *testing.T) {
+	cfg, err := LoadConfig("/nonexistent/badbot-test.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	bb := cfg.Detectors.BadBot
+	if !bb.Enabled {
+		t.Error("BadBot.Enabled: want true")
+	}
+	if bb.Score != 60 {
+		t.Errorf("BadBot.Score: want 60, got %d", bb.Score)
+	}
+	if !bb.CheckUA {
+		t.Error("BadBot.CheckUA: want true")
+	}
+	if bb.CheckReferrer {
+		t.Error("BadBot.CheckReferrer: want false")
+	}
+}
+
+func TestBlocklistConfig_Defaults(t *testing.T) {
+	// Sources, refresh intervals and storage live in the blocklist: section (D6, Flow #025).
+	cfg, err := LoadConfig("/nonexistent/blocklist-defaults-test.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	bl := cfg.Blocklist
+	if bl.Storage != "" {
+		t.Errorf("Blocklist.Storage: want empty (in-memory), got %q", bl.Storage)
+	}
+	if len(bl.Lists) != 2 {
+		t.Fatalf("Blocklist.Lists: want 2 default lists, got %d", len(bl.Lists))
+	}
+	// badbot-ua list
+	uaList := bl.Lists[0]
+	if uaList.Name != "badbot-ua" {
+		t.Errorf("Lists[0].Name: want badbot-ua, got %q", uaList.Name)
+	}
+	if time.Duration(uaList.RefreshInterval) != 24*time.Hour {
+		t.Errorf("Lists[0].RefreshInterval: want 24h, got %v", time.Duration(uaList.RefreshInterval))
+	}
+	if len(uaList.Sources) != 1 || uaList.Sources[0].URL == "" {
+		t.Error("Lists[0].Sources: want one non-empty URL")
+	}
+	if uaList.Sources[0].Format != "plain_text" {
+		t.Errorf("Lists[0].Sources[0].Format: want plain_text, got %q", uaList.Sources[0].Format)
+	}
+	// badbot-ref list
+	refList := bl.Lists[1]
+	if refList.Name != "badbot-ref" {
+		t.Errorf("Lists[1].Name: want badbot-ref, got %q", refList.Name)
+	}
+}
+
+func TestBadBotConfig_EnvOverride(t *testing.T) {
+	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_ENABLED", "false")
+	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_SCORE", "99")
+	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_CHECK_UA", "false")
+	t.Setenv("ARXSENTINEL_DETECTORS_BADBOT_CHECK_REFERRER", "true")
+
+	cfg, err := LoadConfig("/nonexistent/badbot-env-test.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	bb := cfg.Detectors.BadBot
+	if bb.Enabled {
+		t.Error("BadBot.Enabled: want false")
+	}
+	if bb.Score != 99 {
+		t.Errorf("BadBot.Score: want 99, got %d", bb.Score)
+	}
+	if bb.CheckUA {
+		t.Error("BadBot.CheckUA: want false")
+	}
+	if !bb.CheckReferrer {
+		t.Error("BadBot.CheckReferrer: want true")
+	}
+}
+
+func TestBlocklistConfig_EnvStorageOverride(t *testing.T) {
+	// ARXSENTINEL_BLOCKLIST_STORAGE overrides the bbolt storage path for container deployments.
+	t.Setenv("ARXSENTINEL_BLOCKLIST_STORAGE", "/tmp/custom-blocklist.db")
+
+	cfg, err := LoadConfig("/nonexistent/blocklist-env-test.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Blocklist.Storage != "/tmp/custom-blocklist.db" {
+		t.Errorf("Blocklist.Storage: want /tmp/custom-blocklist.db, got %q", cfg.Blocklist.Storage)
+	}
+}
+
+// ── BadBot: validateConfig ────────────────────────────────────────────────────────────
+
+func TestBadBotConfig_ValidateZeroScore(t *testing.T) {
+	// score=0 must fail validation even though sources/refresh now live in blocklist:.
+	path := writeTempYAML(t, `
+detectors:
+  badbot:
+    enabled: true
+    score: 0
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "badbot.score") {
+		t.Errorf("want error about badbot.score, got: %v", err)
+	}
+}
+
+func TestBlocklistConfig_ValidateZeroRefreshInterval(t *testing.T) {
+	// A list with refresh_interval=0 must fail validation (causes ticker panic).
+	path := writeTempYAML(t, `
+blocklist:
+  lists:
+    - name: test-list
+      refresh_interval: 0s
+      sources:
+        - url: http://example.com/list.txt
+          format: plain_text
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "refresh_interval") {
+		t.Errorf("want error about refresh_interval, got: %v", err)
+	}
+}
+
+func TestBlocklistConfig_ValidateEmptySources(t *testing.T) {
+	// A list without sources must fail validation.
+	path := writeTempYAML(t, `
+blocklist:
+  lists:
+    - name: test-list
+      refresh_interval: 24h
+      sources: []
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "source") {
+		t.Errorf("want error about missing sources, got: %v", err)
+	}
+}
+
+func TestBlocklistConfig_ValidateEmptyListName(t *testing.T) {
+	// A list with empty name must fail validation.
+	path := writeTempYAML(t, `
+blocklist:
+  lists:
+    - name: ""
+      refresh_interval: 24h
+      sources:
+        - url: http://example.com/list.txt
+          format: plain_text
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "name") {
+		t.Errorf("want error about empty name, got: %v", err)
+	}
+}
+
+func TestBlocklistConfig_ValidateEmptySourceURL(t *testing.T) {
+	// A source with empty URL must fail validation.
+	path := writeTempYAML(t, `
+blocklist:
+  lists:
+    - name: test-list
+      refresh_interval: 24h
+      sources:
+        - url: ""
+          format: plain_text
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "url") {
+		t.Errorf("want error about empty source URL, got: %v", err)
+	}
+}
+
+// ========================== Tests: chain_guard config =================================
+
+func TestDefaultConfig_ChainGuard(t *testing.T) {
+	// Chain guard is disabled by default — enabled requires warnings_log which has no safe default.
+	// When enabled, Cloudflare and bogon checks are active with sensible defaults.
+	cfg, err := LoadConfig("/nonexistent/chain-guard-defaults.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cg := cfg.ChainGuard
+	if cg.Enabled {
+		t.Error("ChainGuard.Enabled: want false (disabled by default — requires warnings_log)")
+	}
+	if cg.WarningsLog != "" {
+		t.Errorf("ChainGuard.WarningsLog: want empty string (default), got %q", cg.WarningsLog)
+	}
+	if !cg.Cloudflare.Enabled {
+		t.Error("ChainGuard.Cloudflare.Enabled: want true")
+	}
+	if time.Duration(cg.Cloudflare.RefreshInterval) != 24*time.Hour {
+		t.Errorf("ChainGuard.Cloudflare.RefreshInterval: want 24h, got %v", time.Duration(cg.Cloudflare.RefreshInterval))
+	}
+	if len(cg.Cloudflare.Sources) != 2 {
+		t.Fatalf("ChainGuard.Cloudflare.Sources: want 2 default sources, got %d", len(cg.Cloudflare.Sources))
+	}
+	if !strings.Contains(cg.Cloudflare.Sources[0], "cloudflare.com") {
+		t.Errorf("ChainGuard.Cloudflare.Sources[0]: want Cloudflare URL, got %q", cg.Cloudflare.Sources[0])
+	}
+	if !cg.Bogon.Enabled {
+		t.Error("ChainGuard.Bogon.Enabled: want true")
+	}
+}
+
+func TestValidateConfig_ChainGuard_MissingWarningsLog(t *testing.T) {
+	// enabled=true with empty warnings_log must fail validation —
+	// there is nowhere to write infrastructure alerts.
+	path := writeTempYAML(t, `
+chain_guard:
+  enabled: true
+  warnings_log: ""
+  cloudflare:
+    enabled: true
+    refresh_interval: 24h
+    sources:
+      - https://www.cloudflare.com/ips-v4/
+      - https://www.cloudflare.com/ips-v6/
+  bogon:
+    enabled: true
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "chain_guard.warnings_log") {
+		t.Errorf("want error about chain_guard.warnings_log, got: %v", err)
+	}
+}
+
+func TestValidateConfig_ChainGuard_EmptySources(t *testing.T) {
+	// cloudflare check enabled with empty sources list must fail validation —
+	// the checker would never fetch fresh ranges and never signal the operator about stale data.
+	path := writeTempYAML(t, `
+chain_guard:
+  enabled: true
+  warnings_log: /var/log/arxsentinel/warnings.log
+  cloudflare:
+    enabled: true
+    refresh_interval: 24h
+    sources: []
+  bogon:
+    enabled: true
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "chain_guard.cloudflare.sources") {
+		t.Errorf("want error about chain_guard.cloudflare.sources, got: %v", err)
+	}
+}
+
+func TestValidateConfig_ChainGuard_Disabled_NoWarningsLog(t *testing.T) {
+	// disabled chain_guard with empty warnings_log must NOT return an error —
+	// the warnings file is irrelevant when chain guard is off.
+	path := writeTempYAML(t, `
+chain_guard:
+  enabled: false
+  warnings_log: ""
+  cloudflare:
+    enabled: true
+    refresh_interval: 24h
+    sources:
+      - https://www.cloudflare.com/ips-v4/
+      - https://www.cloudflare.com/ips-v6/
+  bogon:
+    enabled: true
+`)
+	_, err := LoadConfig(path)
+	if err != nil {
+		t.Errorf("disabled chain_guard with empty warnings_log must not return error, got: %v", err)
+	}
+}
+
 // ========================== Helper ====================================================
 
 // writeTempYAML creates a temporary file with the given content and returns its path.

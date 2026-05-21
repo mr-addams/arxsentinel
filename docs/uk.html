@@ -36,7 +36,7 @@
       "downloadUrl": "https://github.com/mr-addams/arxsentinel/releases/latest",
       "codeRepository": "https://github.com/mr-addams/arxsentinel",
       "license": "https://opensource.org/licenses/MIT",
-      "softwareVersion": "1.0.3",
+      "softwareVersion": "1.1.0",
       "author": { "@type": "Person", "name": "mr-addams" }
     }
     </script>
@@ -272,11 +272,12 @@
         .section-title { font-family: var(--font-cyber); font-size: 2.2rem; color: #fff; }
         .detectors-section { max-width: 1200px; margin: 6rem auto; }
         .detectors-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 2rem; padding: 0 2rem; justify-items: center;
+            display: flex; flex-wrap: wrap; justify-content: center;
+            gap: 2rem; padding: 0 2rem;
         }
-        .detector-card:last-child { grid-column: 1 / -1; justify-self: center; max-width: 380px; width: 100%; }
+        .detector-card:last-child { max-width: 380px; }
         .detector-card {
+            flex: 0 1 340px; min-width: 0;
             background: var(--bg-panel); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 8px;
             padding: 2rem; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
             display: flex; flex-direction: column; justify-content: space-between;
@@ -411,9 +412,9 @@
             /* ── Detectors ── */
             .detectors-section { margin: 3rem auto; }
             .section-title { font-size: 1.75rem; }
-            .detectors-grid { grid-template-columns: 1fr; padding: 0 1rem; gap: 1rem; }
-            /* остання картка — знімаємо центрування, на 1 колонці не потрібно */
-            .detector-card:last-child { grid-column: auto; justify-self: stretch; max-width: 100%; }
+            .detectors-grid { flex-direction: column; padding: 0 1rem; gap: 1rem; }
+            .detector-card { flex: 1 1 auto; max-width: 100%; }
+            .detector-card:last-child { max-width: 100%; }
 
             /* ── Install ── */
             .install-section { padding: 0 1rem; margin: 3rem auto; }
@@ -507,7 +508,7 @@
 
     <section class="hero">
         <div class="badge-container">
-            <span class="badge badge-version">v1.0.3</span>
+            <span class="badge badge-version">v1.1.0</span>
             <span class="badge">Open Source</span>
             <span class="badge">Go</span>
             <span class="badge">Linux</span>
@@ -536,7 +537,7 @@
                 <div class="pipeline-node">Parser (ngx_http_realip · CF-Connecting-IP · XFF ланцюжок)</div>
                 <div class="pipeline-node">Whitelist (IP · CIDR · UA · верифікація DNS)</div>
                 <div class="pipeline-node">Tracker (стан IP · ring buffer · лічильники rate)</div>
-                <div class="pipeline-node">Scorer (7 детекторів · лінійний decay)</div>
+                <div class="pipeline-node">Scorer (8 детекторів · лінійний decay)</div>
                 <div class="pipeline-node">threats.log</div>
                 <div class="pipeline-node final">Fail2Ban → бан через iptables</div>
             </div>
@@ -544,12 +545,12 @@
     </section>
 
     <section class="stats-grid">
-        <div class="stat-card"><div class="stat-number">7</div><div class="stat-label">Поведінкових детекторів</div></div>
+        <div class="stat-card"><div class="stat-number">8</div><div class="stat-label">Поведінкових детекторів</div></div>
         <div class="stat-card"><div class="stat-number">6</div><div class="stat-label">Профілів серверів</div></div>
         <div class="stat-card"><div class="stat-number">11</div><div class="stat-label">Родин ботів</div></div>
         <div class="stat-card"><div class="stat-number">3</div><div class="stat-label">Формати пакетів</div></div>
         <div class="stat-card"><div class="stat-number">2</div><div class="stat-label">Архітектури (amd64 · arm64)</div></div>
-        <div class="stat-card"><div class="stat-number">4 МБ</div><div class="stat-label">Один бінарник · arm64 готовий</div></div>
+        <div class="stat-card"><div class="stat-number js-binary-size" data-unit="МБ">11 МБ</div><div class="stat-label">Один бінарник · arm64 готовий</div></div>
     </section>
 
     <section class="servers-section">
@@ -637,7 +638,7 @@
     <section id="detectors" class="detectors-section">
         <div class="section-header">
             <span class="section-tag">Аналіз аномалій</span>
-            <h2 class="section-title">7 детекторів — один score</h2>
+            <h2 class="section-title">8 детекторів — один score</h2>
             <p style="color: var(--text-muted); max-width: 600px; margin: 1rem auto 0;">Кожен детектор додає очки до рахунку IP. Score загасає лінійно за час observation_window — жодних хибних банів від старого трафіку.</p>
         </div>
         <div class="detectors-grid">
@@ -690,21 +691,35 @@
                 </div>
                 <span class="detector-score">+30</span>
             </div>
+            <div class="detector-card">
+                <div class="detector-top">
+                    <h3><span class="detector-icon">🚫</span> Bad Bot Blocklist</h3>
+                    <p class="detector-desc">Порівнює User-Agent (та опційно Referer) із community-maintained списком ~685 відомих поганих ботів: скрепери, SEO-краулери, спам-боти, сканери вразливостей. Список оновлюється щодня. Засновано на <a href="https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue)">nginx-ultimate-bad-bot-blocker</a> — проекті <strong>Mitchell Krog</strong> та його команди.</p>
+                </div>
+                <span class="detector-score">+60</span>
+            </div>
         </div>
     </section>
 
     <section class="performance-section">
+        <div class="section-header">
+            <span class="section-tag">Споживання ресурсів</span>
+            <h2 class="section-title">Нуль залежностей. Працює скрізь.</h2>
+        </div>
         <div class="perf-grid">
             <div class="perf-metrics-block">
-                <div class="perf-metrics-title">Споживання ресурсів</div>
                 <div class="perf-metrics-row">
                     <div class="perf-metric">
-                        <div class="p-num">4 МБ</div>
-                        <div class="p-label">Розмір бінарника</div>
+                        <div class="p-num js-binary-size" data-unit="МБ">11 МБ</div>
+                        <div class="p-label">Розмір бінарника · arm64</div>
                     </div>
                     <div class="perf-metric">
-                        <div class="p-num">&lt; 30 МБ</div>
-                        <div class="p-label">RAM на Raspberry Pi</div>
+                        <div class="p-num">~25 МБ</div>
+                        <div class="p-label">RAM · конфіг для Pi 3B</div>
+                    </div>
+                    <div class="perf-metric">
+                        <div class="p-num">&gt;20k</div>
+                        <div class="p-label">Записів лога/сек · Pi 3B</div>
                     </div>
                     <div class="perf-metric">
                         <div class="p-num">0</div>
@@ -717,8 +732,8 @@
                     <div class="perf-callout-title">Загрози рівня Enterprise.<br>Навіть на залізі Raspberry Pi.</div>
                     <div class="perf-callout-body">
                         Чистий Go-бінарник — без JVM, без Python, без витоків пам'яті.
-                        Встановлюється як systemd-сервіс, читає хвіст лога, банить атакуючих.
-                        Стеля RAM налаштовується: від 20 МБ на Pi до будь-якого масштабу на сервері.<br><br>
+                        Запускається нативно на Raspberry Pi 3B (ARM Cortex-A53): ~25 МБ RAM,
+                        22k+ записів лога на секунду — у 20 разів швидше будь-якого реального навантаження на Pi.<br><br>
                         Без чорних ящиків. Детермінована оцінка — кожне блокування
                         обґрунтоване й видно в структурованих JSON-логах.
                     </div>
@@ -729,6 +744,7 @@
                     <span class="perf-tag">JSON логи</span>
                     <span class="perf-tag">Prometheus метрики</span>
                     <span class="perf-tag">нативний arm64</span>
+                    <span class="perf-tag">Raspberry Pi 3B</span>
                     <span class="perf-tag">systemd unit</span>
                 </div>
             </div>
@@ -795,7 +811,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
 
     <section class="whitelist-section">
         <div class="section-header">
-            <span class="section-tag">Можливості v1.0.3</span>
+            <span class="section-tag">Можливості v1.1.0</span>
             <h2 class="section-title">Універсальність за замовчуванням</h2>
         </div>
         <div class="whitelist-grid">
@@ -849,6 +865,10 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </ul>
         <div class="footer-credits">
             Автор: <a href="https://github.com/mr-addams" target="_blank" rel="noopener noreferrer">mr.Addams</a>
+        </div>
+        <div class="footer-credits" style="margin-top:0.4rem;">
+            Дані blocklist: <a href="https://github.com/mitchellkrogza" target="_blank" rel="noopener noreferrer">Mitchell Krog (@mitchellkrogza)</a>
+            &amp; учасники — <a href="https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker" target="_blank" rel="noopener noreferrer">nginx-ultimate-bad-bot-blocker</a>, MIT License
         </div>
         <div class="footer-copyright">
             Ліцензія: <a href="https://github.com/mr-addams/arxsentinel/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GNU GPLv3</a>
@@ -1135,6 +1155,30 @@ sudo systemctl enable --now arxsentinel</span></pre>
             }
 
             animate();
+        })();
+
+        // Auto-update binary size from GitHub Releases API.
+        // Falls back to the hardcoded value if no releases exist or the API is unreachable.
+        (async function updateBinarySize() {
+            try {
+                const r = await fetch(
+                    'https://api.github.com/repos/mr-addams/arxsentinel/releases/latest',
+                    { headers: { Accept: 'application/vnd.github.v3+json' } }
+                );
+                if (!r.ok) return;
+                const release = await r.json();
+                if (!Array.isArray(release.assets) || release.assets.length === 0) return;
+                const asset =
+                    release.assets.find(a => a.name.includes('arm64') && a.name.endsWith('.deb')) ||
+                    release.assets.find(a => a.name.includes('arm64')) ||
+                    release.assets[0];
+                if (!asset || !asset.size) return;
+                const mb = (asset.size / 1048576).toFixed(1);
+                document.querySelectorAll('.js-binary-size').forEach(el => {
+                    const unit = el.dataset.unit || 'МБ';
+                    el.textContent = mb + ' ' + unit;
+                });
+            } catch (_) { /* keep hardcoded fallback */ }
         })();
     </script>
 </body>

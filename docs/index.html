@@ -6,9 +6,9 @@
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ArxSentinel — A vigilant sentinel for your web server</title>
-    <meta name="description" content="Seven behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.">
+    <meta name="description" content="Eight behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.">
     <meta property="og:title" content="ArxSentinel — A vigilant sentinel for your web server">
-    <meta property="og:description" content="Seven behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.">
+    <meta property="og:description" content="Eight behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.">
     <meta property="og:url" content="https://mr-addams.github.io/arxsentinel/">
     <meta property="og:type" content="website">
     <meta property="og:image" content="https://opengraph.githubassets.com/1/mr-addams/arxsentinel">
@@ -16,7 +16,7 @@
     <meta property="og:site_name" content="ArxSentinel">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="ArxSentinel — A vigilant sentinel for your web server">
-    <meta name="twitter:description" content="Seven behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.">
+    <meta name="twitter:description" content="Eight behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.">
     <meta name="twitter:image" content="https://opengraph.githubassets.com/1/mr-addams/arxsentinel">
     <link rel="canonical" href="https://mr-addams.github.io/arxsentinel/">
     <link rel="alternate" hreflang="en"        href="https://mr-addams.github.io/arxsentinel/">
@@ -31,12 +31,12 @@
       "name": "ArxSentinel",
       "applicationCategory": "SecurityApplication",
       "operatingSystem": "Linux",
-      "description": "Seven behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.",
+      "description": "Eight behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.",
       "url": "https://mr-addams.github.io/arxsentinel/",
       "downloadUrl": "https://github.com/mr-addams/arxsentinel/releases/latest",
       "codeRepository": "https://github.com/mr-addams/arxsentinel",
       "license": "https://opensource.org/licenses/MIT",
-      "softwareVersion": "1.0.3",
+      "softwareVersion": "1.1.0",
       "author": { "@type": "Person", "name": "mr-addams" }
     }
     </script>
@@ -272,11 +272,12 @@
         .section-title { font-family: var(--font-cyber); font-size: 2.2rem; color: #fff; }
         .detectors-section { max-width: 1200px; margin: 6rem auto; }
         .detectors-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 2rem; padding: 0 2rem; justify-items: center;
+            display: flex; flex-wrap: wrap; justify-content: center;
+            gap: 2rem; padding: 0 2rem;
         }
-        .detector-card:last-child { grid-column: 1 / -1; justify-self: center; max-width: 380px; width: 100%; }
+        .detector-card:last-child { max-width: 380px; }
         .detector-card {
+            flex: 0 1 340px; min-width: 0;
             background: var(--bg-panel); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 8px;
             padding: 2rem; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
             display: flex; flex-direction: column; justify-content: space-between;
@@ -459,12 +460,12 @@
             .detectors-section { margin: 3rem auto; }
             .section-title { font-size: 1.75rem; }
             .detectors-grid {
-                grid-template-columns: 1fr;
+                flex-direction: column;
                 padding: 0 1rem;
                 gap: 1rem;
             }
-            /* последняя карточка — снимаем центрирование, на 1 колонке не нужно */
-            .detector-card:last-child { grid-column: auto; justify-self: stretch; max-width: 100%; }
+            .detector-card { flex: 1 1 auto; max-width: 100%; }
+            .detector-card:last-child { max-width: 100%; }
 
             /* ── Install ── */
             .install-section { padding: 0 1rem; margin: 3rem auto; }
@@ -656,7 +657,7 @@
 
     <section class="hero">
         <div class="badge-container">
-            <span class="badge badge-version">v1.0.3</span>
+            <span class="badge badge-version">v1.1.0</span>
             <span class="badge">Open Source</span>
             <span class="badge">Go</span>
             <span class="badge">Linux</span>
@@ -666,7 +667,7 @@
             that sees what<br>
             your server misses
         </h1>
-        <p>Seven behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.</p>
+        <p>Eight behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Install</a>
             <a href="https://github.com/mr-addams/arxsentinel/releases" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Releases</a>
@@ -685,7 +686,7 @@
                 <div class="pipeline-node">Parser (ngx_http_realip · CF-Connecting-IP · XFF chain)</div>
                 <div class="pipeline-node">Whitelist (IP · CIDR · UA · bot DNS verify)</div>
                 <div class="pipeline-node">Tracker (per-IP state · ring buffer · rate counters)</div>
-                <div class="pipeline-node">Scorer (7 detectors · linear decay)</div>
+                <div class="pipeline-node">Scorer (8 detectors · linear decay)</div>
                 <div class="pipeline-node">threats.log</div>
                 <div class="pipeline-node final">Fail2Ban → iptables ban</div>
             </div>
@@ -693,12 +694,12 @@
     </section>
 
     <section class="stats-grid">
-        <div class="stat-card"><div class="stat-number">7</div><div class="stat-label">Behavioural detectors</div></div>
+        <div class="stat-card"><div class="stat-number">8</div><div class="stat-label">Behavioural detectors</div></div>
         <div class="stat-card"><div class="stat-number">6</div><div class="stat-label">Server profiles</div></div>
         <div class="stat-card"><div class="stat-number">11</div><div class="stat-label">Verified bot families</div></div>
         <div class="stat-card"><div class="stat-number">3</div><div class="stat-label">Package formats</div></div>
         <div class="stat-card"><div class="stat-number">2</div><div class="stat-label">Architectures (amd64 · arm64)</div></div>
-        <div class="stat-card"><div class="stat-number">4 MB</div><div class="stat-label">Single binary · arm64 ready</div></div>
+        <div class="stat-card"><div class="stat-number js-binary-size" data-unit="MB">11 MB</div><div class="stat-label">Single binary · arm64 ready</div></div>
     </section>
 
     <section class="servers-section">
@@ -786,7 +787,7 @@
     <section id="detectors" class="detectors-section">
         <div class="section-header">
             <span class="section-tag">Anomalies Analysis</span>
-            <h2 class="section-title">7 detectors, one score</h2>
+            <h2 class="section-title">8 detectors, one score</h2>
             <p style="color: var(--text-muted); max-width: 600px; margin: 1rem auto 0;">Each detector adds points to an IP's score. Score decays linearly over the observation window — no false bans from old traffic.</p>
         </div>
         <div class="detectors-grid">
@@ -839,21 +840,35 @@
                 </div>
                 <span class="detector-score">+30</span>
             </div>
+            <div class="detector-card">
+                <div class="detector-top">
+                    <h3><span class="detector-icon">🚫</span> Bad Bot Blocklist</h3>
+                    <p class="detector-desc">Matches User-Agent (and optionally Referer) against a community-maintained blocklist of ~685 known bad bots — scrapers, SEO crawlers, spam bots, vulnerability probes. Updated daily. Powered by <a href="https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue)">nginx-ultimate-bad-bot-blocker</a> by <strong>Mitchell Krog</strong>.</p>
+                </div>
+                <span class="detector-score">+60</span>
+            </div>
         </div>
     </section>
 
     <section class="performance-section">
+        <div class="section-header">
+            <span class="section-tag">Resource footprint</span>
+            <h2 class="section-title">Zero bloat. Runs anywhere.</h2>
+        </div>
         <div class="perf-grid">
             <div class="perf-metrics-block">
-                <div class="perf-metrics-title">Performance footprint</div>
                 <div class="perf-metrics-row">
                     <div class="perf-metric">
-                        <div class="p-num">4 MB</div>
-                        <div class="p-label">Binary size</div>
+                        <div class="p-num js-binary-size" data-unit="MB">11 MB</div>
+                        <div class="p-label">Binary size · arm64</div>
                     </div>
                     <div class="perf-metric">
-                        <div class="p-num">&lt; 30 MB</div>
-                        <div class="p-label">RAM on Raspberry Pi</div>
+                        <div class="p-num">~25 MB</div>
+                        <div class="p-label">RAM · Pi 3B config</div>
+                    </div>
+                    <div class="perf-metric">
+                        <div class="p-num">&gt;20k</div>
+                        <div class="p-label">Log lines/sec · Pi 3B</div>
                     </div>
                     <div class="perf-metric">
                         <div class="p-num">0</div>
@@ -866,8 +881,8 @@
                     <div class="perf-callout-title">Enterprise threats.<br>Even on Raspberry Pi hardware.</div>
                     <div class="perf-callout-body">
                         Pure Go binary — no JVM, no Python runtime, no memory bloat.
-                        Drops in as a systemd service, reads your log tail, bans attackers.
-                        Configurable RAM ceiling: from 20 MB on a Pi to any scale on a server.<br><br>
+                        Runs natively on Raspberry Pi 3B (ARM Cortex-A53): ~25 MB RAM,
+                        22k+ log lines/sec — 20× faster than any real Pi workload.<br><br>
                         No black box. Deterministic scoring — every ban has a reason
                         you can read in structured JSON logs.
                     </div>
@@ -878,6 +893,7 @@
                     <span class="perf-tag">JSON logs</span>
                     <span class="perf-tag">Prometheus metrics</span>
                     <span class="perf-tag">arm64 native</span>
+                    <span class="perf-tag">Raspberry Pi 3B ready</span>
                     <span class="perf-tag">systemd unit</span>
                 </div>
             </div>
@@ -944,7 +960,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
 
     <section class="whitelist-section">
         <div class="section-header">
-            <span class="section-tag">v1.0.3 Capabilities</span>
+            <span class="section-tag">v1.1.0 Capabilities</span>
             <h2 class="section-title">Universal by design</h2>
         </div>
         <div class="whitelist-grid">
@@ -998,6 +1014,10 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </ul>
         <div class="footer-credits">
             Created by <a href="https://github.com/mr-addams" target="_blank" rel="noopener noreferrer">mr.Addams</a>
+        </div>
+        <div class="footer-credits" style="margin-top:0.4rem;">
+            Bad-bot blocklist data by <a href="https://github.com/mitchellkrogza" target="_blank" rel="noopener noreferrer">Mitchell Krog (@mitchellkrogza)</a>
+            &amp; contributors — <a href="https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker" target="_blank" rel="noopener noreferrer">nginx-ultimate-bad-bot-blocker</a>, MIT License
         </div>
         <div class="footer-copyright">
             Licensed under <a href="https://github.com/mr-addams/arxsentinel/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GNU GPLv3</a>
@@ -1292,6 +1312,31 @@ sudo systemctl enable --now arxsentinel</span></pre>
             }
 
             animate();
+        })();
+
+        // Auto-update binary size from GitHub Releases API.
+        // Falls back to the hardcoded value if no releases exist or the API is unreachable.
+        (async function updateBinarySize() {
+            try {
+                const r = await fetch(
+                    'https://api.github.com/repos/mr-addams/arxsentinel/releases/latest',
+                    { headers: { Accept: 'application/vnd.github.v3+json' } }
+                );
+                if (!r.ok) return;
+                const release = await r.json();
+                if (!Array.isArray(release.assets) || release.assets.length === 0) return;
+                // Prefer arm64 .deb; fall back to any arm64 asset; last resort — any asset.
+                const asset =
+                    release.assets.find(a => a.name.includes('arm64') && a.name.endsWith('.deb')) ||
+                    release.assets.find(a => a.name.includes('arm64')) ||
+                    release.assets[0];
+                if (!asset || !asset.size) return;
+                const mb = (asset.size / 1048576).toFixed(1);
+                document.querySelectorAll('.js-binary-size').forEach(el => {
+                    const unit = el.dataset.unit || 'MB';
+                    el.textContent = mb + ' ' + unit;
+                });
+            } catch (_) { /* keep hardcoded fallback */ }
         })();
     </script>
 </body>

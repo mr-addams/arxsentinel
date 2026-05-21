@@ -1,5 +1,17 @@
 services:
 
+  # blocklist-server: nginx serving pattern files fetched from real upstream sources.
+  # Reuses nginx:latest (already pulled for other services — no extra Docker Hub pull).
+  # blocklist/ is created by run.sh before docker compose up; mounted read-only here.
+  # nginx default config serves files from /usr/share/nginx/html at the root path.
+  # Sentinels run on the host, so port 8090 is exposed on localhost.
+  blocklist-server:
+    image: nginx:latest
+    ports:
+      - "8090:80"
+    volumes:
+      - ./blocklist:/usr/share/nginx/html:ro
+
   # php-fpm: processes .php requests forwarded from nginx.
   php-fpm:
     image: php:8-fpm-alpine
@@ -154,3 +166,76 @@ services:
     volumes:
       - ./webapp:/var/www/vhosts/localhost/html:ro
       - ./logs/litespeed-proxy:/usr/local/lsws/logs
+
+  # ── Chain guard test infrastructure ───────────────────────────────────────────────────
+
+  # cloudflare-sim: simulates Cloudflare edge node behavior.
+  # Replaces X-Forwarded-For with $remote_addr (Cloudflare replaces, not appends).
+  # Adds CF-Connecting-IP header. Routes to backends and existing proxies.
+  #
+  # Attached to both networks so that:
+  #   - backends/proxies reach it via the default compose network (172.18.0.0/16)
+  #   - CF attacker containers use cf_ext_net (10.88.0.0/24) whose IPs fall outside
+  #     the trusted 172.16.0.0/12 range — backends then correctly identify the
+  #     attacker IP rather than falling back to cloudflare-sim's IP.
+  cloudflare-sim:
+    image: nginx:latest
+    ports:
+      - "8089:80"
+    volumes:
+      - ./configs/nginx-cf-sim.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - default
+      - cf_ext_net
+    depends_on:
+      - nginx
+      - apache-proxy
+      - traefik-backend
+      - caddy-backend
+      - haproxy-backend
+      - litespeed-backend
+      - traefik
+      - caddy
+      - haproxy
+      - nginx-rp
+      - nginx-bare
+
+  # nginx-bare: nginx without real_ip extraction — logs the proxy IP, not the attacker IP.
+  # Used for the "broken chain" test: cloudflare-sim IP appears as client in access log.
+  # The chain_guard cloudflare-leak check must fire on these entries.
+  nginx-bare:
+    image: nginx:latest
+    volumes:
+      - ./configs/nginx-bare.conf:/etc/nginx/nginx.conf:ro
+      - ./webapp:/var/www/html:ro
+      - ./logs/nginx-bare:/var/log/nginx
+
+  # bogon-injector: simulates an uncontrolled proxy that injects a bogon IP in X-Forwarded-For.
+  # Routes all traffic to nginx-bogon-victim with XFF forced to 10.0.0.1.
+  bogon-injector:
+    image: nginx:latest
+    volumes:
+      - ./configs/nginx-bogon-injector.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - nginx-bogon-victim
+
+  # nginx-bogon-victim: nginx that trusts XFF from Docker subnet.
+  # When bogon-injector sets XFF=10.0.0.1, this server logs 10.0.0.1 as client IP.
+  # The chain_guard bogon check must fire on these entries.
+  nginx-bogon-victim:
+    image: nginx:latest
+    volumes:
+      - ./configs/nginx-bogon-victim.conf:/etc/nginx/nginx.conf:ro
+      - ./webapp:/var/www/html:ro
+      - ./logs/nginx-bogon-victim:/var/log/nginx
+
+networks:
+  # cf_ext_net: isolated subnet for CF attacker containers.
+  # 10.88.0.0/24 is outside the trusted proxy range (172.16.0.0/12), so backends
+  # using real_ip_recursive correctly identify attacker IPs instead of falling back
+  # to cloudflare-sim's IP when every address in the XFF chain is "trusted".
+  cf_ext_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.88.0.0/24

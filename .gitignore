@@ -40,8 +40,9 @@ logs/
 /nginx-sentinel
 /bin/
 
-# Интеграционные тесты — runtime-артефакты (логи серверов, threat-логи)
+# Интеграционные тесты — runtime-артефакты (логи серверов, threat-логи, загружаемые блеклисты)
 tests/integration/logs/
+tests/integration/blocklist/
 
 # Артефакты goreleaser
 /dist/
@@ -52,4 +53,6 @@ tests/integration/logs/
 # Editor/IDE
 # .idea/
 # .vscode/
-.claude/settings.json
+
+# Локальный контекст Claude (TECH_DEBT, флоу, правила, настройки — не коммитить)
+.claude/

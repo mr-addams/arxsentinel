@@ -25,6 +25,7 @@ package utils
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,6 +58,12 @@ var (
 	// threatWriter — file descriptor for threats.log.
 	// nil if the file could not be opened — Init returns an error.
 	threatWriter *os.File
+
+	// ConsoleWriter is the destination for console log lines produced by Log().
+	// Defaults to os.Stdout. Tests can replace it with io.Discard to suppress
+	// operational noise (e.g. CHAIN_WARN from expected error-path tests) without
+	// redirecting the os.Stdout fd that the testing framework uses for -v output.
+	ConsoleWriter io.Writer = os.Stdout
 )
 
 func init() {
@@ -332,7 +339,7 @@ func Log(tag, message, level string) {
 		}
 	}
 
-	fmt.Println(line)
+	fmt.Fprintln(ConsoleWriter, line)
 }
 
 // ========================== Threat log ================================================

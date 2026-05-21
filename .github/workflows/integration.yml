@@ -15,7 +15,7 @@ jobs:
     uses: ./.github/workflows/container.yml
 
   integration:
-    name: Integration tests (66 checks — 6 servers × 7 detectors + 4 proxies × 6 backends)
+    name: Integration tests (110 checks — 6×7 direct + 6 badbot + 6 blocklist + 4×6 proxy-chain + 6 CF-direct + 4×6 CF-chain + 2 chain-guard)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -116,8 +116,12 @@ jobs:
             [backend-silent]="proxy config: routing for /backend-X/ broken or XFF not forwarded"
             [chain-parser-miss]="sentinel: proxy-chain backend log format not matched"
             [ip-leak]="backend config: trusted_proxies/RemoteIPInternalProxy not covering proxy CIDR"
+            [cf-ip-leak]="backend config: CF-Connecting-IP / X-Forwarded-For not configured for Cloudflare"
+            [warnings-file-missing]="chain_guard sentinel: process did not start or warnings_log path wrong"
+            [warnings-file-empty]="chain_guard sentinel: chain_guard.enabled=false or checker disabled"
+            [chain-warn-missing]="chain_guard sentinel: CIDR/bogon ranges do not cover the test IP"
           )
-          for cls in server-silent parser-miss detector-miss backend-silent chain-parser-miss ip-leak; do
+          for cls in server-silent parser-miss detector-miss backend-silent chain-parser-miss ip-leak cf-ip-leak warnings-file-missing warnings-file-empty chain-warn-missing; do
             cnt=$(grep -c "class=$cls" "$verify" 2>/dev/null || echo 0)
             [ "$cnt" -gt 0 ] && echo "| \`$cls\` | $cnt | ${CLASS_MEANING[$cls]} |" >> "$summary"
           done

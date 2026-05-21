@@ -5,10 +5,24 @@
 accessLog:
   filePath: /var/log/traefik/access.log
   bufferingSize: 0
+  fields:
+    headers:
+      defaultMode: drop
+      names:
+        User-Agent: keep
+        Referer: keep
 
 entryPoints:
   web:
     address: ":80"
+    # Trust X-Forwarded-For from the Docker compose network (172.16.0.0/12).
+    # Without this, traefik replaces XFF with the TCP peer IP (cloudflare-sim's IP),
+    # breaking the CF-chain test where cloudflare-sim already set XFF to the real
+    # attacker IP. With trustedIPs, traefik preserves the incoming XFF from trusted
+    # peers and appends the connecting peer so backends can use real_ip_recursive.
+    forwardedHeaders:
+      trustedIPs:
+        - 172.16.0.0/12
 
 # File provider: routes.yml proxies all traffic to the nginx backend.
 providers:

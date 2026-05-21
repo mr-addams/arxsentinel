@@ -2,6 +2,15 @@
     # Disable automatic HTTPS for local testing.
     auto_https off
     admin off
+
+    servers {
+        # Trust X-Forwarded-For from the Docker compose network (172.16.0.0/12).
+        # Without this, Caddy replaces XFF with the TCP peer IP (cloudflare-sim's IP),
+        # breaking the CF-chain test where cloudflare-sim already set XFF to the real
+        # attacker IP. With trusted_proxies, Caddy preserves the incoming XFF from
+        # trusted peers so backends can apply real_ip_recursive to the full chain.
+        trusted_proxies static 172.16.0.0/12
+    }
 }
 
 :80 {
@@ -39,7 +48,7 @@
     log {
         output file /var/log/caddy/access.log
         # transform-encoder outputs Apache CLF — required by the "caddy" sentinel profile.
-        format transform `{request>remote_addr} - {user_id} [{ts}] "{request>method} {request>uri} {request>proto}" {status} {size} "{>Referer}" "{>User-Agent}"` {
+        format transform `{request>remote_ip} - - [{ts}] "{request>method} {request>uri} {request>proto}" {status} {size} "{request>headers>Referer>[0]}" "{request>headers>User-Agent>[0]}"` {
             time_format "02/Jan/2006:15:04:05 -0700"
         }
     }

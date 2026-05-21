@@ -7,7 +7,7 @@
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
-A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 7 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, and OpenLiteSpeed.
+A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 8 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, and OpenLiteSpeed.
 
 Supports **nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, and OpenLiteSpeed** via built-in profiles. nginx works out of the box with no profile needed. Caddy and HAProxy require minimal one-time setup. Custom log formats supported via regex. Watch multiple log files in a single process.
 
@@ -23,10 +23,10 @@ access.log → TailReader → whitelist → tracker → scorer → threats.log �
 |--------|---------|----------------|
 | nginx | *(default — no profile needed)* | None — nginx combined log format works out of the box |
 | Apache | `apache` | None — default CLF format |
-| Traefik | `traefik` | None — default access log (CLF) |
+| Traefik | `traefik` | Add `fields.headers.names.User-Agent/Referer: keep` to accessLog — see [`deploy/examples/traefik/`](deploy/examples/traefik/) |
 | LiteSpeed / OpenLiteSpeed | `litespeed` | None — default CLF format |
-| Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + [transform-encoder](https://github.com/caddyserver/transform-encoder) plugin |
-| HAProxy | `haproxy-http` | `option httplog` in haproxy.cfg + rsyslog to write to file |
+| Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + [transform-encoder](https://github.com/caddyserver/transform-encoder) plugin — see [`deploy/examples/caddy/`](deploy/examples/caddy/) |
+| HAProxy | `haproxy-http` | `http-request capture` + custom `log-format` with UA — see [`deploy/examples/haproxy/`](deploy/examples/haproxy/) |
 
 > Each release includes a **Tested product versions** table with the exact server versions the build was validated against — see [GitHub Releases](https://github.com/mr-addams/arxsentinel/releases).
 
@@ -58,11 +58,6 @@ deploy/examples/
 └── litespeed/   httpd_config.conf + sentinel-config.yaml
 ```
 
-> **Note — HAProxy timestamps:** HAProxy includes milliseconds in the timestamp
-> (`14:30:00.123`), which does not match the expected time format. Sentinel falls
-> back to `time.Time{}` for that field. Rate-window detection uses wall-clock time
-> regardless, so all detectors work correctly.
-
 > **Note — LiteSpeed / OpenLiteSpeed:** Both LSWS and OLS emit Apache CLF by default —
 > no server-side changes required. Log path: `/usr/local/lsws/logs/access.log`
 > (server-wide) or `/usr/local/lsws/logs/<vhostname>/access.log` (per virtual host).
@@ -76,7 +71,8 @@ deploy/examples/
 
 ## Features
 
-- **7 detectors:** probe scanning, rate anomaly, suspicious User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass
+- **8 detectors:** probe scanning, rate anomaly, suspicious User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
+- **Chain Guard:** detects Cloudflare/CDN edge IPs and bogon/RFC 1918/CGNAT addresses appearing as client IPs — signals a misconfigured proxy chain before ArxSentinel's detectors go blind
 - **Bot DNS verification:** Googlebot, Bingbot, Yandex, DuckDuckGo and others are verified via rDNS/fDNS — legitimate crawlers are never banned
 - **Multi-stream:** watch multiple log files in one process — full pipeline isolation per stream
 - **Whitelist:** IPs, CIDRs, UA substrings — configurable exclusion lists
@@ -285,6 +281,26 @@ detectors:
     suspicious_params: [bypass, shell, cmd, exec, eval]
     score: 30
 
+  badbot:
+    enabled: true
+    score: 60
+    check_ua: true
+    check_referrer: false   # opt-in: also match the Referer header (~7108 referrer patterns)
+
+blocklist:
+  storage: ""              # "" = in-memory; file path = bbolt (survives restarts)
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text
+    - name: badbot-ref
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list"
+          format: plain_text
+
 whitelist:
   fake_bot_score: 35      # penalty for a bot UA that fails DNS verification
   dns_verify_timeout: 2s  # DNS verification timeout per pipeline request
@@ -311,6 +327,7 @@ output:
 | **crawler** | ≥5 sequential numeric URLs (/page/1..N) | 20 |
 | **noasset** | <10% requests to static assets with ≥3 page requests | 20 |
 | **overflow** | URL >2048 chars or WAF bypass keywords | 30 |
+| **badbot** | UA (or Referer) matches community blocklist (~685 patterns) | 60 |
 
 Score accumulates with linear decay over `observation_window`. Reaching `alert_threshold` writes a WARN; reaching `ban_threshold` writes a THREAT and triggers Fail2Ban.
 
@@ -471,6 +488,8 @@ access.log (nginx / apache / caddy / traefik / haproxy / litespeed)
        │
   whitelist.Matcher ──→ custom IP/CIDR/UA? → skip
        │
+  chaincheck.Checker ──→ Cloudflare/bogon IP? → warnings.log (CHAIN_WARN)
+       │
   whitelist.Verifier ──→ bot UA? → rDNS/fDNS → verified? → skip
        │                                     → fake bot? → +FakeBotScore
   tracker.Update(*IPState)
@@ -480,7 +499,7 @@ access.log (nginx / apache / caddy / traefik / haproxy / litespeed)
        │
   scorer.Evaluate(ipState, entry)
     ├── decay accumulated score
-    ├── run 7 detectors
+    ├── run 8 detectors
     └── determine verdict (score → level)
        │
   output.ThreatLogger ──→ threats.log ──→ Fail2Ban ──→ iptables ban
@@ -566,6 +585,17 @@ Debug tags (`PARSER`, `TAIL`, `DETECTOR`, `SCORER`) are visible only when `loggi
 ```
 
 Fail2Ban failregex: `THREAT <HOST> score=\d+` (file `deploy/fail2ban/filter.d/arxsentinel.conf`).
+
+**Warnings log** (`chain_guard.warnings_log`) — infrastructure misconfiguration alerts:
+
+```
+2026-05-20T12:34:56Z CHAIN_WARN cloudflare-ip-as-client ip=172.64.0.1 cidr=172.64.0.0/13 log=/var/log/nginx/access.log
+2026-05-20T12:34:57Z CHAIN_WARN bogon-ip-as-client ip=10.0.0.1 cidr=10.0.0.0/8 log=/var/log/nginx/access.log
+```
+
+Warnings are distinct from threats: `CHAIN_WARN` means ArxSentinel cannot reliably identify
+the real attacker IP. Fix the underlying infrastructure issue (see [Chain Guard](#chain-guard--detecting-broken-ip-extraction))
+and the warnings will stop.
 
 ## Management
 
@@ -750,6 +780,52 @@ http {
 0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
 ```
 
+### Chain Guard — detecting broken IP extraction
+
+ArxSentinel continuously checks whether the client IP in each log entry is a real,
+routable address. If it detects a Cloudflare/CDN edge IP or a bogon/CGNAT address
+appearing as the client IP, it writes a `CHAIN_WARN` to `warnings.log`.
+
+**Why this matters:** when a proxy IP appears as the client, all of ArxSentinel's
+detectors score the wrong address — they are effectively blind. Fail2Ban may ban your
+own Cloudflare edge instead of the attacker, taking the site offline for all visitors.
+This is a misconfiguration, not an attack.
+
+**What triggers a warning:**
+
+| Condition | Warning | Fix |
+|-----------|---------|-----|
+| Cloudflare IP as client | `cloudflare-ip-as-client` | Configure `real_ip_header CF-Connecting-IP` (nginx), `RemoteIPHeader CF-Connecting-IP` (Apache), `trustedProxies` (Traefik/Caddy) |
+| Bogon / RFC 1918 as client | `bogon-ip-as-client` | An upstream proxy is injecting private IPs into XFF; verify the proxy chain and add its IP to `set_real_ip_from` |
+| CGNAT (100.64.0.0/10) as client | `bogon-ip-as-client` | Carrier-grade NAT upstream — configure `real_ip_header` to extract the real IP from XFF |
+
+**Configuration:**
+
+```yaml
+chain_guard:
+  enabled: true
+  warnings_log: /var/log/arxsentinel/warnings.log
+  cloudflare:
+    enabled: true
+    refresh_interval: 24h     # re-fetches Cloudflare CIDR lists automatically
+    sources:
+      - https://www.cloudflare.com/ips-v4/
+      - https://www.cloudflare.com/ips-v6/
+  bogon:
+    enabled: true             # RFC 1918, CGNAT, loopback, link-local, documentation ranges
+```
+
+**Monitoring the warnings log:**
+
+```bash
+# Check for any chain guard warnings
+grep CHAIN_WARN /var/log/arxsentinel/warnings.log
+
+# Count by type
+grep -c cloudflare-ip-as-client /var/log/arxsentinel/warnings.log
+grep -c bogon-ip-as-client /var/log/arxsentinel/warnings.log
+```
+
 ## CMS-specific configurations
 
 Ready-made `probe.paths` overrides for the most common PHP stacks are in
@@ -799,11 +875,20 @@ Missing optional groups produce empty fields in the parsed entry — sentinel st
 
 ### Example: HAProxy HTTP log
 
+Use the built-in `haproxy-http` profile with a custom `log-format` that captures the User-Agent header. The required HAProxy configuration is in [`deploy/examples/haproxy/haproxy.cfg`](deploy/examples/haproxy/haproxy.cfg); the sentinel config needs only:
+
 ```yaml
 parser:
-  log_format: "regex"
-  regex_pattern: '(?P<remote_addr>\S+):\d+ \S+ \S+/\S+ \d+/\d+/\d+/\d+/\d+ (?P<status>\d+) (?P<bytes_sent>\d+) .* "(?P<request>[^"]*)"'
+  profile: "haproxy-http"
 ```
+
+The `haproxy-http` profile matches lines produced by the log-format in the deploy example:
+
+```
+172.18.0.1:54321 [20/May/2026:12:34:56 +0000] http-in backend/server 0/0/2/8/10 200 1234 - - ---- 5/4/0/1/0 0/0 "GET /index.html HTTP/1.1" "Mozilla/5.0"
+```
+
+The trailing User-Agent field is optional — old-style logs without it are also accepted.
 
 ### Common mistakes
 
@@ -884,6 +969,16 @@ Restart or `kill -HUP`. The operational log will show `[PARSER]`, `[DETECTOR]`, 
 
 **High memory usage:**  
 Reduce `state.max_tracked_ips` (default 100000; each IP ≈ 2.5 KB → 100k ≈ 250 MB).
+
+---
+
+## Third-party data
+
+The **badbot** detector fetches its blocklists from [nginx-ultimate-bad-bot-blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker), an outstanding community project created and maintained by **[Mitchell Krog (@mitchellkrogza)](https://github.com/mitchellkrogza)** and its contributors. The project curates ~685 bad User-Agent patterns and ~7108 bad referrer words, updated almost daily — an enormous effort that benefits the entire web.
+
+Licensed under [MIT](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/blob/master/LICENSE.md). The lists are downloaded at runtime and are not bundled with ArxSentinel.
+
+Heartfelt thanks to Mitchell Krog and every contributor to that project — your dedication makes the web a safer place for everyone.
 
 ---
 

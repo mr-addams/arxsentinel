@@ -7,7 +7,7 @@
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
-Пильний страж вашого вебсервера: читає HTTP access-логи в реальному часі, оцінює кожен IP через 7 поведінкових детекторів і блокує зловмисників через Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed.
+Пильний страж вашого вебсервера: читає HTTP access-логи в реальному часі, оцінює кожен IP через 8 поведінкових детекторів і блокує зловмисників через Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed.
 
 Підтримує **nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed** через вбудовані профілі. nginx працює з коробки без налаштування профілю. Caddy та HAProxy потребують мінімального одноразового налаштування. Довільні формати логів — через regex. Декілька лог-файлів в одному процесі.
 
@@ -74,7 +74,8 @@ deploy/examples/
 
 ## Можливості
 
-- **7 детекторів:** probe-сканування, rate-аномалія, підозрілий User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass
+- **8 детекторів:** probe-сканування, rate-аномалія, підозрілий User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
+- **Chain Guard:** виявляє IP-адреси Cloudflare/CDN і bogon/RFC 1918/CGNAT у позиції client IP — сигналізує про неправильно налаштований ланцюжок проксі до того, як детектори ArxSentinel втратять здатність визначати справжніх зловмисників
 - **DNS-верифікація ботів:** Googlebot, Bingbot, Yandex, DuckDuckGo та інші верифікуються через rDNS/fDNS — легітимні краулери не потрапляють у бан
 - **Multi-stream:** декілька лог-файлів в одному процесі — повна ізоляція конвеєра на потік
 - **Whitelist:** IP, CIDR, UA-підрядки — конфігуровані списки винятків
@@ -283,6 +284,26 @@ detectors:
     suspicious_params: [bypass, shell, cmd, exec, eval]
     score: 30
 
+  badbot:
+    enabled: true
+    score: 60
+    check_ua: true
+    check_referrer: false   # opt-in: також перевіряти заголовок Referer (~7108 паттернів)
+
+blocklist:
+  storage: ""              # "" = лише в пам'яті; шлях до файлу = bbolt (зберігається між запусками)
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text
+    - name: badbot-ref
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list"
+          format: plain_text
+
 whitelist:
   fake_bot_score: 35      # штраф за імітацію Googlebot/Bingbot
   dns_verify_timeout: 2s  # таймаут DNS-верифікації бота в pipeline
@@ -309,6 +330,7 @@ output:
 | **crawler** | ≥5 послідовних числових URL (/page/1..N) | 20 |
 | **noasset** | <10% запитів до статики при ≥3 сторінках | 20 |
 | **overflow** | URL >2048 символів або WAF bypass keywords | 30 |
+| **badbot** | UA (або Referer) збігається з community-blocklist (~685 паттернів). Дані: [nginx-ultimate-bad-bot-blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker) | 60 |
 
 Score накопичується з лінійним decay за `observation_window`. При досягненні `alert_threshold` — запис WARN, при `ban_threshold` — THREAT + Fail2Ban.
 
@@ -469,6 +491,8 @@ access.log (nginx / apache / caddy / traefik / haproxy / litespeed)
        │
   whitelist.Matcher ──→ custom IP/CIDR/UA? → skip
        │
+  chaincheck.Checker ──→ Cloudflare/bogon IP? → warnings.log (CHAIN_WARN)
+       │
   whitelist.Verifier ──→ bot UA? → rDNS/fDNS → verified? → skip
        │                                      → fake bot? → +FakeBotScore
   tracker.Update(*IPState)
@@ -478,7 +502,7 @@ access.log (nginx / apache / caddy / traefik / haproxy / litespeed)
        │
   scorer.Evaluate(ipState, entry)
     ├── decay накопиченого score
-    ├── запуск 7 детекторів
+    ├── запуск 8 детекторів
     └── винесення вердикту (score → level)
        │
   output.ThreatLogger ──→ threats.log ──→ Fail2Ban ──→ iptables ban
@@ -564,6 +588,17 @@ Debug-теги (`PARSER`, `TAIL`, `DETECTOR`, `SCORER`) видні лише пр
 ```
 
 Fail2Ban failregex: `THREAT <HOST> score=\d+` (файл `deploy/fail2ban/filter.d/arxsentinel.conf`).
+
+**Warnings log** (`chain_guard.warnings_log`) — попередження про інфраструктурні несправності:
+
+```
+2026-05-20T12:34:56Z CHAIN_WARN cloudflare-ip-as-client ip=172.64.0.1 cidr=172.64.0.0/13 log=/var/log/nginx/access.log
+2026-05-20T12:34:57Z CHAIN_WARN bogon-ip-as-client ip=10.0.0.1 cidr=10.0.0.0/8 log=/var/log/nginx/access.log
+```
+
+Попередження відрізняються від загроз: `CHAIN_WARN` означає, що ArxSentinel не може надійно
+визначити справжній IP зловмисника. Усуньте причину (див. [Chain Guard](#chain-guard----виявлення-зламаного-ланцюжка-ip))
+і попередження припиняться.
 
 ## Керування
 
@@ -741,11 +776,57 @@ http {
 }
 ```
 
-**Автооновлення діапазонів** (Cloudflare оновлює їх periodically):
+**Автооновлення діапазонів** (Cloudflare оновлює їх periodично):
 
 ```bash
 # Додати в cron — кожен понеділок о 03:00
 0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
+```
+
+### Chain Guard — виявлення зламаного ланцюжка IP
+
+ArxSentinel безперервно перевіряє, чи є client IP у кожному записі логу справжньою
+маршрутизованою адресою. Якщо виявлено IP Cloudflare/CDN або bogon/CGNAT у позиції
+клієнта — записує `CHAIN_WARN` до `warnings.log`.
+
+**Чому це важливо:** коли IP проксі фігурує як client, всі детектори ArxSentinel
+оцінюють не ту адресу — вони фактично сліпі. Fail2Ban може заблокувати ваш власний
+Cloudflare edge замість зловмисника, поклавши сайт для всіх відвідувачів.
+Це помилка конфігурації, а не атака.
+
+**Що викликає попередження:**
+
+| Умова | Попередження | Виправлення |
+|-------|--------------|-------------|
+| IP Cloudflare у позиції client | `cloudflare-ip-as-client` | Налаштуйте `real_ip_header CF-Connecting-IP` (nginx), `RemoteIPHeader CF-Connecting-IP` (Apache), `trustedProxies` (Traefik/Caddy) |
+| Bogon / RFC 1918 у позиції client | `bogon-ip-as-client` | Вищестоящий проксі інжектує приватні IP у XFF; перевірте ланцюжок проксі та додайте його IP до `set_real_ip_from` |
+| CGNAT (100.64.0.0/10) у позиції client | `bogon-ip-as-client` | Carrier-grade NAT вище по ланцюжку — налаштуйте `real_ip_header` для вилучення справжнього IP з XFF |
+
+**Конфігурація:**
+
+```yaml
+chain_guard:
+  enabled: true
+  warnings_log: /var/log/arxsentinel/warnings.log
+  cloudflare:
+    enabled: true
+    refresh_interval: 24h     # автоматично перезавантажує CIDR-листи Cloudflare
+    sources:
+      - https://www.cloudflare.com/ips-v4/
+      - https://www.cloudflare.com/ips-v6/
+  bogon:
+    enabled: true             # RFC 1918, CGNAT, loopback, link-local, документаційні діапазони
+```
+
+**Моніторинг warnings log:**
+
+```bash
+# Перевірити наявність попереджень chain guard
+grep CHAIN_WARN /var/log/arxsentinel/warnings.log
+
+# Підрахувати за типом
+grep -c cloudflare-ip-as-client /var/log/arxsentinel/warnings.log
+grep -c bogon-ip-as-client /var/log/arxsentinel/warnings.log
 ```
 
 ## Конфігурації для CMS
@@ -881,6 +962,16 @@ logging:
 
 **Високе споживання пам'яті:**  
 Зменшіть `state.max_tracked_ips` (дефолт 100000; кожен IP ≈ 2.5 KB → 100k ≈ 250 MB).
+
+---
+
+## Сторонні дані
+
+Детектор **badbot** отримує свої списки з проекту [nginx-ultimate-bad-bot-blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker), створеного **[Mitchell Krog (@mitchellkrogza)](https://github.com/mitchellkrogza)** та командою супроводжувачів. Це масштабний community-проект, що підтримує актуальні blocklists для ~685 поганих User-Agent та ~7108 небажаних доменів-реферерів, які оновлюються практично щодня.
+
+Ліцензія: [MIT](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/blob/master/LICENSE.md). Списки завантажуються ArxSentinel при запуску в режимі реального часу та не входять до складу дистрибутиву.
+
+Величезна вдячність Mitchell Krog та всім контриб'юторам проекту за їхню невтомну працю з підтримки та оновлення цих баз даних — ваша робота робить інтернет трохи безпечнішим для всіх.
 
 ---
 
