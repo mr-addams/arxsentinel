@@ -54,4 +54,4 @@ go test -tags e2e ./... -v
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [GNU GPLv3 License](LICENSE).
+By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
