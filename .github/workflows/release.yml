@@ -125,7 +125,9 @@ jobs:
           next="${major}.${minor}.$((patch + 1))"
 
           branch="chore/bump-version-${next}"
-          git checkout -b "$branch"
+          git fetch origin dev
+          git checkout -b "$branch" origin/dev
+          git merge --no-edit origin/main
           echo "$next" > VERSION
 
           # Sync all version strings in landing pages to the just-released stable version.
