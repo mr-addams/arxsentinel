@@ -1,4 +1,4 @@
-module github.com/mr-addams/nginx-sentinel
+module github.com/mr-addams/arxsentinel
 
 go 1.26
 

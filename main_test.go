@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mr-addams/nginx-sentinel/internal/core/output"
-	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
-	"github.com/mr-addams/nginx-sentinel/internal/core/scorer"
-	"github.com/mr-addams/nginx-sentinel/internal/core/state"
-	"github.com/mr-addams/nginx-sentinel/internal/core/whitelist"
-	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
-	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
+	"github.com/mr-addams/arxsentinel/internal/core/output"
+	"github.com/mr-addams/arxsentinel/internal/core/parser"
+	"github.com/mr-addams/arxsentinel/internal/core/scorer"
+	"github.com/mr-addams/arxsentinel/internal/core/state"
+	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 )
 
 // TestStartupShutdownInvariants enforces the mandatory startup/shutdown specification

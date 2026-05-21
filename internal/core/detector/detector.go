@@ -26,7 +26,7 @@ package detector
 import (
 	"time"
 
-	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
+	"github.com/mr-addams/arxsentinel/internal/core/parser"
 )
 
 // ========================== IP state access interface =================================

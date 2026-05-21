@@ -1,4 +1,4 @@
-// ========================== Entry point — nginx-sentinel =================================
+// ========================== Entry point — arxsentinel ====================================
 //   Component initialization, pipeline assembly, daemon startup.
 //
 //   WHAT IS HERE:
@@ -70,17 +70,17 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/mr-addams/nginx-sentinel/internal/core/blocklist"
-	"github.com/mr-addams/nginx-sentinel/internal/core/chaincheck"
-	"github.com/mr-addams/nginx-sentinel/internal/core/detector"
-	"github.com/mr-addams/nginx-sentinel/internal/core/output"
-	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
-	"github.com/mr-addams/nginx-sentinel/internal/core/scorer"
-	"github.com/mr-addams/nginx-sentinel/internal/core/state"
-	"github.com/mr-addams/nginx-sentinel/internal/core/whitelist"
-	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
-	"github.com/mr-addams/nginx-sentinel/internal/sys/metrics"
-	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
+	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
+	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
+	"github.com/mr-addams/arxsentinel/internal/core/detector"
+	"github.com/mr-addams/arxsentinel/internal/core/output"
+	"github.com/mr-addams/arxsentinel/internal/core/parser"
+	"github.com/mr-addams/arxsentinel/internal/core/scorer"
+	"github.com/mr-addams/arxsentinel/internal/core/state"
+	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/internal/sys/metrics"
+	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -136,7 +136,7 @@ func main() {
 
 	cfg, err := config.LoadConfig(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "nginx-sentinel: config error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "arxsentinel: config error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -145,7 +145,7 @@ func main() {
 	// Pass empty threatLogPath so global utils.LogThreat is not used.
 	if err := utils.Init(cfg.Logging.Debug, cfg.Logging.ConsoleColor,
 		cfg.Output.OperationalLog, ""); err != nil {
-		fmt.Fprintf(os.Stderr, "nginx-sentinel: logger initialization error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "arxsentinel: logger initialization error: %v\n", err)
 		os.Exit(1)
 	}
 	defer utils.Close()
@@ -160,7 +160,7 @@ func main() {
 
 	// ── Startup messages ──────────────────────────────────────────────────────────────
 
-	utils.Log("STARTUP", "nginx-sentinel "+version+" starting", "info")
+	utils.Log("STARTUP", "arxsentinel "+version+" starting", "info")
 	utils.Log("CONFIG", fmt.Sprintf("alert=%d ban=%d window=%v debug=%v",
 		cfg.Scoring.AlertThreshold,
 		cfg.Scoring.BanThreshold,
@@ -809,7 +809,7 @@ func metricsHandler(username, passwordHash string) http.Handler {
 		userOK := subtle.ConstantTimeCompare([]byte(u), usernameBytes) == 1
 		passOK := bcrypt.CompareHashAndPassword(hashBytes, []byte(p)) == nil
 		if !ok || !userOK || !passOK {
-			w.Header().Set("WWW-Authenticate", `Basic realm="nginx-sentinel metrics"`)
+			w.Header().Set("WWW-Authenticate", `Basic realm="arxsentinel metrics"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}

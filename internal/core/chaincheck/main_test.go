@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
+	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 )
 
 // TestMain silences utils.Log console output during the test run.

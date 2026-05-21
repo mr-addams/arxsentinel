@@ -26,7 +26,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 // iso8601Layouts — nginx $time_iso8601 format variants tried in order.
