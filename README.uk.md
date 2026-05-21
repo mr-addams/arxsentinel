@@ -491,144 +491,11 @@ ArxSentinel підтримує три режими форматів: **combined*
 
 Повні приклади конфігурації, маппінг полів та типові помилки див. у [README.log-formats.uk.md](README.log-formats.uk.md).
 
-## Деплой за зворотним проксі
+## Зворотний проксі та Chain Guard
 
-> **Увага:** якщо HTTP-сервер стоїть за проксі і реальний IP клієнта налаштований некоректно,
-> ArxSentinel виставлятиме score **IP-адресі проксі**, а не реальному зловмиснику.
-> Fail2Ban заблокує ваш же проксі — сайт впаде для всіх.
+Повне керівництво по деплойю за зворотним проксі (HAProxy, Traefik, Caddy, nginx), включаючи конфігурацію вилучення справжнього IP та Chain Guard (виявлення зламаного ланцюжка IP).
 
-### Як це працює
-
-```
-[Клієнт 1.2.3.4] → [Проксі] → X-Forwarded-For: 1.2.3.4 → [HTTP-сервер]
-                                                                  ↓
-                               ngx_http_realip_module замінює $remote_addr
-                               першим не-довіреним IP з ланцюжка XFF
-                                                                  ↓
-                                                            access.log
-                                                                  ↓
-                                                           ArxSentinel
-```
-
-Модуль nginx `ngx_http_realip_module` читає `X-Forwarded-For` від довіреного проксі
-та замінює `$remote_addr` реальним IP клієнта до того, як рядок записується в лог.
-ArxSentinel читає `$remote_addr` з access.log — жодної додаткової змінної не потрібно.
-
-### Готові конфіги
-
-Повні робочі приклади для кожного проксі знаходяться в `deploy/examples/reverse-proxy/`:
-
-| Проксі | Файли |
-|--------|-------|
-| **HAProxy** | [`haproxy/haproxy.cfg`](deploy/examples/reverse-proxy/haproxy/haproxy.cfg), [`nginx.conf`](deploy/examples/reverse-proxy/haproxy/nginx.conf) |
-| **Traefik** | [`traefik/traefik.yml`](deploy/examples/reverse-proxy/traefik/traefik.yml), [`nginx.conf`](deploy/examples/reverse-proxy/traefik/nginx.conf) |
-| **Caddy** | [`caddy/Caddyfile`](deploy/examples/reverse-proxy/caddy/Caddyfile), [`nginx.conf`](deploy/examples/reverse-proxy/caddy/nginx.conf) |
-| **nginx як RP** | [`nginx-rp/nginx-upstream.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-upstream.conf), [`nginx-origin.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-origin.conf) |
-
-Кожен приклад містить конфіг проксі та конфіг origin-nginx з `set_real_ip_from`,
-`real_ip_header X-Forwarded-For`, `real_ip_recursive on` і форматом лога `combined_realip`,
-в якому `$remote_addr` використовується як поле реального IP.
-
-### Мінімальний конфіг nginx (для будь-якого проксі)
-
-```nginx
-http {
-    # Вкажіть реальний IP або CIDR вашого проксі.
-    # Docker Compose: 172.16.0.0/12    Один хост: 127.0.0.1
-    set_real_ip_from  <ip-або-cidr-проксі>;
-
-    # Всі основні проксі (HAProxy, Traefik, Caddy, nginx) виставляють X-Forwarded-For.
-    real_ip_header    X-Forwarded-For;
-
-    # Проходимо по ланцюжку XFF — беремо перший не-довірений IP як реального клієнта.
-    real_ip_recursive on;
-
-    # Після обробки realip $remote_addr — це і є реальний IP клієнта.
-    log_format combined_realip
-        '$remote_addr - $remote_user [$time_local] '
-        '"$request" $status $body_bytes_sent '
-        '"$http_referer" "$http_user_agent" "$remote_addr"';
-
-    server {
-        access_log /var/log/nginx/access.log combined_realip;
-        ...
-    }
-}
-```
-
-### Cloudflare
-
-Якщо nginx стоїть напряму за Cloudflare — використовуйте `CF-Connecting-IP`
-(Cloudflare проставляє цей заголовок на своєму edge; `X-Forwarded-For` може бути підроблений клієнтом).
-
-Згенеруйте директиви `set_real_ip_from` для всіх CIDR-діапазонів Cloudflare:
-
-```bash
-sudo scripts/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf
-```
-
-Додайте до `nginx.conf`:
-
-```nginx
-http {
-    include /etc/nginx/cloudflare-real-ip.conf;  # set_real_ip_from для всіх CF-діапазонів
-    real_ip_header CF-Connecting-IP;
-    ...
-}
-```
-
-**Автооновлення діапазонів** (Cloudflare оновлює їх periodично):
-
-```bash
-# Додати в cron — кожен понеділок о 03:00
-0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
-```
-
-### Chain Guard — виявлення зламаного ланцюжка IP
-
-ArxSentinel безперервно перевіряє, чи є client IP у кожному записі логу справжньою
-маршрутизованою адресою. Якщо виявлено IP Cloudflare/CDN або bogon/CGNAT у позиції
-клієнта — записує `CHAIN_WARN` до `warnings.log`.
-
-**Чому це важливо:** коли IP проксі фігурує як client, всі детектори ArxSentinel
-оцінюють не ту адресу — вони фактично сліпі. Fail2Ban може заблокувати ваш власний
-Cloudflare edge замість зловмисника, поклавши сайт для всіх відвідувачів.
-Це помилка конфігурації, а не атака.
-
-**Що викликає попередження:**
-
-| Умова | Попередження | Виправлення |
-|-------|--------------|-------------|
-| IP Cloudflare у позиції client | `cloudflare-ip-as-client` | Налаштуйте `real_ip_header CF-Connecting-IP` (nginx), `RemoteIPHeader CF-Connecting-IP` (Apache), `trustedProxies` (Traefik/Caddy) |
-| Bogon / RFC 1918 у позиції client | `bogon-ip-as-client` | Вищестоящий проксі інжектує приватні IP у XFF; перевірте ланцюжок проксі та додайте його IP до `set_real_ip_from` |
-| CGNAT (100.64.0.0/10) у позиції client | `bogon-ip-as-client` | Carrier-grade NAT вище по ланцюжку — налаштуйте `real_ip_header` для вилучення справжнього IP з XFF |
-
-**Конфігурація:**
-
-```yaml
-chain_guard:
-  enabled: true
-  warnings_log: /var/log/arxsentinel/warnings.log
-  cloudflare:
-    enabled: true
-    refresh_interval: 24h     # автоматично перезавантажує CIDR-листи Cloudflare
-    sources:
-      - https://www.cloudflare.com/ips-v4/
-      - https://www.cloudflare.com/ips-v6/
-  bogon:
-    enabled: true             # RFC 1918, CGNAT, loopback, link-local, документаційні діапазони
-```
-
-**Моніторинг warnings log:**
-
-```bash
-# Перевірити наявність попереджень chain guard
-grep CHAIN_WARN /var/log/arxsentinel/warnings.log
-
-# Підрахувати за типом
-grep -c cloudflare-ip-as-client /var/log/arxsentinel/warnings.log
-grep -c bogon-ip-as-client /var/log/arxsentinel/warnings.log
-```
+Див. [`deploy/examples/reverse-proxy/README.uk.md`](deploy/examples/reverse-proxy/README.uk.md).
 
 ## Конфігурації для CMS
 
@@ -657,50 +524,9 @@ grep -c bogon-ip-as-client /var/log/arxsentinel/warnings.log
 
 ## Prometheus-метрики
 
-Увімкнути в `config.yaml`:
+Увімкнути метрики в `config.yaml`, налаштувати scraping у Prometheus, встановити bcrypt-хеш пароля та імпортувати дашборд Grafana.
 
-```yaml
-metrics:
-  enabled: true
-  listen_addr: ":9117"   # порт HTTP-сервера метрик
-  # Опційна basic auth — залиште username порожнім для вимкнення:
-  username: ""
-  password_hash: ""      # bcrypt-хеш; генерацію дивіться в deploy/grafana/README.md
-```
-
-### Ендпоінти
-
-| Ендпоінт | Авторизація | Опис |
-|----------|-------------|------|
-| `/metrics` | опційна basic auth | Scrape-ендпоінт Prometheus |
-| `/health` | нема | Liveness probe — завжди повертає `200 {"status":"ok"}` |
-
-`/health` не потребує облікових даних і безпечно відкривається для балансувальників,
-Docker `HEALTHCHECK` та k8s liveness/readiness probes.
-
-### Доступні метрики
-
-| Метрика | Тип | Опис |
-|---------|-----|------|
-| `arxsentinel_lines_processed_total` | Counter | Оброблено рядків лога |
-| `arxsentinel_threats_total{level}` | Counter | Загрози за рівнем (`THREAT` / `WARN`) |
-| `arxsentinel_detector_hits_total{detector}` | Counter | Спрацювання за детектором |
-| `arxsentinel_tracked_ips` | Gauge | Поточна кількість відстежуваних IP |
-| `arxsentinel_suspicious_ips` | Gauge | IP зі score вище alert threshold |
-
-### Конфіг scrape для Prometheus
-
-```yaml
-scrape_configs:
-  - job_name: "arxsentinel"
-    static_configs:
-      - targets: ["localhost:9117"]
-    # basic_auth:          # лише якщо авторизацію увімкнено в конфізі sentinel
-    #   username: "prometheus"
-    #   password: "ваш-пароль-відкритим-текстом"
-```
-
-Налаштування дашборда Grafana — у [`deploy/grafana/README.md`](deploy/grafana/README.md).
+Повне керівництво: [`deploy/grafana/README.uk.md`](deploy/grafana/README.uk.md)
 
 ---
 
