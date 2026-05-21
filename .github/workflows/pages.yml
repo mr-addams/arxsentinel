@@ -5,6 +5,10 @@ on:
     branches: [dev]
     paths:
       - "docs/**"
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
