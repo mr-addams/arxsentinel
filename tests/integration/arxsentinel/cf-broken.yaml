@@ -1,0 +1,43 @@
+general:
+  log_file: logs/nginx-bare/access.log
+  pid_file: /tmp/arxsentinel-cf-broken.pid
+  tail_retry_interval: "2s"
+
+parser:
+  log_format: combined
+
+output:
+  threat_log: logs/threats/cf-broken.log
+  operational_log: logs/threats/sentinel-cf-broken.log
+
+logging:
+  console_color: false
+
+# chain_guard: detect cloudflare-sim container IP appearing as client in nginx-bare access log.
+# nginx-bare has no real_ip_header configured, so it logs the TCP peer (cloudflare-sim)
+# instead of the real visitor. cloudflare-sim's IP falls within 172.16.0.0/12 which is
+# included in the test CIDR file served by blocklist-server.
+chain_guard:
+  enabled: true
+  warnings_log: logs/warnings/cf-broken.log
+  cloudflare:
+    enabled: true
+    refresh_interval: 1m
+    sources:
+      - http://localhost:8090/test-cloudflare-cidrs.txt
+  bogon:
+    enabled: false
+
+blocklist:
+  storage: ""
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "http://localhost:8090/badbot-ua.list"
+          format: plain_text
+    - name: badbot-ref
+      refresh_interval: 24h
+      sources:
+        - url: "http://localhost:8090/badbot-ref.list"
+          format: plain_text

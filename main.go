@@ -34,7 +34,8 @@
 //     4. signal.NotifyContext()           — context before goroutines that check ctx.Done()
 //     5. metrics.Init() + srv.ListenAndServe() — before streams; scraper gets continuous series
 //     6. blocklist.NewManager()           — before buildDetectors(); detectors depend on it
-//     7. runStream() × N                  — last; all shared resources must exist
+//     7. chaincheck.NewChecker()          — before streams; checks every log entry from start
+//     8. runStream() × N                  — last; all shared resources must exist
 //
 //   SHUTDOWN SEQUENCE (SIGTERM/SIGINT → ctx.Done()):
 //     1. tail.Run() exits                — closes lines channel
@@ -70,6 +71,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/mr-addams/nginx-sentinel/internal/core/blocklist"
+	"github.com/mr-addams/nginx-sentinel/internal/core/chaincheck"
 	"github.com/mr-addams/nginx-sentinel/internal/core/detector"
 	"github.com/mr-addams/nginx-sentinel/internal/core/output"
 	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
@@ -89,9 +91,11 @@ var version = "dev"
 // PipelineContext holds long-lived dependencies shared by processLine.
 // Recreated on SIGHUP reload: Scorer, Matcher, and Parser are replaced; Tracker and
 // Verifier survive. FakeBotScore and DNSVerifyTimeout reflect the current config.
+// Shared is passed by value — SharedResources fields are pointers, so the copy is cheap
+// and any nil-check in processLine correctly reflects the state at pipeline construction.
 type PipelineContext struct {
-	StreamName       string        // empty string for single-stream (backward compat)
-	processedCount   *atomic.Int64 // per-stream counter, owned by runStream
+	StreamName       string           // empty string for single-stream (backward compat)
+	processedCount   *atomic.Int64    // per-stream counter, owned by runStream
 	Tracker          *state.Tracker
 	Scorer           *scorer.Scorer
 	ThreatLogger     *output.ThreatLogger
@@ -100,14 +104,20 @@ type PipelineContext struct {
 	Parser           parser.Parser
 	FakeBotScore     int
 	DNSVerifyTimeout time.Duration
+	Shared           SharedResources  // chain checker, warnings writer — nil-safe when disabled
+	LogFile          string           // stream log file path, used for chain warning context
 }
 
 // SharedResources holds singleton dependencies shared across all streams.
 // Created once in main() before streams are launched; passed to buildDetectors.
 // Manager.Update() is called on SIGHUP from the fan-out goroutine — per-stream
 // SIGHUP handlers only rebuild the pipeline, not the shared blocklist state.
+// ChainChecker and WarningsWriter are nil when chain_guard.enabled == false —
+// all callers must nil-check before use.
 type SharedResources struct {
 	BlocklistManager *blocklist.Manager
+	ChainChecker     *chaincheck.Checker    // nil if chain_guard disabled
+	WarningsWriter   *output.WarningsWriter // nil if chain_guard disabled
 }
 
 // configPath — default path to the config file.
@@ -235,14 +245,38 @@ func main() {
 	signal.Notify(sigHUP, syscall.SIGHUP)
 	defer signal.Stop(sigHUP)
 
-	// ── Blocklist Manager ─────────────────────────────────────────────────────────────────
+	// ── Blocklist Manager (Step 6) ────────────────────────────────────────────────────────
 	// Created before streams so all detectors share the same pattern automata.
 	// Uses appCtx — refresh goroutines stop on SIGTERM alongside streams.
 	// Manager.Update() is called from the SIGHUP fan-out below, not per-stream.
-	shared := SharedResources{
-		BlocklistManager: blocklist.NewManager(ctx, cfg.Blocklist),
+	blMgr := blocklist.NewManager(ctx, cfg.Blocklist)
+	defer blMgr.Close()
+
+	// ── Chain Integrity Checker (Step 7) ──────────────────────────────────────────────
+	// Detects Cloudflare or bogon IPs appearing as client IPs in access logs.
+	// Must start before streams — all log entries are checked from the beginning.
+	// Both fields are nil when chain_guard.enabled == false; callers nil-check before use.
+	var chainChecker *chaincheck.Checker
+	var warningsWriter *output.WarningsWriter
+	if cfg.ChainGuard.Enabled {
+		var wErr error
+		warningsWriter, wErr = output.NewWarningsWriter(cfg.ChainGuard.WarningsLog)
+		if wErr != nil {
+			utils.Log("STARTUP", "failed to open warnings log: "+wErr.Error(), "error")
+			return
+		}
+		// warningsWriter deferred before chainChecker so LIFO closes writer last —
+		// any in-flight WriteChainWarning call completes before the file is closed.
+		defer func() { _ = warningsWriter.Close() }()
+		chainChecker = chaincheck.NewChecker(ctx, cfg.ChainGuard.ToChainCheckConfig())
+		defer chainChecker.Close()
 	}
-	defer shared.BlocklistManager.Close()
+
+	shared := SharedResources{
+		BlocklistManager: blMgr,
+		ChainChecker:     chainChecker,
+		WarningsWriter:   warningsWriter,
+	}
 
 	reloadChs := make([]chan struct{}, len(cfg.Streams))
 	for i := range reloadChs {
@@ -269,6 +303,16 @@ func main() {
 					// context is harmless but wasteful — skip the update entirely.
 					if ctx.Err() == nil {
 						shared.BlocklistManager.Update(ctx, newCfg.Blocklist)
+						// Update chain checker with new config (sources, intervals may change).
+						// Same ctx.Err() guard: Update starts a goroutine for CF refresh.
+						if shared.ChainChecker != nil {
+							shared.ChainChecker.Update(ctx, newCfg.ChainGuard.ToChainCheckConfig())
+						}
+					}
+					// WarningsWriter.Reopen() is safe after ctx cancellation:
+					// it only closes/reopens a file, never starts goroutines.
+					if shared.WarningsWriter != nil {
+						_ = shared.WarningsWriter.Reopen()
 					}
 				}
 				// Notify each stream (non-blocking: skip if channel is full,
@@ -379,6 +423,8 @@ func runStream(
 		Parser:           p,
 		FakeBotScore:     cfg.Whitelist.FakeBotScore,
 		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
+		Shared:           shared,
+		LogFile:          streamCfg.LogFile,
 	}
 
 	// GC goroutine — periodic cleanup of inactive IPs.
@@ -492,6 +538,8 @@ func runStream(
 				Parser:           newParser,
 				FakeBotScore:     cfg.Whitelist.FakeBotScore,
 				DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
+				Shared:           shared,
+				LogFile:          streamCfg.LogFile,
 			}
 			utils.Log("CONFIG", fmt.Sprintf("stream %q: SIGHUP config reloaded", streamCfg.Name), "info")
 
@@ -666,6 +714,23 @@ func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
 	), "debug")
+
+	// ── Chain integrity check ─────────────────────────────────────────────────────────
+	// Runs before detectors. If the client IP is Cloudflare or bogon, the proxy chain
+	// is misconfigured — ArxSentinel cannot identify the real attacker IP. We log the
+	// warning loudly (file + operational log) but do NOT add to threat log or score,
+	// because this is an infrastructure problem, not an attack verdict.
+	// RemoteAddr is checked (not RealIP) — it is the raw TCP peer address, which is
+	// what ArxSentinel actually received from the network stack.
+	if pipe.Shared.ChainChecker != nil && pipe.Shared.WarningsWriter != nil {
+		if result := pipe.Shared.ChainChecker.Check(entry.RemoteAddr); result != nil {
+			_ = pipe.Shared.WarningsWriter.WriteChainWarning(result, pipe.LogFile)
+			utils.Log("CHAIN_WARN",
+				fmt.Sprintf("%s-ip-as-client ip=%s cidr=%s log=%s",
+					result.Kind, result.IP, result.MatchedCIDR, pipe.LogFile),
+				"warning")
+		}
+	}
 
 	// ── Step 1: custom whitelist early-exit ──────────────────────────────────────────
 	// Custom whitelist is checked before tracker.Update — whitelisted traffic does not

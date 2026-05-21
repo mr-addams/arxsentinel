@@ -309,6 +309,31 @@ blocklist:
         - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list"
           format: plain_text
 
+# ── chain_guard: IP chain integrity checker ───────────────────────────────────────────────
+# Detects Cloudflare or bogon/RFC1918/CGNAT IPs appearing as client IPs in the access log.
+# This indicates a misconfigured proxy chain — ArxSentinel cannot identify real attackers.
+# Output goes to warnings_log (separate from threat_log) with CHAIN_WARN entries.
+# Action required from operator: configure real_ip / RemoteIPHeader / forwardedHeaders
+# on the origin server to extract the real client IP from CF-Connecting-IP or X-Forwarded-For.
+chain_guard:
+  enabled: false  # set to true and provide warnings_log to activate chain integrity checks
+  warnings_log: ""  # required when enabled: path to warnings file, e.g. /var/log/arxsentinel/warnings.log
+
+  cloudflare:
+    enabled: true
+    refresh_interval: 24h
+    sources:
+      # MIT-compatible public data — Cloudflare publishes these lists for operator use.
+      - https://www.cloudflare.com/ips-v4/
+      - https://www.cloudflare.com/ips-v6/
+
+  bogon:
+    enabled: true
+    # Covers: RFC 1918 (10/8, 172.16/12, 192.168/16), CGNAT (100.64/10),
+    # loopback (127/8, ::1), link-local (169.254/16, fe80::/10),
+    # documentation (192.0.2/24, 198.51.100/24, 203.0.113/24),
+    # unspecified/reserved (0/8, 240/4), IPv6 unique local (fc00::/7).
+
 # ── whitelist: legitimate bots and custom entries / легитимные боты и кастомный список ───
 whitelist:
 

@@ -7,7 +7,7 @@
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
-A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 7 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, and OpenLiteSpeed.
+A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 8 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, and OpenLiteSpeed.
 
 Supports **nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, and OpenLiteSpeed** via built-in profiles. nginx works out of the box with no profile needed. Caddy and HAProxy require minimal one-time setup. Custom log formats supported via regex. Watch multiple log files in a single process.
 
@@ -72,6 +72,7 @@ deploy/examples/
 ## Features
 
 - **8 detectors:** probe scanning, rate anomaly, suspicious User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
+- **Chain Guard:** detects Cloudflare/CDN edge IPs and bogon/RFC 1918/CGNAT addresses appearing as client IPs — signals a misconfigured proxy chain before ArxSentinel's detectors go blind
 - **Bot DNS verification:** Googlebot, Bingbot, Yandex, DuckDuckGo and others are verified via rDNS/fDNS — legitimate crawlers are never banned
 - **Multi-stream:** watch multiple log files in one process — full pipeline isolation per stream
 - **Whitelist:** IPs, CIDRs, UA substrings — configurable exclusion lists
@@ -487,6 +488,8 @@ access.log (nginx / apache / caddy / traefik / haproxy / litespeed)
        │
   whitelist.Matcher ──→ custom IP/CIDR/UA? → skip
        │
+  chaincheck.Checker ──→ Cloudflare/bogon IP? → warnings.log (CHAIN_WARN)
+       │
   whitelist.Verifier ──→ bot UA? → rDNS/fDNS → verified? → skip
        │                                     → fake bot? → +FakeBotScore
   tracker.Update(*IPState)
@@ -582,6 +585,17 @@ Debug tags (`PARSER`, `TAIL`, `DETECTOR`, `SCORER`) are visible only when `loggi
 ```
 
 Fail2Ban failregex: `THREAT <HOST> score=\d+` (file `deploy/fail2ban/filter.d/arxsentinel.conf`).
+
+**Warnings log** (`chain_guard.warnings_log`) — infrastructure misconfiguration alerts:
+
+```
+2026-05-20T12:34:56Z CHAIN_WARN cloudflare-ip-as-client ip=172.64.0.1 cidr=172.64.0.0/13 log=/var/log/nginx/access.log
+2026-05-20T12:34:57Z CHAIN_WARN bogon-ip-as-client ip=10.0.0.1 cidr=10.0.0.0/8 log=/var/log/nginx/access.log
+```
+
+Warnings are distinct from threats: `CHAIN_WARN` means ArxSentinel cannot reliably identify
+the real attacker IP. Fix the underlying infrastructure issue (see [Chain Guard](#chain-guard--detecting-broken-ip-extraction))
+and the warnings will stop.
 
 ## Management
 
@@ -764,6 +778,52 @@ http {
 ```bash
 # Add to cron — every Monday at 03:00
 0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
+```
+
+### Chain Guard — detecting broken IP extraction
+
+ArxSentinel continuously checks whether the client IP in each log entry is a real,
+routable address. If it detects a Cloudflare/CDN edge IP or a bogon/CGNAT address
+appearing as the client IP, it writes a `CHAIN_WARN` to `warnings.log`.
+
+**Why this matters:** when a proxy IP appears as the client, all of ArxSentinel's
+detectors score the wrong address — they are effectively blind. Fail2Ban may ban your
+own Cloudflare edge instead of the attacker, taking the site offline for all visitors.
+This is a misconfiguration, not an attack.
+
+**What triggers a warning:**
+
+| Condition | Warning | Fix |
+|-----------|---------|-----|
+| Cloudflare IP as client | `cloudflare-ip-as-client` | Configure `real_ip_header CF-Connecting-IP` (nginx), `RemoteIPHeader CF-Connecting-IP` (Apache), `trustedProxies` (Traefik/Caddy) |
+| Bogon / RFC 1918 as client | `bogon-ip-as-client` | An upstream proxy is injecting private IPs into XFF; verify the proxy chain and add its IP to `set_real_ip_from` |
+| CGNAT (100.64.0.0/10) as client | `bogon-ip-as-client` | Carrier-grade NAT upstream — configure `real_ip_header` to extract the real IP from XFF |
+
+**Configuration:**
+
+```yaml
+chain_guard:
+  enabled: true
+  warnings_log: /var/log/arxsentinel/warnings.log
+  cloudflare:
+    enabled: true
+    refresh_interval: 24h     # re-fetches Cloudflare CIDR lists automatically
+    sources:
+      - https://www.cloudflare.com/ips-v4/
+      - https://www.cloudflare.com/ips-v6/
+  bogon:
+    enabled: true             # RFC 1918, CGNAT, loopback, link-local, documentation ranges
+```
+
+**Monitoring the warnings log:**
+
+```bash
+# Check for any chain guard warnings
+grep CHAIN_WARN /var/log/arxsentinel/warnings.log
+
+# Count by type
+grep -c cloudflare-ip-as-client /var/log/arxsentinel/warnings.log
+grep -c bogon-ip-as-client /var/log/arxsentinel/warnings.log
 ```
 
 ## CMS-specific configurations

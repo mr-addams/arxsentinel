@@ -805,6 +805,103 @@ blocklist:
 	}
 }
 
+// ========================== Tests: chain_guard config =================================
+
+func TestDefaultConfig_ChainGuard(t *testing.T) {
+	// Chain guard is disabled by default — enabled requires warnings_log which has no safe default.
+	// When enabled, Cloudflare and bogon checks are active with sensible defaults.
+	cfg, err := LoadConfig("/nonexistent/chain-guard-defaults.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cg := cfg.ChainGuard
+	if cg.Enabled {
+		t.Error("ChainGuard.Enabled: want false (disabled by default — requires warnings_log)")
+	}
+	if cg.WarningsLog != "" {
+		t.Errorf("ChainGuard.WarningsLog: want empty string (default), got %q", cg.WarningsLog)
+	}
+	if !cg.Cloudflare.Enabled {
+		t.Error("ChainGuard.Cloudflare.Enabled: want true")
+	}
+	if time.Duration(cg.Cloudflare.RefreshInterval) != 24*time.Hour {
+		t.Errorf("ChainGuard.Cloudflare.RefreshInterval: want 24h, got %v", time.Duration(cg.Cloudflare.RefreshInterval))
+	}
+	if len(cg.Cloudflare.Sources) != 2 {
+		t.Fatalf("ChainGuard.Cloudflare.Sources: want 2 default sources, got %d", len(cg.Cloudflare.Sources))
+	}
+	if !strings.Contains(cg.Cloudflare.Sources[0], "cloudflare.com") {
+		t.Errorf("ChainGuard.Cloudflare.Sources[0]: want Cloudflare URL, got %q", cg.Cloudflare.Sources[0])
+	}
+	if !cg.Bogon.Enabled {
+		t.Error("ChainGuard.Bogon.Enabled: want true")
+	}
+}
+
+func TestValidateConfig_ChainGuard_MissingWarningsLog(t *testing.T) {
+	// enabled=true with empty warnings_log must fail validation —
+	// there is nowhere to write infrastructure alerts.
+	path := writeTempYAML(t, `
+chain_guard:
+  enabled: true
+  warnings_log: ""
+  cloudflare:
+    enabled: true
+    refresh_interval: 24h
+    sources:
+      - https://www.cloudflare.com/ips-v4/
+      - https://www.cloudflare.com/ips-v6/
+  bogon:
+    enabled: true
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "chain_guard.warnings_log") {
+		t.Errorf("want error about chain_guard.warnings_log, got: %v", err)
+	}
+}
+
+func TestValidateConfig_ChainGuard_EmptySources(t *testing.T) {
+	// cloudflare check enabled with empty sources list must fail validation —
+	// the checker would never fetch fresh ranges and never signal the operator about stale data.
+	path := writeTempYAML(t, `
+chain_guard:
+  enabled: true
+  warnings_log: /var/log/arxsentinel/warnings.log
+  cloudflare:
+    enabled: true
+    refresh_interval: 24h
+    sources: []
+  bogon:
+    enabled: true
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "chain_guard.cloudflare.sources") {
+		t.Errorf("want error about chain_guard.cloudflare.sources, got: %v", err)
+	}
+}
+
+func TestValidateConfig_ChainGuard_Disabled_NoWarningsLog(t *testing.T) {
+	// disabled chain_guard with empty warnings_log must NOT return an error —
+	// the warnings file is irrelevant when chain guard is off.
+	path := writeTempYAML(t, `
+chain_guard:
+  enabled: false
+  warnings_log: ""
+  cloudflare:
+    enabled: true
+    refresh_interval: 24h
+    sources:
+      - https://www.cloudflare.com/ips-v4/
+      - https://www.cloudflare.com/ips-v6/
+  bogon:
+    enabled: true
+`)
+	_, err := LoadConfig(path)
+	if err != nil {
+		t.Errorf("disabled chain_guard with empty warnings_log must not return error, got: %v", err)
+	}
+}
+
 // ========================== Helper ====================================================
 
 // writeTempYAML creates a temporary file with the given content and returns its path.

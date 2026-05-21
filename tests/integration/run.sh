@@ -34,6 +34,7 @@ cleanup() {
     done
     rm -f /tmp/arxsentinel-{nginx,apache,traefik,caddy,haproxy,litespeed}.pid
     rm -f /tmp/arxsentinel-{nginx-proxy,apache-proxy,traefik-proxy,caddy-proxy,haproxy-proxy,litespeed-proxy}.pid
+    rm -f /tmp/arxsentinel-{cf-broken,bogon-victim}.pid
 
     # Stop HAProxy log capture (proxy and backend).
     kill "$HAPROXY_LOG_PID" 2>/dev/null || true
@@ -100,6 +101,22 @@ REF_COUNT=$(wc -l < "$BLOCKLIST_DIR/badbot-ref.list")
 echo "[run] blocklist fetched: ${UA_COUNT} UA patterns, ${REF_COUNT} referrer patterns"
 echo "[run] test UA for badbot scenario: ${BADBOT_TEST_UA}"
 
+# Create test Cloudflare CIDR file for chain_guard integration test.
+# Includes Docker bridge subnet (172.16.0.0/12) so cloudflare-sim's container IP
+# is treated as "Cloudflare" by the cf-broken sentinel.
+# In production, real Cloudflare CIDRs are fetched from cloudflare.com/ips-*.
+cat > "$BLOCKLIST_DIR/test-cloudflare-cidrs.txt" <<'EOF'
+# Integration test Cloudflare CIDR list — not for production use.
+# Docker bridge net: covers cloudflare-sim container IP for broken-chain test.
+172.16.0.0/12
+# Real Cloudflare ranges (May 2026):
+173.245.48.0/20
+103.21.244.0/22
+104.16.0.0/13
+172.64.0.0/13
+EOF
+echo "[run] test Cloudflare CIDR file created: $BLOCKLIST_DIR/test-cloudflare-cidrs.txt"
+
 # ── Step 3: prepare log directories ──────────────────────────────────────────────────
 
 mkdir -p \
@@ -114,25 +131,38 @@ mkdir -p \
     "$LOGS_DIR/caddy-proxy" \
     "$LOGS_DIR/haproxy-proxy" \
     "$LOGS_DIR/litespeed-proxy" \
-    "$LOGS_DIR/threats"
+    "$LOGS_DIR/nginx-bare" \
+    "$LOGS_DIR/nginx-bogon-victim" \
+    "$LOGS_DIR/threats" \
+    "$LOGS_DIR/warnings"
 
-# Touch log files so tail can start before the first request arrives.
+# Truncate all server access logs from previous runs.
+# --force-recreate below restarts containers with fresh file descriptors, so
+# truncate-in-place (>) is safe — the running process is being replaced anyway.
+# OLS log files may be owned by nobody:nogroup after a prior run; sudo-remove
+# them so the recreated container starts with a fresh file at the correct path.
 for f in nginx apache traefik caddy haproxy; do
-    touch "$LOGS_DIR/$f/access.log"
+    > "$LOGS_DIR/$f/access.log"
 done
-# OLS writes to localhost.access.log (docker vhost template naming).
-touch "$LOGS_DIR/litespeed/localhost.access.log"
+sudo rm -f "$LOGS_DIR/litespeed/localhost.access.log"
+touch       "$LOGS_DIR/litespeed/localhost.access.log"
 # Proxy-chain backend log files.
-touch "$LOGS_DIR/nginx/access-proxy.log"
-touch "$LOGS_DIR/apache-proxy/access.log"
-touch "$LOGS_DIR/traefik-proxy/access-proxy.log"
-touch "$LOGS_DIR/caddy-proxy/access-proxy.log"
-touch "$LOGS_DIR/haproxy-proxy/access.log"
-touch "$LOGS_DIR/litespeed-proxy/localhost.access.log"
+> "$LOGS_DIR/nginx/access-proxy.log"
+> "$LOGS_DIR/apache-proxy/access.log"
+> "$LOGS_DIR/traefik-proxy/access-proxy.log"
+> "$LOGS_DIR/caddy-proxy/access-proxy.log"
+> "$LOGS_DIR/haproxy-proxy/access.log"
+sudo rm -f "$LOGS_DIR/litespeed-proxy/localhost.access.log"
+touch       "$LOGS_DIR/litespeed-proxy/localhost.access.log"
 
-# Truncate threat logs from previous runs — verify.sh reads cumulative content, so
-# stale entries with proxy IPs from earlier runs would cause false "IP leaked" failures.
+# Chain guard test server log files.
+> "$LOGS_DIR/nginx-bare/access.log"
+> "$LOGS_DIR/nginx-bogon-victim/access.log"
+
+# Truncate threat and warning logs from previous runs — verify.sh reads cumulative content, so
+# stale entries from earlier runs would cause false positives or false negatives.
 rm -f "$LOGS_DIR/threats"/*.log
+rm -f "$LOGS_DIR/warnings"/*.log
 
 # ── Step 4: start containers ──────────────────────────────────────────────────────────
 
@@ -178,6 +208,16 @@ done
 # Start 6 additional sentinel instances for proxy-chain backends.
 PROXY_SERVERS=(nginx-proxy apache-proxy traefik-proxy caddy-proxy haproxy-proxy litespeed-proxy)
 for server in "${PROXY_SERVERS[@]}"; do
+    (cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/${server}.yaml" \
+        "$BIN" > /dev/null 2>&1) &
+    SENTINEL_PIDS+=($!)
+done
+
+# Start 2 chain_guard sentinel instances (cf-broken + bogon-victim).
+# cf-broken watches nginx-bare access log and detects cloudflare-sim IP as client.
+# bogon-victim watches nginx-bogon-victim access log and detects 10.0.0.1 as client.
+CHAIN_GUARD_SENTINELS=(cf-broken bogon-victim)
+for server in "${CHAIN_GUARD_SENTINELS[@]}"; do
     (cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/${server}.yaml" \
         "$BIN" > /dev/null 2>&1) &
     SENTINEL_PIDS+=($!)

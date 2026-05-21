@@ -31,6 +31,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mr-addams/nginx-sentinel/internal/core/blocklist"
+	"github.com/mr-addams/nginx-sentinel/internal/core/chaincheck"
 )
 
 // ========================== Duration helper type =======================================
@@ -65,8 +66,9 @@ type Config struct {
 	Whitelist WhitelistConfig `yaml:"whitelist"`
 	Output    OutputConfig    `yaml:"output"`
 	Metrics   MetricsConfig   `yaml:"metrics"`
-	Blocklist blocklist.Config `yaml:"blocklist"` // YAML: blocklist — lists managed by blocklist.Manager (sources, refresh, bbolt). Consumer: main.go NewManager
-	Streams   []StreamConfig  `yaml:"streams"` // YAML: streams — multi-stream mode; mutually exclusive with general.log_file
+	Blocklist  blocklist.Config  `yaml:"blocklist"`   // YAML: blocklist — lists managed by blocklist.Manager (sources, refresh, bbolt). Consumer: main.go NewManager
+	ChainGuard ChainGuardConfig  `yaml:"chain_guard"` // YAML: chain_guard — proxy chain integrity checker. Consumer: main.go NewChecker
+	Streams    []StreamConfig    `yaml:"streams"`     // YAML: streams — multi-stream mode; mutually exclusive with general.log_file
 }
 
 // StreamConfig defines one log-watching pipeline.
@@ -271,6 +273,48 @@ type MetricsConfig struct {
 	ListenAddr   string `yaml:"listen_addr"`   // YAML: metrics.listen_addr, default ":9117" — address for the metrics HTTP server. Consumer: main.go metrics server
 	Username     string `yaml:"username"`      // YAML: metrics.username — basic auth username; empty disables auth. Consumer: main.go metrics server
 	PasswordHash string `yaml:"password_hash"` // YAML: metrics.password_hash — bcrypt hash of the password (cost ≥ 10). Consumer: main.go metrics server
+}
+
+// ++++++++++++++++++++++++++ Section: chain_guard +++++++++++++++++++++++++++++++++++++++
+
+// ChainGuardConfig controls the chain integrity checker.
+// When enabled, ArxSentinel detects Cloudflare or bogon IPs appearing as client IPs —
+// a sign that the proxy chain is misconfigured and real attacker IPs are not reaching the log.
+// Writes to WarningsLog (not threat_log) — these are infrastructure alerts, not threats.
+type ChainGuardConfig struct {
+	Enabled     bool                 `yaml:"enabled"`      // ENV: ARXSENTINEL_CHAIN_GUARD_ENABLED, default false (requires warnings_log to activate)
+	WarningsLog string               `yaml:"warnings_log"` // ENV: ARXSENTINEL_CHAIN_GUARD_WARNINGS_LOG, default "" (required if enabled)
+	Cloudflare  CloudflareGuardConfig `yaml:"cloudflare"`
+	Bogon       BogonGuardConfig     `yaml:"bogon"`
+}
+
+// CloudflareGuardConfig controls Cloudflare IP range fetching and caching.
+type CloudflareGuardConfig struct {
+	Enabled         bool     `yaml:"enabled"`          // default true
+	RefreshInterval Duration `yaml:"refresh_interval"` // default 24h
+	Sources         []string `yaml:"sources"`          // default: cloudflare.com/ips-v4/ and ips-v6/
+}
+
+// BogonGuardConfig controls bogon/RFC1918/CGNAT IP detection.
+// Uses a static built-in list — no network fetch required.
+type BogonGuardConfig struct {
+	Enabled bool `yaml:"enabled"` // default true
+}
+
+// ToChainCheckConfig converts ChainGuardConfig to the chaincheck package Config.
+// Allows the config layer to remain decoupled from chaincheck internals —
+// callers in main.go never import chaincheck directly for config construction.
+func (c ChainGuardConfig) ToChainCheckConfig() chaincheck.Config {
+	return chaincheck.Config{
+		Cloudflare: chaincheck.CloudflareConfig{
+			Enabled:         c.Cloudflare.Enabled,
+			RefreshInterval: time.Duration(c.Cloudflare.RefreshInterval),
+			Sources:         c.Cloudflare.Sources,
+		},
+		Bogon: chaincheck.BogonConfig{
+			Enabled: c.Bogon.Enabled,
+		},
+	}
 }
 
 // ========================== Config loading ============================================
@@ -511,6 +555,14 @@ func applyEnvOverrides(cfg *Config) error {
 	if err := envBool("ARXSENTINEL_DETECTORS_BADBOT_CHECK_REFERRER", &cfg.Detectors.BadBot.CheckReferrer); err != nil {
 		return err
 	}
+	// ── chain_guard ───────────────────────────────────────────────────────────────────
+	// Detailed source overrides (URLs, refresh intervals) are configured via YAML.
+	// Enabled flag and warnings_log path can be overridden via env for Docker deployments.
+	if err := envBool("ARXSENTINEL_CHAIN_GUARD_ENABLED", &cfg.ChainGuard.Enabled); err != nil {
+		return err
+	}
+	envStr("ARXSENTINEL_CHAIN_GUARD_WARNINGS_LOG", &cfg.ChainGuard.WarningsLog)
+
 	// ── blocklist ─────────────────────────────────────────────────────────────────────
 	// Detailed source overrides (URLs, refresh intervals) are configured via YAML.
 	// Only the storage path can be overridden via env for Docker/container deployments.
@@ -745,6 +797,16 @@ func validateConfig(cfg *Config) error {
 			}
 		}
 	}
+	// chain_guard validation: warnings_log is required when chain_guard is enabled
+	// because without a destination file there is nowhere to write infrastructure alerts.
+	if cfg.ChainGuard.Enabled && cfg.ChainGuard.WarningsLog == "" {
+		return fmt.Errorf("chain_guard.warnings_log must be set when chain_guard is enabled")
+	}
+	// Empty sources list is a misconfiguration — cloudflare checker would have no URLs to fetch
+	// and would rely solely on the hardcoded fallback CIDRs without signalling the operator.
+	if cfg.ChainGuard.Cloudflare.Enabled && len(cfg.ChainGuard.Cloudflare.Sources) == 0 {
+		return fmt.Errorf("chain_guard.cloudflare.sources must not be empty when cloudflare check is enabled")
+	}
 	if cfg.Metrics.Username != "" && cfg.Metrics.PasswordHash == "" {
 		return fmt.Errorf("metrics.password_hash must be set when metrics.username is configured")
 	}
@@ -870,6 +932,24 @@ func defaultConfig() Config {
 		Metrics: MetricsConfig{
 			Enabled:    false,
 			ListenAddr: ":9117",
+		},
+		// ChainGuard default: disabled so the daemon starts without configuration.
+		// Operator must set enabled: true and provide warnings_log to activate.
+		// WarningsLog is required when enabled — validation enforces this at startup.
+		ChainGuard: ChainGuardConfig{
+			Enabled:     false,
+			WarningsLog: "",
+			Cloudflare: CloudflareGuardConfig{
+				Enabled:         true,
+				RefreshInterval: Duration(24 * time.Hour),
+				Sources: []string{
+					"https://www.cloudflare.com/ips-v4/",
+					"https://www.cloudflare.com/ips-v6/",
+				},
+			},
+			Bogon: BogonGuardConfig{
+				Enabled: true,
+			},
 		},
 		// Blocklist defaults provide the mitchellkrogza community lists out of the box.
 		// Sources and refresh schedule are separate from badbot detector config (D6, Flow #025):

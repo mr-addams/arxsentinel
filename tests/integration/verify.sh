@@ -265,6 +265,164 @@ assert_chain() {
     PASS=$((PASS + 1))
 }
 
+# ── assert_cf_direct ──────────────────────────────────────────────────────────
+# assert_cf_direct BACKEND
+#   Verifies CF Case 1: cloudflare-sim → backend.
+#   Checks that the backend's proxy-chain threat log contains THREAT entries
+#   and that cloudflare-sim's container IP did NOT leak into those entries.
+#   If it leaked, the backend is not extracting the real IP from CF-Connecting-IP / XFF.
+
+assert_cf_direct() {
+    local backend=$1
+    local threat_log="$LOGS_DIR/threats/${backend}-proxy.log"
+    local access_log; access_log=$(backend_access_log "$backend")
+    local label="cf-direct/${backend}"
+
+    # Get cloudflare-sim's IP on the default compose network — that is the IP backends
+    # see as the TCP peer. cloudflare-sim is also on cf_ext_net, but that IP is only
+    # visible to attacker containers; it never appears in backend access logs.
+    local cf_ip
+    cf_ip=$(docker inspect "integration-cloudflare-sim-1" \
+        --format '{{(index .NetworkSettings.Networks "integration_default").IPAddress}}' \
+        2>/dev/null || true)
+
+    if ! grep -q "THREAT" "$threat_log" 2>/dev/null; then
+        FAIL=$((FAIL + 1))
+        local access_lines=0
+        [ -n "$access_log" ] && [ -f "$access_log" ] && access_lines=$(wc -l < "$access_log")
+
+        if [ "$access_lines" -eq 0 ]; then
+            echo "FAIL [$label]  class=backend-silent"
+            echo "  access-log: ${access_log:-(unknown)} (0 lines — backend did not log)"
+            echo "  hint: cloudflare-sim routing for /cf-${backend}/ is broken, or backend did not receive request"
+        else
+            echo "FAIL [$label]  class=chain-parser-miss"
+            echo "  access-log: $access_log ($access_lines lines)"
+            echo "  log-sample (last 2 lines):"
+            log_sample "$access_log"
+            echo "  threat-log: $threat_log (0 THREAT entries)"
+            echo "  hint: sentinel parser does not match the backend log format"
+        fi
+        local backend_img; backend_img=$(image_for_server "$backend")
+        echo "  cf-sim-ip: ${cf_ip:-(unknown)}"
+        echo "  backend-image: $backend_img ($(digest_for_image "$backend_img"))"
+        return
+    fi
+
+    local ip_leaked=false
+    if [ -n "$cf_ip" ] && grep "THREAT" "$threat_log" | grep -qF "$cf_ip" 2>/dev/null; then
+        ip_leaked=true
+    fi
+
+    if $ip_leaked; then
+        FAIL=$((FAIL + 1))
+        local leaked_line
+        leaked_line=$(grep "THREAT" "$threat_log" | grep -F "$cf_ip" | tail -1)
+        local backend_img; backend_img=$(image_for_server "$backend")
+        echo "FAIL [$label]  class=cf-ip-leak  cf-sim-ip=$cf_ip"
+        echo "  leaked-line: $leaked_line"
+        echo "  hint: $backend-backend not resolving real IP from CF-Connecting-IP / X-Forwarded-For"
+        echo "  backend-image: $backend_img ($(digest_for_image "$backend_img"))"
+        return
+    fi
+
+    echo "PASS [$label]  real IP ≠ cloudflare-sim IP (${cf_ip:-unknown})"
+    PASS=$((PASS + 1))
+}
+
+# ── assert_cf_chain ────────────────────────────────────────────────────────────
+# assert_cf_chain PROXY BACKEND
+#   Verifies CF Case 2: cloudflare-sim → proxy → backend (two-hop chain).
+#   Checks that cloudflare-sim's container IP did NOT leak into the backend threat log.
+#   If it leaked, either the proxy or the backend lost the real IP across two hops.
+
+assert_cf_chain() {
+    local proxy=$1
+    local backend=$2
+    local threat_log="$LOGS_DIR/threats/${backend}-proxy.log"
+    local label="cf-chain/${proxy}/${backend}"
+
+    # Get cloudflare-sim's IP on the default compose network — that is the IP proxies
+    # see as the TCP peer. cloudflare-sim is also on cf_ext_net, but that IP is only
+    # visible to attacker containers; it never appears in backend access logs.
+    local cf_ip
+    cf_ip=$(docker inspect "integration-cloudflare-sim-1" \
+        --format '{{(index .NetworkSettings.Networks "integration_default").IPAddress}}' \
+        2>/dev/null || true)
+
+    if ! grep -q "THREAT" "$threat_log" 2>/dev/null; then
+        FAIL=$((FAIL + 1))
+        echo "FAIL [$label]  class=backend-silent"
+        echo "  threat-log: $threat_log (no THREAT entries)"
+        echo "  hint: cloudflare-sim or $proxy routing for /cf-chain-${proxy}/backend-${backend}/ is broken"
+        echo "  cf-sim-ip: ${cf_ip:-(unknown)}"
+        local proxy_img; proxy_img=$(image_for_server "$proxy")
+        local backend_img; backend_img=$(image_for_server "$backend")
+        echo "  proxy-image:   $proxy_img ($(digest_for_image "$proxy_img"))"
+        echo "  backend-image: $backend_img ($(digest_for_image "$backend_img"))"
+        return
+    fi
+
+    local ip_leaked=false
+    if [ -n "$cf_ip" ] && grep "THREAT" "$threat_log" | grep -qF "$cf_ip" 2>/dev/null; then
+        ip_leaked=true
+    fi
+
+    if $ip_leaked; then
+        FAIL=$((FAIL + 1))
+        local leaked_line
+        leaked_line=$(grep "THREAT" "$threat_log" | grep -F "$cf_ip" | tail -1)
+        local proxy_img; proxy_img=$(image_for_server "$proxy")
+        local backend_img; backend_img=$(image_for_server "$backend")
+        echo "FAIL [$label]  class=cf-ip-leak  cf-sim-ip=$cf_ip"
+        echo "  leaked-line: $leaked_line"
+        echo "  hint: $proxy or $backend-backend not forwarding/resolving real IP through 2-hop CF chain"
+        echo "  proxy-image:   $proxy_img ($(digest_for_image "$proxy_img"))"
+        echo "  backend-image: $backend_img ($(digest_for_image "$backend_img"))"
+        return
+    fi
+
+    echo "PASS [$label]  real IP ≠ cloudflare-sim IP (${cf_ip:-unknown})"
+    PASS=$((PASS + 1))
+}
+
+# ── assert_chain_warning ───────────────────────────────────────────────────────
+# assert_chain_warning WARNING_FILE KIND LABEL
+#   Verifies that the sentinel's warnings.log contains a CHAIN_WARN entry of
+#   the expected kind (cloudflare-ip-as-client or bogon-ip-as-client).
+
+assert_chain_warning() {
+    local warning_file=$1
+    local kind=$2
+    local label=$3
+
+    if grep -qF "$kind" "$warning_file" 2>/dev/null; then
+        local sample
+        sample=$(grep -F "$kind" "$warning_file" | tail -1)
+        echo "PASS [$label]  $sample"
+        PASS=$((PASS + 1))
+        return
+    fi
+
+    FAIL=$((FAIL + 1))
+
+    if [ ! -f "$warning_file" ]; then
+        echo "FAIL [$label]  class=warnings-file-missing"
+        echo "  warning-file: $warning_file (absent — chain_guard sentinel may not have started)"
+        echo "  hint: check chain_guard sentinel config and run.sh CHAIN_GUARD_SENTINELS startup"
+    elif [ ! -s "$warning_file" ]; then
+        echo "FAIL [$label]  class=warnings-file-empty"
+        echo "  warning-file: $warning_file (empty — no CHAIN_WARN entries written)"
+        echo "  hint: chain_guard.enabled=true in sentinel yaml; check cloudflare/bogon checker config"
+    else
+        echo "FAIL [$label]  class=chain-warn-missing  kind=$kind"
+        echo "  warning-file: $warning_file (exists but '$kind' not found — fixed-string search)"
+        echo "  file-sample (last 4 lines):"
+        log_sample "$warning_file" 4
+        echo "  hint: check chain_guard checker is enabled and CIDR/bogon ranges cover the test IP"
+    fi
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 CHAIN_PROXIES=(traefik caddy haproxy nginx-rp)
@@ -304,11 +462,41 @@ for proxy in "${CHAIN_PROXIES[@]}"; do
     echo ""
 done
 
+echo "--- Cloudflare direct results (Case 1: CF → product) ---"
+echo ""
+
+CF_BACKENDS=(nginx apache traefik caddy haproxy litespeed)
+for backend in "${CF_BACKENDS[@]}"; do
+    assert_cf_direct "$backend"
+done
+echo ""
+
+echo "--- Cloudflare chain results (Case 2: CF → proxy → product) ---"
+echo ""
+
+CF_CHAIN_PROXIES=(traefik caddy haproxy nginx-rp)
+CF_CHAIN_BACKENDS=(nginx apache traefik caddy haproxy litespeed)
+for proxy in "${CF_CHAIN_PROXIES[@]}"; do
+    for backend in "${CF_CHAIN_BACKENDS[@]}"; do
+        assert_cf_chain "$proxy" "$backend"
+    done
+    echo ""
+done
+
+echo "--- Chain guard warnings (Case 3: broken chain + bogon injection) ---"
+echo ""
+assert_chain_warning "$LOGS_DIR/warnings/cf-broken.log"   "cloudflare-ip-as-client" "chain-guard/cf-broken"
+assert_chain_warning "$LOGS_DIR/warnings/bogon-victim.log" "bogon-ip-as-client"      "chain-guard/bogon-victim"
+echo ""
+
 DIRECT_TOTAL=$((${#SERVERS[@]} * ${#MODULES[@]}))
 BADBOT_TOTAL=${#BADBOT_SERVERS[@]}
 BLOCKLIST_TOTAL=${#SERVERS[@]}
 CHAIN_TOTAL=$((${#CHAIN_PROXIES[@]} * ${#CHAIN_BACKENDS[@]}))
-TOTAL=$((DIRECT_TOTAL + BADBOT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL))
+CF_DIRECT_TOTAL=${#CF_BACKENDS[@]}
+CF_CHAIN_TOTAL=$((${#CF_CHAIN_PROXIES[@]} * ${#CF_CHAIN_BACKENDS[@]}))
+CHAIN_GUARD_TOTAL=2
+TOTAL=$((DIRECT_TOTAL + BADBOT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL + CF_DIRECT_TOTAL + CF_CHAIN_TOTAL + CHAIN_GUARD_TOTAL))
 
 echo "================================"
 echo "Results: $PASS passed, $FAIL failed"
@@ -316,6 +504,9 @@ echo "(${#SERVERS[@]} servers × ${#MODULES[@]} detectors = ${DIRECT_TOTAL} dire
 echo "(${#BADBOT_SERVERS[@]} servers × badbot = ${BADBOT_TOTAL} badbot checks — UA-logging servers only)"
 echo "(${#SERVERS[@]} servers × blocklist-loaded = ${BLOCKLIST_TOTAL} blocklist checks)"
 echo "(${#CHAIN_PROXIES[@]} proxies × ${#CHAIN_BACKENDS[@]} backends = ${CHAIN_TOTAL} proxy-chain checks)"
+echo "(${#CF_BACKENDS[@]} backends = ${CF_DIRECT_TOTAL} CF-direct checks)"
+echo "(${#CF_CHAIN_PROXIES[@]} proxies × ${#CF_CHAIN_BACKENDS[@]} backends = ${CF_CHAIN_TOTAL} CF-chain checks)"
+echo "(${CHAIN_GUARD_TOTAL} chain-guard warning checks)"
 echo "(total: ${TOTAL} checks)"
 echo ""
 

@@ -1,0 +1,41 @@
+general:
+  log_file: logs/nginx-bogon-victim/access.log
+  pid_file: /tmp/arxsentinel-bogon-victim.pid
+  tail_retry_interval: "2s"
+
+parser:
+  log_format: combined
+
+output:
+  threat_log: logs/threats/bogon-victim.log
+  operational_log: logs/threats/sentinel-bogon-victim.log
+
+logging:
+  console_color: false
+
+# chain_guard: detect bogon IP (10.0.0.1 injected by bogon-injector) in access log.
+# nginx-bogon-victim trusts XFF from 172.16.0.0/12, so it logs 10.0.0.1 as client IP.
+# 10.0.0.1 is RFC 1918 — the bogon checker fires CHAIN_WARN bogon-ip-as-client.
+chain_guard:
+  enabled: true
+  warnings_log: logs/warnings/bogon-victim.log
+  cloudflare:
+    enabled: false
+    sources:
+      - http://localhost:8090/test-cloudflare-cidrs.txt
+  bogon:
+    enabled: true
+
+blocklist:
+  storage: ""
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "http://localhost:8090/badbot-ua.list"
+          format: plain_text
+    - name: badbot-ref
+      refresh_interval: 24h
+      sources:
+        - url: "http://localhost:8090/badbot-ref.list"
+          format: plain_text
