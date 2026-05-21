@@ -43,7 +43,7 @@ LOG_DIR=/var/log/arxsentinel
 
 # ── 1. Build binary ───────────────────────────────────────────────────────────────────
 echo "[1/6] Building..."
-go build -o "$BINARY" .
+go build -o "$BINARY" ./cmd/arxsentinel
 
 # ── 2. System user ────────────────────────────────────────────────────────────────────
 # || true: user may already exist on repeated runs — do not abort the script.

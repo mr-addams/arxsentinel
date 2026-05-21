@@ -38,8 +38,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
-	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/internal/core/parser"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 // numericSuffixRE extracts (prefix, digits) from a URL path where the LAST segment is a pure number.

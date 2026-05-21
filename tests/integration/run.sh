@@ -50,7 +50,7 @@ trap cleanup EXIT
 if [ "$SKIP_BUILD" = false ]; then
     echo "[run] building arxsentinel..."
     mkdir -p "$REPO_ROOT/bin"
-    (cd "$REPO_ROOT" && go build -o "$BIN" .)
+    (cd "$REPO_ROOT" && go build -o "$BIN" ./cmd/arxsentinel)
     echo "[run] build done"
 fi
 

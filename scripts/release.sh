@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# Publishes a stable release by creating and merging a PR from dev into main.
+# Release: publishes a stable release by creating and merging a PR from dev into main.
 # Use instead of: git push origin main
 set -euo pipefail
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ "$BRANCH" != "dev" ]; then
-  echo "push_main: must be on dev branch, currently on $BRANCH" >&2
+  echo "release: must be on dev branch, currently on $BRANCH" >&2
   exit 1
 fi
 
 if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "push_main: uncommitted changes present, commit first" >&2
+  echo "release: uncommitted changes present, commit first" >&2
   exit 1
 fi
 
 if [ ! -f VERSION ]; then
-  echo "push_main: VERSION file not found" >&2
+  echo "release: VERSION file not found" >&2
   exit 1
 fi
 

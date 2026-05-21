@@ -24,7 +24,7 @@ e2e_test.go
 
 # Deploy (exclude all except the Docker-specific config baked into the image)
 deploy/
-!deploy/docker/config.docker.yaml
+!deploy/container/docker/config.docker.yaml
 
 # Packaging
 packaging/

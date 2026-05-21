@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mr-addams/nginx-sentinel/internal/core/chaincheck"
+	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 )
 
 // ========================== Test helpers =============================================

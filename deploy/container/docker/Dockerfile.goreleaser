@@ -14,7 +14,7 @@ ARG TARGETPLATFORM
 
 # GoReleaser places pre-built binaries in linux/{arch}/ inside the build context.
 COPY ${TARGETPLATFORM}/arxsentinel /arxsentinel
-COPY deploy/docker/config.docker.yaml /etc/arxsentinel/config.yaml
+COPY deploy/container/docker/config.docker.yaml /etc/arxsentinel/config.yaml
 
 EXPOSE 9117
 

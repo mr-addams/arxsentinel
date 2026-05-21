@@ -24,7 +24,7 @@ docker run -d \
 ## Docker Compose
 
 ```bash
-cd deploy/docker
+cd deploy/container/docker
 
 # Copy and adjust the env file
 cp .env.example .env
@@ -41,7 +41,7 @@ docker compose up -d
 docker compose logs -f arxsentinel
 ```
 
-The Compose file is at [`deploy/docker/docker-compose.yml`](deploy/docker/docker-compose.yml).
+The Compose file is at [`deploy/container/docker/docker-compose.yml`](deploy/container/docker/docker-compose.yml).
 
 ## Configuration
 
@@ -104,7 +104,7 @@ The metrics endpoint is enabled by default in the Docker image.
 # Verify the endpoint
 curl http://localhost:9117/metrics | grep arx
 
-# Add to Prometheus — paste the job from deploy/docker/prometheus-scrape.yml
+# Add to Prometheus — paste the job from deploy/container/docker/prometheus-scrape.yml
 # into your prometheus.yml scrape_configs section.
 ```
 
@@ -168,7 +168,7 @@ docker run -d \
 
 ```bash
 # Build the image (requires Docker Buildx)
-docker build --build-arg VERSION=$(cat VERSION) -t arxsentinel:local .
+docker build -f deploy/container/docker/Dockerfile --build-arg VERSION=$(cat VERSION) -t arxsentinel:local .
 
 # Run container integration tests (requires the image built above)
 go test -v -tags container ./tests/container/ -timeout 120s

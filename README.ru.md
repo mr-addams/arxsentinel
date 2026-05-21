@@ -215,7 +215,7 @@ docker run -d \
 Топология DaemonSet — один под на узел, читает access.log через `hostPath`.
 
 ```bash
-helm install arxsentinel ./deploy/helm/arxsentinel \
+helm install arxsentinel ./deploy/container/k8s/arxsentinel \
   --set logVolume.hostPath=/var/log/nginx \
   --set threatLog.hostPath=/var/log/arxsentinel
 ```
@@ -337,149 +337,11 @@ Score накапливается с линейным decay за `observation_win
 
 ## Whitelist
 
-Whitelist говорит ArxSentinel: «эти — свои, пропускай без проверки». Есть два независимых механизма: **автоматическая верификация ботов** (поисковые системы) и **кастомные исключения** (ваши IP, подсети, инструменты).
+ArxSentinel предоставляет автоматическую верификацию ботов (поисковые системы)
+и кастомные списки исключений (IP, CIDR, подстроки User-Agent). Занесённые в whitelist
+запросы пропускают все детекторы полностью.
 
-### Автоматическая верификация ботов (Googlebot, Bingbot, Яндекс и др.)
-
-ArxSentinel знает User-Agent строки всех крупных поисковых ботов. Когда такой бот приходит, выполняется DNS-проверка подлинности:
-
-1. Обратный DNS-запрос по IP → получаем hostname (например `crawl-66-249-66-1.googlebot.com`)
-2. Прямой DNS по этому hostname → должен вернуть тот же IP
-3. Hostname должен заканчиваться на один из известных доменов Google (`.googlebot.com`, `.google.com`)
-
-Оба проверки прошли → бот легитимный → пропускается, очки не начисляются.  
-Проверки не прошли → UA заявляет Googlebot, но IP не гугловский → начисляется штраф `fake_bot_score` (дефолт 35).
-
-Встроенные верифицируемые боты: Google, Bing, Яндекс, DuckDuckBot, Baidu, Apple, GPTBot, ClaudeBot и другие — см. секцию `whitelist.bots` в `config.yaml`.
-
-**Настройка не нужна** — верификация автоматическая. Результаты DNS кэшируются (`dns_cache.positive_ttl: 24h`), поэтому на производительность не влияет.
-
-### Кастомный whitelist
-
-Добавьте свои IP, подсети и инструменты в секцию `whitelist.custom`:
-
-```yaml
-whitelist:
-  custom:
-    ips:           []
-    cidrs:         []
-    ua_substrings: []
-```
-
-Запросы, совпавшие с любым пунктом, пропускаются **до** запуска детекторов — score не начисляется никогда.
-
----
-
-#### `ips` — конкретные IP-адреса
-
-Перечислите отдельные IP-адреса, которые никогда не проверяются.
-
-```yaml
-whitelist:
-  custom:
-    ips:
-      - "192.168.1.50"    # рабочая станция в офисе
-      - "10.99.99.1"      # сервер внутреннего мониторинга
-      - "203.0.113.42"    # ваш домашний IP
-```
-
-Используйте для: своих серверов, известных партнёров, офисных машин, ноутбуков разработчиков.
-
----
-
-#### `cidrs` — диапазоны IP-адресов (подсети)
-
-CIDR — компактная запись диапазона IP-адресов. Вместо того чтобы перечислять сотни адресов, пишете одну строку.
-
-Как читать: `192.168.1.0/24` означает «все адреса от `192.168.1.0` до `192.168.1.255`» — целый блок из 256 адресов. Число после `/` определяет размер блока:
-
-| Запись | Диапазон | Адресов |
-|--------|----------|---------|
-| `10.0.0.1/32` | ровно `10.0.0.1` | 1 (один IP) |
-| `192.168.1.0/24` | `192.168.1.0` – `192.168.1.255` | 256 |
-| `10.0.0.0/8` | `10.0.0.0` – `10.255.255.255` | ~16 миллионов |
-
-```yaml
-whitelist:
-  custom:
-    cidrs:
-      - "192.168.0.0/16"    # весь офис и VPN
-      - "10.0.0.0/8"        # все приватные адреса 10.x.x.x
-      - "172.16.0.0/12"     # Docker / внутренняя сеть
-```
-
-> **Как узнать свою подсеть?** Спросите системного администратора или посмотрите в сетевых настройках сервера. Хостинг-провайдеры обычно выдают блок вида `185.220.100.0/22` для вашего кластера.
-
-Используйте для: офисных сетей, VPN-подсетей, диапазонов IP Cloudflare, CDN edge-узлов, вашего кластера серверов.
-
----
-
-#### `ua_substrings` — подстроки User-Agent
-
-Если запрос содержит эту строку где угодно в заголовке User-Agent — он попадает в whitelist. Сравнение **без учёта регистра**.
-
-```yaml
-whitelist:
-  custom:
-    ua_substrings:
-      - "UptimeRobot"          # сервис мониторинга uptime
-      - "internal-healthcheck" # ваш собственный скрипт проверки
-      - "MySEOCrawler/"        # ваш SEO-инструмент
-      - "Screaming Frog SEO"   # краулер Screaming Frog
-      - "Ahrefs"               # бот Ahrefs
-      - "Semrush"              # краулер SEMrush
-```
-
-> **Для SEO-инструментов:** если ваш SEO-краулер попадает под блокировку (делает много запросов или у него подозрительный UA), добавьте его название сюда. Точную UA-строку можно посмотреть в access.log:
-> ```bash
-> grep -i "screaming\|ahrefs\|semrush\|moz\|sitebulb" /var/log/nginx/access.log | awk -F'"' '{print $6}' | sort -u
-> ```
-
-**Достаточно подстроки** — полная строка не нужна. `"Ahrefs"` совпадёт с `"AhrefsBot/7.0"` и любой будущей версией.
-
----
-
-### Применение изменений
-
-Все изменения whitelist применяются **без перезапуска демона** — отправьте сигнал перезагрузки:
-
-```bash
-# Перезагрузить конфиг (whitelist, детекторы, пороги — всё кроме пути к лог-файлу)
-systemctl kill -s HUP arxsentinel
-
-# Или через PID-файл
-kill -HUP $(cat /var/run/arxsentinel.pid)
-```
-
-Изменения вступают в силу в течение секунд. В operational-логе появится:
-
-```
-[CONFIG] reloaded: whitelist updated
-```
-
-### Полный пример
-
-```yaml
-whitelist:
-  fake_bot_score: 35        # штраф за имитацию Googlebot/Bingbot
-  dns_verify_timeout: "2s"  # таймаут DNS-верификации
-
-  custom:
-    ips:
-      - "203.0.113.42"      # домашний IP разработчика
-      - "10.99.99.1"        # мониторинг Zabbix
-
-    cidrs:
-      - "192.168.0.0/16"    # офис и VPN
-      - "10.0.0.0/8"        # приватная сеть
-
-    ua_substrings:
-      - "UptimeRobot"
-      - "Screaming Frog SEO Spider"
-      - "AhrefsBot"
-      - "SemrushBot"
-      - "MJ12bot"           # краулер Majestic
-```
+Подробно — см. [README.whitelist.ru.md](README.whitelist.ru.md), примеры и настройка.
 
 ## Архитектура
 
@@ -624,211 +486,17 @@ fail2ban-client set arxsentinel unbanip 1.2.3.4
 **Что обновляется при SIGHUP:** scorer (детекторы + пороги), whitelist matcher, debug/color флаги, пути к лог-файлам.  
 **Что НЕ обновляется:** tracker (state IP), DNS cache, TailReader (путь к access.log требует перезапуска).
 
-## JSON-формат логов
+## Форматы логов
 
-По умолчанию ArxSentinel парсит nginx combined log format (профиль не требуется) или формат, определённый активным профилем (apache, caddy, traefik, haproxy-http или litespeed).  
-Поддерживается также JSON-формат — переключается через `config.yaml` без перекомпиляции.
+ArxSentinel поддерживает три режима форматов: **combined** (стандартный nginx), **JSON** (без перекомпиляции), и **пользовательский regex** для произвольных текстовых форматов.
 
-Примеры ниже используют nginx. Для других серверов адаптируйте директиву `log_format` к вашему серверу.
+Полные примеры конфигурации, маппинг полей и типичные ошибки см. в [README.log-formats.ru.md](README.log-formats.ru.md).
 
-### Шаг 1 — Настройка HTTP-сервера (пример nginx)
+## Обратный прокси и Chain Guard
 
-Добавьте нужный `log_format` в блок `http {}` файла `nginx.conf`.
-Готовые конфиги также в [`deploy/examples/nginx-json-logformat.conf`](deploy/examples/nginx-json-logformat.conf).
+Полное руководство по деплойю за обратным прокси (HAProxy, Traefik, Caddy, nginx), включая конфигурацию извлечения реального IP и Chain Guard (обнаружение сломанной цепочки IP).
 
-**Прямой nginx (без прокси)** — `$remote_addr` содержит реальный IP клиента:
-
-```nginx
-log_format sentinel_json_direct escape=json
-    '{'
-        '"remote_addr":"$remote_addr",'
-        '"time_iso8601":"$time_iso8601",'
-        '"request":"$request",'
-        '"status":"$status",'
-        '"bytes_sent":"$bytes_sent",'
-        '"http_referer":"$http_referer",'
-        '"http_user_agent":"$http_user_agent"'
-    '}';
-
-access_log /var/log/nginx/access.log sentinel_json_direct;
-```
-
-**За обратным прокси** — настройте `ngx_http_realip_module` (см.
-[Деплой за обратным прокси](#деплой-за-обратным-прокси)).
-После обработки realip `$remote_addr` уже содержит реальный IP клиента,
-поэтому тот же формат `sentinel_json_direct` работает без изменений — отдельный proxy-вариант не нужен.
-
-### Шаг 2 — Обновить конфиг sentinel
-
-```yaml
-parser:
-  log_format: "json"   # "combined" (по умолчанию) | "json"
-```
-
-Изменение вступает в силу после **SIGHUP** — рестарт не нужен:
-
-```bash
-kill -HUP $(cat /var/run/arxsentinel.pid)
-```
-
-### Кастомные имена полей
-
-Если в вашем формате логов используются другие ключи — переопределите маппинг:
-
-```yaml
-parser:
-  log_format: "json"
-  json_fields:
-    remote_addr: "client"
-    time:        "ts"
-    request:     "req"
-    status:      "code"
-    bytes_sent:  "size"
-    referer:     "ref"
-    user_agent:  "ua"
-    real_ip:     "ip"
-```
-
-Неизвестные поля в JSON-строке игнорируются — потребляются только поля из маппинга.
-
-## Деплой за обратным прокси
-
-> **Внимание:** если HTTP-сервер стоит за прокси и реальный IP клиента настроен некорректно,
-> ArxSentinel будет выставлять score **IP-адресу прокси**, а не реальному атакующему.
-> Fail2Ban заблокирует ваш же прокси — сайт упадёт для всех.
-
-### Как это работает
-
-```
-[Клиент 1.2.3.4] → [Прокси] → X-Forwarded-For: 1.2.3.4 → [HTTP-сервер]
-                                                                   ↓
-                                ngx_http_realip_module заменяет $remote_addr
-                                первым не-доверенным IP из цепочки XFF
-                                                                   ↓
-                                                             access.log
-                                                                   ↓
-                                                            ArxSentinel
-```
-
-Модуль nginx `ngx_http_realip_module` читает `X-Forwarded-For` от доверенного прокси
-и заменяет `$remote_addr` реальным IP клиента до того, как строка пишется в лог.
-ArxSentinel читает `$remote_addr` из access.log — никакой дополнительной переменной не нужно.
-
-### Готовые конфиги
-
-Полные рабочие примеры для каждого прокси находятся в `deploy/examples/reverse-proxy/`:
-
-| Прокси | Файлы |
-|--------|-------|
-| **HAProxy** | [`haproxy/haproxy.cfg`](deploy/examples/reverse-proxy/haproxy/haproxy.cfg), [`nginx.conf`](deploy/examples/reverse-proxy/haproxy/nginx.conf) |
-| **Traefik** | [`traefik/traefik.yml`](deploy/examples/reverse-proxy/traefik/traefik.yml), [`nginx.conf`](deploy/examples/reverse-proxy/traefik/nginx.conf) |
-| **Caddy** | [`caddy/Caddyfile`](deploy/examples/reverse-proxy/caddy/Caddyfile), [`nginx.conf`](deploy/examples/reverse-proxy/caddy/nginx.conf) |
-| **nginx как RP** | [`nginx-rp/nginx-upstream.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-upstream.conf), [`nginx-origin.conf`](deploy/examples/reverse-proxy/nginx-rp/nginx-origin.conf) |
-
-Каждый пример содержит конфиг прокси и конфиг origin-nginx с `set_real_ip_from`,
-`real_ip_header X-Forwarded-For`, `real_ip_recursive on` и форматом лога `combined_realip`,
-в котором `$remote_addr` используется как поле реального IP.
-
-### Минимальный конфиг nginx (для любого прокси)
-
-```nginx
-http {
-    # Укажите реальный IP или CIDR вашего прокси.
-    # Docker Compose: 172.16.0.0/12    Один хост: 127.0.0.1
-    set_real_ip_from  <ip-или-cidr-прокси>;
-
-    # Все основные прокси (HAProxy, Traefik, Caddy, nginx) выставляют X-Forwarded-For.
-    real_ip_header    X-Forwarded-For;
-
-    # Проходим по цепочке XFF — берём первый не-доверенный IP как реальный клиент.
-    real_ip_recursive on;
-
-    # После обработки realip $remote_addr — это и есть реальный IP клиента.
-    log_format combined_realip
-        '$remote_addr - $remote_user [$time_local] '
-        '"$request" $status $body_bytes_sent '
-        '"$http_referer" "$http_user_agent" "$remote_addr"';
-
-    server {
-        access_log /var/log/nginx/access.log combined_realip;
-        ...
-    }
-}
-```
-
-### Cloudflare
-
-Если nginx стоит напрямую за Cloudflare — используйте `CF-Connecting-IP` вместо `X-Real-IP`
-(Cloudflare проставляет этот заголовок на своём edge; `X-Forwarded-For` может быть подделан клиентом).
-
-Сгенерируйте директивы `set_real_ip_from` для всех CIDR-диапазонов Cloudflare:
-
-```bash
-sudo scripts/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf
-```
-
-Добавьте в `nginx.conf`:
-
-```nginx
-http {
-    include /etc/nginx/cloudflare-real-ip.conf;  # set_real_ip_from для всех CF-диапазонов
-    real_ip_header CF-Connecting-IP;
-    ...
-}
-```
-
-**Автообновление диапазонов** (Cloudflare обновляет их периодически):
-
-```bash
-# Добавить в cron — каждый понедельник в 03:00
-0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
-```
-
-### Chain Guard — обнаружение сломанной цепочки IP
-
-ArxSentinel непрерывно проверяет, является ли client IP в каждой записи лога реальным
-маршрутизируемым адресом. Если обнаружен IP Cloudflare/CDN или bogon/CGNAT в позиции
-клиента — записывает `CHAIN_WARN` в `warnings.log`.
-
-**Почему это важно:** когда IP прокси фигурирует как client, все детекторы ArxSentinel
-оценивают не тот адрес — они фактически слепые. Fail2Ban может заблокировать ваш
-собственный Cloudflare edge вместо атакующего, положив сайт для всех посетителей.
-Это ошибка конфигурации, а не атака.
-
-**Что вызывает предупреждение:**
-
-| Условие | Предупреждение | Исправление |
-|---------|----------------|-------------|
-| IP Cloudflare в позиции client | `cloudflare-ip-as-client` | Настройте `real_ip_header CF-Connecting-IP` (nginx), `RemoteIPHeader CF-Connecting-IP` (Apache), `trustedProxies` (Traefik/Caddy) |
-| Bogon / RFC 1918 в позиции client | `bogon-ip-as-client` | Вышестоящий прокси инжектирует приватные IP в XFF; проверьте цепочку прокси и добавьте его IP в `set_real_ip_from` |
-| CGNAT (100.64.0.0/10) в позиции client | `bogon-ip-as-client` | Carrier-grade NAT выше по цепочке — настройте `real_ip_header` для извлечения реального IP из XFF |
-
-**Конфигурация:**
-
-```yaml
-chain_guard:
-  enabled: true
-  warnings_log: /var/log/arxsentinel/warnings.log
-  cloudflare:
-    enabled: true
-    refresh_interval: 24h     # автоматически перезагружает CIDR-листы Cloudflare
-    sources:
-      - https://www.cloudflare.com/ips-v4/
-      - https://www.cloudflare.com/ips-v6/
-  bogon:
-    enabled: true             # RFC 1918, CGNAT, loopback, link-local, документационные диапазоны
-```
-
-**Мониторинг warnings log:**
-
-```bash
-# Проверить наличие предупреждений chain guard
-grep CHAIN_WARN /var/log/arxsentinel/warnings.log
-
-# Подсчитать по типу
-grep -c cloudflare-ip-as-client /var/log/arxsentinel/warnings.log
-grep -c bogon-ip-as-client /var/log/arxsentinel/warnings.log
-```
+См. [`deploy/examples/reverse-proxy/README.ru.md`](deploy/examples/reverse-proxy/README.ru.md).
 
 ## Конфигурации для CMS
 
@@ -852,92 +520,14 @@ grep -c bogon-ip-as-client /var/log/arxsentinel/warnings.log
 Пути **дополняют** (а не заменяют) встроенный список sensitive-путей по умолчанию.
 Чтобы использовать только свой список, задайте в `detectors.probe.paths:` ровно те пути, которые нужны.
 
-## Произвольный формат логов (regex)
-
-Используйте любой текстовый формат логов, указав Go-регулярное выражение с именованными группами.
-
-```yaml
-parser:
-  log_format: "regex"
-  regex_pattern: '(?P<remote_addr>\S+) \S+ \S+ \[(?P<time>[^\]]+)\] "(?P<request>[^"]*)" (?P<status>\d+) (?P<bytes_sent>\d+) "(?P<http_referer>[^"]*)" "(?P<http_user_agent>[^"]*)"'
-```
-
-### Именованные группы
-
-| Группа | Обязательная | Описание |
-|--------|-------------|----------|
-| `remote_addr` | ✅ | IP-адрес клиента или прокси |
-| `time` | ✅ | Время запроса (формат `02/Jan/2006:15:04:05 -0700`) |
-| `request` | ✅ | Строка запроса: `METHOD /path HTTP/x.x` |
-| `status` | ✅ | HTTP-код ответа |
-| `bytes_sent` | ✅ | Размер ответа в байтах |
-| `http_referer` | опциональная | Значение заголовка Referer |
-| `http_user_agent` | опциональная | Значение заголовка User-Agent |
-| `real_ip` | опциональная | Реальный IP клиента из заголовка доверенного прокси |
-
-Отсутствующие опциональные группы дают пустые поля — sentinel продолжает работу.
-
-### Пример: HAProxy HTTP log
-
-```yaml
-parser:
-  log_format: "regex"
-  regex_pattern: '(?P<remote_addr>\S+):\d+ \S+ \S+/\S+ \d+/\d+/\d+/\d+/\d+ (?P<status>\d+) (?P<bytes_sent>\d+) .* "(?P<request>[^"]*)"'
-```
-
-### Типичные ошибки
-
-- **Отсутствует обязательная группа** — sentinel завершается при старте с понятным сообщением об ошибке.
-- **Неверный формат времени** — поддерживается только `02/Jan/2006:15:04:05 -0700` (nginx `$time_local`). ISO 8601 не парсится; детекторы без временны́х зависимостей работают в любом случае.
 
 ---
 
 ## Prometheus-метрики
 
-Включить в `config.yaml`:
+Включить метрики в `config.yaml`, настроить scraping в Prometheus, установить bcrypt-хеш пароля и импортировать дашборд Grafana.
 
-```yaml
-metrics:
-  enabled: true
-  listen_addr: ":9117"   # порт HTTP-сервера метрик
-  # Опциональная basic auth — оставьте username пустым для отключения:
-  username: ""
-  password_hash: ""      # bcrypt-хеш; генерацию см. в deploy/grafana/README.md
-```
-
-### Эндпоинты
-
-| Эндпоинт | Авторизация | Описание |
-|----------|-------------|----------|
-| `/metrics` | опциональная basic auth | Scrape-эндпоинт Prometheus |
-| `/health` | нет | Liveness probe — всегда возвращает `200 {"status":"ok"}` |
-
-`/health` не требует учётных данных и безопасно открывается для балансировщиков,
-Docker `HEALTHCHECK` и k8s liveness/readiness probes.
-
-### Доступные метрики
-
-| Метрика | Тип | Описание |
-|---------|-----|----------|
-| `arxsentinel_lines_processed_total` | Counter | Обработано строк лога |
-| `arxsentinel_threats_total{level}` | Counter | Угрозы по уровню (`THREAT` / `WARN`) |
-| `arxsentinel_detector_hits_total{detector}` | Counter | Срабатывания по детектору |
-| `arxsentinel_tracked_ips` | Gauge | Текущее количество отслеживаемых IP |
-| `arxsentinel_suspicious_ips` | Gauge | IP с score выше alert threshold |
-
-### Конфиг scrape для Prometheus
-
-```yaml
-scrape_configs:
-  - job_name: "arxsentinel"
-    static_configs:
-      - targets: ["localhost:9117"]
-    # basic_auth:          # только если авторизация включена в конфиге sentinel
-    #   username: "prometheus"
-    #   password: "ваш-пароль-открытым-текстом"
-```
-
-Настройка дашборда Grafana — в [`deploy/grafana/README.md`](deploy/grafana/README.md).
+Полное руководство: [`deploy/grafana/README.ru.md`](deploy/grafana/README.ru.md)
 
 ---
 

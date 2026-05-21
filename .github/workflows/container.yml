@@ -36,7 +36,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile
+          file: deploy/container/docker/Dockerfile
           build-args: VERSION=${{ steps.version.outputs.version }}
           tags: arxsentinel:local
           load: true   # load into local docker daemon for tests

@@ -33,7 +33,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
       -trimpath \
       -ldflags="-s -w -X main.version=${VERSION}" \
       -o /out/arxsentinel \
-      .
+      ./cmd/arxsentinel
 
 # ── Stage 2: final ────────────────────────────────────────────────────────────────────────
 # distroless/static: no libc, no shell, no package manager.
@@ -42,7 +42,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 
 # Copy binary and container-specific defaults config.
 COPY --from=builder /out/arxsentinel /arxsentinel
-COPY deploy/docker/config.docker.yaml /etc/arxsentinel/config.yaml
+COPY deploy/container/docker/config.docker.yaml /etc/arxsentinel/config.yaml
 
 # 9117 — Prometheus /metrics endpoint (metrics.listen_addr default).
 EXPOSE 9117

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
-	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/internal/core/parser"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 // ========================== Helper functions ===================================

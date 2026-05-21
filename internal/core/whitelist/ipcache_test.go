@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 // testCacheConfig returns a cache config with short TTLs for tests.
