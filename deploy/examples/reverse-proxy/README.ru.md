@@ -4,6 +4,10 @@
 > ArxSentinel будет выставлять score **IP-адресу прокси**, а не реальному атакующему.
 > Fail2Ban заблокирует ваш же прокси — сайт упадёт для всех.
 
+> **Примечание:** ArxSentinel читает access-логи там, где веб-сервер уже извлёк реальный IP клиента.
+> В конфиге sentinel не нужны никакие `trusted_proxies` или прокси-специфичные настройки —
+> это полностью ответственность веб-сервера.
+
 ## Как это работает
 
 ```
@@ -80,9 +84,38 @@ sudo scripts/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf
 http {
     include /etc/nginx/cloudflare-real-ip.conf;  # set_real_ip_from для всех CF-диапазонов
     real_ip_header CF-Connecting-IP;
+    real_ip_recursive on;  # ОБЯЗАТЕЛЕН при CF → proxy → origin
     ...
 }
 ```
+
+**Почему `real_ip_recursive on` обязателен для цепочки CF → proxy → origin:**
+
+Когда Cloudflare на краю, трафик идёт: `[Клиент] → [CF edge] → [Ваш прокси] → [nginx origin]`.
+
+XFF-цепочка приходит в nginx как:
+```
+X-Forwarded-For: <attacker-ip>, <cloudflare-edge-ip>, <your-proxy-ip>, ...
+```
+
+Без `real_ip_recursive on` nginx использует `CF-Connecting-IP` для извлечения CF-IP
+и удаляет её из цепочки. Но **на этом останавливается** — рассматривая первый оставшийся
+значение в XFF (IP вашего прокси) как не-доверенное и оставляя его как `$remote_addr`.
+Результат: ArxSentinel видит IP прокси, а не атакующего.
+
+С `real_ip_recursive on` nginx продолжает проходить по XFF-цепочке: видит, что IP прокси
+тоже в `set_real_ip_from`, удаляет его, и продолжает, пока не найдёт первый не-доверенный IP
+(реального атакующего). Пример:
+
+```
+X-Forwarded-For: 203.0.113.50, 104.16.0.1, 192.168.1.100
+                 ↑attacker     ↑CF edge       ↑your proxy
+                                                          ↓
+real_ip_recursive проходит цепочку: CF edge — доверен (удален),
+IP прокси — доверен (удален), IP атакующего остался → $remote_addr = 203.0.113.50
+```
+
+Без рекурсии nginx остановился бы после удаления CF edge, оставив IP прокси как `$remote_addr`.
 
 **Автообновление диапазонов** (Cloudflare обновляет их периодически):
 
@@ -90,6 +123,66 @@ http {
 # Добавить в cron — каждый понедельник в 03:00
 0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
 ```
+
+## Нечинжовые origin-сервера за прокси
+
+Если origin-сервер **не nginx** — HAProxy, Traefik, Caddy, Apache или LiteSpeed —
+действует тот же принцип: origin должен **логировать реальный IP клиента** (из `X-Forwarded-For`
+или эквивалента), и ArxSentinel читает этот лог. Вот минимальные конфиги для каждого:
+
+### HAProxy
+
+```haproxy
+frontend http-in
+    bind *:80
+    http-request set-var(txn.client_ip) req.hdr_ip(X-Forwarded-For,1)
+    log-format "%[var(txn.client_ip)]:%cp [%tr] %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %{+Q}r"
+```
+
+`req.hdr_ip(X-Forwarded-For,1)` извлекает первый IP из XFF-цепочки — реального клиента.
+Логирование этого вместо `%ci` (прямого пирного IP) гарантирует, что ArxSentinel
+оценит атакующего, а не вышестоящий прокси.
+
+### Traefik
+
+```yaml
+entryPoints:
+  web:
+    address: ":80"
+    forwardedHeaders:
+      trustedIPs:
+        - "172.16.0.0/12"  # Docker-подсеть или CIDR вашего прокси
+```
+
+Параметр `trustedIPs` приказывает Traefik доверять `X-Forwarded-For` из этой подсети.
+Без этого Traefik игнорирует входящий XFF и логирует IP прокси.
+
+### Caddy
+
+```caddy
+:80 {
+    reverse_proxy upstream-server:80
+    log {
+        output file /var/log/caddy/access.log
+        format transform `{request>headers>X-Forwarded-For>[0]:request>remote_ip} - - [{ts}] "{request>method} {request>uri} {request>proto}" {status} {size} "{request>headers>Referer>[0]}" "{request>headers>User-Agent>[0]}"` {
+            time_format "02/Jan/2006:15:04:05 -0700"
+        }
+    }
+}
+```
+
+Формат лога transform читает `X-Forwarded-For[0]` (реальный IP клиента) и выводит
+его как поле remote_ip в Apache CLF — совместимо с парсерами ArxSentinel.
+
+### LiteSpeed
+
+```python
+# В patch-ols-logformat.py (запустить на этапе build контейнера):
+LOG_FORMAT_LINE = '    logFormat             "%{X-Forwarded-For}i %l %u %t \\"%r\\" %>s %b"\n'
+```
+
+В LiteSpeed формат лога использует Apache-стиль `%{X-Forwarded-For}i` для логирования
+значения XFF-заголовка как IP клиента. Этот формат соответствует профилю `litespeed` ArxSentinel.
 
 ## Chain Guard — обнаружение сломанной цепочки IP
 
