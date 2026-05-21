@@ -37,7 +37,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 // ========================== Resolver interface =========================================

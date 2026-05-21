@@ -30,8 +30,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/mr-addams/nginx-sentinel/internal/core/blocklist"
-	"github.com/mr-addams/nginx-sentinel/internal/core/chaincheck"
+	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
+	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 )
 
 // ========================== Duration helper type =======================================

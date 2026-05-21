@@ -154,7 +154,7 @@ nfpms:
         type: config
 
 dockers_v2:
-  - dockerfile: Dockerfile.goreleaser
+  - dockerfile: deploy/container/docker/Dockerfile.goreleaser
     images:
       - "ghcr.io/mr-addams/arxsentinel"
     tags:
@@ -166,7 +166,7 @@ dockers_v2:
     # extra_files are copied into the build context preserving their relative path from the project root.
     # Required because dockers_v2 uses a temp dir (not project root) as the build context.
     extra_files:
-      - deploy/docker/config.docker.yaml
+      - deploy/container/docker/config.docker.yaml
     labels:
       "org.opencontainers.image.title": "arxsentinel"
       "org.opencontainers.image.description": "nginx access log analyzer with Fail2Ban integration"

@@ -28,7 +28,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mr-addams/nginx-sentinel/internal/core/chaincheck"
+	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 )
 
 // ========================== WarningsWriter ============================================

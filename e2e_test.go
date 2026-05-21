@@ -20,12 +20,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mr-addams/nginx-sentinel/internal/core/output"
-	"github.com/mr-addams/nginx-sentinel/internal/core/parser"
-	"github.com/mr-addams/nginx-sentinel/internal/core/scorer"
-	"github.com/mr-addams/nginx-sentinel/internal/core/state"
-	"github.com/mr-addams/nginx-sentinel/internal/core/whitelist"
-	"github.com/mr-addams/nginx-sentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/internal/core/output"
+	"github.com/mr-addams/arxsentinel/internal/core/parser"
+	"github.com/mr-addams/arxsentinel/internal/core/scorer"
+	"github.com/mr-addams/arxsentinel/internal/core/state"
+	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 // e2eMaxLineBytes — scanner buffer limit matching tail.go:maxLineSize.
@@ -33,7 +33,7 @@ import (
 const e2eMaxLineBytes = 64 * 1024
 
 // fail2banRE — regexp matching the full structure of a threat-log line.
-// Reproduces the failregex from deploy/fail2ban/filter.d/nginx-sentinel.conf
+// Reproduces the failregex from deploy/fail2ban/filter.d/arxsentinel.conf
 // and additionally checks for modules= and reason= — format regressions are caught immediately.
 // modules=\S* (not \S+): the field may be empty when score carries over with no new detectors.
 var fail2banRE = regexp.MustCompile(`(WARN|THREAT)\s+\S+\s+score=\d+\s+modules=\S*\s+reason=`)

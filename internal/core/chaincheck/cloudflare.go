@@ -33,7 +33,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
+	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 )
 
 // fallbackCloudflareV4 holds known Cloudflare IPv4 CIDRs as of May 2026.

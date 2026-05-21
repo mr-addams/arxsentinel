@@ -43,7 +43,7 @@ import (
 	"github.com/rrethy/ahocorasick"
 	bolt "go.etcd.io/bbolt"
 
-	"github.com/mr-addams/nginx-sentinel/internal/sys/utils"
+	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 )
 
 // fetchSizeLimit caps the response body — protects against memory exhaustion

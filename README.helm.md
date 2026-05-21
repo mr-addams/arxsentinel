@@ -14,7 +14,7 @@ configurable host directory for Fail2Ban integration.
 
 ```bash
 # Watch /var/log/nginx on every node, metrics only (no Fail2Ban)
-helm install arxsentinel ./deploy/helm/arxsentinel \
+helm install arxsentinel ./deploy/container/k8s/arxsentinel \
   --set logVolume.hostPath=/var/log/nginx
 ```
 
@@ -26,7 +26,7 @@ helm install arxsentinel ./deploy/helm/arxsentinel \
 sudo mkdir -p /var/log/arxsentinel
 sudo chown 65532:65532 /var/log/arxsentinel
 
-helm install arxsentinel ./deploy/helm/arxsentinel \
+helm install arxsentinel ./deploy/container/k8s/arxsentinel \
   --set logVolume.hostPath=/var/log/nginx \
   --set threatLog.hostPath=/var/log/arxsentinel
 ```
@@ -62,7 +62,7 @@ Set `threatLog.hostPath` to a directory present on every node.
 Fail2Ban on the host reads `threats.log` from that directory:
 
 ```bash
-helm upgrade arxsentinel ./deploy/helm/arxsentinel \
+helm upgrade arxsentinel ./deploy/container/k8s/arxsentinel \
   --set threatLog.hostPath=/var/log/arxsentinel
 ```
 
@@ -83,7 +83,7 @@ Filter and jail configs: [`deploy/fail2ban/`](deploy/fail2ban/).
 ## Prometheus Operator integration (ServiceMonitor)
 
 ```bash
-helm upgrade arxsentinel ./deploy/helm/arxsentinel \
+helm upgrade arxsentinel ./deploy/container/k8s/arxsentinel \
   --set serviceMonitor.enabled=true \
   --set serviceMonitor.namespace=monitoring \
   --set serviceMonitor.additionalLabels.release=prometheus
@@ -96,7 +96,7 @@ The `ServiceMonitor` targets port `metrics` (9117) on the ArxSentinel `ClusterIP
 By default, DaemonSet pods are not scheduled on control-plane nodes. Add a toleration:
 
 ```bash
-helm upgrade arxsentinel ./deploy/helm/arxsentinel \
+helm upgrade arxsentinel ./deploy/container/k8s/arxsentinel \
   --set "tolerations[0].key=node-role.kubernetes.io/control-plane" \
   --set "tolerations[0].operator=Exists" \
   --set "tolerations[0].effect=NoSchedule"
@@ -117,7 +117,7 @@ env:
 ```
 
 ```bash
-helm upgrade arxsentinel ./deploy/helm/arxsentinel -f values-production.yaml
+helm upgrade arxsentinel ./deploy/container/k8s/arxsentinel -f values-production.yaml
 ```
 
 ## Cloud environments (managed Kubernetes)
@@ -137,7 +137,7 @@ dependency for cloud deployments.
 ## Upgrade
 
 ```bash
-helm upgrade arxsentinel ./deploy/helm/arxsentinel
+helm upgrade arxsentinel ./deploy/container/k8s/arxsentinel
 ```
 
 Pods are restarted automatically when the ConfigMap checksum changes.

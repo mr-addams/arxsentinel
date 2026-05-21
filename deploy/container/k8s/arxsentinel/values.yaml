@@ -4,11 +4,11 @@
 #   Each pod writes threats.log to a configurable hostPath for Fail2Ban on that node.
 #
 #   Minimal install:
-#     helm install arxsentinel ./deploy/helm/arxsentinel \
+#     helm install arxsentinel ./deploy/container/k8s/arxsentinel \
 #       --set logVolume.hostPath=/var/log/nginx
 #
 #   Full install with Fail2Ban on bare-metal / k3s:
-#     helm install arxsentinel ./deploy/helm/arxsentinel \
+#     helm install arxsentinel ./deploy/container/k8s/arxsentinel \
 #       --set logVolume.hostPath=/var/log/nginx \
 #       --set threatLog.hostPath=/var/log/arxsentinel
 #

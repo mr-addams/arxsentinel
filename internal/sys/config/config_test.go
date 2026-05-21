@@ -18,7 +18,7 @@ import (
 func TestLoadConfig_Defaults(t *testing.T) {
 	// Non-existent path → LoadConfig must return defaults without an error.
 	// This allows the daemon to start out of the box without config.yaml.
-	cfg, err := LoadConfig("/nonexistent/path/nginx-sentinel-test-config.yaml")
+	cfg, err := LoadConfig("/nonexistent/path/arxsentinel-test-config.yaml")
 	if err != nil {
 		t.Fatalf("non-existent config must return defaults without error, got: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestLoadConfig_StderrOnMissingFile(t *testing.T) {
 	}
 	os.Stderr = w
 
-	LoadConfig("/nonexistent/path/nginx-sentinel-test-stderr.yaml")
+	LoadConfig("/nonexistent/path/arxsentinel-test-stderr.yaml")
 
 	w.Close()
 	os.Stderr = origStderr
@@ -278,7 +278,7 @@ parser:
 general:
   log_file: /var/log/nginx/access.log
 output:
-  threat_log: /var/log/nginx-sentinel/threats.log
+  threat_log: /var/log/arxsentinel/threats.log
 `)
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -309,7 +309,7 @@ parser:
 general:
   log_file: /var/log/apache2/access.log
 output:
-  threat_log: /var/log/nginx-sentinel/threats.log
+  threat_log: /var/log/arxsentinel/threats.log
 `)
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -336,7 +336,7 @@ func TestLoadConfig_BackwardCompat_SingleStream(t *testing.T) {
 general:
   log_file: /var/log/nginx/access.log
 output:
-  threat_log: /var/log/nginx-sentinel/threats.log
+  threat_log: /var/log/arxsentinel/threats.log
 `)
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -352,8 +352,8 @@ output:
 	if s.LogFile != "/var/log/nginx/access.log" {
 		t.Errorf("Streams[0].LogFile: want %q, got %q", "/var/log/nginx/access.log", s.LogFile)
 	}
-	if s.ThreatLog != "/var/log/nginx-sentinel/threats.log" {
-		t.Errorf("Streams[0].ThreatLog: want %q, got %q", "/var/log/nginx-sentinel/threats.log", s.ThreatLog)
+	if s.ThreatLog != "/var/log/arxsentinel/threats.log" {
+		t.Errorf("Streams[0].ThreatLog: want %q, got %q", "/var/log/arxsentinel/threats.log", s.ThreatLog)
 	}
 }
 
@@ -363,10 +363,10 @@ func TestLoadConfig_MultiStream(t *testing.T) {
 streams:
   - name: site1
     log_file: /var/log/nginx/site1.access.log
-    threat_log: /var/log/nginx-sentinel/site1.threats.log
+    threat_log: /var/log/arxsentinel/site1.threats.log
   - name: site2
     log_file: /var/log/nginx/site2.access.log
-    threat_log: /var/log/nginx-sentinel/site2.threats.log
+    threat_log: /var/log/arxsentinel/site2.threats.log
 `)
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -392,9 +392,9 @@ general:
 streams:
   - name: site1
     log_file: /var/log/nginx/site1.access.log
-    threat_log: /var/log/nginx-sentinel/site1.threats.log
+    threat_log: /var/log/arxsentinel/site1.threats.log
 output:
-  threat_log: /var/log/nginx-sentinel/threats.log
+  threat_log: /var/log/arxsentinel/threats.log
 `)
 	_, err := LoadConfig(path)
 	if err == nil {
@@ -410,7 +410,7 @@ func TestLoadConfig_StreamMissingLogFile(t *testing.T) {
 	path := writeTempYAML(t, `
 streams:
   - name: site1
-    threat_log: /var/log/nginx-sentinel/site1.threats.log
+    threat_log: /var/log/arxsentinel/site1.threats.log
 `)
 	_, err := LoadConfig(path)
 	if err == nil {
@@ -907,7 +907,7 @@ chain_guard:
 // writeTempYAML creates a temporary file with the given content and returns its path.
 func writeTempYAML(t *testing.T, content string) string {
 	t.Helper()
-	f, err := os.CreateTemp("", "nginx-sentinel-test-*.yaml")
+	f, err := os.CreateTemp("", "arxsentinel-test-*.yaml")
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}

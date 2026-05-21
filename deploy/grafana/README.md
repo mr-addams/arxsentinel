@@ -7,42 +7,7 @@
 
 ---
 
-## Step 1 — Configure Prometheus scrape job
-
-Add to `prometheus.yml`:
-
-```yaml
-scrape_configs:
-  - job_name: "arxsentinel"
-    static_configs:
-      - targets: ["localhost:9117"]
-    # If basic auth is enabled (see Step 2):
-    # basic_auth:
-    #   username: "prometheus"
-    #   password: "your-plaintext-password"
-```
-
-Then reload Prometheus:
-
-```bash
-curl -X POST http://localhost:9090/-/reload
-# or: systemctl reload prometheus
-```
-
-Verify the target is up: `http://localhost:9090/targets`
-
----
-
-## Available endpoints
-
-| Endpoint | Auth | Description |
-|----------|------|-------------|
-| `/metrics` | optional basic auth | Prometheus scrape endpoint |
-| `/health` | none | Liveness probe — always returns `200 {"status":"ok"}` |
-
----
-
-## Step 2 — Enable metrics in sentinel config (optional: basic auth)
+## Step 1 — Enable metrics in sentinel config (optional: basic auth)
 
 In `config.yaml`:
 
@@ -90,7 +55,63 @@ metrics:
 
 ---
 
-## Step 3 — Import the dashboard into Grafana
+## Step 2 — Available endpoints
+
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `/metrics` | optional basic auth | Prometheus scrape endpoint |
+| `/health` | none | Liveness probe — always returns `200 {"status":"ok"}` |
+
+---
+
+## Step 3 — Available metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `arxsentinel_lines_processed_total` | Counter | Log lines processed |
+| `arxsentinel_threats_total{level}` | Counter | Threats by level (`THREAT` / `WARN`) |
+| `arxsentinel_detector_hits_total{detector}` | Counter | Hits per detector name |
+| `arxsentinel_tracked_ips` | Gauge | Currently tracked IPs |
+| `arxsentinel_suspicious_ips` | Gauge | IPs with score above alert threshold |
+
+---
+
+## Step 4 — Configure Prometheus scrape job
+
+Add to `prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: "arxsentinel"
+    static_configs:
+      - targets: ["localhost:9117"]
+    # If basic auth is enabled (see Step 2):
+    # basic_auth:
+    #   username: "prometheus"
+    #   password: "your-plaintext-password"
+```
+
+Then reload Prometheus:
+
+```bash
+curl -X POST http://localhost:9090/-/reload
+# or: systemctl reload prometheus
+```
+
+Verify the target is up: `http://localhost:9090/targets`
+
+---
+
+## Available endpoints
+
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `/metrics` | optional basic auth | Prometheus scrape endpoint |
+| `/health` | none | Liveness probe — always returns `200 {"status":"ok"}` |
+
+---
+
+## Step 5 — Import the dashboard into Grafana
 
 ### Via Grafana UI
 
