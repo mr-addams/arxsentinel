@@ -30,7 +30,7 @@ severity, description, and proposed resolution.
   expects cmd/<binary>/main.go. Deferred due to high coordination cost (6+ files to update).
 - **Resolution:** Dedicated flow — update goreleaser, Dockerfiles, install.sh, packaging,
   CI workflow, all documentation references in one atomic set of commits.
-- **Status:** open
+- **Status:** resolved (Flow #028)
 
 ---
 
