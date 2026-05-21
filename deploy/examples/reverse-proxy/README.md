@@ -4,6 +4,10 @@
 > ArxSentinel will score the **proxy's IP address** instead of the real attacker.
 > Fail2Ban will then ban your own proxy — taking the site down for everyone.
 
+> **Note:** ArxSentinel reads access logs where the web server has already extracted
+> the real client IP. No `trusted_proxies` or proxy-specific settings are needed in
+> the sentinel config — that is entirely the web server's responsibility.
+
 ## How it works
 
 ```
@@ -80,9 +84,38 @@ Add to `nginx.conf`:
 http {
     include /etc/nginx/cloudflare-real-ip.conf;  # set_real_ip_from for all CF ranges
     real_ip_header CF-Connecting-IP;
+    real_ip_recursive on;  # REQUIRED when CF → proxy → origin
     ...
 }
 ```
+
+**Why `real_ip_recursive on` is mandatory for CF → proxy → origin chains:**
+
+When Cloudflare sits at the edge, traffic flows: `[Client IP] → [Cloudflare edge] → [Your proxy] → [nginx origin]`.
+
+The XFF chain arrives at nginx as:
+```
+X-Forwarded-For: <attacker-ip>, <cloudflare-edge-ip>, <your-proxy-ip>, ...
+```
+
+Without `real_ip_recursive on`, nginx uses `CF-Connecting-IP` to extract the Cloudflare IP
+and removes it from the chain. But **it stops there** — treating the first remaining value
+in XFF (your proxy's IP) as untrusted and leaving it as `$remote_addr`. Result: ArxSentinel
+sees the proxy IP, not the attacker.
+
+With `real_ip_recursive on`, nginx continues walking the XFF chain: it sees that the proxy IP
+is also in `set_real_ip_from`, removes it, and continues until it finds the first non-trusted IP
+(the real attacker). Example:
+
+```
+X-Forwarded-For: 203.0.113.50, 104.16.0.1, 192.168.1.100
+                 ↑attacker     ↑CF edge       ↑your proxy
+                                                           ↓
+real_ip_recursive walks the chain: CF edge is trusted (removed),
+proxy IP is trusted (removed), attacker IP left → $remote_addr = 203.0.113.50
+```
+
+Without recursion, nginx would stop after removing the CF edge, leaving the proxy IP as `$remote_addr`.
 
 **Auto-update IP ranges** (Cloudflare updates them periodically):
 
@@ -90,6 +123,66 @@ http {
 # Add to cron — every Monday at 03:00
 0 3 * * 1 /path/to/update-cloudflare-ips.sh /etc/nginx/cloudflare-real-ip.conf && nginx -t && nginx -s reload
 ```
+
+## Non-nginx origins behind a proxy
+
+If your origin server is **not nginx** — HAProxy, Traefik, Caddy, Apache, or LiteSpeed —
+the same principle applies: the origin must **log the real client IP** (from `X-Forwarded-For`
+or equivalent), and ArxSentinel reads that log. Here are the minimum configs per origin:
+
+### HAProxy
+
+```haproxy
+frontend http-in
+    bind *:80
+    http-request set-var(txn.client_ip) req.hdr_ip(X-Forwarded-For,1)
+    log-format "%[var(txn.client_ip)]:%cp [%tr] %ft %b/%s %TR/%Tw/%Tc/%Tr/%Ta %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %{+Q}r"
+```
+
+The `req.hdr_ip(X-Forwarded-For,1)` extracts the first IP from the XFF chain — the
+real client. Logging this instead of `%ci` (direct peer IP) ensures ArxSentinel scores
+the attacker, not the upstream proxy.
+
+### Traefik
+
+```yaml
+entryPoints:
+  web:
+    address: ":80"
+    forwardedHeaders:
+      trustedIPs:
+        - "172.16.0.0/12"  # Docker subnet, or your upstream proxy CIDR
+```
+
+The `trustedIPs` setting tells Traefik to trust `X-Forwarded-For` from that subnet.
+Without it, Traefik ignores incoming XFF and logs the proxy IP.
+
+### Caddy
+
+```caddy
+:80 {
+    reverse_proxy upstream-server:80
+    log {
+        output file /var/log/caddy/access.log
+        format transform `{request>headers>X-Forwarded-For>[0]:request>remote_ip} - - [{ts}] "{request>method} {request>uri} {request>proto}" {status} {size} "{request>headers>Referer>[0]}" "{request>headers>User-Agent>[0]}"` {
+            time_format "02/Jan/2006:15:04:05 -0700"
+        }
+    }
+}
+```
+
+The transform log format reads `X-Forwarded-For[0]` (the real client IP) and outputs
+it as the remote_ip field in Apache CLF format — compatible with ArxSentinel's parsers.
+
+### LiteSpeed
+
+```python
+# In patch-ols-logformat.py (run at container build time):
+LOG_FORMAT_LINE = '    logFormat             "%{X-Forwarded-For}i %l %u %t \\"%r\\" %>s %b"\n'
+```
+
+LiteSpeed's log format uses Apache-style `%{X-Forwarded-For}i` to log the XFF header
+value as the client IP. This format matches the `litespeed` ArxSentinel profile.
 
 ## Chain Guard — detecting broken IP extraction
 
