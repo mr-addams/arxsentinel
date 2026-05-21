@@ -33,7 +33,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
       -trimpath \
       -ldflags="-s -w -X main.version=${VERSION}" \
       -o /out/arxsentinel \
-      .
+      ./cmd/arxsentinel
 
 # ── Stage 2: final ────────────────────────────────────────────────────────────────────────
 # distroless/static: no libc, no shell, no package manager.

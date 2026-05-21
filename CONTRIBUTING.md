@@ -1,4 +1,4 @@
-# Contributing to nginx-sentinel
+# Contributing to ArxSentinel
 
 Thank you for your interest in contributing!
 
@@ -10,14 +10,14 @@ Thank you for your interest in contributing!
 
 ## Before you start
 
-- Check [open issues](https://github.com/mr-addams/nginx-sentinel/issues) to avoid duplicates
+- Check [open issues](https://github.com/mr-addams/arxsentinel/issues) to avoid duplicates
 - For significant changes, open an issue first to discuss the approach
 
 ## Development setup
 
 ```bash
-git clone https://github.com/mr-addams/nginx-sentinel
-cd nginx-sentinel
+git clone https://github.com/mr-addams/arxsentinel
+cd arxsentinel
 go mod tidy
 go build ./...
 go test ./...
@@ -41,7 +41,7 @@ go test -tags e2e ./... -v
 
 1. Create `internal/core/detector/yourdetector.go` implementing the `Detector` interface
 2. Add config fields to `internal/sys/config/config.go`
-3. Register the detector in `main.go` `buildDetectors()`
+3. Register the detector in `cmd/arxsentinel/main.go` `buildDetectors()`
 4. Add a test in `internal/core/detector/yourdetector_test.go`
 5. Document the detector in `README.md` under the Detectors table
 

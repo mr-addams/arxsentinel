@@ -6,6 +6,7 @@ before:
 
 builds:
   - binary: arxsentinel
+    main: ./cmd/arxsentinel
     goos:
       - linux
     goarch:

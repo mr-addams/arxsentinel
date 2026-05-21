@@ -13,7 +13,7 @@
 set -euo pipefail
 
 echo "[pre-commit] checking startup/shutdown invariants..."
-go test . -run TestStartupShutdownInvariants -count=1 -timeout 30s
+go test ./cmd/arxsentinel -run TestStartupShutdownInvariants -count=1 -timeout 30s
 
 echo "[pre-commit] running full test suite..."
 go test ./... -count=1 -timeout 120s
