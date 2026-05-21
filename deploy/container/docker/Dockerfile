@@ -42,7 +42,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 
 # Copy binary and container-specific defaults config.
 COPY --from=builder /out/arxsentinel /arxsentinel
-COPY deploy/docker/config.docker.yaml /etc/arxsentinel/config.yaml
+COPY deploy/container/docker/config.docker.yaml /etc/arxsentinel/config.yaml
 
 # 9117 — Prometheus /metrics endpoint (metrics.listen_addr default).
 EXPOSE 9117
