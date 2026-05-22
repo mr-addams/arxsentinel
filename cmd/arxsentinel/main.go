@@ -56,6 +56,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"flag"
 	"fmt"
 	"net"
 	"net/http"
@@ -127,6 +128,17 @@ type SharedResources struct {
 const configPath = "/etc/arxsentinel/config.yaml"
 
 func main() {
+	// ── CLI flags ─────────────────────────────────────────────────────────────────────
+
+	showVersion := flag.Bool("version", false, "print version and exit")
+	flag.BoolVar(showVersion, "v", false, "print version and exit (shorthand)")
+	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("arxsentinel " + version)
+		os.Exit(0)
+	}
+
 	// ── Config loading ────────────────────────────────────────────────────────────────
 
 	path := configPath
@@ -334,6 +346,10 @@ func main() {
 		wg.Add(1)
 		go runStream(ctx, path, cfg, streamCfg, ipCache, resolver, reloadChs[i], &wg, shared)
 	}
+
+	// Notify systemd that all streams are running and the service is ready.
+	// Status= appears in `systemctl status` output.
+	sdNotify("READY=1\nSTATUS=" + version + " running")
 
 	metricsWg.Wait()
 	wg.Wait()
@@ -789,6 +805,30 @@ func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 		}
 	}
 	pipe.ThreatLogger.Log(entry.RealIP, score, level, modules, reason)
+}
+
+// ========================== systemd notify ===============================================
+
+// sdNotify sends a state notification to systemd via NOTIFY_SOCKET.
+// Called once after all streams start: READY=1 marks the service active,
+// STATUS= appears in `systemctl status` output.
+// No-op when NOTIFY_SOCKET is absent (non-systemd environments, tests).
+func sdNotify(state string) {
+	socket := os.Getenv("NOTIFY_SOCKET")
+	if socket == "" {
+		return
+	}
+	addr := socket
+	// Abstract namespace socket: "@" prefix → replace with null byte per sd_notify spec.
+	if len(addr) > 0 && addr[0] == '@' {
+		addr = "\x00" + addr[1:]
+	}
+	conn, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: addr, Net: "unixgram"})
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	_, _ = conn.Write([]byte(state))
 }
 
 // ========================== Metrics auth ================================================

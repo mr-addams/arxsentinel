@@ -1,4 +1,4 @@
-# nginx-sentinel — WordPress-specific probe paths override
+# arxsentinel — WordPress-specific probe paths override
 #
 # Copy the paths below into your config.yaml to harden detection
 # against WordPress-targeted scanners and exploit kits.
@@ -8,7 +8,7 @@
 #   These paths extend (or replace) the default probe path list.
 #
 # Apply without restart:
-#   kill -HUP $(pgrep nginx-sentinel)   # or systemctl kill -s HUP nginx-sentinel
+#   kill -HUP $(pgrep arxsentinel)   # or systemctl kill -s HUP arxsentinel
 
 detectors:
   probe:

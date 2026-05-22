@@ -1,4 +1,4 @@
-# nginx-sentinel config for Apache httpd.
+# arxsentinel config for Apache httpd.
 # Uses the built-in "apache" profile (Apache Combined Log Format).
 
 parser:
@@ -8,7 +8,7 @@ general:
   log_file: /var/log/apache2/access.log
 
 output:
-  threat_log: /var/log/nginx-sentinel/threats.log
+  threat_log: /var/log/arxsentinel/threats.log
 
 # All other settings use defaults.
-# See the full reference: https://github.com/mr-addams/nginx-sentinel#configuration
+# See the full reference: https://github.com/mr-addams/arxsentinel#configuration

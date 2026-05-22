@@ -831,7 +831,7 @@ func defaultConfig() Config {
 		General: GeneralConfig{
 			// LogFile default is applied lazily in the backward-compat block below
 			// so it does not conflict with streams: when streams: is explicitly set.
-			PIDFile:           "/var/run/arxsentinel.pid",
+			PIDFile:           "/run/arxsentinel/arxsentinel.pid",
 			LinesBufSize:      1000,
 			TailRetryInterval: Duration(5 * time.Second),
 			StatsInterval:     Duration(300 * time.Second),

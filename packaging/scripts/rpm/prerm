@@ -5,11 +5,11 @@ set -euo pipefail
 # Stop and disable only on full uninstall; on upgrade RPM restarts the service itself.
 if [ "$1" -eq 0 ]; then
     if command -v systemctl >/dev/null 2>&1; then
-        if systemctl is-active --quiet nginx-sentinel 2>/dev/null; then
-            systemctl stop nginx-sentinel || true
+        if systemctl is-active --quiet arxsentinel 2>/dev/null; then
+            systemctl stop arxsentinel || true
         fi
-        if systemctl is-enabled --quiet nginx-sentinel 2>/dev/null; then
-            systemctl disable nginx-sentinel || true
+        if systemctl is-enabled --quiet arxsentinel 2>/dev/null; then
+            systemctl disable arxsentinel || true
         fi
     fi
 fi

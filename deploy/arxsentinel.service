@@ -4,13 +4,17 @@ Documentation=https://github.com/mr-addams/arxsentinel
 After=network.target
 
 [Service]
-# Type=simple: the Go daemon does not fork, systemd tracks the PID directly.
-Type=simple
+# Type=notify: daemon sends READY=1 via sd_notify after all streams are running.
+# systemd waits for the notification before marking the service active.
+Type=notify
 # Unprivileged system user — access only to arxsentinel logs and its own files.
 User=arxsentinel
 Group=arxsentinel
 # EnvironmentFile is optional (-): absence of the file does not crash the service.
 EnvironmentFile=-/etc/arxsentinel/env
+# RuntimeDirectory: systemd creates /run/arxsentinel/ owned by the service user before
+# ExecStart — the process can write its PID file there without root privileges.
+RuntimeDirectory=arxsentinel
 ExecStart=/usr/local/bin/arxsentinel
 # Restart=on-failure: restart on crash, but not on systemctl stop (ExitCode=0).
 Restart=on-failure

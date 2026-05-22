@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-SENTINEL_USER="nginx-sentinel"
-LOG_DIR="/var/log/nginx-sentinel"
-CFG_DIR="/etc/nginx-sentinel"
+SENTINEL_USER="arxsentinel"
+LOG_DIR="/var/log/arxsentinel"
+CFG_DIR="/etc/arxsentinel"
 CFG_EXAMPLE="${CFG_DIR}/config.yaml.example"
 CFG_FILE="${CFG_DIR}/config.yaml"
 
@@ -12,7 +12,7 @@ CFG_FILE="${CFG_DIR}/config.yaml"
 if ! id "${SENTINEL_USER}" &>/dev/null; then
     useradd --system --no-create-home \
             --shell /usr/bin/nologin \
-            --comment "nginx-sentinel daemon" \
+            --comment "arxsentinel daemon" \
             "${SENTINEL_USER}"
 fi
 
@@ -31,7 +31,7 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 echo ""
-echo "nginx-sentinel installed. Edit the config and start the service:"
-echo "  sudo nano /etc/nginx-sentinel/config.yaml"
-echo "  sudo systemctl enable --now nginx-sentinel"
+echo "arxsentinel installed. Edit the config and start the service:"
+echo "  sudo nano /etc/arxsentinel/config.yaml"
+echo "  sudo systemctl enable --now arxsentinel"
 echo ""
