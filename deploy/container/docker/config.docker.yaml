@@ -65,7 +65,7 @@ output:
 # ── blocklists ────────────────────────────────────────────────────────────────────────────
 # URLs are the single source of truth — edit here to update across all deploy types.
 # Set enabled: false to disable a list without removing its URL.
-blocklists:
+blocklist:
   lists:
     - name: badbot-ua
       enabled: true

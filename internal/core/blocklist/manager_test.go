@@ -407,9 +407,9 @@ func TestBlocklistSourceURLs(t *testing.T) {
 		Sources []rawSource `yaml:"sources"`
 	}
 	type rawCfg struct {
-		Blocklists struct {
+		Blocklist struct {
 			Lists []rawList `yaml:"lists"`
-		} `yaml:"blocklists"`
+		} `yaml:"blocklist"`
 	}
 
 	var cfg rawCfg
@@ -419,7 +419,7 @@ func TestBlocklistSourceURLs(t *testing.T) {
 
 	client := &http.Client{Timeout: 10 * time.Second}
 
-	for _, list := range cfg.Blocklists.Lists {
+	for _, list := range cfg.Blocklist.Lists {
 		lc := ListConfig{Name: list.Name, Enabled: list.Enabled}
 		if !listEnabled(lc) {
 			t.Logf("list %q: enabled=false, skipping URL checks", list.Name)

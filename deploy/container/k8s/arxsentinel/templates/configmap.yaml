@@ -48,7 +48,7 @@ data:
       operational_log: /tmp/sentinel.log
 
     # URLs are the single source of truth — edit here to update across all deploy types.
-    blocklists:
+    blocklist:
       lists:
         - name: badbot-ua
           enabled: true
