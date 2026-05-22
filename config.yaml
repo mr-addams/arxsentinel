@@ -420,8 +420,8 @@ whitelist:
 
 # ── output: log file paths / пути к лог-файлам ──────────────────────────────────────────
 output:
-  threat_log: ./logs/threats.log          # threat log for Fail2Ban (dev: local) / threat-лог для Fail2Ban (dev: локально)
-  operational_log: ./logs/sentinel.log    # daemon operational log (dev: local) / operational-лог демона (dev: локально)
-  # Production / Продакшн:
-  # threat_log: /var/log/arxsentinel/threats.log
-  # operational_log: /var/log/arxsentinel/sentinel.log
+  threat_log: /var/log/arxsentinel/threats.log    # threat log for Fail2Ban (production) / threat-лог для Fail2Ban (продакшн)
+  operational_log: /var/log/arxsentinel/sentinel.log  # daemon operational log (production) / operational-лог демона (продакшн)
+  # Dev / Local:
+  # threat_log: ./logs/threats.log
+  # operational_log: ./logs/sentinel.log
