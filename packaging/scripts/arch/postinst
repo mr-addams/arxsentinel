@@ -32,6 +32,12 @@ if [ -d /var/log/nginx ]; then
     usermod -aG nginx "${SENTINEL_USER}" 2>/dev/null || true
 fi
 
+# On Debian/Ubuntu, nginx log files are owned root:adm with 640 permissions.
+# Adding the daemon user to the adm group grants read access without changing ownership.
+if getent group adm >/dev/null 2>&1; then
+    usermod -aG adm "${SENTINEL_USER}" 2>/dev/null || true
+fi
+
 mkdir -p "${LOG_DIR}"
 chown "${SENTINEL_USER}:${SENTINEL_USER}" "${LOG_DIR}"
 chmod 750 "${LOG_DIR}"
