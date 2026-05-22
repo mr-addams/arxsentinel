@@ -46,3 +46,19 @@ data:
       threat_log: /tmp/threats.log
       {{- end }}
       operational_log: /tmp/sentinel.log
+
+    # URLs are the single source of truth — edit here to update across all deploy types.
+    blocklists:
+      lists:
+        - name: badbot-ua
+          enabled: true
+          refresh_interval: 24h
+          sources:
+            - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+              format: plain_text
+        - name: badbot-ref
+          enabled: true
+          refresh_interval: 24h
+          sources:
+            - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrers.list"
+              format: plain_text

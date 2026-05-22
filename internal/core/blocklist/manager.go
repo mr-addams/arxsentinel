@@ -62,8 +62,11 @@ type SourceConfig struct {
 }
 
 // ListConfig describes one named blocklist: refresh cadence and one or more sources.
+// Enabled defaults to true when omitted from YAML (zero value false is overridden by
+// manager.NewManager — lists without an explicit enabled:false are treated as active).
 type ListConfig struct {
 	Name            string         `yaml:"name"`
+	Enabled         *bool          `yaml:"enabled"` // nil = default true; explicit false = skip list
 	RefreshInterval Duration       `yaml:"refresh_interval"`
 	Sources         []SourceConfig `yaml:"sources"`
 }
@@ -142,11 +145,15 @@ func NewManager(ctx context.Context, cfg Config) *Manager {
 		}
 	}
 
+	active := 0
 	for _, lc := range cfg.Lists {
-		m.startList(ctx, lc)
+		if listEnabled(lc) {
+			m.startList(ctx, lc)
+			active++
+		}
 	}
 
-	utils.Log("BLOCKLIST", fmt.Sprintf("manager started: %d lists, storage=%q", len(cfg.Lists), cfg.Storage), "info")
+	utils.Log("BLOCKLIST", fmt.Sprintf("manager started: %d lists, storage=%q", active, cfg.Storage), "info")
 	return m
 }
 
@@ -184,11 +191,15 @@ func (m *Manager) Update(ctx context.Context, cfg Config) {
 	m.mu.Unlock()
 
 	// Start new per-list goroutines (outside the lock — startList acquires its own lock).
+	active := 0
 	for _, lc := range cfg.Lists {
-		m.startList(ctx, lc)
+		if listEnabled(lc) {
+			m.startList(ctx, lc)
+			active++
+		}
 	}
 
-	utils.Log("BLOCKLIST", fmt.Sprintf("manager updated: %d lists", len(cfg.Lists)), "info")
+	utils.Log("BLOCKLIST", fmt.Sprintf("manager updated: %d lists", active), "info")
 }
 
 // Match returns true if text contains any pattern from the named list.
@@ -402,4 +413,10 @@ func (m *Manager) saveToBolt(listName string, patterns []string) {
 	}); err != nil {
 		utils.Log("BLOCKLIST", fmt.Sprintf("list %q: bbolt save error: %v", listName, err), "warn")
 	}
+}
+
+// listEnabled reports whether a list should be started.
+// nil Enabled pointer means the field was omitted from YAML — default is enabled.
+func listEnabled(lc ListConfig) bool {
+	return lc.Enabled == nil || *lc.Enabled
 }
