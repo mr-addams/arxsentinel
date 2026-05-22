@@ -40,6 +40,15 @@ done
 BINARY=/usr/local/bin/arxsentinel
 CONFIG=/etc/arxsentinel/config.yaml
 LOG_DIR=/var/log/arxsentinel
+CFG_EXAMPLE="${CONFIG}.example"
+
+# ── Check if service is currently running ──────────────────────────────────────────────
+WAS_RUNNING=false
+if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet arxsentinel 2>/dev/null; then
+    WAS_RUNNING=true
+    echo "[*] Stopping running service..."
+    systemctl stop arxsentinel || true
+fi
 
 # ── 1. Build binary ───────────────────────────────────────────────────────────────────
 echo "[1/6] Building..."
@@ -78,6 +87,40 @@ fi
 echo "[6/6] Logrotate..."
 install -m 644 deploy/logrotate/arxsentinel /etc/logrotate.d/
 
-echo ""
-echo "Installation complete. Start with: systemctl start arxsentinel"
-echo "Status:                            systemctl status arxsentinel"
+# ── 7. Config validation (show any missing top-level sections) ──────────────────────────
+# Only run if config exists and example is available (post-install).
+if [ -f "$CONFIG" ] && [ -f "$CFG_EXAMPLE" ]; then
+    missing=""
+    while IFS= read -r key; do
+        # Match only top-level keys (no leading whitespace, ends with colon)
+        if ! grep -qE "^${key}[[:space:]]*:" "$CONFIG"; then
+            missing="${missing}  - ${key}\n"
+        fi
+    done < <(grep -E '^[a-z_]+:' "$CFG_EXAMPLE" | sed 's/:.*//' | sort -u)
+
+    if [ -n "${missing}" ]; then
+        echo ""
+        echo "┌─────────────────────────────────────────────────────────────────┐"
+        echo "│  arxsentinel: config.yaml update recommended                    │"
+        echo "└─────────────────────────────────────────────────────────────────┘"
+        echo ""
+        echo "  Your existing config is missing the following sections:"
+        echo ""
+        printf "%b" "${missing}"
+        echo ""
+        echo "  New features in these sections will not be active until you add"
+        echo "  them. See the example config for reference:"
+        echo "    ${CFG_EXAMPLE}"
+        echo ""
+    fi
+fi
+
+# ── 8. Restart service if it was running before ────────────────────────────────────────
+if $WAS_RUNNING; then
+    echo "[*] Restarting service..."
+    systemctl start arxsentinel
+else
+    echo ""
+    echo "Installation complete. Start with: systemctl start arxsentinel"
+    echo "Status:                            systemctl status arxsentinel"
+fi
