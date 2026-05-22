@@ -8,6 +8,13 @@ CFG_EXAMPLE="${CFG_DIR}/config.yaml.example"
 CFG_FILE="${CFG_DIR}/config.yaml"
 
 # $1=1 — new install; $1=2 — upgrade
+if [ "$1" -eq 2 ]; then
+    # Upgrade scenario: stop the running daemon before binary replacement
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet arxsentinel 2>/dev/null; then
+        systemctl stop arxsentinel || true
+    fi
+fi
+
 if [ "$1" -eq 1 ]; then
     # Create system user only on fresh install
     if ! id "${SENTINEL_USER}" &>/dev/null; then
@@ -73,6 +80,11 @@ fi
 # Guard: systemd may be absent in Docker/chroot/mock
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
+
+    # On upgrade, restart the service after daemon-reload. On fresh install, user starts manually.
+    if [ "$1" -eq 2 ]; then
+        systemctl start arxsentinel || true
+    fi
 fi
 
 if [ "$1" -eq 1 ]; then

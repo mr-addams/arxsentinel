@@ -8,6 +8,11 @@ CFG_EXAMPLE="${CFG_DIR}/config.yaml.example"
 CFG_FILE="${CFG_DIR}/config.yaml"
 
 # pacman does not pass install/upgrade arguments — this script runs on both events.
+# Detect if service is running and stop it before binary replacement.
+if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet arxsentinel 2>/dev/null; then
+    systemctl stop arxsentinel || true
+fi
+
 # User creation is idempotent: useradd exits with code 9 if user already exists.
 if ! id "${SENTINEL_USER}" &>/dev/null; then
     useradd --system --no-create-home \
@@ -68,6 +73,9 @@ fi
 
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
+    # If service was stopped during install (upgrade), restart it after daemon-reload.
+    # We try to start; if it wasn't running before, systemctl start is idempotent and harmless.
+    systemctl start arxsentinel 2>/dev/null || true
 fi
 
 echo ""
