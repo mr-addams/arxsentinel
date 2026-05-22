@@ -55,7 +55,9 @@ elif [ -f "${CFG_EXAMPLE}" ] && [ -f "${CFG_FILE}" ]; then
         if ! grep -qE "^${key}[[:space:]]*:" "${CFG_FILE}"; then
             missing="${missing}  - ${key}\n"
         fi
-    done < <(grep -E '^[a-z_]+:' "${CFG_EXAMPLE}" | sed 's/:.*//' | sort -u)
+    done << EOF
+$(grep -E '^[a-z_]+:' "${CFG_EXAMPLE}" | sed 's/:.*//' | sort -u)
+EOF
 
     if [ -n "${missing}" ]; then
         echo ""
