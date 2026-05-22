@@ -9,6 +9,15 @@ CFG_FILE="${CFG_DIR}/config.yaml"
 
 case "$1" in
     configure)
+        # On upgrade ($2 contains previous version), stop the service before updating binary.
+        # On fresh install, $2 is empty — service is not running yet.
+        if [ -n "${2:-}" ]; then
+            # Upgrade scenario: stop the running daemon before binary replacement
+            if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet arxsentinel 2>/dev/null; then
+                systemctl stop arxsentinel || true
+            fi
+        fi
+
         # Create system user if it does not exist yet
         if ! id "${SENTINEL_USER}" &>/dev/null; then
             useradd --system --no-create-home \
@@ -48,7 +57,7 @@ case "$1" in
                 if ! grep -qE "^${key}[[:space:]]*:" "${CFG_FILE}"; then
                     missing="${missing}  - ${key}\n"
                 fi
-            done < <(grep -oE '^[a-z_]+(?=:)' "${CFG_EXAMPLE}" | sort -u)
+            done < <(grep -E '^[a-z_]+:' "${CFG_EXAMPLE}" | sed 's/:.*//' | sort -u)
 
             if [ -n "${missing}" ]; then
                 echo ""
@@ -73,6 +82,11 @@ case "$1" in
         # Guard: systemd may be absent in Docker/chroot
         if command -v systemctl >/dev/null 2>&1; then
             systemctl daemon-reload || true
+
+            # On upgrade, restart the service after daemon-reload. On fresh install, user starts manually.
+            if [ -n "${2:-}" ]; then
+                systemctl start arxsentinel || true
+            fi
         fi
 
         echo ""
@@ -81,8 +95,12 @@ case "$1" in
         echo "Review and edit the config if needed:"
         echo "  ${CFG_FILE}"
         echo ""
-        echo "Then enable and start the service:"
-        echo "  systemctl enable --now arxsentinel"
+
+        if [ -z "${2:-}" ]; then
+            # Fresh install
+            echo "Then enable and start the service:"
+            echo "  systemctl enable --now arxsentinel"
+        fi
         echo ""
         ;;
 
