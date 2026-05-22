@@ -1,4 +1,4 @@
-# Caddy configuration for use with nginx-sentinel.
+# Caddy configuration for use with arxsentinel.
 #
 # trusted_proxies tells Caddy which upstream addresses are trusted to set
 # X-Forwarded-For. Without this, Caddy ignores X-Forwarded-For from clients

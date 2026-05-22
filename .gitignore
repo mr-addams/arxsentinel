@@ -33,11 +33,11 @@ go.work.sum
 # Локальные флоу и контекст агентов (не коммитить)
 .opencode/
 
-# Dev-окружение: локальные лог-файлы (в проде — /var/log/nginx-sentinel/)
+# Dev-окружение: локальные лог-файлы (в проде — /var/log/arxsentinel/)
 logs/
 
 # Бинарники после go build
-/nginx-sentinel
+/arxsentinel
 /bin/
 
 # Интеграционные тесты — runtime-артефакты (логи серверов, threat-логи, загружаемые блеклисты)

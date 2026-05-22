@@ -1,6 +1,6 @@
-# Caddy v2 configuration for nginx-sentinel integration.
+# Caddy v2 configuration for arxsentinel integration.
 #
-# nginx-sentinel's "caddy" profile expects Apache Combined Log Format (CLF).
+# arxsentinel's "caddy" profile expects Apache Combined Log Format (CLF).
 # Caddy v2's built-in log encoder outputs JSON (nested), which is not compatible
 # directly. Use the caddy-transform-encoder plugin to emit CLF text format.
 #

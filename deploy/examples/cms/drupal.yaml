@@ -1,4 +1,4 @@
-# nginx-sentinel — Drupal-specific probe paths override
+# arxsentinel — Drupal-specific probe paths override
 #
 # Drupal uses /user/login, /admin, and settings.php — different from WordPress.
 # These paths are targeted by Drupalgeddon and similar exploit kits.
@@ -7,7 +7,7 @@
 #   Merge detectors.probe.paths into your config.yaml.
 #
 # Apply without restart:
-#   kill -HUP $(pgrep nginx-sentinel)   # or systemctl kill -s HUP nginx-sentinel
+#   kill -HUP $(pgrep arxsentinel)   # or systemctl kill -s HUP arxsentinel
 
 detectors:
   probe:

@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-SENTINEL_USER="nginx-sentinel"
-LOG_DIR="/var/log/nginx-sentinel"
-CFG_DIR="/etc/nginx-sentinel"
+SENTINEL_USER="arxsentinel"
+LOG_DIR="/var/log/arxsentinel"
+CFG_DIR="/etc/arxsentinel"
 
 # Remove user and data (pacman purge — explicit uninstall)
 if id "${SENTINEL_USER}" &>/dev/null; then

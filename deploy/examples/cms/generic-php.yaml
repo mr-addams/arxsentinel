@@ -1,4 +1,4 @@
-# nginx-sentinel — Generic PHP application probe paths override
+# arxsentinel — Generic PHP application probe paths override
 #
 # Covers common misconfigurations and exposed tools found in custom PHP apps,
 # legacy codebases, and shared hosting environments.
@@ -8,7 +8,7 @@
 #   Merge detectors.probe.paths into your config.yaml.
 #
 # Apply without restart:
-#   kill -HUP $(pgrep nginx-sentinel)   # or systemctl kill -s HUP nginx-sentinel
+#   kill -HUP $(pgrep arxsentinel)   # or systemctl kill -s HUP arxsentinel
 
 detectors:
   probe:

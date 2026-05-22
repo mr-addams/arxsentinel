@@ -120,19 +120,22 @@ var innerTagColors = map[string]*color.Color{
 }
 
 // debugOnlyTags — tags visible only when DebugEnabled=true.
-// PARSER and TAIL are suppressed in production — they emit one line per nginx log entry.
+// PARSER is suppressed in production — it emits one line per nginx log entry.
 var debugOnlyTags = map[string]bool{
 	"DEBUG":  true,
 	"PARSER": true, // one line per nginx entry — too noisy in production
-	"TAIL":   true, // inotify filesystem events — debug noise
 }
 
 // quietTags — tags that show only error/warning without debug mode.
 // Detectors and Scorer emit many messages during processing — only needed
 // during debugging, not in routine monitoring.
+// TAIL uses quietTags (not debugOnlyTags) so errors and warnings always surface in
+// production — file permission failures and rotation errors are operational signals,
+// not debug noise.
 var quietTags = map[string]bool{
 	"DETECTOR": true,
 	"SCORER":   true,
+	"TAIL":     true,
 }
 
 // ========================== Initialization ============================================
