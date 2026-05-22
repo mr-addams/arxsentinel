@@ -31,8 +31,8 @@ API="https://api.github.com/repos/${REPO}/releases/latest"
 banner() {
   echo
   echo -e "${C}┌─────────────────────────────────────────────┐${RESET}"
-  echo -e "${C}│${W}           ArxSentinel  installer             ${C}│${RESET}"
-  echo -e "${C}│${DIM}    Universal HTTP threat detection daemon    ${C}│${RESET}"
+  echo -e "${C}│${W}           ArxSentinel  installer            ${C}│${RESET}"
+  echo -e "${C}│${DIM}    Universal HTTP threat detection daemon   ${C}│${RESET}"
   echo -e "${C}└─────────────────────────────────────────────┘${RESET}"
   echo
 }
@@ -296,7 +296,7 @@ start_service() {
 summary() {
   echo
   echo -e "${G}┌─────────────────────────────────────────────┐${RESET}"
-  echo -e "${G}│${W}          Installation complete!              ${G}│${RESET}"
+  echo -e "${G}│${W}          Installation complete!             ${G}│${RESET}"
   echo -e "${G}└─────────────────────────────────────────────┘${RESET}"
   echo
   echo -e "  ${W}Version   ${RESET}${VERSION}"
