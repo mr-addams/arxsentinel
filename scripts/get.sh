@@ -5,7 +5,10 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash
-#   sudo bash get.sh
+#   sudo bash get.sh                          # Install latest stable release
+#   sudo bash get.sh --dev                    # Install latest dev pre-release
+#   sudo bash get.sh --version v1.3.6-dev.1  # Install specific version/tag
+#   sudo bash get.sh --help                   # Show this message
 set -euo pipefail
 
 # ── Colour palette ────────────────────────────────────────────────────────────
@@ -20,19 +23,42 @@ if [ -t 1 ] && [ "${NO_COLOR:-}" = "" ]; then
   DIM='\033[2m'
   RESET='\033[0m'
 else
+  # shellcheck disable=SC2034
   R='' G='' Y='' B='' C='' M='' W='' DIM='' RESET=''
 fi
 
 REPO="mr-addams/arxsentinel"
-API="https://api.github.com/repos/${REPO}/releases/latest"
+
+# Release selection mode: "stable" (default), "dev", or "version:TAG"
+RELEASE_MODE="stable"
+RELEASE_VERSION=""
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+show_help() {
+  cat << EOF
+${C}ArxSentinel Installer${RESET}
+
+${W}Usage:${RESET}
+  sudo bash get.sh                          Install latest stable release
+  sudo bash get.sh --dev                    Install latest dev pre-release
+  sudo bash get.sh --version TAG            Install specific tag/version
+  sudo bash get.sh --help                   Show this message
+
+${W}Examples:${RESET}
+  sudo bash get.sh --version v1.3.5
+  sudo bash get.sh --version v1.3.6-dev.1
+  sudo bash get.sh --dev
+
+EOF
+  exit 0
+}
 
 banner() {
   echo
   echo -e "${C}┌─────────────────────────────────────────────┐${RESET}"
-  echo -e "${C}│${W}           ArxSentinel  installer             ${C}│${RESET}"
-  echo -e "${C}│${DIM}    Universal HTTP threat detection daemon    ${C}│${RESET}"
+  echo -e "${C}│${W}           ArxSentinel  installer            ${C}│${RESET}"
+  echo -e "${C}│${DIM}    Universal HTTP threat detection daemon   ${C}│${RESET}"
   echo -e "${C}└─────────────────────────────────────────────┘${RESET}"
   echo
 }
@@ -124,18 +150,47 @@ detect_arch() {
 # ── Fetch latest release ──────────────────────────────────────────────────────
 
 fetch_release() {
-  section "Fetching latest release"
-
   need_cmd curl
   need_cmd grep
   need_cmd cut
 
-  step "Querying GitHub API..."
-  RELEASE_JSON=$(curl -fsSL "$API" 2>/dev/null) \
+  # Determine API endpoint based on release mode
+  local api_endpoint
+  local fetch_desc
+
+  case "$RELEASE_MODE" in
+    stable)
+      section "Fetching latest stable release"
+      api_endpoint="https://api.github.com/repos/${REPO}/releases/latest"
+      fetch_desc="latest stable"
+      ;;
+    dev)
+      section "Fetching latest dev pre-release"
+      api_endpoint="https://api.github.com/repos/${REPO}/releases"
+      fetch_desc="latest dev pre-release"
+      ;;
+    version)
+      section "Fetching release ${RELEASE_VERSION}"
+      api_endpoint="https://api.github.com/repos/${REPO}/releases/tags/${RELEASE_VERSION}"
+      fetch_desc="release ${RELEASE_VERSION}"
+      ;;
+  esac
+
+  step "Querying GitHub API for ${fetch_desc}..."
+  RELEASE_JSON=$(curl -fsSL "$api_endpoint" 2>/dev/null) \
     || fail "Failed to reach GitHub API. Check your internet connection."
 
-  VERSION=$(echo "$RELEASE_JSON" | grep '"tag_name"' | cut -d'"' -f4)
-  [ -n "$VERSION" ] || fail "Could not determine latest release version."
+  # For --dev mode, we need to find the first pre-release from the array
+  if [ "$RELEASE_MODE" = "dev" ]; then
+    # The response is an array; extract the first object with "prerelease": true
+    RELEASE_JSON=$(echo "$RELEASE_JSON" \
+      | grep -A 50 '"prerelease": true' \
+      | head -50)
+    [ -n "$RELEASE_JSON" ] || fail "No dev pre-release found."
+  fi
+
+  VERSION=$(echo "$RELEASE_JSON" | grep '"tag_name"' | cut -d'"' -f4 | head -1)
+  [ -n "$VERSION" ] || fail "Could not determine release version for ${fetch_desc}."
 
   # Find the download URL matching our arch and package format
   DOWNLOAD_URL=$(echo "$RELEASE_JSON" \
@@ -149,7 +204,7 @@ fetch_release() {
 
   FILENAME=$(basename "$DOWNLOAD_URL")
 
-  ok "Latest version: ${W}${VERSION}${RESET}"
+  ok "Version: ${W}${VERSION}${RESET}"
   ok "Package: ${W}${FILENAME}${RESET}"
 }
 
@@ -244,6 +299,12 @@ configure() {
 
   CFG="/etc/arxsentinel/config.yaml"
 
+  # Skip auto-detection on upgrade — preserve user's existing config
+  if [ "$CFG_WAS_PRESENT" = true ]; then
+    warn "Upgrade detected — skipping log_file auto-detection (your config is preserved)"
+    return
+  fi
+
   # Try to detect nginx access.log path automatically
   NGINX_LOG=""
   for candidate in \
@@ -296,7 +357,7 @@ start_service() {
 summary() {
   echo
   echo -e "${G}┌─────────────────────────────────────────────┐${RESET}"
-  echo -e "${G}│${W}          Installation complete!              ${G}│${RESET}"
+  echo -e "${G}│${W}          Installation complete!             ${G}│${RESET}"
   echo -e "${G}└─────────────────────────────────────────────┘${RESET}"
   echo
   echo -e "  ${W}Version   ${RESET}${VERSION}"
@@ -312,9 +373,37 @@ summary() {
   echo
 }
 
+# ── Argument parsing ──────────────────────────────────────────────────────────
+
+parse_args() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --help|-h)
+        show_help
+        ;;
+      --dev)
+        RELEASE_MODE="dev"
+        shift
+        ;;
+      --version)
+        if [ $# -lt 2 ]; then
+          fail "--version requires a tag argument. Usage: --version TAG"
+        fi
+        RELEASE_MODE="version"
+        RELEASE_VERSION="$2"
+        shift 2
+        ;;
+      *)
+        fail "Unknown option: $1. Use --help for usage information."
+        ;;
+    esac
+  done
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 main() {
+  parse_args "$@"
   banner
   check_root
   detect_os
@@ -322,6 +411,9 @@ main() {
   fetch_release
   download_package
   install_deps
+  # Detect fresh install before package installation (which may create config via postinst)
+  CFG_WAS_PRESENT=false
+  [ -f /etc/arxsentinel/config.yaml ] && CFG_WAS_PRESENT=true
   install_package
   configure
   start_service
