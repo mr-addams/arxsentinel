@@ -14,4 +14,6 @@ FROM litespeedtech/openlitespeed:latest
 # Python handles the quote escaping correctly: \" in the logFormat string tells
 # OLS to output a literal " around the request field (%r).
 COPY dockerfiles/patch-ols-logformat.py /tmp/patch-ols-logformat.py
+# litespeedtech/openlitespeed removed python3 from the base image; install it explicitly.
+RUN apt-get update -qq && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
 RUN python3 /tmp/patch-ols-logformat.py
