@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ── helpers ───────────────────────────────────────────────────────────────────────────
@@ -351,5 +353,90 @@ func TestManager_BboltBadPath_FallsBackToMemory(t *testing.T) {
 
 	if !m.Match("ua", "ahrefsbot") {
 		t.Error("in-memory match should still work when bbolt fails to open")
+	}
+}
+
+// ── listEnabled ───────────────────────────────────────────────────────────────────────
+
+func TestListEnabled(t *testing.T) {
+	yes := true
+	no := false
+
+	cases := []struct {
+		name    string
+		enabled *bool
+		want    bool
+	}{
+		{"nil means enabled by default", nil, true},
+		{"explicit true", &yes, true},
+		{"explicit false", &no, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lc := ListConfig{Name: "test", Enabled: tc.enabled}
+			if got := listEnabled(lc); got != tc.want {
+				t.Errorf("listEnabled = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// ── source URL reachability ───────────────────────────────────────────────────────────
+
+// TestBlocklistSourceURLs verifies that every enabled source URL in config.yaml
+// returns HTTP 200. Skipped in short mode (-test.short) to keep CI fast on offline runners.
+func TestBlocklistSourceURLs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping network test in short mode")
+	}
+
+	// Resolve config.yaml relative to this file's package root.
+	cfgPath := "../../../config.yaml"
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("cannot read config.yaml: %v", err)
+	}
+
+	// Parse only the blocklists section we care about.
+	type rawSource struct {
+		URL string `yaml:"url"`
+	}
+	type rawList struct {
+		Name    string      `yaml:"name"`
+		Enabled *bool       `yaml:"enabled"`
+		Sources []rawSource `yaml:"sources"`
+	}
+	type rawCfg struct {
+		Blocklists struct {
+			Lists []rawList `yaml:"lists"`
+		} `yaml:"blocklists"`
+	}
+
+	var cfg rawCfg
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("cannot parse config.yaml: %v", err)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	for _, list := range cfg.Blocklists.Lists {
+		lc := ListConfig{Name: list.Name, Enabled: list.Enabled}
+		if !listEnabled(lc) {
+			t.Logf("list %q: enabled=false, skipping URL checks", list.Name)
+			continue
+		}
+		for _, src := range list.Sources {
+			src := src
+			t.Run(list.Name+"/"+src.URL, func(t *testing.T) {
+				resp, err := client.Head(src.URL)
+				if err != nil {
+					t.Fatalf("HEAD %s: %v", src.URL, err)
+				}
+				resp.Body.Close()
+				if resp.StatusCode != http.StatusOK {
+					t.Errorf("HEAD %s: got %d, want 200", src.URL, resp.StatusCode)
+				}
+			})
+		}
 	}
 }

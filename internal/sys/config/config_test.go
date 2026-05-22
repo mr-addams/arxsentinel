@@ -652,7 +652,9 @@ func TestBadBotConfig_Defaults(t *testing.T) {
 }
 
 func TestBlocklistConfig_Defaults(t *testing.T) {
-	// Sources, refresh intervals and storage live in the blocklist: section (D6, Flow #025).
+	// Blocklist URLs are defined exclusively in config.yaml, not in Go defaults.
+	// The Go default provides an empty list; users supply URLs via their yaml file.
+	// This test verifies that the Go default is a clean slate (no hardcoded URLs).
 	cfg, err := LoadConfig("/nonexistent/blocklist-defaults-test.yaml")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -661,27 +663,9 @@ func TestBlocklistConfig_Defaults(t *testing.T) {
 	if bl.Storage != "" {
 		t.Errorf("Blocklist.Storage: want empty (in-memory), got %q", bl.Storage)
 	}
-	if len(bl.Lists) != 2 {
-		t.Fatalf("Blocklist.Lists: want 2 default lists, got %d", len(bl.Lists))
-	}
-	// badbot-ua list
-	uaList := bl.Lists[0]
-	if uaList.Name != "badbot-ua" {
-		t.Errorf("Lists[0].Name: want badbot-ua, got %q", uaList.Name)
-	}
-	if time.Duration(uaList.RefreshInterval) != 24*time.Hour {
-		t.Errorf("Lists[0].RefreshInterval: want 24h, got %v", time.Duration(uaList.RefreshInterval))
-	}
-	if len(uaList.Sources) != 1 || uaList.Sources[0].URL == "" {
-		t.Error("Lists[0].Sources: want one non-empty URL")
-	}
-	if uaList.Sources[0].Format != "plain_text" {
-		t.Errorf("Lists[0].Sources[0].Format: want plain_text, got %q", uaList.Sources[0].Format)
-	}
-	// badbot-ref list
-	refList := bl.Lists[1]
-	if refList.Name != "badbot-ref" {
-		t.Errorf("Lists[1].Name: want badbot-ref, got %q", refList.Name)
+	// Go defaults carry no lists — URLs live only in config.yaml.
+	if len(bl.Lists) != 0 {
+		t.Errorf("Blocklist.Lists: want 0 in Go defaults (URLs in yaml), got %d", len(bl.Lists))
 	}
 }
 

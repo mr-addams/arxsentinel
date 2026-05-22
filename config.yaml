@@ -294,6 +294,7 @@ blocklist:
     # User-Agent blocklist: ~685 known bad bots
     # Список User-Agent: ~685 известных плохих ботов
     - name: badbot-ua
+      enabled: true           # set false to skip this list entirely
       refresh_interval: 24h
       sources:
         # MIT License — https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker
@@ -303,10 +304,11 @@ blocklist:
     # Referrer blocklist: ~7108 spam referrer domains (used when check_referrer: true)
     # Список реферреров: ~7108 спам-доменов (используется при check_referrer: true)
     - name: badbot-ref
+      enabled: true           # set false to skip this list entirely
       refresh_interval: 24h
       sources:
         # MIT License — https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker
-        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list"
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrers.list"
           format: plain_text
 
 # ── chain_guard: IP chain integrity checker ───────────────────────────────────────────────

@@ -952,28 +952,12 @@ func defaultConfig() Config {
 			},
 		},
 		// Blocklist defaults provide the mitchellkrogza community lists out of the box.
-		// Sources and refresh schedule are separate from badbot detector config (D6, Flow #025):
-		// the detector only decides *what* to match; the manager decides *where* to fetch from.
+		// Blocklist sources (URLs, format) live exclusively in config.yaml — not here.
+		// Go defaults only declare that both lists are enabled; the yaml provides the URLs.
+		// This avoids URL duplication across config.yaml, config.docker.yaml, and code.
 		Blocklist: blocklist.Config{
 			Storage: "",
-			Lists: []blocklist.ListConfig{
-				{
-					Name:            "badbot-ua",
-					RefreshInterval: blocklist.Duration(24 * time.Hour),
-					Sources: []blocklist.SourceConfig{{
-						URL:    "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list",
-						Format: "plain_text",
-					}},
-				},
-				{
-					Name:            "badbot-ref",
-					RefreshInterval: blocklist.Duration(24 * time.Hour),
-					Sources: []blocklist.SourceConfig{{
-						URL:    "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrer-words.list",
-						Format: "plain_text",
-					}},
-				},
-			},
+			Lists:   []blocklist.ListConfig{},
 		},
 	}
 }
