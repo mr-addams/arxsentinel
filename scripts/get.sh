@@ -299,6 +299,12 @@ configure() {
 
   CFG="/etc/arxsentinel/config.yaml"
 
+  # Skip auto-detection on upgrade — preserve user's existing config
+  if [ "$CFG_WAS_PRESENT" = true ]; then
+    warn "Upgrade detected — skipping log_file auto-detection (your config is preserved)"
+    return
+  fi
+
   # Try to detect nginx access.log path automatically
   NGINX_LOG=""
   for candidate in \
@@ -405,6 +411,9 @@ main() {
   fetch_release
   download_package
   install_deps
+  # Detect fresh install before package installation (which may create config via postinst)
+  CFG_WAS_PRESENT=false
+  [ -f /etc/arxsentinel/config.yaml ] && CFG_WAS_PRESENT=true
   install_package
   configure
   start_service
