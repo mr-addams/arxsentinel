@@ -61,3 +61,24 @@ metrics:
 output:
   threat_log: /var/log/arxsentinel/threats.log
   operational_log: /var/log/arxsentinel/sentinel.log
+
+# ── blocklists ────────────────────────────────────────────────────────────────────────────
+# URLs are the single source of truth — edit here to update across all deploy types.
+# Set enabled: false to disable a list without removing its URL.
+blocklist:
+  lists:
+    - name: badbot-ua
+      enabled: true
+      refresh_interval: 24h
+      sources:
+        # MIT License — https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text
+
+    - name: badbot-ref
+      enabled: true
+      refresh_interval: 24h
+      sources:
+        # MIT License — https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrers.list"
+          format: plain_text
