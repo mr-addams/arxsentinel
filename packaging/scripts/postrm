@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-SENTINEL_USER="nginx-sentinel"
-LOG_DIR="/var/log/nginx-sentinel"
-CFG_DIR="/etc/nginx-sentinel"
+SENTINEL_USER="arxsentinel"
+LOG_DIR="/var/log/arxsentinel"
+CFG_DIR="/etc/arxsentinel"
 
 case "$1" in
     purge)

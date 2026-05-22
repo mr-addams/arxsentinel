@@ -1,4 +1,4 @@
-# nginx-sentinel config for Caddy v2.
+# arxsentinel config for Caddy v2.
 # Uses the built-in "caddy" profile (Apache CLF format via transform-encoder).
 # See Caddyfile in this directory for the required log format configuration.
 
@@ -9,4 +9,4 @@ general:
   log_file: /var/log/caddy/access.log
 
 output:
-  threat_log: /var/log/nginx-sentinel/threats.log
+  threat_log: /var/log/arxsentinel/threats.log

@@ -2,33 +2,33 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>https://mr-addams.github.io/nginx-sentinel/</loc>
+    <loc>https://mr-addams.github.io/arxsentinel/</loc>
     <lastmod>2026-05-17</lastmod>
     <changefreq>monthly</changefreq>
     <priority>1.0</priority>
-    <xhtml:link rel="alternate" hreflang="en"        href="https://mr-addams.github.io/nginx-sentinel/"/>
-    <xhtml:link rel="alternate" hreflang="uk"        href="https://mr-addams.github.io/nginx-sentinel/uk.html"/>
-    <xhtml:link rel="alternate" hreflang="ru"        href="https://mr-addams.github.io/nginx-sentinel/ru.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://mr-addams.github.io/nginx-sentinel/"/>
+    <xhtml:link rel="alternate" hreflang="en"        href="https://mr-addams.github.io/arxsentinel/"/>
+    <xhtml:link rel="alternate" hreflang="uk"        href="https://mr-addams.github.io/arxsentinel/uk.html"/>
+    <xhtml:link rel="alternate" hreflang="ru"        href="https://mr-addams.github.io/arxsentinel/ru.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mr-addams.github.io/arxsentinel/"/>
   </url>
   <url>
-    <loc>https://mr-addams.github.io/nginx-sentinel/uk.html</loc>
+    <loc>https://mr-addams.github.io/arxsentinel/uk.html</loc>
     <lastmod>2026-05-17</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
-    <xhtml:link rel="alternate" hreflang="en"        href="https://mr-addams.github.io/nginx-sentinel/"/>
-    <xhtml:link rel="alternate" hreflang="uk"        href="https://mr-addams.github.io/nginx-sentinel/uk.html"/>
-    <xhtml:link rel="alternate" hreflang="ru"        href="https://mr-addams.github.io/nginx-sentinel/ru.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://mr-addams.github.io/nginx-sentinel/"/>
+    <xhtml:link rel="alternate" hreflang="en"        href="https://mr-addams.github.io/arxsentinel/"/>
+    <xhtml:link rel="alternate" hreflang="uk"        href="https://mr-addams.github.io/arxsentinel/uk.html"/>
+    <xhtml:link rel="alternate" hreflang="ru"        href="https://mr-addams.github.io/arxsentinel/ru.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mr-addams.github.io/arxsentinel/"/>
   </url>
   <url>
-    <loc>https://mr-addams.github.io/nginx-sentinel/ru.html</loc>
+    <loc>https://mr-addams.github.io/arxsentinel/ru.html</loc>
     <lastmod>2026-05-17</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
-    <xhtml:link rel="alternate" hreflang="en"        href="https://mr-addams.github.io/nginx-sentinel/"/>
-    <xhtml:link rel="alternate" hreflang="uk"        href="https://mr-addams.github.io/nginx-sentinel/uk.html"/>
-    <xhtml:link rel="alternate" hreflang="ru"        href="https://mr-addams.github.io/nginx-sentinel/ru.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://mr-addams.github.io/nginx-sentinel/"/>
+    <xhtml:link rel="alternate" hreflang="en"        href="https://mr-addams.github.io/arxsentinel/"/>
+    <xhtml:link rel="alternate" hreflang="uk"        href="https://mr-addams.github.io/arxsentinel/uk.html"/>
+    <xhtml:link rel="alternate" hreflang="ru"        href="https://mr-addams.github.io/arxsentinel/ru.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mr-addams.github.io/arxsentinel/"/>
   </url>
 </urlset>

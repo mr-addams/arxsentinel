@@ -1,4 +1,4 @@
-# nginx-sentinel — Joomla-specific probe paths override
+# arxsentinel — Joomla-specific probe paths override
 #
 # Joomla uses /administrator as the admin entry point.
 # These paths are targeted by JoomScan, Joomla-specific exploit kits,
@@ -8,7 +8,7 @@
 #   Merge detectors.probe.paths into your config.yaml.
 #
 # Apply without restart:
-#   kill -HUP $(pgrep nginx-sentinel)   # or systemctl kill -s HUP nginx-sentinel
+#   kill -HUP $(pgrep arxsentinel)   # or systemctl kill -s HUP arxsentinel
 
 detectors:
   probe:

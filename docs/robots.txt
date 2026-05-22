@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://mr-addams.github.io/nginx-sentinel/sitemap.xml
+Sitemap: https://mr-addams.github.io/arxsentinel/sitemap.xml
