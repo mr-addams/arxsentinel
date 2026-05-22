@@ -16,6 +16,17 @@ if ! id "${SENTINEL_USER}" &>/dev/null; then
             "${SENTINEL_USER}"
 fi
 
+# Fix nginx log directory access on RHEL-like systems.
+# AlmaLinux/CentOS ship /var/log/nginx as drwxrwx--- nginx:root, which blocks
+# inotify (tail.Watch) for any user outside the nginx group.
+# Adding o+rx lets the daemon traverse and read the directory without changing
+# ownership. Joining the nginx group provides an alternative path that respects
+# the original ACL model — both fixes are applied so either approach works.
+if [ -d /var/log/nginx ]; then
+    chmod o+rx /var/log/nginx
+    usermod -aG nginx "${SENTINEL_USER}" 2>/dev/null || true
+fi
+
 mkdir -p "${LOG_DIR}"
 chown "${SENTINEL_USER}:${SENTINEL_USER}" "${LOG_DIR}"
 chmod 750 "${LOG_DIR}"
@@ -24,6 +35,35 @@ if [ -f "${CFG_EXAMPLE}" ] && [ ! -f "${CFG_FILE}" ]; then
     cp "${CFG_EXAMPLE}" "${CFG_FILE}"
     chown "root:${SENTINEL_USER}" "${CFG_FILE}"
     chmod 640 "${CFG_FILE}"
+elif [ -f "${CFG_EXAMPLE}" ] && [ -f "${CFG_FILE}" ]; then
+    # Upgrade scenario: check for top-level sections present in the example
+    # but missing from the user's config. Missing sections mean new features
+    # won't be active until the user updates their config manually.
+    missing=""
+    while IFS= read -r key; do
+        if ! grep -qE "^${key}[[:space:]]*:" "${CFG_FILE}"; then
+            missing="${missing}  - ${key}\n"
+        fi
+    done < <(grep -oE '^[a-z_]+(?=:)' "${CFG_EXAMPLE}" | sort -u)
+
+    if [ -n "${missing}" ]; then
+        echo ""
+        echo "┌─────────────────────────────────────────────────────────────────┐"
+        echo "│  arxsentinel: config.yaml update required                       │"
+        echo "└─────────────────────────────────────────────────────────────────┘"
+        echo ""
+        echo "  Your existing config is missing the following sections:"
+        echo ""
+        printf "%b" "${missing}"
+        echo ""
+        echo "  New features in these sections will not be active until you add"
+        echo "  them. See the example config for reference:"
+        echo "    ${CFG_EXAMPLE}"
+        echo ""
+        echo "  After updating, reload the daemon:"
+        echo "    kill -HUP \$(cat /run/arxsentinel/arxsentinel.pid)"
+        echo ""
+    fi
 fi
 
 if command -v systemctl >/dev/null 2>&1; then
