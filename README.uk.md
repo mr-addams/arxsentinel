@@ -207,7 +207,7 @@ docker run -d \
   ghcr.io/mr-addams/arxsentinel:latest
 ```
 
-Детальніше: [README.docker.md](README.docker.md) — Docker Compose, монтування томів, змінні середовища, інтеграція з Fail2Ban.
+Детальніше: [README.docker.md](deploy/container/docker/README.md) — Docker Compose, монтування томів, змінні середовища, інтеграція з Fail2Ban.
 
 ### Kubernetes (Helm)
 
@@ -219,7 +219,7 @@ helm install arxsentinel ./deploy/container/k8s/arxsentinel \
   --set threatLog.hostPath=/var/log/arxsentinel
 ```
 
-Детальніше: [README.helm.md](README.helm.md) — опис values, Prometheus Operator, деплой у хмару.
+Детальніше: [README.helm.md](deploy/container/k8s/arxsentinel/README.md) — опис values, Prometheus Operator, деплой у хмару.
 
 ## Конфігурація
 
@@ -340,7 +340,7 @@ ArxSentinel пропонує автоматичну верифікацію бо�
 та кастомні списки винятків (IP, CIDR, підрядки User-Agent). Занесені до whitelist
 запити пропускають усі детектори повністю.
 
-Детально — див. [README.whitelist.uk.md](README.whitelist.uk.md), приклади та налаштування.
+Детально — див. [README.whitelist.uk.md](deploy/examples/README.whitelist.uk.md), приклади та налаштування.
 
 ## Архітектура
 
@@ -489,7 +489,7 @@ fail2ban-client set arxsentinel unbanip 1.2.3.4
 
 ArxSentinel підтримує три режими форматів: **combined** (стандартний nginx), **JSON** (без перекомпіляції), та **користувацький regex** для довільних текстових форматів.
 
-Повні приклади конфігурації, маппінг полів та типові помилки див. у [README.log-formats.uk.md](README.log-formats.uk.md).
+Повні приклади конфігурації, маппінг полів та типові помилки див. у [README.log-formats.uk.md](deploy/examples/README.log-formats.uk.md).
 
 ## Зворотний проксі та Chain Guard
 

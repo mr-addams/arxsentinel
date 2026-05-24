@@ -64,7 +64,7 @@ ArxSentinel розгорнутий за зворотним проксі (nginx, 
 
 ## Додаткова інформація
 
-- **Правила Whitelist:** [../../README.whitelist.uk.md](../../README.whitelist.uk.md)
+- **Правила Whitelist:** [./README.whitelist.uk.md](./README.whitelist.uk.md)
 - **Перевірка ланцюга та захист від bogon:** [reverse-proxy/README.uk.md](reverse-proxy/README.uk.md)
 - **Метрики та моніторинг:** [../../deploy/grafana/README.md](../../deploy/grafana/README.md)
-- **Користувацькі формати журналів:** [../../README.log-formats.uk.md](../../README.log-formats.uk.md)
+- **Користувацькі формати журналів:** [./README.log-formats.uk.md](./README.log-formats.uk.md)

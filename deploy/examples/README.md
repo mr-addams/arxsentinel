@@ -63,7 +63,7 @@ include the necessary log format directives.
 
 ## More Information
 
-- **Whitelist Rules:** [../../README.whitelist.md](../../README.whitelist.md)
+- **Whitelist Rules:** [./README.whitelist.md](./README.whitelist.md)
 - **Chain Guard & IP Validation:** [reverse-proxy/README.md](reverse-proxy/README.md)
 - **Metrics & Monitoring:** [../../deploy/grafana/README.md](../../deploy/grafana/README.md)
-- **Custom Log Formats:** [../../README.log-formats.md](../../README.log-formats.md)
+- **Custom Log Formats:** [./README.log-formats.md](./README.log-formats.md)

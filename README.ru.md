@@ -208,7 +208,7 @@ docker run -d \
   ghcr.io/mr-addams/arxsentinel:latest
 ```
 
-Подробнее: [README.docker.md](README.docker.md) — Docker Compose, монтирование томов, переменные окружения, интеграция с Fail2Ban.
+Подробнее: [README.docker.md](deploy/container/docker/README.md) — Docker Compose, монтирование томов, переменные окружения, интеграция с Fail2Ban.
 
 ### Kubernetes (Helm)
 
@@ -220,7 +220,7 @@ helm install arxsentinel ./deploy/container/k8s/arxsentinel \
   --set threatLog.hostPath=/var/log/arxsentinel
 ```
 
-Подробнее: [README.helm.md](README.helm.md) — описание values, Prometheus Operator, деплой в облако.
+Подробнее: [README.helm.md](deploy/container/k8s/arxsentinel/README.md) — описание values, Prometheus Operator, деплой в облако.
 
 ## Конфигурация
 
@@ -341,7 +341,7 @@ ArxSentinel предоставляет автоматическую верифи
 и кастомные списки исключений (IP, CIDR, подстроки User-Agent). Занесённые в whitelist
 запросы пропускают все детекторы полностью.
 
-Подробно — см. [README.whitelist.ru.md](README.whitelist.ru.md), примеры и настройка.
+Подробно — см. [README.whitelist.ru.md](deploy/examples/README.whitelist.ru.md), примеры и настройка.
 
 ## Архитектура
 
@@ -490,7 +490,7 @@ fail2ban-client set arxsentinel unbanip 1.2.3.4
 
 ArxSentinel поддерживает три режима форматов: **combined** (стандартный nginx), **JSON** (без перекомпиляции), и **пользовательский regex** для произвольных текстовых форматов.
 
-Полные примеры конфигурации, маппинг полей и типичные ошибки см. в [README.log-formats.ru.md](README.log-formats.ru.md).
+Полные примеры конфигурации, маппинг полей и типичные ошибки см. в [README.log-formats.ru.md](deploy/examples/README.log-formats.ru.md).
 
 ## Обратный прокси и Chain Guard
 

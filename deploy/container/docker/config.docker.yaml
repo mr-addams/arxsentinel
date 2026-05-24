@@ -46,6 +46,216 @@ state:
   gc_interval: "60s"
   max_tracked_ips: 100000
 
+# ── detectors ──────────────────────────────────────────────────────────────────────────────
+detectors:
+  probe:
+    enabled: true
+    score: 25
+    paths:
+      - "/.env"
+      - "/.env.backup"
+      - "/.env.local"
+      - "/.env.production"
+      - "/.env.staging"
+      - "/config.yml"
+      - "/config.yaml"
+      - "/config.json"
+      - "/application.properties"
+      - "/settings.py"
+      - "/local_settings.py"
+      - "/database.yml"
+      - "/web.config"
+      - "/.git/config"
+      - "/.git/HEAD"
+      - "/.gitignore"
+      - "/.svn/entries"
+      - "/.hg/"
+      - "/.aws/credentials"
+      - "/.docker/config.json"
+      - "/aws-exports.json"
+      - "/wp-config.php"
+      - "/wp-config.php.bak"
+      - "/wp-login.php"
+      - "/xmlrpc.php"
+      - "/wp-admin/"
+      - "/administrator/"
+      - "/admin/"
+      - "/phpmyadmin/"
+      - "/pma/"
+      - "/backup.zip"
+      - "/backup.tar.gz"
+      - "/backup.sql"
+      - "/db.dump"
+      - "/database.sql"
+      - "/dump.sql"
+      - "/server-status"
+      - "/server-info"
+      - "/phpinfo.php"
+      - "/info.php"
+      - "/actuator/"
+      - "/actuator/env"
+      - "/actuator/health"
+      - "/metrics"
+      - "/.debug"
+      - "/trace"
+      - "/console"
+      - "/graphql"
+      - "/graphiql"
+      - "/api/graphql"
+
+  bruteforce:
+    enabled: true
+    min_requests: 10
+    ratio_threshold: 0.6
+    score: 30
+
+  crawler:
+    enabled: true
+    min_sequential: 5
+    score: 20
+
+  noasset:
+    enabled: true
+    min_page_requests: 3
+    asset_ratio_threshold: 0.1
+    asset_extensions:
+      - ".css"
+      - ".js"
+      - ".png"
+      - ".jpg"
+      - ".jpeg"
+      - ".gif"
+      - ".svg"
+      - ".woff"
+      - ".woff2"
+      - ".ttf"
+      - ".ico"
+      - ".webp"
+    score: 20
+
+  rate:
+    enabled: true
+    window: "60s"
+    threshold: 100
+    score: 25
+
+  useragent:
+    enabled: true
+    scanner_score: 40
+    grabber_score: 20
+    automation_score: 15
+    empty_ua_score: 30
+    extra_scanner_patterns: []
+    extra_grabber_patterns: []
+    extra_automation_patterns: []
+
+  overflow:
+    enabled: true
+    max_url_length: 2048
+    suspicious_params:
+      - "bypass"
+      - "shell"
+      - "cmd"
+      - "exec"
+      - "eval"
+      - "system"
+      - "passthru"
+    score: 30
+
+  badbot:
+    enabled: true
+    score: 60
+    check_ua: true
+    check_referrer: false
+
+# ── blocklist ────────────────────────────────────────────────────────────────────────────
+blocklist:
+  storage: ""
+  lists:
+    - name: badbot-ua
+      enabled: true
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text
+    - name: badbot-ref
+      enabled: true
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrers.list"
+          format: plain_text
+
+# ── chain_guard ────────────────────────────────────────────────────────────────────────────
+chain_guard:
+  enabled: false
+  warnings_log: ""
+  cloudflare:
+    enabled: true
+    refresh_interval: 24h
+    sources:
+      - https://www.cloudflare.com/ips-v4/
+      - https://www.cloudflare.com/ips-v6/
+  bogon:
+    enabled: true
+
+# ── whitelist ──────────────────────────────────────────────────────────────────────────────
+whitelist:
+  fake_bot_score: 35
+  dns_verify_timeout: "2s"
+  bots:
+    - name: google
+      ua_patterns: ["Googlebot", "Google-InspectionTool", "GoogleOther", "AdsBot-Google"]
+      rdns_domains: [".googlebot.com", ".google.com"]
+      verify_method: rdns_ipjson
+    - name: bing
+      ua_patterns: ["bingbot", "BingPreview", "msnbot", "adidxbot"]
+      rdns_domains: [".search.msn.com"]
+      verify_method: rdns
+    - name: yandex
+      ua_patterns: ["YandexBot", "YandexImages", "YandexMetrika", "YandexDirect"]
+      rdns_domains: [".yandex.ru", ".yandex.net", ".yandex.com"]
+      verify_method: rdns
+    - name: duckduckgo
+      ua_patterns: ["DuckDuckBot"]
+      rdns_domains: [".duckduckgo.com"]
+      verify_method: rdns
+    - name: baidu
+      ua_patterns: ["Baiduspider", "BaiduMobaider"]
+      rdns_domains: [".baidu.com", ".baidu.jp"]
+      verify_method: rdns
+    - name: apple
+      ua_patterns: ["Applebot"]
+      rdns_domains: [".applebot.apple.com"]
+      verify_method: rdns
+    - name: facebook
+      ua_patterns: ["facebookexternalhit", "Facebot"]
+      rdns_domains: []
+      verify_method: ip_ranges
+    - name: twitter
+      ua_patterns: ["Twitterbot"]
+      rdns_domains: []
+      verify_method: ip_ranges
+    - name: telegram
+      ua_patterns: ["TelegramBot"]
+      rdns_domains: []
+      verify_method: ip_ranges
+    - name: gptbot
+      ua_patterns: ["GPTBot"]
+      rdns_domains: [".openai.com"]
+      verify_method: rdns
+    - name: claudebot
+      ua_patterns: ["ClaudeBot", "Claude-Web", "anthropic-ai"]
+      rdns_domains: [".anthropic.com"]
+      verify_method: rdns
+  custom:
+    ips: []
+    cidrs: []
+    ua_substrings: []
+  dns_cache:
+    positive_ttl: "24h"
+    negative_ttl: "1h"
+    ip_list_refresh: "24h"
+
 # ── metrics ───────────────────────────────────────────────────────────────────────────────
 # Enabled by default in container mode — expose port 9117 for Prometheus scraping.
 # Set metrics.username + metrics.password_hash to enable basic auth.
@@ -61,24 +271,3 @@ metrics:
 output:
   threat_log: /var/log/arxsentinel/threats.log
   operational_log: /var/log/arxsentinel/sentinel.log
-
-# ── blocklists ────────────────────────────────────────────────────────────────────────────
-# URLs are the single source of truth — edit here to update across all deploy types.
-# Set enabled: false to disable a list without removing its URL.
-blocklist:
-  lists:
-    - name: badbot-ua
-      enabled: true
-      refresh_interval: 24h
-      sources:
-        # MIT License — https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker
-        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
-          format: plain_text
-
-    - name: badbot-ref
-      enabled: true
-      refresh_interval: 24h
-      sources:
-        # MIT License — https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker
-        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrers.list"
-          format: plain_text
