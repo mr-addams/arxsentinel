@@ -56,3 +56,4 @@ tests/integration/blocklist/
 
 # Локальный контекст Claude (TECH_DEBT, флоу, правила, настройки — не коммитить)
 .claude/
+.opencode/
