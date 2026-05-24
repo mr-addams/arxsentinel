@@ -1,363 +1,445 @@
-# ArxSentinel Integration Tests
+# Integration Tests — arxsentinel
 
-End-to-end test suite that runs real web server containers, fires attack scenarios,
-and verifies that arxsentinel's detectors and threat logs produce the expected output.
+## High-Level Overview
 
-**55 checks in total:** 35 direct (5 servers × 7 detectors) + 20 proxy-chain (4 proxies × 5 backends).
+### Purpose
+
+The integration test suite validates that arxsentinel correctly detects threats across
+multiple backends, proxy chains, and Cloudflare scenarios. It runs end-to-end using
+Docker containers, attacking each server with crafted HTTP requests and verifying that
+sentinel's threat log records the correct attacker IP (not proxy IP).
+
+### Infrastructure
+
+```
+Docker network: integration_default (172.16.0.0/12)
+External network: integration_cf_ext_net (10.88.0.0/24) — attacker IP isolated from trusted proxies
+
+Containers:
+  Attackers: curlimages/curl (Alpine-based, one container per scenario)
+  Backends:  nginx, apache, traefik, caddy, haproxy, litespeed
+  Proxies:   traefik:80, caddy:80, haproxy:80, nginx-rp:80
+  Simulators: cloudflare-sim, bogon-injector
+```
+
+### Matrix — 109 Checks
+
+| Category | Formula | Count | Invariant Verified |
+|---|---|---|---|
+| DIRECT | 6 servers × 7 detectors | 42 | Each detector fires on every server |
+| BADBOT | 5 servers (no litespeed) | 5 | UA blocklist fires on UA-logging servers |
+| BLOCKLIST | 6 servers (automaton loaded) | 6 | Manager builds automaton from blocklist source |
+| PROXY-CHAIN | 4 proxies × 6 backends | 24 | Threat log shows attacker IP, NOT proxy IP |
+| CF-DIRECT | 6 backends | 6 | Threat log shows real IP, NOT CF-sim IP |
+| CF-CHAIN | 4 proxies × 6 backends | 24 | Real IP survives two-hop CF→proxy→backend |
+| CHAIN-GUARD | 2 warnings | 2 | cf-broken and bogon-victim write warnings |
+| **TOTAL** | | **109** | |
+
+Litespeed is excluded from BADBOT because OLS does not log User-Agent in standard CLF format.
 
 ---
 
-## Quick start
+## Deep Dive
+
+### 1. Direct Tests (Scenario 1–8)
+
+Each scenario spawns one attacker container on `integration_default`. All 6 backends are hit
+sequentially via `attack_all` helper.
+
+#### 1.1 probe — Sensitive Path Detection
+
+**What is sent (per server, 7 curl commands):**
+```
+curl http://<srv>/wp-login.php
+curl http://<srv>/.env
+curl http://<srv>/.git/config
+curl http://<srv>/admin/config.php
+curl http://<srv>/etc/passwd
+curl http://<srv>/.aws/credentials
+curl http://<srv>/xmlrpc.php
+```
+
+**Expected in threat log:** THREAT entry with `class=probe` for each server.
+
+**Why `-sf`:** Silently fails (no output) on 404/403 so the attacker container does not
+pollute stdout. `|| true` ensures the script continues even if all curls fail.
+
+---
+
+#### 1.2 ua — Scanner User-Agent Detection
+
+**What is sent (per server, 5 curl commands):**
+```
+curl -A "sqlmap/1.7.11"  http://<srv>/
+curl -A "sqlmap/1.7.11"  http://<srv>/
+curl -A "Nuclei/3.0"     http://<srv>/
+curl -A "masscan/1.3"   http://<srv>/
+curl -A "zgrab/0.x"      http://<srv>/
+```
+
+**Expected:** THREAT with `class=ua`, subtype referencing the matched UA string.
+
+---
+
+#### 1.3 bruteforce — 404 Ratio > 60%
+
+**Pattern per server (15 requests):**
+```
+3 × GET / (200 OK)
+12 × GET /missing-page-N (404)
+```
+
+After 10+ requests with >60% 404, `bruteforce` detector fires. 12/15 = 80% ratio.
+
+**Expected:** THREAT with `class=bruteforce`. Threshold: `min_requests=10`.
+
+---
+
+#### 1.4 crawler — Sequential Numeric URLs
+
+**Pattern per server (6 requests):**
+```
+GET /items/1
+GET /items/2
+GET /items/3
+GET /items/4
+GET /items/5
+GET /items/6
+```
+
+Threshold: `min_sequential=5`. Five consecutive numeric URLs under the same path prefix
+trigger detection.
+
+**Expected:** THREAT with `class=crawler`.
+
+---
+
+#### 1.5 noasset — Page Requests Without Assets
+
+**Pattern per server (8 requests):**
+```
+8 × GET / (or /info.php) — HTML page requests only, zero CSS/JS
+```
+
+`assetRatio = 0% < 10%` threshold. Fires after `min_page_requests=3`.
+
+**Expected:** THREAT with `class=noasset`.
+
+---
+
+#### 1.6 rate — High Request Rate
+
+**Pattern per server (60 requests):**
+```
+30 × GET / (burst 1)
+sleep 1
+30 × GET / (burst 2)
+```
+
+ApproxRate ≈ 30 req/s >> threshold (100/60 ≈ 1.67 req/s).
+
+**Expected:** THREAT with `class=rate`.
+
+---
+
+#### 1.7 overflow — URL Path > 2048 Bytes
+
+**What is sent (per server, 1 request):**
+```bash
+LONG_PATH="/$(head -c 20000 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 2200)"
+curl "http://<srv>${LONG_PATH}"
+```
+
+Path length > 2048 bytes triggers `overflow` detector.
+
+**Expected:** THREAT with `class=overflow`.
+
+---
+
+#### 1.8 badbot — Community Blocklist UA
+
+**Pattern per server (2 requests):**
+```
+UA read from blocklist/test-ua.txt (fetched from blocklist-server:8090)
+2 × curl -A "<badbot-ua>/1.0" http://<srv>/
+```
+
+**Expected:** THREAT with `class=badbot` on nginx, apache, traefik, caddy, haproxy.
+**Excluded:** litespeed — OLS does not log User-Agent.
+
+---
+
+### 2. Infrastructure Tests
+
+#### 2.1 Proxy-Chain Tests (Scenario 9)
+
+**Topology:**
+```
+attacker (integration_default)
+    ↓
+traefik:80 / caddy:80 / haproxy:80 / nginx-rp:80
+    ↓
+nginx / apache / traefik / caddy / haproxy / litespeed
+```
+
+**What is sent (per proxy × backend, 5 curl commands):**
+```
+curl http://<proxy>:80/backend-<backend>/wp-login.php
+curl http://<proxy>:80/backend-<backend>/.env
+curl http://<proxy>:80/backend-<backend>/.git/config
+curl http://<proxy>:80/backend-<backend>/admin/login.php
+curl http://<proxy>:80/backend-<backend>/xmlrpc.php
+```
+
+**Invariant:** Threat log must show attacker IP (from `X-Forwarded-For`), NOT proxy container IP.
+If proxy IP appears on a THREAT line → class=ip-leak → FAIL.
+
+**24 combinations:** 4 proxies × 6 backends.
+
+```
++---------+--------+--------+--------+--------+--------+--------+
+| Proxy   | →nginx | →apa   | →trf   | →cad   | →hap   | →lite  |
++---------+--------+--------+--------+--------+--------+--------+
+| traefik |   ✓    |   ✓    |   ✓    |   ✓    |   ✓    |   ✓    |
+| caddy   |   ✓    |   ✓    |   ✓    |   ✓    |   ✓    |   ✓    |
+| haproxy |   ✓    |   ✓    |   ✓    |   ✓    |   ✓    |   ✓    |
+| nginx-rp|   ✓    |   ✓    |   ✓    |   ✓    |   ✓    |   ✓    |
++---------+--------+--------+--------+--------+--------+--------+
+```
+
+---
+
+#### 2.2 Cloudflare Cases
+
+All CF scenarios use `integration_cf_ext_net` (10.88.0.0/24) — attacker IP is outside trusted
+proxy CIDR (172.16.0.0/12). This forces backends to extract real IP from `CF-Connecting-IP` /
+`X-Forwarded-For`, preventing `real_ip_recursive` from consuming all trusted IPs and
+falling back to cloudflare-sim container IP.
+
+---
+
+**Case 1 — CF-Direct: cloudflare-sim → product (Scenario 10)**
+
+**Topology:**
+```
+attacker (10.88.0.x) → cloudflare-sim → nginx/apache/traefik/caddy/haproxy/litespeed
+```
+
+cloudflare-sim rewrites `X-Forwarded-For` to `$remote_addr` and adds `CF-Connecting-IP` header.
+Each backend must extract real IP from these headers.
+
+**5 paths per backend:** `/wp-login.php`, `/.env`, `/.git/config`, `/admin/login.php`, `/xmlrpc.php`
+
+**Invariant:** Threat log shows attacker IP, NOT cloudflare-sim container IP.
+If CF-sim IP appears → class=cf-ip-leak → FAIL.
+
+**6 checks** (one per backend).
+
+---
+
+**Case 2 — CF-Chain: cloudflare-sim → our proxy → product (Scenario 11)**
+
+**Topology:**
+```
+attacker (10.88.0.x) → cloudflare-sim → traefik/caddy/haproxy/nginx-rp → backend
+```
+
+Two-hop chain: CF headers set by cloudflare-sim, then proxy forwards to backend.
+Real IP must survive both hops.
+
+**3 paths per (proxy, backend) pair:** `/wp-login.php`, `/.env`, `/xmlrpc.php`
+
+**Invariant:** Same as Case 1 — threat log shows attacker IP, not CF-sim IP.
+
+**72 checks** (4 proxies × 6 backends × 3 paths).
+
+---
+
+**Case 3A — CF-Broken: cloudflare-sim → nginx-bare (Scenario 12A)**
+
+nginx-bare has NO `real_ip_header` configured. It logs the TCP peer (cloudflare-sim container IP)
+as client IP.
+
+**2 requests:** `curl /wp-login.php` and `curl /.env` via cloudflare-sim:80/cf-bare/
+
+**Chain-Guard response:** sentinel must detect cloudflare-sim container IP as within Cloudflare
+IP range and write `cloudflare-ip-as-client` to `warnings/cf-broken.log`.
+
+---
+
+**Case 3B — Bogon Injection (Scenario 12B)**
+
+bogon-injector adds `X-Forwarded-For: 10.0.0.1` before forwarding to nginx-bogon-victim.
+
+nginx-bogon-victim trusts XFF from Docker subnet, logs 10.0.0.1 as client.
+
+**Chain-Guard response:** sentinel must detect 10.0.0.1 as RFC 1918 bogon and write
+`bogon-ip-as-client` to `warnings/bogon-victim.log`.
+
+---
+
+### 3. Safety Guards — Chain Guard
+
+Chain Guard is a sentinel component that monitors backend logs for IPs that should never
+appear as client IPs:
+
+| Warning Type | Condition | Log File |
+|---|---|---|
+| `cloudflare-ip-as-client` | Backend logs a Cloudflare range IP as client | `warnings/cf-broken.log` |
+| `bogon-ip-as-client` | Backend logs an RFC 1918 private IP as client | `warnings/bogon-victim.log` |
+
+**Trigger conditions:**
+- cf-broken: nginx-bare (no `real_ip_header`) logs CF-sim container IP → chain_guard detects
+  CF IP range → writes warning
+- bogon-victim: nginx-bogon-victim trusts XFF, logs 10.0.0.1 → chain_guard detects RFC 1918 →
+  writes warning
+
+**Verification:** `verify.sh` checks that each warning file contains the expected string.
+Absence = FAIL.
+
+---
+
+## Developer's Guide
+
+### Adding a New Backend Server
+
+1. **Add server to arrays in `scenarios.sh` and `verify.sh`:**
+   ```bash
+   # scenarios.sh
+   SERVERS=(nginx apache traefik caddy haproxy litespeed <NEW_SERVER>)
+   
+   # verify.sh
+   SERVERS=(nginx apache traefik caddy haproxy litespeed <NEW_SERVER>)
+   ```
+
+2. **Create sentinel config:** `arxsentinel/<NEW_SERVER>.yaml`
+   - Configure `real_ip_header` and `trusted_proxies` if the server sits behind a proxy
+   - Set appropriate `log_format` / `log_path` for access log parsing
+
+3. **Add to docker-compose.yml:** define `<NEW_SERVER>` container with the image and networks
+
+4. **Update BADBOT_SERVERS** in `verify.sh` if the new server logs User-Agent:
+   ```bash
+   BADBOT_SERVERS=(nginx apache traefik caddy haproxy litespeed <UA_LOGGING_SERVER>)
+   ```
+   If it does NOT log UA (like litespeed), do NOT add it.
+
+5. **Add to proxy-chain** if the new server will be a backend behind proxies:
+   - No code changes needed — `CHAIN_BACKENDS` iterates over all servers
+   - Ensure the proxy routes `/backend-<server>/` to the correct container
+
+6. **Add to CF scenarios** if the server should be tested in CF-direct and CF-chain:
+   - No code changes needed — `CHAIN_BACKENDS` covers all servers
+
+7. **Run verification:**
+   ```bash
+   cd tests/integration
+   docker compose up -d --build
+   bash scenarios.sh
+   bash verify.sh
+   ```
+
+---
+
+### Adding a New Detector
+
+1. **Add scenario to `scenarios.sh`:**
+   ```bash
+   run_scenario "<detector_name>" "$(attack_all '
+   <curl commands using __SRV__ placeholder>
+   ')"
+   ```
+
+2. **Add to MODULES array in `verify.sh`:**
+   ```bash
+   MODULES=(probe ua bruteforce crawler noasset rate overflow <NEW_DETECTOR>)
+   ```
+
+3. **Configure the detector** in each `arxsentinel/<SERVER>.yaml`:
+   - Set appropriate thresholds (`min_requests`, `threshold`, etc.)
+   - Ensure log format includes fields the detector needs
+
+4. **Update expected count in documentation** (this README and matrix)
+
+---
+
+### Adding a New Proxy
+
+1. **Add to `CHAIN_PROXIES` in `scenarios.sh`:**
+   ```bash
+   CHAIN_PROXIES=(
+       "traefik:80"
+       "caddy:80"
+       "haproxy:80"
+       "nginx-rp:80"
+       "<NEW_PROXY>:80"
+   )
+   ```
+
+2. **Add to `CF_CHAIN_PROXIES`** for CF Case 2:
+   ```bash
+   CF_CHAIN_PROXIES=(traefik caddy haproxy nginx-rp <NEW_PROXY>)
+   ```
+
+3. **Add proxy configuration** in `configs/` (e.g., `nginx-rp.conf` for nginx reverse proxy)
+
+4. **Add to docker-compose.yml:** define `<NEW_PROXY>` container with networks
+
+5. **Ensure routes** are configured so `/backend-<SERVER>/` proxies to the correct
+   backend container
+
+---
+
+### Key Arrays Reference
 
 ```bash
-# From the repository root — builds the binary and runs all 55 checks.
-bash tests/integration/run.sh
-
-# Skip rebuild if the binary is already up to date.
-bash tests/integration/run.sh --skip-build
-```
-
-Expected output:
-
-```
-Results: 55 passed, 0 failed
-(5 servers × 7 detectors = 35 direct checks)
-(4 proxies × 5 backends = 20 proxy-chain checks)
-(total: 55 checks)
-```
-
-### Requirements
-
-- Docker with Compose v2 (`docker compose`)
-- Go toolchain (only needed without `--skip-build`)
-- ~2 GB free disk space (images are cached after the first run)
-
----
-
-## What is tested
-
-### Direct checks (35)
-
-Each of the 5 web servers is attacked independently by 7 distinct scenarios.
-arxsentinel monitors the server's access log and must detect the threat within the
-session window. One check = one `(server, detector)` pair in the threat log.
-
-| Server | Profile | Access log |
-|--------|---------|------------|
-| nginx | `combined` | `logs/nginx/access.log` |
-| apache | `apache` | `logs/apache/access.log` |
-| traefik | `traefik` | `logs/traefik/access.log` |
-| caddy | `caddy` | `logs/caddy/access.log` |
-| haproxy | `haproxy-http` | `logs/haproxy/access.log` |
-
-| Detector | What triggers it | Scenario |
-|----------|-----------------|----------|
-| `probe` | Request to `/.env`, `/wp-login.php`, `/.git/config`, … | 7 sensitive-path requests |
-| `ua` | Scanner User-Agent (`sqlmap`, `Nuclei`, `masscan`, …) | 5 requests with scanner UAs |
-| `bruteforce` | 404 ratio > 60% after ≥ 10 requests | 15 requests, 12 to missing pages (80% 404) |
-| `crawler` | ≥ 5 sequential numeric paths under one prefix | `/items/1` … `/items/6` |
-| `noasset` | Page requests with zero asset (CSS/JS) requests | 8 HTML requests, 0 assets |
-| `rate` | > 100 req/60 s from one IP | 30 + 30 requests with 1 s gap (≈ 60 req/s) |
-| `overflow` | URL length > 2048 bytes | Single request with a 2200-char path |
-
-### Proxy-chain checks (20)
-
-Each proxy-chain check fires probe requests through one of 4 proxy layers to one
-of 5 backend configurations. arxsentinel monitors the **backend's** access log.
-
-**Invariant checked:** the threat log must contain a `THREAT` entry AND the proxy
-container's IP must NOT appear in any threat line. If the backend logged the proxy
-address instead of the attacker, the check fails with "proxy IP leaked".
-
-| Proxy ↓ \ Backend → | nginx | apache | traefik | caddy | haproxy |
-|---|---|---|---|---|---|
-| traefik | ✅ | ✅ | ✅ | ✅ | ✅ |
-| caddy | ✅ | ✅ | ✅ | ✅ | ✅ |
-| haproxy | ✅ | ✅ | ✅ | ✅ | ✅ |
-| nginx-rp | ✅ | ✅ | ✅ | ✅ | ✅ |
-
----
-
-## Infrastructure
-
-### Docker Compose services
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Attacker containers (one per scenario, ephemeral)              │
-│  Each gets a unique Docker IP → no cross-contamination          │
-└───────────────────────┬─────────────────────────────────────────┘
-                        │ HTTP
-         ┌──────────────┼──────────────────────┐
-         ▼              ▼                      ▼
-  ┌─────────────┐  ┌───────────────────────────────────────────┐
-  │Direct tests │  │         Proxy-chain tests                 │
-  │             │  │                                           │
-  │ nginx  :8081│  │  traefik  :8083 ─────────────────────────┤
-  │ apache :8082│  │  caddy    :8084 ─────────────────────────┤
-  │ traefik:8083│  │  haproxy  :8085 ─────────────────────────┤
-  │ caddy  :8084│  │  nginx-rp :8086 ─────────────────────────┤
-  │ haproxy:8085│  │                                           │
-  └─────────────┘  │  Routes: /backend-<name>/ → backend      │
-                   │                                           │
-                   └──┬──────┬────────┬───────┬───────────────┘
-                      │      │        │       │
-                      ▼      ▼        ▼       ▼
-              nginx:8080  apache  traefik  caddy  haproxy
-              (proxy-    -proxy   -backend -backend -backend
-               backend)
-```
-
-**Direct backends** (ports 8081–8085): serve static HTML + PHP, return real 200/404
-responses so detectors see authentic HTTP status codes.
-
-**Proxy layers** (ports 8083–8086): route path prefix `/backend-<name>/` to the
-corresponding trusted backend after stripping the prefix. All four set
-`X-Forwarded-For` with the client's real IP before forwarding.
-
-**Proxy-chain backends** (no host ports — internal only):
-
-| Service | Real IP mechanism | Log location |
-|---------|------------------|--------------|
-| nginx (`:8080`) | `ngx_http_realip_module` + `real_ip_header X-Forwarded-For` | `logs/nginx/access-proxy.log` |
-| apache-proxy | `mod_remoteip` + `RemoteIPInternalProxy 172.16.0.0/12` | `logs/apache-proxy/access.log` |
-| traefik-backend | `entryPoints.web.forwardedHeaders.trustedIPs` | `logs/traefik-proxy/access-proxy.log` |
-| caddy-backend | Logs `{http.request.header.X-Forwarded-For}` directly as client IP via transform-encoder | `logs/caddy-proxy/access-proxy.log` |
-| haproxy-backend | Custom `log-format` with `%[var(txn.client_ip)]` (txn var set from XFF at request time) | `logs/haproxy-proxy/access.log` |
-
-### arxsentinel instances
-
-`run.sh` starts 10 sentinel processes — one per monitored log file:
-
-```
-arxsentinel/nginx.yaml           → logs/nginx/access.log
-arxsentinel/apache.yaml          → logs/apache/access.log
-arxsentinel/traefik.yaml         → logs/traefik/access.log
-arxsentinel/caddy.yaml           → logs/caddy/access.log
-arxsentinel/haproxy.yaml         → logs/haproxy/access.log
-
-arxsentinel/nginx-proxy.yaml     → logs/nginx/access-proxy.log
-arxsentinel/apache-proxy.yaml    → logs/apache-proxy/access.log
-arxsentinel/traefik-proxy.yaml   → logs/traefik-proxy/access-proxy.log
-arxsentinel/caddy-proxy.yaml     → logs/caddy-proxy/access-proxy.log
-arxsentinel/haproxy-proxy.yaml   → logs/haproxy-proxy/access.log
-```
-
-Each proxy-chain sentinel writes its threat log to `logs/threats/<backend>-proxy.log`.
-
----
-
-## Test isolation model
-
-Each call to `run_scenario NAME SCRIPT` spins up a **fresh Docker container** on the
-integration network. Every container gets a unique IP address from the Docker IPAM pool
-— that IP becomes the attacker's address in the access log.
-
-```
-run_scenario "probe"     → attacker IP: 172.18.0.N
-run_scenario "ua"        → attacker IP: 172.18.0.M   (different container, different IP)
-run_scenario "bruteforce"→ attacker IP: 172.18.0.K
-...
-```
-
-Because arxsentinel's threat detector accumulates state **per IP**, fresh containers
-guarantee that the `probe` scenario's IP never collides with the `bruteforce` scenario's
-IP — each detector is triggered in clean isolation.
-
-For proxy-chain scenarios the container is the **attacker** and the Docker network
-assigns it a different IP from the proxy containers. `verify.sh` resolves the proxy
-container's IP via `docker inspect` and asserts it never appears in the threat log.
-
----
-
-## Proxy-chain mechanics
-
-### The invariant
-
-> The backend logs the **real client IP** (the attacker container's IP), not the
-> intermediate proxy's IP.
-
-This is validated by `assert_chain` in `verify.sh`:
-
-```
-1. grep for "THREAT" in logs/threats/<backend>-proxy.log  →  threat must exist
-2. inspect proxy container IP via docker inspect
-3. grep for that IP in any THREAT line                    →  must NOT appear
-```
-
-### How each backend extracts the real IP
-
-All four proxy layers set `X-Forwarded-For: <attacker-ip>` before forwarding.
-Each backend type uses its native mechanism to trust and log that header.
-
-#### nginx (`ngx_http_realip_module`)
-
-```nginx
-set_real_ip_from  172.16.0.0/12;   # trust Docker proxy subnet
-real_ip_header    X-Forwarded-For;
-real_ip_recursive on;              # walk chain, pick first non-trusted IP
-```
-
-After processing, `$remote_addr` **is** the real client IP. The access log uses
-`$remote_addr` directly — no auxiliary variable needed.
-
-> **Why not `$realip_remote_addr`?** That variable holds the original TCP peer (the
-> proxy IP). ArxSentinel reads the last field of the access log line as the client IP;
-> `$remote_addr` (replaced by realip) is the correct choice.
-
-#### Apache (`mod_remoteip`)
-
-```apache
-RemoteIPHeader         X-Forwarded-For
-RemoteIPInternalProxy  172.16.0.0/12
-```
-
-`%h` in the log format resolves to the forwarded IP after `mod_remoteip` processing.
-
-> **Why `RemoteIPInternalProxy` and not `RemoteIPTrustedProxy`?** In Docker Compose
-> networks the proxy sits on the same private subnet as the backend. `InternalProxy`
-> fully trusts the XFF chain from that CIDR; `TrustedProxy` adds an extra hop that
-> can cause the proxy's IP to appear in `%h` in some configurations.
-
-#### Traefik (`forwardedHeaders.trustedIPs`)
-
-Static config (traefik.yml):
-
-```yaml
-entryPoints:
-  web:
-    forwardedHeaders:
-      trustedIPs:
-        - "172.16.0.0/12"
-```
-
-Traefik rewrites `X-Forwarded-For` in the CLF access log with the real client IP
-when the incoming request comes from a trusted CIDR.
-
-> **Traefik v3 note:** `serversTransport.forwardedHeaders` does not exist. The correct
-> path is `entryPoints.<name>.forwardedHeaders.trustedIPs`.
-
-#### Caddy (transform-encoder, log XFF directly)
-
-Caddy does not provide a native mechanism to replace the logged client IP from
-`X-Forwarded-For` without being the terminating edge (i.e., without `trusted_proxies`
-applying to its own access log). The backend Caddyfile instead logs the XFF header
-value directly as the client IP field in the CLF output via `transform-encoder`:
-
-```caddyfile
-log {
-    format transform `{http.request.header.X-Forwarded-For} - {user_id} [{ts}] ...`
-}
-```
-
-ArxSentinel's `caddy` profile regex matches `{http.request.header.X-Forwarded-For}`
-in the `remote_addr` position.
-
-#### HAProxy (custom `log-format` with `txn` variable)
-
-```haproxy
-http-request set-var(txn.client_ip) req.fhdr(X-Forwarded-For)
-log-format "%[var(txn.client_ip)]:%cp [%tr] ..."
-```
-
-`req.fhdr(X-Forwarded-For)` is captured into a transaction variable at HTTP request
-time and written in the log-format `%ci` position (client IP).
-
-> **Why the `txn` variable pattern?** In HAProxy 3.x, using `req.fhdr(...)` directly
-> in `log-format` causes `ALERT: sample fetch 'req.fhdr' may not be reliably used
-> here because it needs 'HTTP request headers' which is not available at logging time`.
-> A `txn` variable is always available at log time.
-
----
-
-## CI integration
-
-`.github/workflows/integration.yml` runs the full suite on every PR targeting `dev`
-and on every push to `dev`. Both `dev-release.yml` and `release.yml` declare `needs:
-integration`, so a release cannot be published if any check fails.
-
-The CI workflow:
-1. Builds the binary (`go build`)
-2. Starts all containers (`docker compose up`)
-3. Runs `scenarios.sh` (attack traffic)
-4. Runs `verify.sh` (assert 55/55 PASS)
-
----
-
-## Directory layout
-
-```
-tests/integration/
-├── run.sh                  # Orchestrator: build → containers → scenarios → verify
-├── scenarios.sh            # Attack traffic generator (one container per scenario)
-├── verify.sh               # Assertions: 35 direct + 20 proxy-chain checks
-├── docker-compose.yml      # 10 server/proxy containers + php-fpm
-│
-├── configs/                # Server configuration files
-│   ├── nginx.conf          # Direct backend (port 80) + proxy-trusted backend (port 8080)
-│   ├── httpd.conf          # Apache direct backend
-│   ├── httpd-proxy.conf    # Apache with mod_remoteip (proxy-chain backend)
-│   ├── traefik.yml         # Traefik as proxy layer (path-based routing to 5 backends)
-│   ├── traefik-routes.yml  # Traefik dynamic routes
-│   ├── traefik-backend.yml # Traefik as trusted backend (forwardedHeaders.trustedIPs)
-│   ├── traefik-backend-routes.yml
-│   ├── Caddyfile           # Caddy as proxy layer (handle_path to 5 backends)
-│   ├── Caddyfile-backend   # Caddy as trusted backend (logs XFF as client IP)
-│   ├── haproxy.cfg         # HAProxy as proxy layer (ACL path routing + forwardfor)
-│   ├── haproxy-backend.cfg # HAProxy as trusted backend (txn var log-format)
-│   └── nginx-rp.conf       # nginx as reverse proxy layer (4th proxy type)
-│
-├── arxsentinel/            # Sentinel config per monitored log
-│   ├── nginx.yaml          # Direct: logs/nginx/access.log
-│   ├── apache.yaml
-│   ├── traefik.yaml
-│   ├── caddy.yaml
-│   ├── haproxy.yaml
-│   ├── nginx-proxy.yaml    # Proxy-chain: logs/nginx/access-proxy.log
-│   ├── apache-proxy.yaml
-│   ├── traefik-proxy.yaml
-│   ├── caddy-proxy.yaml
-│   └── haproxy-proxy.yaml
-│
-├── dockerfiles/
-│   └── Caddy.Dockerfile    # Caddy + transform-encoder plugin
-│
-├── logs/                   # Runtime — gitignored
-│   ├── nginx/, apache/, traefik/, caddy/, haproxy/
-│   ├── apache-proxy/, traefik-proxy/, caddy-proxy/, haproxy-proxy/
-│   └── threats/            # Sentinel threat output (one file per instance)
-│
-└── webapp/                 # Static site served by all backends
-    ├── index.html
-    ├── style.css
-    ├── app.js
-    ├── info.php
-    └── api/data.json
+# scenarios.sh
+SERVERS=(nginx apache traefik caddy haproxy litespeed)   # backends
+CHAIN_PROXIES=(traefik:80 caddy:80 haproxy:80 nginx-rp:80)
+CHAIN_BACKENDS=(nginx apache traefik caddy haproxy litespeed)
+
+# verify.sh
+SERVERS=(nginx apache traefik caddy haproxy litespeed)   # backends
+MODULES=(probe ua bruteforce crawler noasset rate overflow)  # core 7
+BADBOT_SERVERS=(nginx apache traefik caddy haproxy litespeed)  # 5 (no litespeed)
 ```
 
 ---
 
-## Adding new tests
+### Network Architecture
 
-### New detector check (direct)
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ integration_default (172.16.0.0/12)                                  │
+│                                                                      │
+│   attacker-probe  ──→  nginx  apache  traefik  caddy  haproxy  lite│
+│   attacker-ua          (all direct tests)                            │
+│   attacker-bruteforce                                                │
+│   attacker-crawler                                                    │
+│   attacker-noasset                                                    │
+│   attacker-rate                                                       │
+│   attacker-overflow                                                  │
+│   attacker-badbot                                                     │
+│   attacker-bogon-injection ──→ bogon-injector ──→ nginx-bogon-victim│
+│                                                                      │
+│   traefik:80 ──┬──→ nginx  apache  traefik  caddy  haproxy  lite   │
+│   caddy:80     │    (proxy-chain tests)                             │
+│   haproxy:80   │                                                     │
+│   nginx-rp:80  │                                                     │
+│                │                                                     │
+└────────────────┼────────────────────────────────────────────────────┘
+                 │
+┌────────────────┴──────────────────────────────────────────────────┐
+│ integration_cf_ext_net (10.88.0.0/24)                              │
+│   attacker-cf-direct ──→ cloudflare-sim ──→ nginx  apache  ...    │
+│   attacker-cf-chain  ──→ cloudflare-sim ──→ traefik ──→ nginx     │
+│   attacker-cf-broken ──→ cloudflare-sim ──→ nginx-bare           │
+└────────────────────────────────────────────────────────────────────┘
+```
 
-1. Add a `run_scenario "name" "..."` block to `scenarios.sh` with traffic that
-   triggers the new detector against all 5 servers via `attack_all`.
-2. Add the detector name to `MODULES` in `verify.sh`.
-3. Run `bash tests/integration/run.sh --skip-build` and confirm the new count.
-
-### New server profile (direct)
-
-1. Add the server container to `docker-compose.yml` with a mounted log volume.
-2. Write a server config under `configs/` and an arxsentinel config under `arxsentinel/`.
-3. Start the sentinel instance in `run.sh` (mirror the existing loop).
-4. Add the server name to `SERVERS` in both `scenarios.sh` and `verify.sh`.
-
-### New proxy-chain combination
-
-1. Add the proxy layer or backend service to `docker-compose.yml`.
-2. Configure path routing (`/backend-<name>/`) in the proxy config.
-3. For a new backend: add an arxsentinel config under `arxsentinel/` and start the
-   instance in `run.sh`.
-4. Add the combination to `CHAIN_PROXIES` or `CHAIN_BACKENDS` in `scenarios.sh`
-   and `verify.sh`.
+**Why two networks?**
+- Attacker on `integration_default` (172.16.x.x) shares the proxy CIDR range
+- If attacker were on same network as proxies, `real_ip_recursive` would exhaust trusted IPs
+  and fall back to cloudflare-sim container IP
+- By placing attacker on `10.88.0.0/24` (outside 172.16.0.0/12), attacker IP is always treated
+  as untrusted, forcing proper header extraction
