@@ -13,7 +13,7 @@ After v0.3.0 ships, the project migrates to **arx-sentinel**.
 ### Flow #13 — Multi-stream support
 
 Watch multiple log files in one process with full per-stream isolation.
-See `~/.claude/flows/013_2026-05-17_multi-stream/` for detailed plan.
+Decisions are documented in `.opencode/config/opencode/architecture/adr/` (ADR-001+).
 
 ```yaml
 streams:

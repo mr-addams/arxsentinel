@@ -101,17 +101,55 @@ affinity: {}
 # ── ArxSentinel config overrides via env vars ─────────────────────────────────────────────
 # These map to ARXSENTINEL_* environment variables (highest priority — override config.yaml).
 # See README.helm.md for the full list of available variables.
+# Scalar fields only — arrays (probe.paths, whitelist.bots, extra patterns) require custom
+# config.yaml override via ConfigMap editing or a separate rendered config file.
 env:
+  # ── General ─────────────────────────────────────────────────────────────────────────
+  ARXSENTINEL_GENERAL_PID_FILE: /tmp/arxsentinel.pid
+
+  # ── Logging ────────────────────────────────────────────────────────────────────────
+  ARXSENTINEL_LOGGING_DEBUG: "false"
+
+  # ── Parser ─────────────────────────────────────────────────────────────────────────
+  # ARXSENTINEL_PARSER_PROFILE: "apache"
+  # ARXSENTINEL_PARSER_LOG_FORMAT: "combined"
+
+  # ── Scoring ────────────────────────────────────────────────────────────────────────
   ARXSENTINEL_SCORING_ALERT_THRESHOLD: "50"
   ARXSENTINEL_SCORING_BAN_THRESHOLD: "80"
-  ARXSENTINEL_LOGGING_DEBUG: "false"
-  # ARXSENTINEL_METRICS_USERNAME: ""
-  # ARXSENTINEL_METRICS_PASSWORD_HASH: ""
+  # ARXSENTINEL_SCORING_OBSERVATION_WINDOW: "300s"
+
+  # ── State ──────────────────────────────────────────────────────────────────────────
+  # ARXSENTINEL_STATE_GC_INTERVAL: "60s"
+  # ARXSENTINEL_STATE_MAX_TRACKED_IPS: "100000"
+
+  # ── Detectors ──────────────────────────────────────────────────────────────────────
+  # ARXSENTINEL_DETECTORS_PROBE_ENABLED: "true"
+  # ARXSENTINEL_DETECTORS_RATE_THRESHOLD: "100"
+  # ARXSENTINEL_DETECTORS_BRUTEFORCE_RATIO_THRESHOLD: "0.6"
+  # ARXSENTINEL_DETECTORS_USERAGENT_SCANNER_SCORE: "40"
+
+  # ── Chain Guard ────────────────────────────────────────────────────────────────────
+  # ARXSENTINEL_CHAIN_GUARD_ENABLED: "true"
+  # ARXSENTINEL_CHAIN_GUARD_WARNINGS_LOG: "/tmp/warnings.log"
+
+  # ── Whitelist ──────────────────────────────────────────────────────────────────────
+  # ARXSENTINEL_WHITELIST_FAKE_BOT_SCORE: "35"
+  # ARXSENTINEL_WHITELIST_CUSTOM_IPS: "10.0.0.1,192.168.1.100"
+  # ARXSENTINEL_WHITELIST_CUSTOM_CIDRS: "10.0.0.0/8"
+
+  # ── Output ─────────────────────────────────────────────────────────────────────────
+  # ARXSENTINEL_OUTPUT_THREAT_LOG: /var/log/arxsentinel/threats.log
+  # ARXSENTINEL_OUTPUT_OPERATIONAL_LOG: /var/log/arxsentinel/sentinel.log
+
+  # ── Metrics ────────────────────────────────────────────────────────────────────────
+  # ARXSENTINEL_METRICS_USERNAME: "prometheus"
+  # ARXSENTINEL_METRICS_PASSWORD_HASH: "$2y$10$..."
 
 # ── Extra env vars (arbitrary key/value pairs) ────────────────────────────────────────────
 extraEnv: []
-# - name: ARXSENTINEL_SCORING_DECAY
-#   value: "linear"
+# - name: ARXSENTINEL_SCORING_OBSERVATION_WINDOW
+#   value: "600s"
 
 # ── Naming ────────────────────────────────────────────────────────────────────────────────
 nameOverride: ""

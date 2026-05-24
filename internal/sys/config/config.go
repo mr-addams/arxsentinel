@@ -758,21 +758,79 @@ func validateConfig(cfg *Config) error {
 	}
 	// Detector validation: zero thresholds cause panic or silent misconfiguration
 	// with partial YAML (yaml.v3 partial merge zeroes unset fields in a section).
-	if cfg.Detectors.Crawler.Enabled && cfg.Detectors.Crawler.MinSequential <= 0 {
-		return fmt.Errorf("detectors.crawler.min_sequential must be > 0, got %d",
-			cfg.Detectors.Crawler.MinSequential)
+	// Detector score validation: every enabled detector must have score > 0.
+	// Without this check a partial YAML section can silently zero the score,
+	// causing the detector to trigger on every single request with accumulated score 0.
+	if cfg.Detectors.Probe.Enabled && cfg.Detectors.Probe.Score <= 0 {
+		return fmt.Errorf("detectors.probe.score must be > 0, got %d", cfg.Detectors.Probe.Score)
 	}
-	if cfg.Detectors.Bruteforce.Enabled && cfg.Detectors.Bruteforce.MinRequests <= 0 {
-		return fmt.Errorf("detectors.bruteforce.min_requests must be > 0, got %d",
-			cfg.Detectors.Bruteforce.MinRequests)
+	if cfg.Detectors.Bruteforce.Enabled {
+		if cfg.Detectors.Bruteforce.MinRequests <= 0 {
+			return fmt.Errorf("detectors.bruteforce.min_requests must be > 0, got %d",
+				cfg.Detectors.Bruteforce.MinRequests)
+		}
+		if cfg.Detectors.Bruteforce.Score <= 0 {
+			return fmt.Errorf("detectors.bruteforce.score must be > 0, got %d",
+				cfg.Detectors.Bruteforce.Score)
+		}
 	}
-	if cfg.Detectors.NoAsset.Enabled && cfg.Detectors.NoAsset.MinPageRequests <= 0 {
-		return fmt.Errorf("detectors.noasset.min_page_requests must be > 0, got %d",
-			cfg.Detectors.NoAsset.MinPageRequests)
+	if cfg.Detectors.Crawler.Enabled {
+		if cfg.Detectors.Crawler.MinSequential <= 0 {
+			return fmt.Errorf("detectors.crawler.min_sequential must be > 0, got %d",
+				cfg.Detectors.Crawler.MinSequential)
+		}
+		if cfg.Detectors.Crawler.Score <= 0 {
+			return fmt.Errorf("detectors.crawler.score must be > 0, got %d",
+				cfg.Detectors.Crawler.Score)
+		}
 	}
-	if cfg.Detectors.Overflow.Enabled && cfg.Detectors.Overflow.MaxURLLength <= 0 {
-		return fmt.Errorf("detectors.overflow.max_url_length must be > 0, got %d",
-			cfg.Detectors.Overflow.MaxURLLength)
+	if cfg.Detectors.NoAsset.Enabled {
+		if cfg.Detectors.NoAsset.MinPageRequests <= 0 {
+			return fmt.Errorf("detectors.noasset.min_page_requests must be > 0, got %d",
+				cfg.Detectors.NoAsset.MinPageRequests)
+		}
+		if cfg.Detectors.NoAsset.Score <= 0 {
+			return fmt.Errorf("detectors.noasset.score must be > 0, got %d",
+				cfg.Detectors.NoAsset.Score)
+		}
+	}
+	if cfg.Detectors.Rate.Enabled {
+		if cfg.Detectors.Rate.Threshold <= 0 {
+			return fmt.Errorf("detectors.rate.threshold must be > 0, got %d",
+				cfg.Detectors.Rate.Threshold)
+		}
+		if cfg.Detectors.Rate.Score <= 0 {
+			return fmt.Errorf("detectors.rate.score must be > 0, got %d",
+				cfg.Detectors.Rate.Score)
+		}
+	}
+	if cfg.Detectors.UserAgent.Enabled {
+		if cfg.Detectors.UserAgent.ScannerScore <= 0 {
+			return fmt.Errorf("detectors.useragent.scanner_score must be > 0, got %d",
+				cfg.Detectors.UserAgent.ScannerScore)
+		}
+		if cfg.Detectors.UserAgent.GrabberScore <= 0 {
+			return fmt.Errorf("detectors.useragent.grabber_score must be > 0, got %d",
+				cfg.Detectors.UserAgent.GrabberScore)
+		}
+		if cfg.Detectors.UserAgent.AutomationScore <= 0 {
+			return fmt.Errorf("detectors.useragent.automation_score must be > 0, got %d",
+				cfg.Detectors.UserAgent.AutomationScore)
+		}
+		if cfg.Detectors.UserAgent.EmptyUAScore <= 0 {
+			return fmt.Errorf("detectors.useragent.empty_ua_score must be > 0, got %d",
+				cfg.Detectors.UserAgent.EmptyUAScore)
+		}
+	}
+	if cfg.Detectors.Overflow.Enabled {
+		if cfg.Detectors.Overflow.MaxURLLength <= 0 {
+			return fmt.Errorf("detectors.overflow.max_url_length must be > 0, got %d",
+				cfg.Detectors.Overflow.MaxURLLength)
+		}
+		if cfg.Detectors.Overflow.Score <= 0 {
+			return fmt.Errorf("detectors.overflow.score must be > 0, got %d",
+				cfg.Detectors.Overflow.Score)
+		}
 	}
 	if cfg.Detectors.BadBot.Enabled {
 		if cfg.Detectors.BadBot.Score <= 0 {

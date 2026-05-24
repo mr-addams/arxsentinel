@@ -62,6 +62,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -186,6 +187,12 @@ func main() {
 		for _, s := range cfg.Streams {
 			utils.Log("CONFIG", fmt.Sprintf("  stream %q: %s", s.Name, s.LogFile), "info")
 		}
+	}
+
+	// Log active ARXSENTINEL_* env var overrides for diagnostics.
+	// Users can verify their env vars were read; misspelled keys will be absent from this line.
+	if envVars := activeEnvOverrides(); len(envVars) > 0 {
+		utils.Log("CONFIG", fmt.Sprintf("env overrides: %s", strings.Join(envVars, ", ")), "info")
 	}
 	if cfg.Metrics.Enabled {
 		displayAddr := cfg.Metrics.ListenAddr
@@ -855,4 +862,24 @@ func metricsHandler(username, passwordHash string) http.Handler {
 		}
 		inner.ServeHTTP(w, r)
 	})
+}
+
+// ========================== Env var diagnostics =========================================
+
+// activeEnvOverrides returns sorted ARXSENTINEL_* keys found in the environment.
+// Used at startup to log which env var overrides are active — helps users verify
+// their env vars were read. Misspelled or unsupported keys produce no log but also
+// no error; the user can spot them missing from the output.
+func activeEnvOverrides() []string {
+	prefix := "ARXSENTINEL_"
+	var vars []string
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, prefix) {
+			if idx := strings.IndexByte(e, '='); idx > 0 {
+				vars = append(vars, e[:idx])
+			}
+		}
+	}
+	sort.Strings(vars)
+	return vars
 }

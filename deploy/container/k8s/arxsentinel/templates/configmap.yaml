@@ -7,10 +7,13 @@ metadata:
     {{- include "arxsentinel.labels" . | nindent 4 }}
 data:
   config.yaml: |
-    # ArxSentinel config rendered by Helm — override values via values.yaml env section.
+    # ArxSentinel config rendered by Helm — override individual fields via values.yaml env section.
     general:
       log_file: /var/log/nginx/{{ .Values.logFile }}
       pid_file: /tmp/arxsentinel.pid
+      lines_buf_size: 1000
+      tail_retry_interval: "5s"
+      stats_interval: "300s"
 
     logging:
       debug: false
@@ -30,24 +33,106 @@ data:
       gc_interval: "60s"
       max_tracked_ips: 100000
 
-    metrics:
-      enabled: {{ .Values.metrics.enabled }}
-      listen_addr: ":{{ .Values.metrics.port }}"
-      username: ""
-      password_hash: ""
+    detectors:
+      probe:
+        enabled: true
+        score: 25
+        paths:
+          - "/.env"
+          - "/.env.backup"
+          - "/.env.local"
+          - "/.env.production"
+          - "/.env.staging"
+          - "/config.yml"
+          - "/config.yaml"
+          - "/config.json"
+          - "/wp-config.php"
+          - "/.git/config"
+          - "/.git/HEAD"
+          - "/.gitignore"
+          - "/.aws/credentials"
+          - "/.docker/config.json"
+          - "/wp-login.php"
+          - "/xmlrpc.php"
+          - "/wp-admin/"
+          - "/administrator/"
+          - "/admin/"
+          - "/phpmyadmin/"
+          - "/backup.zip"
+          - "/backup.tar.gz"
+          - "/backup.sql"
+          - "/server-status"
+          - "/server-info"
+          - "/phpinfo.php"
+          - "/actuator/"
+          - "/metrics"
+          - "/graphql"
 
-    output:
-      {{- if .Values.threatLog.hostPath }}
-      threat_log: /var/log/arxsentinel/threats.log
-      {{- else }}
-      # No threatLog.hostPath set — threat log goes to stdout-visible temp location.
-      # In managed cloud environments, use an Output Plugin (future) to send threats
-      # to a database, queue, or webhook instead of Fail2Ban.
-      threat_log: /tmp/threats.log
-      {{- end }}
-      operational_log: /tmp/sentinel.log
+      bruteforce:
+        enabled: true
+        min_requests: 10
+        ratio_threshold: 0.6
+        score: 30
 
-    # URLs are the single source of truth — edit here to update across all deploy types.
+      crawler:
+        enabled: true
+        min_sequential: 5
+        score: 20
+
+      noasset:
+        enabled: true
+        min_page_requests: 3
+        asset_ratio_threshold: 0.1
+        asset_extensions:
+          - ".css"
+          - ".js"
+          - ".png"
+          - ".jpg"
+          - ".jpeg"
+          - ".gif"
+          - ".svg"
+          - ".woff"
+          - ".woff2"
+          - ".ttf"
+          - ".ico"
+          - ".webp"
+        score: 20
+
+      rate:
+        enabled: true
+        window: "60s"
+        threshold: 100
+        score: 25
+
+      useragent:
+        enabled: true
+        scanner_score: 40
+        grabber_score: 20
+        automation_score: 15
+        empty_ua_score: 30
+        extra_scanner_patterns: []
+        extra_grabber_patterns: []
+        extra_automation_patterns: []
+
+      overflow:
+        enabled: true
+        max_url_length: 2048
+        suspicious_params:
+          - "bypass"
+          - "shell"
+          - "cmd"
+          - "exec"
+          - "eval"
+          - "system"
+          - "passthru"
+        score: 30
+
+      badbot:
+        enabled: true
+        score: 60
+        check_ua: true
+        check_referrer: false
+
     blocklist:
       lists:
         - name: badbot-ua
@@ -62,3 +147,86 @@ data:
           sources:
             - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrers.list"
               format: plain_text
+
+    chain_guard:
+      enabled: false
+      warnings_log: ""
+      cloudflare:
+        enabled: true
+        refresh_interval: 24h
+        sources:
+          - https://www.cloudflare.com/ips-v4/
+          - https://www.cloudflare.com/ips-v6/
+      bogon:
+        enabled: true
+
+    whitelist:
+      fake_bot_score: 35
+      dns_verify_timeout: "2s"
+      bots:
+        - name: google
+          ua_patterns: ["Googlebot", "Google-InspectionTool", "GoogleOther", "AdsBot-Google"]
+          rdns_domains: [".googlebot.com", ".google.com"]
+          verify_method: rdns_ipjson
+        - name: bing
+          ua_patterns: ["bingbot", "BingPreview", "msnbot", "adidxbot"]
+          rdns_domains: [".search.msn.com"]
+          verify_method: rdns
+        - name: yandex
+          ua_patterns: ["YandexBot", "YandexImages", "YandexMetrika", "YandexDirect"]
+          rdns_domains: [".yandex.ru", ".yandex.net", ".yandex.com"]
+          verify_method: rdns
+        - name: duckduckgo
+          ua_patterns: ["DuckDuckBot"]
+          rdns_domains: [".duckduckgo.com"]
+          verify_method: rdns
+        - name: baidu
+          ua_patterns: ["Baiduspider", "BaiduMobaider"]
+          rdns_domains: [".baidu.com", ".baidu.jp"]
+          verify_method: rdns
+        - name: apple
+          ua_patterns: ["Applebot"]
+          rdns_domains: [".applebot.apple.com"]
+          verify_method: rdns
+        - name: facebook
+          ua_patterns: ["facebookexternalhit", "Facebot"]
+          rdns_domains: []
+          verify_method: ip_ranges
+        - name: twitter
+          ua_patterns: ["Twitterbot"]
+          rdns_domains: []
+          verify_method: ip_ranges
+        - name: telegram
+          ua_patterns: ["TelegramBot"]
+          rdns_domains: []
+          verify_method: ip_ranges
+        - name: gptbot
+          ua_patterns: ["GPTBot"]
+          rdns_domains: [".openai.com"]
+          verify_method: rdns
+        - name: claudebot
+          ua_patterns: ["ClaudeBot", "Claude-Web", "anthropic-ai"]
+          rdns_domains: [".anthropic.com"]
+          verify_method: rdns
+      custom:
+        ips: []
+        cidrs: []
+        ua_substrings: []
+      dns_cache:
+        positive_ttl: "24h"
+        negative_ttl: "1h"
+        ip_list_refresh: "24h"
+
+    metrics:
+      enabled: {{ .Values.metrics.enabled }}
+      listen_addr: ":{{ .Values.metrics.port }}"
+      username: ""
+      password_hash: ""
+
+    output:
+      {{- if .Values.threatLog.hostPath }}
+      threat_log: /var/log/arxsentinel/threats.log
+      {{- else }}
+      threat_log: /tmp/threats.log
+      {{- end }}
+      operational_log: /tmp/sentinel.log

@@ -204,7 +204,7 @@ docker run -d \
   ghcr.io/mr-addams/arxsentinel:latest
 ```
 
-See [README.docker.md](README.docker.md) for Docker Compose setup, volume mounts, env var overrides, and Fail2Ban integration.
+See [README.docker.md](deploy/container/docker/README.md) for Docker Compose setup, volume mounts, env var overrides, and Fail2Ban integration.
 
 ### Kubernetes (Helm)
 
@@ -216,7 +216,7 @@ helm install arxsentinel ./deploy/container/k8s/arxsentinel \
   --set threatLog.hostPath=/var/log/arxsentinel
 ```
 
-See [README.helm.md](README.helm.md) for values reference, Prometheus Operator integration, and cloud deployment notes.
+See [README.helm.md](deploy/container/k8s/arxsentinel/README.md) for values reference, Prometheus Operator integration, and cloud deployment notes.
 
 ## Configuration
 
@@ -336,7 +336,7 @@ Score accumulates with linear decay over `observation_window`. Reaching `alert_t
 ArxSentinel provides automatic bot verification (search engines) and custom exclusion lists
 (IPs, CIDRs, User-Agent substrings). Whitelisted requests skip all detectors entirely.
 
-See [README.whitelist.md](README.whitelist.md) for configuration details and examples.
+See [README.whitelist.md](deploy/examples/README.whitelist.md) for configuration details and examples.
 
 ## Architecture
 
@@ -485,7 +485,7 @@ fail2ban-client set arxsentinel unbanip 1.2.3.4
 
 ArxSentinel supports three log format modes: **combined** (default nginx), **JSON** (no recompilation needed), and **custom regex** for arbitrary text formats.
 
-See [README.log-formats.md](README.log-formats.md) for full configuration examples, field mappings, and common mistakes.
+See [README.log-formats.md](deploy/examples/README.log-formats.md) for full configuration examples, field mappings, and common mistakes.
 
 ## Reverse proxy & Chain Guard
 
