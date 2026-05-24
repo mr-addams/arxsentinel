@@ -22,20 +22,22 @@ Containers:
   Simulators: cloudflare-sim, bogon-injector
 ```
 
-### Matrix — 109 Checks
+### Matrix — 110 Checks
 
 | Category | Formula | Count | Invariant Verified |
 |---|---|---|---|
 | DIRECT | 6 servers × 7 detectors | 42 | Each detector fires on every server |
-| BADBOT | 5 servers (no litespeed) | 5 | UA blocklist fires on UA-logging servers |
+| BADBOT | 6 servers (all log UA) | 6 | UA blocklist fires on every server |
 | BLOCKLIST | 6 servers (automaton loaded) | 6 | Manager builds automaton from blocklist source |
 | PROXY-CHAIN | 4 proxies × 6 backends | 24 | Threat log shows attacker IP, NOT proxy IP |
 | CF-DIRECT | 6 backends | 6 | Threat log shows real IP, NOT CF-sim IP |
 | CF-CHAIN | 4 proxies × 6 backends | 24 | Real IP survives two-hop CF→proxy→backend |
 | CHAIN-GUARD | 2 warnings | 2 | cf-broken and bogon-victim write warnings |
-| **TOTAL** | | **109** | |
+| **TOTAL** | | **110** |
 
-Litespeed is excluded from BADBOT because OLS does not log User-Agent in standard CLF format.
+All 6 servers log User-Agent: nginx/apache/caddy/litespeed natively;
+traefik via `fields.headers.names.User-Agent: keep`;
+haproxy via `http-request capture req.hdr(user-agent)` + custom log-format.
 
 ---
 
@@ -164,8 +166,28 @@ UA read from blocklist/test-ua.txt (fetched from blocklist-server:8090)
 2 × curl -A "<badbot-ua>/1.0" http://<srv>/
 ```
 
-**Expected:** THREAT with `class=badbot` on nginx, apache, traefik, caddy, haproxy.
-**Excluded:** litespeed — OLS does not log User-Agent.
+**Expected:** THREAT with `class=badbot` on all 6 servers.
+
+---
+
+#### 1.9 blocklist — Automaton Loaded
+
+**What is verified (per server, 1 check):**
+```
+assert_blocklist_loaded "$srv"
+```
+
+**Purpose:** This is NOT a detector test — it validates that the **Manager component**
+successfully fetched blocklist patterns from the local `blocklist-server:8090`, rebuilt
+the Aho-Corasick automaton, and loaded N>0 patterns into memory. Without this, the
+`badbot` detector would have no patterns to match against.
+
+**Verification:** `verify.sh` checks each server's operational log for the string
+`automaton rebuilt (N patterns)` where N is non-zero.
+
+**Expected:** PASS with pattern count displayed.
+
+**6 checks** (one per server).
 
 ---
 
@@ -218,7 +240,7 @@ falling back to cloudflare-sim container IP.
 
 ---
 
-**Case 1 — CF-Direct: cloudflare-sim → product (Scenario 10)**
+##### Case 1 — CF-Direct: cloudflare-sim → product (Scenario 10)
 
 **Topology:**
 ```
@@ -237,7 +259,7 @@ If CF-sim IP appears → class=cf-ip-leak → FAIL.
 
 ---
 
-**Case 2 — CF-Chain: cloudflare-sim → our proxy → product (Scenario 11)**
+##### Case 2 — CF-Chain: cloudflare-sim → our proxy → product (Scenario 11)
 
 **Topology:**
 ```
@@ -251,11 +273,11 @@ Real IP must survive both hops.
 
 **Invariant:** Same as Case 1 — threat log shows attacker IP, not CF-sim IP.
 
-**72 checks** (4 proxies × 6 backends × 3 paths).
+**24 checks** (4 proxies × 6 backends — 3 probe paths per pair, single assertion per pair).
 
 ---
 
-**Case 3A — CF-Broken: cloudflare-sim → nginx-bare (Scenario 12A)**
+##### Case 3A — CF-Broken: cloudflare-sim → nginx-bare (Scenario 12A)
 
 nginx-bare has NO `real_ip_header` configured. It logs the TCP peer (cloudflare-sim container IP)
 as client IP.
@@ -267,7 +289,7 @@ IP range and write `cloudflare-ip-as-client` to `warnings/cf-broken.log`.
 
 ---
 
-**Case 3B — Bogon Injection (Scenario 12B)**
+##### Case 3B — Bogon Injection (Scenario 12B)
 
 bogon-injector adds `X-Forwarded-For: 10.0.0.1` before forwarding to nginx-bogon-victim.
 
@@ -322,7 +344,7 @@ Absence = FAIL.
    ```bash
    BADBOT_SERVERS=(nginx apache traefik caddy haproxy litespeed <UA_LOGGING_SERVER>)
    ```
-   If it does NOT log UA (like litespeed), do NOT add it.
+   All 6 servers in the test suite log UA, so add the new one if it also does.
 
 5. **Add to proxy-chain** if the new server will be a backend behind proxies:
    - No code changes needed — `CHAIN_BACKENDS` iterates over all servers
@@ -401,7 +423,7 @@ CHAIN_BACKENDS=(nginx apache traefik caddy haproxy litespeed)
 # verify.sh
 SERVERS=(nginx apache traefik caddy haproxy litespeed)   # backends
 MODULES=(probe ua bruteforce crawler noasset rate overflow)  # core 7
-BADBOT_SERVERS=(nginx apache traefik caddy haproxy litespeed)  # 5 (no litespeed)
+BADBOT_SERVERS=(nginx apache traefik caddy haproxy litespeed)  # 6 (all servers log UA)
 ```
 
 ---

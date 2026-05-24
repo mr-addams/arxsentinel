@@ -24,19 +24,21 @@ External network: integration_cf_ext_net (10.88.0.0/24) — IP атакуючо�
 
 ---
 
-### Matrix — 109 Checks
+### Matrix — 110 Checks
 
 | Category | Formula | Count | Invariant Verified |
 |---|---|---|---|
 | DIRECT | 6 серверів × 7 детекторів | 42 | Кожен детектор спрацьовує на кожному сервері |
-| BADBOT | 5 серверів (без litespeed) | 5 | UA blocklist спрацьовує на серверах з логуванням UA |
+| BADBOT | 6 серверів (всі логують UA) | 6 | UA blocklist спрацьовує на кожному сервері |
 | BLOCKLIST | 6 серверів (автомат завантажено) | 6 | Manager будує автомат із source blocklist |
 | PROXY-CHAIN | 4 проксі × 6 backends | 24 | Лог загроз показує IP атакуючого, НЕ IP проксі |
 | CF-DIRECT | 6 backends | 6 | Лог загроз показує real IP, НЕ IP CF‑sim |
 | CF-CHAIN | 4 проксі × 6 backends | 24 | Real IP зберігається через two‑hop CF→proxy→backend |
 | CHAIN-GUARD | 2 попередження | 2 | cf‑broken і bogon‑victim записують warnings |
 
-*Litespeed виключено з BADBOT, тому що OLS не логує User-Agent у стандартному форматі CLF.*
+Всі 6 серверів логують User-Agent: nginx/apache/caddy/litespeed нативно;
+traefik через `fields.headers.names.User-Agent: keep`;
+haproxy через `http-request capture req.hdr(user-agent)` + кастомний log-format.
 
 ---
 
@@ -149,8 +151,28 @@ UA read from blocklist/test-ua.txt (fetched from blocklist-server:8090)
 2 × curl -A "<badbot-ua>/1.0" http://<srv>/
 ```
 
-**Очікується:** THREAT з `class=badbot` на nginx, apache, traefik, caddy, haproxy.
-*Виключено:* litespeed — OLS не логує User-Agent.
+**Очікується:** THREAT з `class=badbot` на всіх 6 серверах.
+
+---
+
+#### 1.9 blocklist — Automaton Loaded
+
+**Що перевіряється (на сервер, 1 перевірка):**
+```
+assert_blocklist_loaded "$srv"
+```
+
+**Призначення:** Це НЕ тест детектора — він валідує, що **Manager** успішно завантажив
+патерни blocklist з локального `blocklist-server:8090`, пересклав Aho-Corasick-автомат
+і завантажив N>0 патернів у пам'ять. Без цього детектор `badbot` не мав би патернів для
+порівняння.
+
+**Верифікація:** `verify.sh` перевіряє operational log кожного сервера на наявність рядка
+`automaton rebuilt (N patterns)` з N>0.
+
+**Очікується:** PASS з відображенням кількості патернів.
+
+**6 перевірок** (одна на сервер).
 
 ---
 
@@ -274,7 +296,7 @@ Chain Guard — це компонент sentinel'а, який моніторит
    ```bash
    BADBOT_SERVERS=(nginx apache traefik caddy haproxy litespeed <UA_LOGGING_SERVER>)
    ```
-   *Якщо НЕ логує UA (наприклад, litespeed) — НЕ додавати.*
+    *Всі 6 серверів у тестовому наборі логують UA — додавай новий, якщо він теж це робить.*
 
 5. **Додати до proxy‑chain**, якщо новий сервер буде backend за проксі:
    - Зміни коду не потрібні — `CHAIN_BACKENDS` ітерує по всіх серверах
@@ -339,7 +361,7 @@ CHAIN_BACKENDS=(nginx apache traefik caddy haproxy litespeed)
 # verify.sh
 SERVERS=(nginx apache traefik caddy haproxy litespeed)   # backends
 MODULES=(probe ua bruteforce crawler noasset rate overflow)  # core 7
-BADBOT_SERVERS=(nginx apache traefik caddy haproxy litespeed)  # 5 (no litespeed)
+BADBOT_SERVERS=(nginx apache traefik caddy haproxy litespeed)  # 6 (всі сервери логують UA)
 ```
 
 ### Network Architecture
