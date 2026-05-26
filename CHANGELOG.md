@@ -11,6 +11,47 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Universal I/O** (Flow #030) — Source/Sink abstraction layer replacing the hardwired
+  TailReader→threats.log pipeline.
+
+  Sources (`pkg/plugin.Source`):
+  - `file` — watches a log file via inotify, handles logrotate (existing behaviour)
+  - `stdin` — reads log lines from standard input; enables pipe/container/sidecar mode
+
+  Sinks (`pkg/plugin.Sink`):
+  - `file` — writes to a file in `fail2ban` or `json` format (existing behaviour)
+  - `stdout` — writes to standard output in `fail2ban` or `json` format
+
+  CLI flags for pipe mode:
+  ```bash
+  # Pipe nginx access log, emit JSON threat events to stdout
+  docker logs -f nginx | arxsentinel --input=stdin --output=stdout,json
+  ```
+
+  Config syntax (`inputs:`/`outputs:` sections):
+  ```yaml
+  inputs:
+    - type: file
+      path: /var/log/nginx/access.log
+  outputs:
+    - type: file
+      path: /var/log/arxsentinel/threats.log
+      format: fail2ban
+    - type: stdout
+      format: json
+  ```
+
+  Backward compatible — existing `general.log_file` + `output.threat_log` configs
+  are auto-migrated to the new syntax at startup with a deprecation notice.
+
+  New Prometheus metrics:
+  - `arxsentinel_input_lines_total{stream, source, source_type}`
+  - `arxsentinel_output_events_total{stream, sink, sink_type}`
+  - `arxsentinel_output_dropped_total{stream, sink, reason}`
+
+  New CLI flag:
+  - `--config PATH` — override config file path (alternative to `ARXSENTINEL_CONFIG` env var)
+
 - **Chain Guard** (`chain_guard`) — new subsystem for IP chain integrity detection.
   Runs before the detector pipeline on every log entry; writes infrastructure warnings
   to a dedicated `warnings.log` — separate from `threats.log`.

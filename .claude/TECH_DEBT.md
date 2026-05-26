@@ -55,3 +55,55 @@ severity, description, and proposed resolution.
 - **Status:** resolved (Flow #025) — `blocklist.Manager` is created once in `main()` and
   passed to all streams via `SharedResources`. `BadBotDetector` is now a thin wrapper over
   `Manager.Match()`. A single bbolt file is opened by the Manager; no per-stream duplication.
+
+
+---
+
+### [030-1] Alert Sinks with dedup/rate limit (Telegram, Slack, PagerDuty, Zapier)
+
+- **Flow:** #030 — Universal I/O Phase 2
+- **Severity:** medium
+- **Area:** `internal/core/output/`, `pkg/plugin/sink.go`
+- **Problem:** Phase 1 only implements file and stdout sinks. Teams often need real-time
+  alert delivery to Telegram/Slack/PagerDuty. Without dedup and rate-limiting, a flood
+  attack would generate thousands of alerts.
+- **Resolution:** Add `AlertSink` wrapper with dedup cache (IP+level → last-sent timestamp)
+  and token bucket rate limiter per-sink. Config: `min_level`, `dedup_window`, `rate_limit`.
+  Implement alongside `HTTPSink` in Phase 2.
+- **Status:** open
+
+### [030-2] Static Plugin Registry (name → factory function)
+
+- **Flow:** #030 — Universal I/O Phase 2+
+- **Severity:** low
+- **Area:** `pkg/plugin/`, `cmd/arxsentinel/main.go`
+- **Problem:** Source and Sink types are hardcoded in `buildSources()`/`buildSinks()`.
+  Adding a new type requires editing main.go. After Phase 2 reaches ≥3 Source types and
+  ≥3 Sink types, a registry pattern becomes worthwhile.
+- **Resolution:** `plugin.RegisterSource(name, factory)` / `plugin.RegisterSink(name, factory)`
+  called from `init()` in each implementation package. YAML `type:` maps to registry lookup.
+- **Status:** open
+
+### [030-3] Dynamic Plugin Runtime (gRPC sidecar or WASM)
+
+- **Flow:** #030 — Universal I/O long-term
+- **Severity:** low
+- **Area:** `pkg/plugin/`
+- **Problem:** External developers cannot add custom Sources/Sinks without forking and
+  recompiling. Limits extensibility for enterprise use cases.
+- **Resolution:** Implement a gRPC sidecar protocol or WASM plugin runtime.
+  Precedents: Terraform providers, Vault plugins, Packer builders.
+- **Status:** open
+
+### [030-4] Slogan and hero section landing — dual audience positioning
+
+- **Flow:** #030 — Universal I/O
+- **Severity:** low
+- **Area:** `docs/index.html`
+- **Problem:** Current slogan is nginx-centric ("watches every HTTP request and hands
+  confirmed attackers straight to Fail2Ban"). After Universal I/O, ArxSentinel works
+  with any web server and any output sink, but the slogan does not reflect this.
+  Changing the hero copy requires copywriter input and A/B testing considerations.
+- **Resolution:** Separate flow for slogan/hero redesign. Interim: add "Works with your
+  stack" section below the hero (done in Flow #030).
+- **Status:** open (hero section deferred)
