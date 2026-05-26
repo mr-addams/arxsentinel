@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/output"
 	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/core/scorer"
 	"github.com/mr-addams/arxsentinel/internal/core/state"
 	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
+	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 // TestStartupShutdownInvariants enforces the mandatory startup/shutdown specification
@@ -135,34 +135,38 @@ general:
 	}
 
 	var count atomic.Int64
-	// ThreatLogger with a no-op write function — we do not assert on threat output here.
-	tl := output.NewThreatLogger(func(ip string, score int, level string, modules []string, reason string) {})
+	var threatCount atomic.Int64
 
 	pipe := &PipelineContext{
-		StreamName:     "test",
-		processedCount: &count,
-		Tracker:        tracker,
-		Scorer:         scorer.NewScorer(cfg.Scoring, nil, func(tag, msg, level string) {}),
-		ThreatLogger:   tl,
-		Matcher:        matcher,
-		Verifier:       whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, func(tag, msg, level string) {}),
-		Parser:         &parser.CombinedParser{},
-		FakeBotScore:   cfg.Whitelist.FakeBotScore,
+		StreamName:       "test",
+		processedCount:   &count,
+		threatCount:      &threatCount,
+		Tracker:          tracker,
+		Scorer:           scorer.NewScorer(cfg.Scoring, nil, func(tag, msg, level string) {}),
+		Sinks:            []plugin.Sink{}, // no-op sink list — we do not assert on threat output here
+		Matcher:          matcher,
+		Verifier:         whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, func(tag, msg, level string) {}),
+		FakeBotScore:     cfg.Whitelist.FakeBotScore,
 		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
 		// Shared is zero-value: ChainChecker == nil, WarningsWriter == nil.
 		// This simulates chain_guard.enabled = false (the default).
-		Shared:  SharedResources{},
-		LogFile: "/var/log/nginx/access.log",
+		Shared:     SharedResources{},
+		SourceName: "file:/var/log/nginx/access.log",
+		SourceType: "file",
 	}
 
 	// A valid nginx combined + real_ip log line (the format CombinedParser expects).
 	// Format: $remote_addr ... "$http_user_agent" "$real_ip"
-	line := `203.0.113.1 - - [20/May/2026:10:00:00 +0000] "GET /wp-login.php HTTP/1.1" 200 512 "-" "curl/7.88" "203.0.113.1"`
+	rawLine := `203.0.113.1 - - [20/May/2026:10:00:00 +0000] "GET /wp-login.php HTTP/1.1" 200 512 "-" "curl/7.88" "203.0.113.1"`
+	entry, ok := (&parser.CombinedParser{}).Parse(rawLine)
+	if !ok {
+		t.Fatal("test setup: CombinedParser failed to parse the test line")
+	}
 
 	// Must not panic.
-	processLine(context.Background(), line, pipe)
+	processLine(context.Background(), entry, pipe)
 
 	if count.Load() == 0 {
-		t.Error("processLine returned without incrementing processedCount for a valid log line")
+		t.Error("processLine returned without incrementing processedCount for a valid log entry")
 	}
 }

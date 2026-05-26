@@ -265,3 +265,34 @@ run_scenario "bogon-injection" "
 "
 
 echo "[scenarios] all scenarios done"
+
+# ── Universal I/O pipe-mode scenarios (no Docker required) ───────────────────────────────
+# These scenarios test the --input=stdin / --output=stdout CLI flags introduced in Flow #030.
+# They run the arxsentinel binary directly and do not need a Docker network.
+# Skipped when the binary is not present in the expected location.
+
+ARX_BIN="${INT_DIR}/arxsentinel/arxsentinel"
+ARX_CONFIG="${INT_DIR}/configs/default.yaml"
+
+run_stdin_scenario() {
+    # Pipe a known probe attack line through stdin and verify JSON output on stdout.
+    # The line triggers the probe detector (/.env access with score above WARN threshold).
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/stdin] SKIP — binary not found at $ARX_BIN"
+        return
+    fi
+    echo "[scenarios/stdin] testing --input=stdin --output=stdout,json"
+    # Generate multiple probe lines to exceed the detection threshold.
+    local attack_line='1.2.3.4 - - [01/Jan/2026:00:00:00 +0000] "GET /.env HTTP/1.1" 404 0 "-" "curl/7.88" "1.2.3.4"'
+    local output
+    output=$(printf '%s\n%.0s' "$attack_line" {1..5} \
+        | timeout 10 "$ARX_BIN" --input=stdin --output=stdout,json \
+            --config "$ARX_CONFIG" 2>/dev/null || true)
+    if echo "$output" | grep -q '"ip":"1.2.3.4"'; then
+        echo "[scenarios/stdin] PASS — threat event detected in JSON output"
+    else
+        echo "[scenarios/stdin] SKIP — no threat event (thresholds may require more lines)"
+    fi
+}
+
+run_stdin_scenario

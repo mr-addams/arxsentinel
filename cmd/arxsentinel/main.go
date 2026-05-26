@@ -75,6 +75,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
 	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 	"github.com/mr-addams/arxsentinel/internal/core/detector"
+	coreinput "github.com/mr-addams/arxsentinel/internal/core/input"
 	"github.com/mr-addams/arxsentinel/internal/core/output"
 	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/core/scorer"
@@ -83,6 +84,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/metrics"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
+	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -91,23 +93,25 @@ import (
 var version = "dev"
 
 // PipelineContext holds long-lived dependencies shared by processLine.
-// Recreated on SIGHUP reload: Scorer, Matcher, and Parser are replaced; Tracker and
-// Verifier survive. FakeBotScore and DNSVerifyTimeout reflect the current config.
+// Recreated on SIGHUP reload: Scorer and Matcher are replaced; Tracker and Verifier survive.
+// Sinks are kept across reloads — FileSink.Reload() handles log rotation in-place.
+// FakeBotScore and DNSVerifyTimeout reflect the current config.
 // Shared is passed by value — SharedResources fields are pointers, so the copy is cheap
 // and any nil-check in processLine correctly reflects the state at pipeline construction.
 type PipelineContext struct {
 	StreamName       string           // empty string for single-stream (backward compat)
 	processedCount   *atomic.Int64    // per-stream counter, owned by runStream
+	threatCount      *atomic.Int64    // per-stream threat counter, owned by runStream
 	Tracker          *state.Tracker
 	Scorer           *scorer.Scorer
-	ThreatLogger     *output.ThreatLogger
+	Sinks            []plugin.Sink    // ordered list of output sinks for this stream
 	Matcher          *whitelist.Matcher
 	Verifier         *whitelist.Verifier
-	Parser           parser.Parser
 	FakeBotScore     int
 	DNSVerifyTimeout time.Duration
 	Shared           SharedResources  // chain checker, warnings writer — nil-safe when disabled
-	LogFile          string           // stream log file path, used for chain warning context
+	SourceName       string           // first source name, e.g. "file:/path" — for ThreatEvent metadata
+	SourceType       string           // "file" | "stdin" — for ThreatEvent metadata
 }
 
 // SharedResources holds singleton dependencies shared across all streams.
@@ -133,6 +137,12 @@ func main() {
 
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.BoolVar(showVersion, "v", false, "print version and exit (shorthand)")
+	// --input=stdin overrides config inputs; useful for pipe/container mode.
+	inputFlag := flag.String("input", "", "override input source: stdin")
+	// --output=stdout[,format] overrides config outputs; format defaults to fail2ban.
+	outputFlag := flag.String("output", "", "override output sink: stdout[,json]")
+	// --config overrides the config file path (alternative to ARXSENTINEL_CONFIG env var).
+	configFlag := flag.String("config", "", "path to config file (default: "+configPath+")")
 	flag.Parse()
 
 	if *showVersion {
@@ -143,7 +153,9 @@ func main() {
 	// ── Config loading ────────────────────────────────────────────────────────────────
 
 	path := configPath
-	if env := os.Getenv("ARXSENTINEL_CONFIG"); env != "" {
+	if *configFlag != "" {
+		path = *configFlag
+	} else if env := os.Getenv("ARXSENTINEL_CONFIG"); env != "" {
 		path = env
 	}
 
@@ -151,6 +163,28 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "arxsentinel: config error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// --input / --output flags override the config I/O sections entirely.
+	// When either flag is present, cfg.Streams is replaced by a single CLI-driven stream
+	// so all downstream code (runStream, buildSources, buildSinks) works unchanged.
+	if *inputFlag != "" || *outputFlag != "" {
+		var inputs []config.InputConfig
+		var outputs []config.SinkConfig
+		if *inputFlag != "" {
+			inputs = parseFlagInputs(*inputFlag, cfg)
+		}
+		if *outputFlag != "" {
+			var ferr error
+			outputs, ferr = parseFlagOutputs(*outputFlag)
+			if ferr != nil {
+				fmt.Fprintf(os.Stderr, "arxsentinel: --output flag: %v\n", ferr)
+				os.Exit(1)
+			}
+		}
+		cfg.Inputs = inputs
+		cfg.Outputs = outputs
+		cfg.Streams = []config.StreamConfig{{Inputs: inputs, Outputs: outputs}}
 	}
 
 	// ── Logger initialization ─────────────────────────────────────────────────────────
@@ -181,11 +215,12 @@ func main() {
 		cfg.Logging.Debug,
 	), "info")
 	if len(cfg.Streams) == 1 {
-		utils.Log("CONFIG", fmt.Sprintf("log: %s", cfg.Streams[0].LogFile), "info")
+		src := streamSourceLabel(cfg.Streams[0], cfg)
+		utils.Log("CONFIG", fmt.Sprintf("source: %s", src), "info")
 	} else {
 		utils.Log("CONFIG", fmt.Sprintf("streams: %d", len(cfg.Streams)), "info")
 		for _, s := range cfg.Streams {
-			utils.Log("CONFIG", fmt.Sprintf("  stream %q: %s", s.Name, s.LogFile), "info")
+			utils.Log("CONFIG", fmt.Sprintf("  stream %q: %s", s.Name, streamSourceLabel(s, cfg)), "info")
 		}
 	}
 
@@ -364,9 +399,10 @@ func main() {
 }
 
 // runStream runs the complete pipeline for a single stream.
-// Each stream gets its own tracker, scorer, whitelist, TailReader, and threat log file.
-// Survives SIGHUP via reloadCh — recreates the pipeline components from a fresh config.
-// Signals completion to wg when ctx is cancelled and the line buffer is drained.
+// Each stream gets its own tracker, scorer, whitelist, Sources, and Sinks.
+// Survives SIGHUP via reloadCh — reloads whitelist/scorer config and calls FileSink.Reload()
+// for log rotation. Sources continue running across reloads (restarting them would drop lines).
+// Signals completion to wg when ctx is cancelled and the entries buffer is drained.
 func runStream(
 	ctx context.Context,
 	path string,
@@ -403,51 +439,39 @@ func runStream(
 	// Verifier uses the shared ipCache — DNS results are not stream-specific.
 	verifier := whitelist.NewVerifier(ipCache, resolver, utils.Log)
 
-	// Per-stream threat file.
-	threatFile, err := utils.OpenThreatLog(streamCfg.ThreatLog)
+	// Build sources and sinks from the stream/top-level config.
+	sources, err := buildSources(cfg, streamCfg)
 	if err != nil {
-		utils.Log("ERROR", fmt.Sprintf("stream %q: threat log error: %v", streamCfg.Name, err), "error")
+		utils.Log("ERROR", fmt.Sprintf("stream %q: source init error: %v", streamCfg.Name, err), "error")
 		return
 	}
-	defer func() { _ = threatFile.Sync(); _ = threatFile.Close() }()
-
-	// makeThreatLogger builds a ThreatLogger whose writeFn writes to tf (a specific file)
-	// and mirrors the event to the console. threatCount is incremented for THREAT-level events.
-	makeThreatLogger := func(tf *os.File) *output.ThreatLogger {
-		return output.NewThreatLogger(func(ip string, score int, level string, modules []string, reason string) {
-			if level == "THREAT" {
-				threatCount.Add(1)
-			}
-			line := output.FormatThreatLine(ip, score, level, modules, reason)
-			if _, werr := fmt.Fprintln(tf, line); werr != nil {
-				fmt.Fprintf(os.Stderr, "[ERROR] stream %q: threat record lost (%s score=%d): %v\n",
-					streamCfg.Name, ip, score, werr)
-			}
-			modulesStr := strings.Join(modules, ",")
-			utils.Log("THREAT", fmt.Sprintf("%s score=%d modules=%s reason=%q",
-				ip, score, modulesStr, reason), "warning")
-		})
-	}
-
-	// Build initial pipeline context.
-	p, err := buildParser(cfg)
+	sinks, err := buildSinks(cfg, streamCfg)
 	if err != nil {
-		utils.Log("ERROR", fmt.Sprintf("stream %q: parser init error: %v", streamCfg.Name, err), "error")
+		utils.Log("ERROR", fmt.Sprintf("stream %q: sink init error: %v", streamCfg.Name, err), "error")
 		return
 	}
+	defer func() {
+		for _, sink := range sinks {
+			_ = sink.Close()
+		}
+	}()
+
+	sourceName, sourceType := sourceMetadata(sources)
+
 	pipe := &PipelineContext{
 		StreamName:       streamCfg.Name,
 		processedCount:   &processedCount,
+		threatCount:      &threatCount,
 		Tracker:          tracker,
 		Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg, shared), utils.Log),
-		ThreatLogger:     makeThreatLogger(threatFile),
+		Sinks:            sinks,
 		Matcher:          matcher,
 		Verifier:         verifier,
-		Parser:           p,
 		FakeBotScore:     cfg.Whitelist.FakeBotScore,
 		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
 		Shared:           shared,
-		LogFile:          streamCfg.LogFile,
+		SourceName:       sourceName,
+		SourceType:       sourceType,
 	}
 
 	// GC goroutine — periodic cleanup of inactive IPs.
@@ -480,14 +504,13 @@ func runStream(
 		}
 	}()
 
-	// TailReader feeds log lines into the lines channel.
-	lines := make(chan string, cfg.General.LinesBufSize)
-	tail := utils.NewTailReader(streamCfg.LogFile, lines, time.Duration(cfg.General.TailRetryInterval))
-	go tail.Run(ctx)
+	// Fan-in all sources into a single entries channel.
+	// Sources run in goroutines started by Merge and stop when ctx is cancelled.
+	entries := coreinput.Merge(ctx, sources, cfg.Pipeline.BufferSize)
 
 	utils.Log("STARTUP", fmt.Sprintf(
-		"stream %q: pipeline started (tail→whitelist→tracker→scorer) | file: %s",
-		streamCfg.Name, streamCfg.LogFile,
+		"stream %q: pipeline started (sources=%d sinks=%d) | source: %s",
+		streamCfg.Name, len(sources), len(sinks), sourceName,
 	), "info")
 
 	// ── Main processing loop ──────────────────────────────────────────────────────────
@@ -496,18 +519,12 @@ func runStream(
 		select {
 		case <-ctx.Done():
 			utils.Log("SHUTDOWN", fmt.Sprintf("stream %q: signal received, draining buffer...", streamCfg.Name), "info")
-			// TailReader shuts down on the same ctx and closes the channel via defer.
-			// We wait for !ok — this guarantees TailReader has flushed all lines before exit.
+			// Sources stop on ctx.Done() and Merge closes entries when all sources exit.
 			// context.Background() instead of ctx: ctx is already cancelled, so verifyCtx
 			// (context.WithTimeout(ctx,...)) would be immediately cancelled → all bots
 			// would get isFakeBot=true → false ban entries in threats.log on shutdown.
-		drainLoop:
-			for {
-				line, ok := <-lines
-				if !ok {
-					break drainLoop
-				}
-				processLine(context.Background(), line, pipe)
+			for entry := range entries {
+				processLine(context.Background(), entry, pipe)
 			}
 			utils.Log("SHUTDOWN", fmt.Sprintf("stream %q: done", streamCfg.Name), "info")
 			return
@@ -532,46 +549,41 @@ func runStream(
 					break
 				}
 			}
-			// Reopen threat file so logrotate can rotate it after sending SIGHUP.
-			newThreatFile, err := utils.OpenThreatLog(newStreamCfg.ThreatLog)
-			if err != nil {
-				utils.Log("CONFIG", fmt.Sprintf("stream %q: SIGHUP threat log error, reload cancelled: %v", streamCfg.Name, err), "warn")
-				continue
+			// Reload FileSinks for log rotation — replaces the old utils.OpenThreatLog pattern.
+			// Sources are NOT restarted: they run continuously across reloads.
+			for _, sink := range pipe.Sinks {
+				if fs, ok := sink.(*output.FileSink); ok {
+					if reloadErr := fs.Reload(); reloadErr != nil {
+						utils.Log("CONFIG", fmt.Sprintf("stream %q: SIGHUP sink reload error: %v", streamCfg.Name, reloadErr), "warn")
+					}
+				}
 			}
-			_ = threatFile.Sync()
-			_ = threatFile.Close()
-			threatFile = newThreatFile
 			streamCfg = newStreamCfg
-
-			newParser, err := buildParser(newCfg)
-			if err != nil {
-				utils.Log("CONFIG", fmt.Sprintf("stream %q: SIGHUP parser error, reload cancelled: %v", streamCfg.Name, err), "warn")
-				continue
-			}
 			cfg = newCfg
 			tracker.Reconfigure(cfg)
 			pipe = &PipelineContext{
 				StreamName:       streamCfg.Name,
 				processedCount:   &processedCount,
+				threatCount:      &threatCount,
 				Tracker:          tracker,
 				Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg, shared), utils.Log),
-				ThreatLogger:     makeThreatLogger(threatFile),
+				Sinks:            sinks, // same sinks — already reloaded above
 				Matcher:          newMatcher,
 				Verifier:         verifier,
-				Parser:           newParser,
 				FakeBotScore:     cfg.Whitelist.FakeBotScore,
 				DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
 				Shared:           shared,
-				LogFile:          streamCfg.LogFile,
+				SourceName:       sourceName, // source identity does not change on SIGHUP
+				SourceType:       sourceType,
 			}
 			utils.Log("CONFIG", fmt.Sprintf("stream %q: SIGHUP config reloaded", streamCfg.Name), "info")
 
-		case line, ok := <-lines:
+		case entry, ok := <-entries:
 			if !ok {
 				utils.Log("SHUTDOWN", fmt.Sprintf("stream %q: channel closed, exiting", streamCfg.Name), "info")
 				return
 			}
-			processLine(ctx, line, pipe)
+			processLine(ctx, entry, pipe)
 		}
 	}
 }
@@ -607,11 +619,10 @@ func buildDetectors(cfg config.Config, shared SharedResources) []detector.Detect
 	return detectors
 }
 
-// buildParser returns the parser for the current config.
-// Priority: parser.profile → parser.log_format → default combined (Decision 1 — Flow #15).
-// Called at startup and on SIGHUP so format changes take effect without restart.
-func buildParser(cfg config.Config) (parser.Parser, error) {
-	// Profile takes priority over log_format.
+// buildParserForInput returns the parser for a specific InputConfig.
+// Priority: global parser.profile → input.parser → global parser.log_format → combined.
+func buildParserForInput(cfg config.Config, input config.InputConfig) (parser.Parser, error) {
+	// Global profile overrides everything — same precedence as the old buildParser.
 	if cfg.Parser.Profile != "" {
 		factory, ok := parser.Profiles[cfg.Parser.Profile]
 		if !ok {
@@ -620,13 +631,146 @@ func buildParser(cfg config.Config) (parser.Parser, error) {
 		}
 		return factory()
 	}
-	switch cfg.Parser.LogFormat {
+	format := input.Parser
+	if format == "" {
+		format = cfg.Parser.LogFormat
+	}
+	switch format {
 	case "json":
 		return parser.NewJSONParser(cfg.Parser.JSONFields), nil
 	case "regex":
 		return parser.NewRegexParser(cfg.Parser.RegexPattern)
-	default:
+	default: // "combined", "" → combined
 		return &parser.CombinedParser{}, nil
+	}
+}
+
+// buildSources constructs the Source list for a stream.
+// Falls back to cfg.Inputs when streamCfg.Inputs is empty (single-stream / default case).
+func buildSources(cfg config.Config, streamCfg config.StreamConfig) ([]plugin.Source, error) {
+	inputs := streamCfg.Inputs
+	if len(inputs) == 0 {
+		inputs = cfg.Inputs
+	}
+	if len(inputs) == 0 {
+		return nil, fmt.Errorf("no inputs configured for stream %q", streamCfg.Name)
+	}
+	sources := make([]plugin.Source, 0, len(inputs))
+	for _, in := range inputs {
+		p, err := buildParserForInput(cfg, in)
+		if err != nil {
+			return nil, fmt.Errorf("input %q: %w", in.Type, err)
+		}
+		switch in.Type {
+		case "stdin":
+			sources = append(sources, coreinput.NewStdinSource(p, utils.Log))
+		case "file":
+			src, err := coreinput.NewFileSource(in.Path, p,
+				time.Duration(cfg.General.TailRetryInterval), utils.Log)
+			if err != nil {
+				return nil, fmt.Errorf("file source %q: %w", in.Path, err)
+			}
+			sources = append(sources, src)
+		default:
+			return nil, fmt.Errorf("unknown input type %q", in.Type)
+		}
+	}
+	return sources, nil
+}
+
+// buildSinks constructs the Sink list for a stream.
+// Falls back to cfg.Outputs when streamCfg.Outputs is empty (single-stream / default case).
+func buildSinks(cfg config.Config, streamCfg config.StreamConfig) ([]plugin.Sink, error) {
+	outputs := streamCfg.Outputs
+	if len(outputs) == 0 {
+		outputs = cfg.Outputs
+	}
+	if len(outputs) == 0 {
+		return nil, fmt.Errorf("no outputs configured for stream %q", streamCfg.Name)
+	}
+	sinks := make([]plugin.Sink, 0, len(outputs))
+	for _, out := range outputs {
+		switch out.Type {
+		case "stdout":
+			sink, err := output.NewStdoutSink(out.Format)
+			if err != nil {
+				return nil, fmt.Errorf("stdout sink: %w", err)
+			}
+			sinks = append(sinks, sink)
+		case "file":
+			sink, err := output.NewFileSink(out.Path, out.Format)
+			if err != nil {
+				return nil, fmt.Errorf("file sink %q: %w", out.Path, err)
+			}
+			sinks = append(sinks, sink)
+		default:
+			return nil, fmt.Errorf("unknown output type %q", out.Type)
+		}
+	}
+	return sinks, nil
+}
+
+// sourceMetadata returns the name and type of the first source for ThreatEvent metadata.
+// With multiple sources merged, Phase 1 uses the first source's identity as the stream label.
+func sourceMetadata(sources []plugin.Source) (name, sourceType string) {
+	if len(sources) == 0 {
+		return "", ""
+	}
+	name = sources[0].Name()
+	if strings.HasPrefix(name, "file:") {
+		return name, "file"
+	}
+	return name, "stdin"
+}
+
+// sinkTypeFromName extracts the sink type string from a sink Name() value.
+// "file:/path/…" → "file", "stdout" → "stdout".
+func sinkTypeFromName(name string) string {
+	if strings.HasPrefix(name, "file:") {
+		return "file"
+	}
+	return name
+}
+
+// streamSourceLabel returns a short human-readable source description for startup logging.
+func streamSourceLabel(streamCfg config.StreamConfig, cfg config.Config) string {
+	inputs := streamCfg.Inputs
+	if len(inputs) == 0 {
+		inputs = cfg.Inputs
+	}
+	if len(inputs) == 0 {
+		return "(none)"
+	}
+	if inputs[0].Type == "stdin" {
+		return "stdin"
+	}
+	return inputs[0].Path
+}
+
+// parseFlagInputs converts the --input flag value into an InputConfig slice.
+func parseFlagInputs(flagVal string, cfg config.Config) []config.InputConfig {
+	switch flagVal {
+	case "stdin":
+		return []config.InputConfig{{Type: "stdin", Parser: cfg.Parser.LogFormat}}
+	default:
+		return []config.InputConfig{{Type: "file", Path: flagVal, Parser: cfg.Parser.LogFormat}}
+	}
+}
+
+// parseFlagOutputs converts the --output flag value into a SinkConfig slice.
+// Accepted forms: "stdout", "stdout,json", "stdout,fail2ban".
+func parseFlagOutputs(flagVal string) ([]config.SinkConfig, error) {
+	parts := strings.SplitN(flagVal, ",", 2)
+	sinkType := parts[0]
+	format := "fail2ban"
+	if len(parts) == 2 {
+		format = parts[1]
+	}
+	switch sinkType {
+	case "stdout":
+		return []config.SinkConfig{{Type: "stdout", Format: format}}, nil
+	default:
+		return nil, fmt.Errorf("unknown output type %q; supported: stdout", sinkType)
 	}
 }
 
@@ -706,9 +850,11 @@ func removePID(path string) {
 	_ = os.Remove(path)
 }
 
-// processLine processes a single log line:
+// processLine processes a single parsed log entry:
 //
-//	parse → whitelist early-exit → tracking → fake bot penalty → scoring → threat log.
+//	whitelist early-exit → tracking → fake bot penalty → scoring → sinks.
+//
+// The entry is already parsed by the Source — processLine receives a *plugin.LogEntry.
 //
 // WHITELIST EARLY-EXIT ARCHITECTURE:
 //
@@ -718,21 +864,14 @@ func removePID(path string) {
 //	Step 4 — fake bot → tracker.Update + add FakeBotScore BEFORE scorer.Evaluate
 //
 // KNOWN LIMITATION (Task 7.x): Verify makes a DNS request synchronously in the pipeline goroutine.
-// On cache miss a single request blocks the lines channel processing for a DNS round-trip (~200ms).
+// On cache miss a single request blocks the entries channel for a DNS round-trip (~200ms).
 // Mitigation: IPCache caches the result — DNS is only done on the first request for a new IP.
 // With a targeted attack using bot UA and many unique IPs, delay is possible.
-// Maximum wait is bounded by dnsVerifyTimeout (config whitelist.dns_verify_timeout, default 2s). On timeout → isFakeBot=true.
-//
-// Change (Flow #4, Task 4.0): added whitelist integration and fake bot penalty.
-func processLine(ctx context.Context, line string, pipe *PipelineContext) {
-	entry, ok := pipe.Parser.Parse(line)
-	if !ok {
-		utils.Log("PARSER", fmt.Sprintf("skipping malformed line: %.80s", line), "debug")
-		return
-	}
-	// Only successfully parsed lines are counted — malformed entries are excluded.
+// Maximum wait is bounded by dnsVerifyTimeout (config whitelist.dns_verify_timeout, default 2s).
+func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineContext) {
 	pipe.processedCount.Add(1)
 	metrics.RecordLine(pipe.StreamName)
+	metrics.RecordInputLine(pipe.StreamName, pipe.SourceName, pipe.SourceType)
 
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
@@ -747,10 +886,10 @@ func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 	// what ArxSentinel actually received from the network stack.
 	if pipe.Shared.ChainChecker != nil && pipe.Shared.WarningsWriter != nil {
 		if result := pipe.Shared.ChainChecker.Check(entry.RemoteAddr); result != nil {
-			_ = pipe.Shared.WarningsWriter.WriteChainWarning(result, pipe.LogFile)
+			_ = pipe.Shared.WarningsWriter.WriteChainWarning(result, pipe.SourceName)
 			utils.Log("CHAIN_WARN",
-				fmt.Sprintf("%s-ip-as-client ip=%s cidr=%s log=%s",
-					result.Kind, result.IP, result.MatchedCIDR, pipe.LogFile),
+				fmt.Sprintf("%s-ip-as-client ip=%s cidr=%s source=%s",
+					result.Kind, result.IP, result.MatchedCIDR, pipe.SourceName),
 				"warning")
 		}
 	}
@@ -799,19 +938,44 @@ func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 		utils.Log("WHITELIST", fmt.Sprintf("fake bot %s +%d (fake bot score)", entry.RealIP, pipe.FakeBotScore), "warn")
 	}
 
-	// ── Scoring → threat log ──────────────────────────────────────────────────────────
+	// ── Scoring → sinks ──────────────────────────────────────────────────────────────
 	// Evaluate: decay accumulated score + run detectors + issue verdict.
 	// Returned *IPState implements detector.ScoreAccess.
 	level, score, modules, reason := pipe.Scorer.Evaluate(ipState, entry)
 
-	// Write to threat log and record metrics only on WARN or THREAT.
-	if level != "" {
-		metrics.RecordThreat(pipe.StreamName, level)
-		for _, mod := range modules {
-			metrics.RecordDetectorHit(pipe.StreamName, mod)
-		}
+	// Write to sinks and record metrics only on WARN or THREAT.
+	if level == "" {
+		return
 	}
-	pipe.ThreatLogger.Log(entry.RealIP, score, level, modules, reason)
+
+	if level == "THREAT" {
+		pipe.threatCount.Add(1)
+	}
+	metrics.RecordThreat(pipe.StreamName, level)
+	for _, mod := range modules {
+		metrics.RecordDetectorHit(pipe.StreamName, mod)
+	}
+
+	event := plugin.ThreatEvent{
+		Timestamp:  time.Now().UTC(),
+		Level:      level,
+		Stream:     pipe.StreamName,
+		Source:     pipe.SourceName,
+		SourceType: pipe.SourceType,
+		IP:         entry.RealIP,
+		Score:      score,
+		Modules:    modules,
+		Reason:     reason,
+	}
+	utils.Log("THREAT", fmt.Sprintf("%s score=%d modules=%s reason=%q",
+		entry.RealIP, score, strings.Join(modules, ","), reason), "warning")
+	for _, sink := range pipe.Sinks {
+		if err := sink.Write(event); err != nil {
+			utils.Log("ERROR", fmt.Sprintf("stream %q: sink %s: %v", pipe.StreamName, sink.Name(), err), "error")
+			continue
+		}
+		metrics.RecordOutputEvent(pipe.StreamName, sink.Name(), sinkTypeFromName(sink.Name()))
+	}
 }
 
 // ========================== systemd notify ===============================================

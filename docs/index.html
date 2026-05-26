@@ -381,6 +381,17 @@
             padding: 0.1rem 0.3rem; border-radius: 2px;
         }
 
+        /* ── Integrations section ─────────────────────────────────────────── */
+        .integrations-section { max-width: 900px; margin: 6rem auto; padding: 0 2rem; }
+        .integrations-grid { display: flex; gap: 3rem; justify-content: center; flex-wrap: wrap; margin-top: 2.5rem; }
+        .integrations-col { flex: 1 1 280px; }
+        .integrations-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .integration-tag {
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 20px; padding: 0.3rem 0.85rem; font-size: 0.82rem; color: #e0e0e0;
+        }
+        .integration-tag.muted { color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.08); }
+
         .whitelist-section { max-width: 1200px; margin: 6rem auto; }
         .whitelist-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; padding: 0 2rem; }
         .whitelist-card {
@@ -1001,6 +1012,51 @@ sudo systemctl enable --now arxsentinel</span></pre>
                 <h3><span style="color: var(--accent-blue)">🌐</span> Cloudflare support</h3>
                 <p><code>ngx_http_realip_module</code> replaces <code>$remote_addr</code> with the real client IP from <code>CF-Connecting-IP</code> or <code>X-Forwarded-For</code> — detectors always score the actual attacker, never the proxy.</p>
             </div>
+        </div>
+    </section>
+
+    <section class="integrations-section">
+        <div class="section-header">
+            <span class="section-tag">Universal I/O</span>
+            <h2 class="section-title">Works with your stack</h2>
+            <p style="color: var(--text-muted); max-width: 600px; margin: 0 auto;">
+                Read from any log source. Write threats to any destination.
+                Fail2Ban remains the default — now one option among many.
+            </p>
+        </div>
+        <div class="integrations-grid">
+            <div class="integrations-col">
+                <h3 style="color: var(--accent-blue); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Inputs</h3>
+                <div class="integrations-list">
+                    <span class="integration-tag">nginx</span>
+                    <span class="integration-tag">Apache</span>
+                    <span class="integration-tag">Traefik</span>
+                    <span class="integration-tag">Caddy</span>
+                    <span class="integration-tag">HAProxy</span>
+                    <span class="integration-tag">LiteSpeed</span>
+                    <span class="integration-tag">any log file</span>
+                    <span class="integration-tag">stdin pipe</span>
+                    <span class="integration-tag muted">syslog (soon)</span>
+                    <span class="integration-tag muted">HTTP (soon)</span>
+                </div>
+            </div>
+            <div class="integrations-col">
+                <h3 style="color: var(--accent-green); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Outputs</h3>
+                <div class="integrations-list">
+                    <span class="integration-tag">Fail2Ban</span>
+                    <span class="integration-tag">stdout&nbsp;JSON</span>
+                    <span class="integration-tag muted">Grafana Loki (soon)</span>
+                    <span class="integration-tag muted">Splunk HEC (soon)</span>
+                    <span class="integration-tag muted">Datadog (soon)</span>
+                    <span class="integration-tag muted">Kafka (soon)</span>
+                    <span class="integration-tag muted">Telegram (soon)</span>
+                </div>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 2rem;">
+            <code style="background: var(--bg-card); padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 0.9rem; color: var(--text-muted);">
+                docker logs nginx | arxsentinel --input=stdin --output=stdout,json
+            </code>
         </div>
     </section>
 

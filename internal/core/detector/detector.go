@@ -1,94 +1,47 @@
 // ========================== detector module =============================================
-//   Detector interface, result types, and IP state access interfaces.
-//   Defines the contract between scorer, state, and concrete detectors.
+//   Type aliases and ScoreAccess for the detector layer.
+//   Public contracts (IPView, DetectResult, Detector) are defined in pkg/plugin/detector.go
+//   and re-exported here as type aliases so all internal packages compile unchanged.
 //
 //   WHAT IS HERE:
-//     - IPView — IP state read interface (implemented by *state.IPState)
-//     - ScoreAccess — IPView extension for reading and updating accumulated score
-//     - DetectResult — result of a single detector run
-//     - Detector — threat detector interface
+//     - IPView, DetectResult, Detector — type aliases for pkg/plugin equivalents
+//     - ScoreAccess — extends plugin.IPView with score mutation (internal only)
 //
 //   WHAT IS NOT HERE:
-//     - Detector implementations (probe.go, rate.go, useragent.go, ...) — Flow #4
+//     - Detector implementations (probe.go, rate.go, useragent.go, ...)
 //     - Score aggregation (scorer/)
 //
 //   LAYER ISOLATION:
-//     IPView and ScoreAccess are defined here, not in state/ — so that scorer
-//     depends only on detector/, without importing core/state directly.
-//     *state.IPState implements both interfaces implicitly (Go duck typing).
-//
-//   core/ IMPORTS:
-//     detector/ → parser/ (LogEntry as the shared pipeline DTO).
-//     Unidirectional dependency, no cycles.
+//     ScoreAccess stays in internal — it exposes scorer internals not relevant
+//     to external detector authors.
+//     *state.IPState implements ScoreAccess implicitly (Go duck typing).
 
 package detector
 
 import (
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/parser"
+	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
-// ========================== IP state access interface =================================
+// IPView is a type alias for plugin.IPView.
+// Canonical definition and method docs live in pkg/plugin/detector.go.
+type IPView = plugin.IPView
 
-// IPView — IP state read interface for detectors (read-only).
-//
-// Implemented by *state.IPState without importing the detector package from state/:
-// Go does not require explicit declaration — matching signatures are sufficient.
-//
-// Purpose of each method:
-//   GetTotalRequests  → bruteforce (404 ratio), rate, noasset
-//   GetRequests404    → bruteforce (404 ratio)
-//   RecentPaths       → probe (sensitive paths), crawler (sequential patterns)
-//   ApproxRate        → rate anomaly (requests/sec over window)
-type IPView interface {
-	GetIP() string
-	GetTotalRequests() int
-	GetRequests404() int
-	RecentPaths() []string
-	ApproxRate(window time.Duration) float64
-}
+// DetectResult is a type alias for plugin.DetectResult.
+type DetectResult = plugin.DetectResult
 
-// ScoreAccess extends IPView with the ability to read and update accumulated score.
+// Detector is a type alias for plugin.Detector.
+type Detector = plugin.Detector
+
+// ScoreAccess extends IPView with score read/write used by the scorer.
 //
-// Scorer calls SetScore after each evaluation — decay + new points are stored
-// in the IP state for accumulation between requests.
+// Not exported via pkg/plugin — score mutation is an internal scorer concern,
+// not part of the public detector contract.
+// *state.IPState satisfies this interface without explicit declaration.
 type ScoreAccess interface {
-	IPView
+	plugin.IPView
 	GetScore() int
 	GetScoreUpdatedAt() time.Time
 	SetScore(score int, at time.Time)
-}
-
-// ========================== Detection result ==========================================
-
-// DetectResult — result of a single detector run for a single IP.
-//
-// Score=0 means no threat — the detector adds no points.
-// Module and Reason are populated only if Score > 0.
-type DetectResult struct {
-	Score  int    // threat points (0 = did not trigger)
-	Module string // detector identifier: "probe", "rate", "ua", "bruteforce", ...
-	Reason string // trigger details: "env_probe:3", "rate:142rps", "ua:Nuclei"
-}
-
-// ========================== Detector interface ========================================
-
-// Detector — threat detector interface.
-//
-// Each detector analyzes a single (IP state + current request) combination
-// and returns a threat score. Detectors do not store state themselves —
-// all state lives in IPView (implemented by state.Tracker).
-//
-// Implementations — in Flow #4:
-//   probe.go      — requests to .env, .git, wp-config, etc.
-//   rate.go       — request rate spike over a window
-//   useragent.go  — scanners, curl, empty UA
-//   bruteforce.go — anomalous 404 percentage
-//   crawler.go    — sequential URL traversal
-//   noasset.go    — requests without loading CSS/JS/images
-//   overflow.go   — anomalous URL length, WAF bypass parameters
-type Detector interface {
-	Name() string
-	Detect(sv IPView, entry *parser.LogEntry) DetectResult
 }

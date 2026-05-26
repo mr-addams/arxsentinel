@@ -12,7 +12,7 @@
 Підтримує **nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed** через вбудовані профілі. nginx працює з коробки без налаштування профілю. Caddy та HAProxy потребують мінімального одноразового налаштування. Довільні формати логів — через regex. Декілька лог-файлів в одному процесі.
 
 ```
-access.log → TailReader → whitelist → tracker → scorer → threats.log → Fail2Ban → iptables
+access.log (або stdin) → Source → Merge → whitelist → tracker → scorer → Sink → Fail2Ban / stdout JSON / …
 ```
 
 ## Підтримувані HTTP-сервери
@@ -345,31 +345,35 @@ ArxSentinel пропонує автоматичну верифікацію бо�
 ## Архітектура
 
 ```
-access.log (nginx / apache / caddy / traefik / haproxy / litespeed)
-       │
-  TailReader (inotify, logrotate-aware)
-       │
-  lines chan (буфер LinesBufSize)
-       │
-  whitelist.Matcher ──→ custom IP/CIDR/UA? → skip
-       │
-  chaincheck.Checker ──→ Cloudflare/bogon IP? → warnings.log (CHAIN_WARN)
-       │
-  whitelist.Verifier ──→ bot UA? → rDNS/fDNS → verified? → skip
-       │                                      → fake bot? → +FakeBotScore
-  tracker.Update(*IPState)
-    ├── TotalRequests, Requests404
-    ├── pathBuf (ring buffer, останні 64 шляхи)
-    └── sliding window rate counters
-       │
-  scorer.Evaluate(ipState, entry)
-    ├── decay накопиченого score
-    ├── запуск 8 детекторів
-    └── винесення вердикту (score → level)
-       │
-  output.ThreatLogger ──→ threats.log ──→ Fail2Ban ──→ iptables ban
-                      └──→ sentinel.log (operational)
+[Source: file]  ─┐    FileSource (inotify, logrotate-aware)
+[Source: stdin] ─┼──→ Merge() ──→ entries chan (*LogEntry)
+[Source: http]  ─┘    (Phase 2+)
+                              │
+                  whitelist.Matcher ──→ custom IP/CIDR/UA? → skip
+                              │
+                  chaincheck.Checker ──→ Cloudflare/bogon IP? → warnings.log
+                              │
+                  whitelist.Verifier ──→ bot UA? → rDNS/fDNS → verified? → skip
+                              │                              → fake bot? → +FakeBotScore
+                  tracker.Update(*IPState)
+                    ├── TotalRequests, Requests404
+                    ├── pathBuf (ring buffer, останні 64 шляхи)
+                    └── sliding window rate counters
+                              │
+                  scorer.Evaluate(ipState, entry)
+                    ├── decay накопиченого score
+                    ├── запуск 8 детекторів
+                    └── винесення вердикту (score → level)
+                              │
+                  [Sink: Fail2Ban file]  ──→ threats.log ──→ Fail2Ban ──→ iptables ban
+                  [Sink: stdout JSON]    ──→ агрегатор логів (Loki, Splunk, Datadog)
+                  [Sink: Splunk/Kafka]       (Phase 2+)
+                              │
+                  sentinel.log (operational)
 ```
+
+Конфігурація за замовчуванням (Fail2Ban file sink) повністю зворотньо сумісна — існуючі
+налаштування `general.log_file` та `output.threat_log` працюють без змін.
 
 Фонові горутини:
 - **TailReader** — спостереження за файлом через fsnotify, обробка mv/copytruncate logrotate
