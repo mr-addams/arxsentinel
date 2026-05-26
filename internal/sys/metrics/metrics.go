@@ -41,6 +41,10 @@ type Metrics struct {
 	detectorHits   *prometheus.CounterVec
 	trackedIPs     *prometheus.GaugeVec
 	suspiciousIPs  *prometheus.GaugeVec
+	// Universal I/O counters (Flow #030).
+	inputLines    *prometheus.CounterVec
+	outputEvents  *prometheus.CounterVec
+	outputDropped *prometheus.CounterVec
 }
 
 // New creates and registers all metrics with reg.
@@ -68,12 +72,27 @@ func New(reg prometheus.Registerer) *Metrics {
 			Help: "Current number of IPs with a non-zero suspicion score.",
 		}, []string{"stream"}),
 	}
+	m.inputLines = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "arxsentinel_input_lines_total",
+		Help: "Total log lines read from sources, by stream, source, and source_type.",
+	}, []string{"stream", "source", "source_type"})
+	m.outputEvents = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "arxsentinel_output_events_total",
+		Help: "Total threat events written to sinks, by stream, sink, and sink_type.",
+	}, []string{"stream", "sink", "sink_type"})
+	m.outputDropped = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "arxsentinel_output_dropped_total",
+		Help: "Total threat events dropped at sinks, by stream, sink, and reason.",
+	}, []string{"stream", "sink", "reason"})
 	reg.MustRegister(
 		m.linesProcessed,
 		m.threats,
 		m.detectorHits,
 		m.trackedIPs,
 		m.suspiciousIPs,
+		m.inputLines,
+		m.outputEvents,
+		m.outputDropped,
 	)
 	return m
 }
@@ -95,6 +114,21 @@ func (m *Metrics) RecordDetectorHit(stream, detector string) {
 func (m *Metrics) UpdateGauges(stream string, tracked, suspicious int) {
 	m.trackedIPs.WithLabelValues(stream).Set(float64(tracked))
 	m.suspiciousIPs.WithLabelValues(stream).Set(float64(suspicious))
+}
+
+// RecordInputLine increments the per-source line counter.
+func (m *Metrics) RecordInputLine(stream, source, sourceType string) {
+	m.inputLines.WithLabelValues(stream, source, sourceType).Inc()
+}
+
+// RecordOutputEvent increments the per-sink event counter on successful Write.
+func (m *Metrics) RecordOutputEvent(stream, sink, sinkType string) {
+	m.outputEvents.WithLabelValues(stream, sink, sinkType).Inc()
+}
+
+// RecordOutputDropped increments the dropped counter (Phase 2: async sinks with internal buffers).
+func (m *Metrics) RecordOutputDropped(stream, sink, reason string) {
+	m.outputDropped.WithLabelValues(stream, sink, reason).Inc()
 }
 
 // defPtr is the package-level default instance.
@@ -138,5 +172,26 @@ func RecordDetectorHit(stream, detector string) {
 func UpdateGauges(stream string, tracked, suspicious int) {
 	if m := defPtr.Load(); m != nil {
 		m.UpdateGauges(stream, tracked, suspicious)
+	}
+}
+
+// RecordInputLine increments the per-source line counter on the default instance.
+func RecordInputLine(stream, source, sourceType string) {
+	if m := defPtr.Load(); m != nil {
+		m.RecordInputLine(stream, source, sourceType)
+	}
+}
+
+// RecordOutputEvent increments the per-sink event counter on the default instance.
+func RecordOutputEvent(stream, sink, sinkType string) {
+	if m := defPtr.Load(); m != nil {
+		m.RecordOutputEvent(stream, sink, sinkType)
+	}
+}
+
+// RecordOutputDropped increments the dropped counter on the default instance.
+func RecordOutputDropped(stream, sink, reason string) {
+	if m := defPtr.Load(); m != nil {
+		m.RecordOutputDropped(stream, sink, reason)
 	}
 }
