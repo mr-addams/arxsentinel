@@ -229,7 +229,9 @@ sleep 3
 # ── Step 7: run attack scenarios ─────────────────────────────────────────────────────
 
 echo "[run] running attack scenarios..."
-bash "$INT_DIR/scenarios.sh"
+# Export BIN so scenarios.sh can locate the binary we just built.
+# scenarios.sh uses ARX_BIN with a fallback to its legacy path for standalone runs.
+ARX_BIN="$BIN" bash "$INT_DIR/scenarios.sh"
 
 # Give sentinels time to process the last log lines.
 sleep 5
