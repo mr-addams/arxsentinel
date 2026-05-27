@@ -73,11 +73,10 @@ services:
           cpus: "0.05"
           memory: 32M
 
-    # Healthcheck via Prometheus metrics endpoint.
-    # Requires curl in the container — distroless has none. Use a TCP probe instead:
-    # Docker Engine 25+ supports TCP healthchecks without curl.
+    # Healthcheck: TCP connect + HTTP GET /health via the built-in /healthcheck binary.
+    # The binary is baked into the distroless image — no curl or shell required.
     healthcheck:
-      test: ["CMD-SHELL", "test -f /tmp/arxsentinel.pid"]
+      test: ["CMD", "/healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3

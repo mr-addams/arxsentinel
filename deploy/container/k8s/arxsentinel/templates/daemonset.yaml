@@ -34,6 +34,7 @@ spec:
           {{- end }}
 
           env:
+            # User-defined overrides from values.yaml env: and extraEnv:
             {{- range $key, $val := .Values.env }}
             - name: {{ $key }}
               value: {{ $val | quote }}
@@ -41,7 +42,7 @@ spec:
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-            # Derived from Helm values — ensure config matches the mounted log path.
+            # Derived values — automatically set to match Helm values, override env section.
             - name: ARXSENTINEL_GENERAL_LOG_FILE
               value: /var/log/nginx/{{ .Values.logFile }}
             {{- if .Values.threatLog.hostPath }}

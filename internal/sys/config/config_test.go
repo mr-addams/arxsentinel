@@ -886,6 +886,242 @@ chain_guard:
 	}
 }
 
+// ========================== Tests: Pipeline Abstraction (Flow #034) ===================
+
+// TestPipelineConfig_ParseYAML verifies that a multi-pipeline YAML config is parsed correctly.
+func TestPipelineConfig_ParseYAML(t *testing.T) {
+	path := writeTempYAML(t, `
+streams:
+  - name: nginx-monitoring
+    pipelines:
+      - name: api-scanner
+        tracker_group: web
+        inputs:
+          - type: stdin
+        outputs:
+          - type: stdout
+            format: json
+        detectors:
+          probe:
+            enabled: true
+          rate:
+            enabled: false
+      - name: admin-watcher
+        tracker_group: web
+        inputs:
+          - type: stdin
+        outputs:
+          - type: stdout
+            format: fail2ban
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if len(cfg.Streams) != 1 {
+		t.Fatalf("want 1 stream, got %d", len(cfg.Streams))
+	}
+	s := cfg.Streams[0]
+	if s.Name != "nginx-monitoring" {
+		t.Errorf("stream name: want %q, got %q", "nginx-monitoring", s.Name)
+	}
+	if len(s.Pipelines) != 2 {
+		t.Fatalf("want 2 pipelines, got %d", len(s.Pipelines))
+	}
+
+	p0 := s.Pipelines[0]
+	if p0.Name != "api-scanner" {
+		t.Errorf("pipelines[0].name: want %q, got %q", "api-scanner", p0.Name)
+	}
+	if p0.TrackerGroup != "web" {
+		t.Errorf("pipelines[0].tracker_group: want %q, got %q", "web", p0.TrackerGroup)
+	}
+	if len(p0.Inputs) != 1 || p0.Inputs[0].Type != "stdin" {
+		t.Errorf("pipelines[0].inputs: want [{stdin}], got %v", p0.Inputs)
+	}
+	if len(p0.Outputs) != 1 || p0.Outputs[0].Format != "json" {
+		t.Errorf("pipelines[0].outputs: want [{stdout json}], got %v", p0.Outputs)
+	}
+	// Detector config is present.
+	if p0.Detectors == nil {
+		t.Fatal("pipelines[0].detectors: want non-nil map")
+	}
+	probeD, ok := p0.Detectors["probe"]
+	if !ok {
+		t.Fatal("pipelines[0].detectors[probe]: missing")
+	}
+	if !probeD.Enabled {
+		t.Error("pipelines[0].detectors[probe].enabled: want true")
+	}
+	rateD, ok := p0.Detectors["rate"]
+	if !ok {
+		t.Fatal("pipelines[0].detectors[rate]: missing")
+	}
+	if rateD.Enabled {
+		t.Error("pipelines[0].detectors[rate].enabled: want false")
+	}
+
+	p1 := s.Pipelines[1]
+	if p1.Name != "admin-watcher" {
+		t.Errorf("pipelines[1].name: want %q, got %q", "admin-watcher", p1.Name)
+	}
+	if p1.TrackerGroup != "web" {
+		t.Errorf("pipelines[1].tracker_group: want %q, got %q", "web", p1.TrackerGroup)
+	}
+}
+
+// TestMigrate_AutoWrap verifies that a stream with inputs/outputs but no pipelines
+// is automatically wrapped into Pipelines[0] by Migrate().
+func TestMigrate_AutoWrap(t *testing.T) {
+	path := writeTempYAML(t, `
+streams:
+  - name: legacy
+    inputs:
+      - type: stdin
+    outputs:
+      - type: stdout
+        format: fail2ban
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	s := cfg.Streams[0]
+	if len(s.Pipelines) != 1 {
+		t.Fatalf("want Pipelines auto-wrapped to len=1, got %d", len(s.Pipelines))
+	}
+	p := s.Pipelines[0]
+	if p.Name != "" {
+		t.Errorf("auto-wrapped pipeline name: want empty, got %q", p.Name)
+	}
+	if p.TrackerGroup != "" {
+		t.Errorf("auto-wrapped tracker_group: want empty, got %q", p.TrackerGroup)
+	}
+	if len(p.Inputs) != 1 || p.Inputs[0].Type != "stdin" {
+		t.Errorf("auto-wrapped inputs: want [{stdin}], got %v", p.Inputs)
+	}
+	if len(p.Outputs) != 1 || p.Outputs[0].Format != "fail2ban" {
+		t.Errorf("auto-wrapped outputs: want [{stdout fail2ban}], got %v", p.Outputs)
+	}
+}
+
+// TestMigrate_NewSyntax_NotWrapped verifies that a stream with pipelines: already set
+// is not auto-wrapped — the explicit pipelines take precedence.
+func TestMigrate_NewSyntax_NotWrapped(t *testing.T) {
+	path := writeTempYAML(t, `
+streams:
+  - name: explicit
+    pipelines:
+      - name: only
+        inputs:
+          - type: stdin
+        outputs:
+          - type: stdout
+            format: json
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	s := cfg.Streams[0]
+	if len(s.Pipelines) != 1 {
+		t.Fatalf("want exactly 1 explicit pipeline, got %d", len(s.Pipelines))
+	}
+	if s.Pipelines[0].Name != "only" {
+		t.Errorf("pipeline name: want %q, got %q", "only", s.Pipelines[0].Name)
+	}
+}
+
+// TestValidate_DuplicatePipelineNames verifies that two pipelines with the same name
+// within a stream are rejected.
+func TestValidate_DuplicatePipelineNames(t *testing.T) {
+	path := writeTempYAML(t, `
+streams:
+  - name: s
+    pipelines:
+      - name: dup
+        inputs:
+          - type: stdin
+        outputs:
+          - type: stdout
+            format: json
+      - name: dup
+        inputs:
+          - type: stdin
+        outputs:
+          - type: stdout
+            format: json
+`)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("want error for duplicate pipeline name, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate pipeline name") {
+		t.Errorf("error should mention duplicate pipeline name, got: %v", err)
+	}
+}
+
+// TestMigrate_LegacyLogFile_AutoWrapped verifies the full legacy path:
+// general.log_file → stream synthesized → Migrate → Pipelines[0].
+func TestMigrate_LegacyLogFile_AutoWrapped(t *testing.T) {
+	// Non-existent config → defaults applied → single auto-wrapped pipeline.
+	cfg, err := LoadConfig("/nonexistent/arxsentinel-pipeline-test.yaml")
+	if err != nil {
+		t.Fatalf("LoadConfig with defaults: %v", err)
+	}
+	if len(cfg.Streams) != 1 {
+		t.Fatalf("want 1 stream, got %d", len(cfg.Streams))
+	}
+	s := cfg.Streams[0]
+	if len(s.Pipelines) != 1 {
+		t.Fatalf("want 1 auto-wrapped pipeline, got %d", len(s.Pipelines))
+	}
+	p := s.Pipelines[0]
+	if len(p.Inputs) == 0 {
+		t.Error("auto-wrapped pipeline must have inputs from default log_file")
+	}
+	if len(p.Outputs) == 0 {
+		t.Error("auto-wrapped pipeline must have outputs from default threat_log")
+	}
+}
+
+// TestValidate_PipelineMissingOutputs verifies that a pipeline with inputs but no outputs
+// is rejected — a pipeline with no outputs silently drops all threat events.
+func TestValidate_PipelineMissingOutputs(t *testing.T) {
+	path := writeTempYAML(t, `
+streams:
+  - name: broken
+    inputs:
+      - type: stdin
+`)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("want error for pipeline with no outputs, got nil")
+	}
+	if !strings.Contains(err.Error(), "output") {
+		t.Errorf("error should mention outputs, got: %v", err)
+	}
+}
+
+// TestValidate_PipelineMissingInputs verifies that a pipeline with outputs but no inputs
+// is rejected.
+func TestValidate_PipelineMissingInputs(t *testing.T) {
+	path := writeTempYAML(t, `
+streams:
+  - name: broken
+    outputs:
+      - type: stdout
+        format: fail2ban
+`)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("want error for pipeline with no inputs, got nil")
+	}
+	if !strings.Contains(err.Error(), "input") {
+		t.Errorf("error should mention inputs, got: %v", err)
+	}
+}
+
 // ========================== Helper ====================================================
 
 // writeTempYAML creates a temporary file with the given content and returns its path.

@@ -3,8 +3,9 @@
 //
 //   WHAT IS HERE:
 //     - main() — config loading, logger initialization, metrics server, stream launch
-//     - runStream() — complete per-stream pipeline: tail→whitelist→tracker→scorer→logger
-//     - buildDetectors() — assembles active detectors from config
+//     - runStream() — per-stream orchestrator: builds TrackerGroup map, launches runPipeline goroutines
+//     - runPipeline() — isolated processing unit: sources, detectors, sinks, whitelist, scorer
+//     - buildPipelineDetectors() — builds detector list from registry (pkg/detector)
 //     - processLine() — processes a single log line
 //     - writePID() / removePID() — daemon PID file management
 //
@@ -20,7 +21,7 @@
 //              ↓
 //     tracker.Update(*IPState)
 //              ↓
-//     scorer.Evaluate(state, entry, detectors=[probe, rate, ua, bruteforce, crawler, noasset, overflow])
+//     scorer.Evaluate(state, entry, detectors=[probe, rate, ua, bruteforce, crawler, noasset, overflow, badbot])
 //              ↓ [level≠""]
 //     threatLogger.Log → per-stream threat file
 //
@@ -62,6 +63,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,7 +75,7 @@ import (
 
 	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
 	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
-	"github.com/mr-addams/arxsentinel/internal/core/detector"
+	coreinput "github.com/mr-addams/arxsentinel/internal/core/input"
 	"github.com/mr-addams/arxsentinel/internal/core/output"
 	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/core/scorer"
@@ -82,6 +84,10 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/metrics"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
+	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
+	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
+	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
+	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -90,23 +96,26 @@ import (
 var version = "dev"
 
 // PipelineContext holds long-lived dependencies shared by processLine.
-// Recreated on SIGHUP reload: Scorer, Matcher, and Parser are replaced; Tracker and
-// Verifier survive. FakeBotScore and DNSVerifyTimeout reflect the current config.
+// Recreated on SIGHUP reload: Scorer and Matcher are replaced; Tracker and Verifier survive.
+// Sinks are kept across reloads — FileSink.Reload() handles log rotation in-place.
+// FakeBotScore and DNSVerifyTimeout reflect the current config.
 // Shared is passed by value — SharedResources fields are pointers, so the copy is cheap
 // and any nil-check in processLine correctly reflects the state at pipeline construction.
 type PipelineContext struct {
 	StreamName       string           // empty string for single-stream (backward compat)
-	processedCount   *atomic.Int64    // per-stream counter, owned by runStream
+	PipelineName     string           // empty string for auto-wrapped legacy pipelines
+	processedCount   *atomic.Int64    // per-pipeline counter, owned by runPipeline
+	threatCount      *atomic.Int64    // per-pipeline threat counter, owned by runPipeline
 	Tracker          *state.Tracker
 	Scorer           *scorer.Scorer
-	ThreatLogger     *output.ThreatLogger
+	Sinks            []plugin.Sink    // ordered list of output sinks for this stream
 	Matcher          *whitelist.Matcher
 	Verifier         *whitelist.Verifier
-	Parser           parser.Parser
 	FakeBotScore     int
 	DNSVerifyTimeout time.Duration
 	Shared           SharedResources  // chain checker, warnings writer — nil-safe when disabled
-	LogFile          string           // stream log file path, used for chain warning context
+	SourceName       string           // first source name, e.g. "file:/path" — for ThreatEvent metadata
+	SourceType       string           // "file" | "stdin" — for ThreatEvent metadata
 }
 
 // SharedResources holds singleton dependencies shared across all streams.
@@ -132,6 +141,12 @@ func main() {
 
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.BoolVar(showVersion, "v", false, "print version and exit (shorthand)")
+	// --input=stdin overrides config inputs; useful for pipe/container mode.
+	inputFlag := flag.String("input", "", "override input source: stdin")
+	// --output=stdout[,format] overrides config outputs; format defaults to fail2ban.
+	outputFlag := flag.String("output", "", "override output sink: stdout[,json]")
+	// --config overrides the config file path (alternative to ARXSENTINEL_CONFIG env var).
+	configFlag := flag.String("config", "", "path to config file (default: "+configPath+")")
 	flag.Parse()
 
 	if *showVersion {
@@ -142,7 +157,9 @@ func main() {
 	// ── Config loading ────────────────────────────────────────────────────────────────
 
 	path := configPath
-	if env := os.Getenv("ARXSENTINEL_CONFIG"); env != "" {
+	if *configFlag != "" {
+		path = *configFlag
+	} else if env := os.Getenv("ARXSENTINEL_CONFIG"); env != "" {
 		path = env
 	}
 
@@ -150,6 +167,36 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "arxsentinel: config error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// --input / --output flags override the config I/O sections entirely.
+	// When either flag is present, cfg.Streams is replaced by a single CLI-driven stream.
+	// Migrate() was already called inside LoadConfig; here we construct the pipeline
+	// directly so runStream() always sees Pipelines != nil.
+	if *inputFlag != "" || *outputFlag != "" {
+		// Unset flags fall back to the already-migrated top-level defaults.
+		inputs := cfg.Inputs
+		outputs := cfg.Outputs
+		if *inputFlag != "" {
+			inputs = parseFlagInputs(*inputFlag, cfg)
+		}
+		if *outputFlag != "" {
+			var ferr error
+			outputs, ferr = parseFlagOutputs(*outputFlag)
+			if ferr != nil {
+				fmt.Fprintf(os.Stderr, "arxsentinel: --output flag: %v\n", ferr)
+				os.Exit(1)
+			}
+		}
+		cfg.Inputs = inputs
+		cfg.Outputs = outputs
+		cfg.Streams = []config.StreamConfig{{
+			Pipelines: []config.PipelineConfig{{
+				Inputs:   inputs,
+				Outputs:  outputs,
+				Pipeline: cfg.Pipeline,
+			}},
+		}}
 	}
 
 	// ── Logger initialization ─────────────────────────────────────────────────────────
@@ -180,12 +227,19 @@ func main() {
 		cfg.Logging.Debug,
 	), "info")
 	if len(cfg.Streams) == 1 {
-		utils.Log("CONFIG", fmt.Sprintf("log: %s", cfg.Streams[0].LogFile), "info")
+		src := streamSourceLabel(cfg.Streams[0], cfg)
+		utils.Log("CONFIG", fmt.Sprintf("source: %s", src), "info")
 	} else {
 		utils.Log("CONFIG", fmt.Sprintf("streams: %d", len(cfg.Streams)), "info")
 		for _, s := range cfg.Streams {
-			utils.Log("CONFIG", fmt.Sprintf("  stream %q: %s", s.Name, s.LogFile), "info")
+			utils.Log("CONFIG", fmt.Sprintf("  stream %q: %s", s.Name, streamSourceLabel(s, cfg)), "info")
 		}
+	}
+
+	// Log active ARXSENTINEL_* env var overrides for diagnostics.
+	// Users can verify their env vars were read; misspelled keys will be absent from this line.
+	if envVars := activeEnvOverrides(); len(envVars) > 0 {
+		utils.Log("CONFIG", fmt.Sprintf("env overrides: %s", strings.Join(envVars, ", ")), "info")
 	}
 	if cfg.Metrics.Enabled {
 		displayAddr := cfg.Metrics.ListenAddr
@@ -356,10 +410,9 @@ func main() {
 	utils.Log("SHUTDOWN", "all streams done", "info")
 }
 
-// runStream runs the complete pipeline for a single stream.
-// Each stream gets its own tracker, scorer, whitelist, TailReader, and threat log file.
-// Survives SIGHUP via reloadCh — recreates the pipeline components from a fresh config.
-// Signals completion to wg when ctx is cancelled and the line buffer is drained.
+// runStream is the per-stream orchestrator.
+// It builds a TrackerGroup map, starts GC goroutines for each shared tracker, then
+// launches one runPipeline() goroutine per pipeline. Returns when all pipelines exit.
 func runStream(
 	ctx context.Context,
 	path string,
@@ -372,84 +425,119 @@ func runStream(
 	shared SharedResources,
 ) {
 	defer wg.Done()
-	// Recover from panics so one stream crashing does not take down all other streams.
+	// Recover from panics so one crashing stream does not take down other streams.
 	defer func() {
 		if r := recover(); r != nil {
 			utils.Log("ERROR", fmt.Sprintf("stream %q: panic recovered: %v", streamCfg.Name, r), "error")
 		}
 	}()
 
-	// Per-stream counters captured by stats goroutine and processLine via PipelineContext.
+	// Build TrackerGroup map — pipelines with the same group share one *state.Tracker.
+	// Auto-wrapped legacy pipelines (Name="", TrackerGroup="") all land in group ""
+	// and share a single tracker, which is the pre-Task-3 behavior.
+	trackers := buildTrackerGroups(cfg, streamCfg)
+
+	// Start one GC goroutine per distinct tracker.
+	// Two pipelines in the same group share a tracker — starting two GC goroutines
+	// on the same tracker would double the GC rate, which is incorrect.
+	for _, tracker := range trackers {
+		go tracker.RunGC(ctx, time.Duration(cfg.State.GCInterval))
+	}
+
+	// Launch one pipeline per PipelineConfig entry.
+	var pipelineWg sync.WaitGroup
+	for i, pipeCfg := range streamCfg.Pipelines {
+		pipelineWg.Add(1)
+		tracker := trackers[resolveTrackerGroup(pipeCfg)]
+		go runPipeline(ctx, path, cfg, streamCfg, pipeCfg, i, tracker, ipCache, resolver, reloadCh, &pipelineWg, shared)
+	}
+	pipelineWg.Wait()
+}
+
+// runPipeline runs a single isolated pipeline within a stream.
+//
+// Owns its Sources, Sinks, Whitelist Matcher/Verifier, and Scorer.
+// Shares the Tracker from trackers[resolveTrackerGroup(pipeCfg)] with sibling pipelines
+// that have the same tracker_group.
+//
+// Survives SIGHUP: reloads config, rebuilds Scorer+Matcher, calls FileSink.Reload().
+// Sources are NOT restarted on SIGHUP — they run continuously across reloads.
+func runPipeline(
+	ctx context.Context,
+	path string,
+	cfg config.Config,
+	streamCfg config.StreamConfig,
+	pipeCfg config.PipelineConfig,
+	pipeIdx int,
+	tracker *state.Tracker,
+	ipCache *whitelist.IPCache,
+	resolver *net.Resolver,
+	reloadCh <-chan struct{},
+	wg *sync.WaitGroup,
+	shared SharedResources,
+) {
+	defer wg.Done()
+
+	// Per-pipeline counters.
 	var processedCount atomic.Int64
 	var threatCount atomic.Int64
 
-	// Per-stream state tracker.
-	tracker := state.NewTracker(cfg, utils.Log)
+	logTag := pipelineLogTag(streamCfg.Name, pipeCfg.Name)
 
-	// Per-stream whitelist matcher (IP/CIDR/UA rules).
+	// Per-pipeline whitelist matcher (IP/CIDR/UA rules).
 	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
 	if err != nil {
-		utils.Log("ERROR", fmt.Sprintf("stream %q: whitelist init error: %v", streamCfg.Name, err), "error")
+		utils.Log("ERROR", fmt.Sprintf("%s: whitelist init error: %v", logTag, err), "error")
 		return
 	}
 
-	// Verifier uses the shared ipCache — DNS results are not stream-specific.
+	// Verifier uses the shared ipCache — DNS results are not pipeline-specific.
 	verifier := whitelist.NewVerifier(ipCache, resolver, utils.Log)
 
-	// Per-stream threat file.
-	threatFile, err := utils.OpenThreatLog(streamCfg.ThreatLog)
+	// Build sources and sinks from the pipeline config.
+	sources, err := buildSources(cfg, pipeCfg.Inputs)
 	if err != nil {
-		utils.Log("ERROR", fmt.Sprintf("stream %q: threat log error: %v", streamCfg.Name, err), "error")
+		utils.Log("ERROR", fmt.Sprintf("%s: source init error: %v", logTag, err), "error")
 		return
 	}
-	defer func() { _ = threatFile.Sync(); _ = threatFile.Close() }()
-
-	// makeThreatLogger builds a ThreatLogger whose writeFn writes to tf (a specific file)
-	// and mirrors the event to the console. threatCount is incremented for THREAT-level events.
-	makeThreatLogger := func(tf *os.File) *output.ThreatLogger {
-		return output.NewThreatLogger(func(ip string, score int, level string, modules []string, reason string) {
-			if level == "THREAT" {
-				threatCount.Add(1)
-			}
-			line := output.FormatThreatLine(ip, score, level, modules, reason)
-			if _, werr := fmt.Fprintln(tf, line); werr != nil {
-				fmt.Fprintf(os.Stderr, "[ERROR] stream %q: threat record lost (%s score=%d): %v\n",
-					streamCfg.Name, ip, score, werr)
-			}
-			modulesStr := strings.Join(modules, ",")
-			utils.Log("THREAT", fmt.Sprintf("%s score=%d modules=%s reason=%q",
-				ip, score, modulesStr, reason), "warning")
-		})
-	}
-
-	// Build initial pipeline context.
-	p, err := buildParser(cfg)
+	sinks, err := buildSinks(pipeCfg.Outputs)
 	if err != nil {
-		utils.Log("ERROR", fmt.Sprintf("stream %q: parser init error: %v", streamCfg.Name, err), "error")
+		utils.Log("ERROR", fmt.Sprintf("%s: sink init error: %v", logTag, err), "error")
 		return
 	}
+	defer func() {
+		for _, sink := range sinks {
+			_ = sink.Close()
+		}
+	}()
+
+	sourceName, sourceType := sourceMetadata(sources)
+
+	// Choose buffer size: pipeline-level override or stream-level default.
+	bufSize := int(pipeCfg.Pipeline.BufferSize)
+	if bufSize == 0 {
+		bufSize = int(cfg.Pipeline.BufferSize)
+	}
+
 	pipe := &PipelineContext{
 		StreamName:       streamCfg.Name,
+		PipelineName:     pipeCfg.Name,
 		processedCount:   &processedCount,
+		threatCount:      &threatCount,
 		Tracker:          tracker,
-		Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg, shared), utils.Log),
-		ThreatLogger:     makeThreatLogger(threatFile),
+		Scorer:           scorer.NewScorer(cfg.Scoring, buildPipelineDetectors(cfg, pipeCfg, shared), utils.Log),
+		Sinks:            sinks,
 		Matcher:          matcher,
 		Verifier:         verifier,
-		Parser:           p,
 		FakeBotScore:     cfg.Whitelist.FakeBotScore,
 		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
 		Shared:           shared,
-		LogFile:          streamCfg.LogFile,
+		SourceName:       sourceName,
+		SourceType:       sourceType,
 	}
 
-	// GC goroutine — periodic cleanup of inactive IPs.
-	// Interval is fixed at startup: RunGC holds the ticker internally.
-	// A gc_interval change in config takes effect only on restart.
-	go tracker.RunGC(ctx, time.Duration(cfg.State.GCInterval))
-
 	// Stats goroutine — periodic operational log line.
-	// Captures processedCount, threatCount, tracker, streamCfg.Name directly —
+	// Captures processedCount, threatCount, tracker, tag directly —
 	// does not access the pipe variable, which may be reassigned on SIGHUP.
 	go func() {
 		ticker := time.NewTicker(time.Duration(cfg.General.StatsInterval))
@@ -460,27 +548,22 @@ func runStream(
 				return
 			case <-ticker.C:
 				st := tracker.GetStats()
-				prefix := ""
-				if streamCfg.Name != "" {
-					prefix = fmt.Sprintf("[%s] ", streamCfg.Name)
-				}
 				utils.Log("STATS", fmt.Sprintf(
-					"%sprocessed=%d tracked=%d threats=%d suspicious=%d",
-					prefix, processedCount.Load(), st.TrackedIPs, threatCount.Load(), st.Suspicious,
+					"%s processed=%d tracked=%d threats=%d suspicious=%d",
+					logTag, processedCount.Load(), st.TrackedIPs, threatCount.Load(), st.Suspicious,
 				), "info")
-				metrics.UpdateGauges(streamCfg.Name, st.TrackedIPs, st.Suspicious)
+				metrics.UpdateGauges(streamCfg.Name, pipeCfg.Name, st.TrackedIPs, st.Suspicious)
 			}
 		}
 	}()
 
-	// TailReader feeds log lines into the lines channel.
-	lines := make(chan string, cfg.General.LinesBufSize)
-	tail := utils.NewTailReader(streamCfg.LogFile, lines, time.Duration(cfg.General.TailRetryInterval))
-	go tail.Run(ctx)
+	// Fan-in all sources into a single entries channel.
+	// Sources run in goroutines started by Merge and stop when ctx is cancelled.
+	entries := coreinput.Merge(ctx, sources, bufSize)
 
 	utils.Log("STARTUP", fmt.Sprintf(
-		"stream %q: pipeline started (tail→whitelist→tracker→scorer) | file: %s",
-		streamCfg.Name, streamCfg.LogFile,
+		"%s: pipeline started (sources=%d sinks=%d) | source: %s",
+		logTag, len(sources), len(sinks), sourceName,
 	), "info")
 
 	// ── Main processing loop ──────────────────────────────────────────────────────────
@@ -488,36 +571,29 @@ func runStream(
 	for {
 		select {
 		case <-ctx.Done():
-			utils.Log("SHUTDOWN", fmt.Sprintf("stream %q: signal received, draining buffer...", streamCfg.Name), "info")
-			// TailReader shuts down on the same ctx and closes the channel via defer.
-			// We wait for !ok — this guarantees TailReader has flushed all lines before exit.
+			utils.Log("SHUTDOWN", fmt.Sprintf("%s: signal received, draining buffer...", logTag), "info")
+			// Sources stop on ctx.Done() and Merge closes entries when all sources exit.
 			// context.Background() instead of ctx: ctx is already cancelled, so verifyCtx
 			// (context.WithTimeout(ctx,...)) would be immediately cancelled → all bots
 			// would get isFakeBot=true → false ban entries in threats.log on shutdown.
-		drainLoop:
-			for {
-				line, ok := <-lines
-				if !ok {
-					break drainLoop
-				}
-				processLine(context.Background(), line, pipe)
+			for entry := range entries {
+				processLine(context.Background(), entry, pipe)
 			}
-			utils.Log("SHUTDOWN", fmt.Sprintf("stream %q: done", streamCfg.Name), "info")
+			utils.Log("SHUTDOWN", fmt.Sprintf("%s: done", logTag), "info")
 			return
 
 		case <-reloadCh:
 			newCfg, err := config.LoadConfig(path)
 			if err != nil {
-				utils.Log("CONFIG", fmt.Sprintf("stream %q: SIGHUP reload error: %v", streamCfg.Name, err), "warn")
+				utils.Log("CONFIG", fmt.Sprintf("%s: SIGHUP reload error: %v", logTag, err), "warn")
 				continue
 			}
 			newMatcher, err := whitelist.NewMatcher(newCfg.Whitelist)
 			if err != nil {
-				utils.Log("CONFIG", fmt.Sprintf("stream %q: SIGHUP whitelist error, reload cancelled: %v", streamCfg.Name, err), "warn")
+				utils.Log("CONFIG", fmt.Sprintf("%s: SIGHUP whitelist error, reload cancelled: %v", logTag, err), "warn")
 				continue
 			}
-			// Find the updated stream config by name.
-			// If stream was removed from config, keep the old streamCfg (graceful: finish existing work).
+			// Find the updated stream config by name; fall back to current if removed.
 			newStreamCfg := streamCfg
 			for _, s := range newCfg.Streams {
 				if s.Name == streamCfg.Name {
@@ -525,86 +601,223 @@ func runStream(
 					break
 				}
 			}
-			// Reopen threat file so logrotate can rotate it after sending SIGHUP.
-			newThreatFile, err := utils.OpenThreatLog(newStreamCfg.ThreatLog)
-			if err != nil {
-				utils.Log("CONFIG", fmt.Sprintf("stream %q: SIGHUP threat log error, reload cancelled: %v", streamCfg.Name, err), "warn")
-				continue
+			newPipeCfg := findPipelineCfg(newStreamCfg, pipeCfg.Name, pipeIdx, pipeCfg)
+			// Reload FileSinks for log rotation.
+			// Sources are NOT restarted — they run continuously across reloads.
+			for _, sink := range pipe.Sinks {
+				if fs, ok := sink.(*output.FileSink); ok {
+					if reloadErr := fs.Reload(); reloadErr != nil {
+						utils.Log("CONFIG", fmt.Sprintf("%s: SIGHUP sink reload error: %v", logTag, reloadErr), "warn")
+					}
+				}
 			}
-			_ = threatFile.Sync()
-			_ = threatFile.Close()
-			threatFile = newThreatFile
 			streamCfg = newStreamCfg
-
-			newParser, err := buildParser(newCfg)
-			if err != nil {
-				utils.Log("CONFIG", fmt.Sprintf("stream %q: SIGHUP parser error, reload cancelled: %v", streamCfg.Name, err), "warn")
-				continue
-			}
+			pipeCfg = newPipeCfg
 			cfg = newCfg
 			tracker.Reconfigure(cfg)
 			pipe = &PipelineContext{
 				StreamName:       streamCfg.Name,
+				PipelineName:     pipeCfg.Name,
 				processedCount:   &processedCount,
+				threatCount:      &threatCount,
 				Tracker:          tracker,
-				Scorer:           scorer.NewScorer(cfg.Scoring, buildDetectors(cfg, shared), utils.Log),
-				ThreatLogger:     makeThreatLogger(threatFile),
+				Scorer:           scorer.NewScorer(cfg.Scoring, buildPipelineDetectors(cfg, pipeCfg, shared), utils.Log),
+				Sinks:            sinks, // same sinks — already reloaded above
 				Matcher:          newMatcher,
 				Verifier:         verifier,
-				Parser:           newParser,
 				FakeBotScore:     cfg.Whitelist.FakeBotScore,
 				DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
 				Shared:           shared,
-				LogFile:          streamCfg.LogFile,
+				SourceName:       sourceName, // source identity does not change on SIGHUP
+				SourceType:       sourceType,
 			}
-			utils.Log("CONFIG", fmt.Sprintf("stream %q: SIGHUP config reloaded", streamCfg.Name), "info")
+			utils.Log("CONFIG", fmt.Sprintf("%s: SIGHUP config reloaded", logTag), "info")
 
-		case line, ok := <-lines:
+		case entry, ok := <-entries:
 			if !ok {
-				utils.Log("SHUTDOWN", fmt.Sprintf("stream %q: channel closed, exiting", streamCfg.Name), "info")
+				utils.Log("SHUTDOWN", fmt.Sprintf("%s: channel closed, exiting", logTag), "info")
 				return
 			}
-			processLine(ctx, line, pipe)
+			processLine(ctx, entry, pipe)
 		}
 	}
 }
 
-// detectorFactories — registry of all available detectors.
-// Each factory returns nil when the detector is disabled in config.
-// To add a new detector: append one entry here + write a newXxxDetector function below.
-var detectorFactories = []func(config.Config, SharedResources) detector.Detector{
-	newProbeDetector,
-	newRateDetector,
-	newUADetector,
-	newBruteforceDetector,
-	newCrawlerDetector,
-	newNoAssetDetector,
-	newOverflowDetector,
-	newBadBotDetector,
+// ── TrackerGroup helpers ───────────────────────────────────────────────────────────────
+
+// buildTrackerGroups creates one *state.Tracker per unique tracker group in the stream.
+// Pipelines that share the same group see the same IP state (shared tracker).
+func buildTrackerGroups(cfg config.Config, streamCfg config.StreamConfig) map[string]*state.Tracker {
+	groups := make(map[string]*state.Tracker)
+	for _, pipeCfg := range streamCfg.Pipelines {
+		group := resolveTrackerGroup(pipeCfg)
+		if _, exists := groups[group]; !exists {
+			groups[group] = state.NewTracker(cfg, utils.Log)
+		}
+	}
+	return groups
 }
 
-// buildDetectors assembles the list of active detectors from config.
-// Iterates detectorFactories; nil returns (disabled) are filtered out.
-// No goroutines are started here — goroutine-owning resources live in SharedResources.
-func buildDetectors(cfg config.Config, shared SharedResources) []detector.Detector {
-	var detectors []detector.Detector
+// resolveTrackerGroup returns the effective tracker group key for a pipeline.
+// An empty TrackerGroup means isolated: use the pipeline name as the implicit group.
+// Auto-wrapped pipelines (Name="", TrackerGroup="") all resolve to "" and share one tracker,
+// which is the pre-Task-3 behavior for single-pipeline streams.
+func resolveTrackerGroup(pipeCfg config.PipelineConfig) string {
+	if pipeCfg.TrackerGroup != "" {
+		return pipeCfg.TrackerGroup
+	}
+	return pipeCfg.Name // "" for auto-wrapped pipelines → shared tracker per stream
+}
+
+// pipelineLogTag returns a human-readable log prefix that includes stream and pipeline names.
+// Examples: "stream \"nginx\" pipeline \"api\"", "stream \"nginx\"" (unnamed pipeline).
+func pipelineLogTag(streamName, pipelineName string) string {
+	if streamName == "" && pipelineName == "" {
+		return "(default)"
+	}
+	if pipelineName == "" {
+		return fmt.Sprintf("stream %q", streamName)
+	}
+	return fmt.Sprintf("stream %q pipeline %q", streamName, pipelineName)
+}
+
+// findPipelineCfg locates the pipeline config in a (possibly updated) stream config.
+// Named pipelines are matched by name; unnamed (auto-wrapped) by index.
+// Returns fallback when the pipeline is not found (e.g. removed from config on SIGHUP).
+func findPipelineCfg(streamCfg config.StreamConfig, name string, idx int, fallback config.PipelineConfig) config.PipelineConfig {
+	if name != "" {
+		for _, p := range streamCfg.Pipelines {
+			if p.Name == name {
+				return p
+			}
+		}
+		return fallback // named pipeline removed from config — keep old
+	}
+	if idx < len(streamCfg.Pipelines) {
+		return streamCfg.Pipelines[idx]
+	}
+	return fallback
+}
+
+// ── Detector construction ──────────────────────────────────────────────────────────────
+
+// detectorShared adapts main.go's SharedResources to pkgdetector.SharedResources.
+// *blocklist.Manager satisfies pkgdetector.Matcher implicitly (has Match(list, text) bool).
+type detectorShared struct {
+	blocklist pkgdetector.Matcher
+}
+
+func (s detectorShared) Blocklist() pkgdetector.Matcher { return s.blocklist }
+
+// bridgeShared wraps SharedResources into the pkgdetector.SharedResources interface.
+// Returns nil Blocklist when shared.BlocklistManager is nil.
+func bridgeShared(shared SharedResources) pkgdetector.SharedResources {
+	return detectorShared{blocklist: shared.BlocklistManager}
+}
+
+// buildPipelineDetectors constructs the detector list for a pipeline.
+//
+// If pipeCfg.Detectors is nil (auto-wrapped legacy pipeline), all registered detectors
+// are built from the global cfg.Detectors section — preserving backward compat so that
+// detectors.rate.threshold=50 in config.yaml continues to work unchanged.
+//
+// If pipeCfg.Detectors is set (new pipeline syntax), only the listed detectors are built.
+// Unknown detector names are logged as warnings and skipped (forward compat).
+func buildPipelineDetectors(cfg config.Config, pipeCfg config.PipelineConfig, shared SharedResources) []plugin.Detector {
+	ds := bridgeShared(shared)
+
+	var specs map[string]pkgdetector.DetectorConfig
+	if pipeCfg.Detectors == nil {
+		// Legacy path: build from global cfg.Detectors, respecting all custom parameters.
+		specs = globalDetectorSpecs(cfg)
+	} else {
+		// New syntax path: build exactly the detectors listed in the pipeline config.
+		specs = make(map[string]pkgdetector.DetectorConfig, len(pipeCfg.Detectors))
+		for name, dc := range pipeCfg.Detectors {
+			specs[name] = pkgdetector.DetectorConfig{
+				Enabled: dc.Enabled,
+				Params:  dc.Params,
+				Exec:    dc.Exec,  // exec plugin binary path (empty for built-in detectors)
+			}
+		}
+	}
+
+	var detectors []plugin.Detector
 	var names []string
-	for _, f := range detectorFactories {
-		if d := f(cfg, shared); d != nil {
-			detectors = append(detectors, d)
-			names = append(names, d.Name())
+	for name, spec := range specs {
+		d, err := pkgdetector.Build(name, spec, ds)
+		if err != nil {
+			utils.Log("CONFIG", fmt.Sprintf("detector %q: build error: %v (skipped)", name, err), "warn")
+			continue
 		}
+		if d == nil {
+			continue // disabled
+		}
+		detectors = append(detectors, d)
+		names = append(names, d.Name())
 	}
+	sort.Strings(names)
 	utils.Log("CONFIG", fmt.Sprintf("detectors: %d active (%s)",
 		len(detectors), strings.Join(names, " ")), "info")
 	return detectors
 }
 
-// buildParser returns the parser for the current config.
-// Priority: parser.profile → parser.log_format → default combined (Decision 1 — Flow #15).
-// Called at startup and on SIGHUP so format changes take effect without restart.
-func buildParser(cfg config.Config) (parser.Parser, error) {
-	// Profile takes priority over log_format.
+// globalDetectorSpecs converts the global cfg.Detectors section into the registry format.
+// Used by buildPipelineDetectors for auto-wrapped legacy pipelines (Detectors == nil).
+// Preserves all user-configured values so existing configs behave identically after Task 3.
+func globalDetectorSpecs(cfg config.Config) map[string]pkgdetector.DetectorConfig {
+	d := cfg.Detectors
+	return map[string]pkgdetector.DetectorConfig{
+		"probe": {Enabled: d.Probe.Enabled, Params: map[string]interface{}{
+			"score": d.Probe.Score,
+			"paths": d.Probe.Paths,
+		}},
+		"rate": {Enabled: d.Rate.Enabled, Params: map[string]interface{}{
+			"threshold": d.Rate.Threshold,
+			"window":    time.Duration(d.Rate.Window).String(),
+			"score":     d.Rate.Score,
+		}},
+		"ua": {Enabled: d.UserAgent.Enabled, Params: map[string]interface{}{
+			"scanner_score":             d.UserAgent.ScannerScore,
+			"grabber_score":             d.UserAgent.GrabberScore,
+			"automation_score":          d.UserAgent.AutomationScore,
+			"empty_ua_score":            d.UserAgent.EmptyUAScore,
+			"extra_scanner_patterns":    d.UserAgent.ExtraScannerPatterns,
+			"extra_grabber_patterns":    d.UserAgent.ExtraGrabberPatterns,
+			"extra_automation_patterns": d.UserAgent.ExtraAutomationPatterns,
+		}},
+		"bruteforce": {Enabled: d.Bruteforce.Enabled, Params: map[string]interface{}{
+			"min_requests":    d.Bruteforce.MinRequests,
+			"ratio_threshold": d.Bruteforce.RatioThreshold,
+			"score":           d.Bruteforce.Score,
+		}},
+		"crawler": {Enabled: d.Crawler.Enabled, Params: map[string]interface{}{
+			"min_sequential": d.Crawler.MinSequential,
+			"score":          d.Crawler.Score,
+		}},
+		"noasset": {Enabled: d.NoAsset.Enabled, Params: map[string]interface{}{
+			"min_page_requests":     d.NoAsset.MinPageRequests,
+			"asset_ratio_threshold": d.NoAsset.AssetRatioThreshold,
+			"score":                 d.NoAsset.Score,
+			"asset_extensions":      d.NoAsset.AssetExtensions,
+		}},
+		"overflow": {Enabled: d.Overflow.Enabled, Params: map[string]interface{}{
+			"max_url_length":    d.Overflow.MaxURLLength,
+			"suspicious_params": d.Overflow.SuspiciousParams,
+			"score":             d.Overflow.Score,
+		}},
+		"badbot": {Enabled: d.BadBot.Enabled, Params: map[string]interface{}{
+			"check_ua":       d.BadBot.CheckUA,
+			"check_referrer": d.BadBot.CheckReferrer,
+			"score":          d.BadBot.Score,
+		}},
+	}
+}
+
+// buildParserForInput returns the parser for a specific InputConfig.
+// Priority: global parser.profile → input.parser → global parser.log_format → combined.
+func buildParserForInput(cfg config.Config, input config.InputConfig) (parser.Parser, error) {
+	// Global profile overrides everything — same precedence as the old buildParser.
 	if cfg.Parser.Profile != "" {
 		factory, ok := parser.Profiles[cfg.Parser.Profile]
 		if !ok {
@@ -613,74 +826,138 @@ func buildParser(cfg config.Config) (parser.Parser, error) {
 		}
 		return factory()
 	}
-	switch cfg.Parser.LogFormat {
+	format := input.Parser
+	if format == "" {
+		format = cfg.Parser.LogFormat
+	}
+	switch format {
 	case "json":
 		return parser.NewJSONParser(cfg.Parser.JSONFields), nil
 	case "regex":
 		return parser.NewRegexParser(cfg.Parser.RegexPattern)
-	default:
+	default: // "combined", "" → combined
 		return &parser.CombinedParser{}, nil
 	}
 }
 
-// ── Detector factories ─────────────────────────────────────────────────────────────────
-
-func newProbeDetector(cfg config.Config, _ SharedResources) detector.Detector {
-	if !cfg.Detectors.Probe.Enabled {
-		return nil
+// buildSources constructs the Source list from an explicit inputs slice.
+// Called from runPipeline with pipeCfg.Inputs — each pipeline owns its inputs directly.
+func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Source, error) {
+	if len(inputs) == 0 {
+		return nil, fmt.Errorf("no inputs configured")
 	}
-	return detector.NewProbeDetector(cfg.Detectors.Probe)
+	sources := make([]plugin.Source, 0, len(inputs))
+	for _, in := range inputs {
+		p, err := buildParserForInput(cfg, in)
+		if err != nil {
+			return nil, fmt.Errorf("input %q: %w", in.Type, err)
+		}
+		src, err := pkgsource.Build(in.Type, pkgsource.InputConfig{
+			Type: in.Type,
+			Path: in.Path,
+			Exec: in.Exec,  // NEW
+		}, pkgsource.BuildOptions{
+			Parser:        p,
+			RetryInterval: time.Duration(cfg.General.TailRetryInterval),
+			LogFn:         utils.Log,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("source %q: %w", in.Type, err)
+		}
+		sources = append(sources, src)
+	}
+	return sources, nil
 }
 
-func newRateDetector(cfg config.Config, _ SharedResources) detector.Detector {
-	if !cfg.Detectors.Rate.Enabled {
-		return nil
+// buildSinks constructs the Sink list from an explicit outputs slice.
+// Called from runPipeline with pipeCfg.Outputs — each pipeline owns its sinks directly.
+func buildSinks(outputs []config.SinkConfig) ([]plugin.Sink, error) {
+	if len(outputs) == 0 {
+		return nil, fmt.Errorf("no outputs configured")
 	}
-	return detector.NewRateDetector(cfg.Detectors.Rate)
+	sinks := make([]plugin.Sink, 0, len(outputs))
+	for _, out := range outputs {
+		sink, err := pkgsink.Build(pkgsink.SinkConfig{
+			Type:   out.Type,
+			Path:   out.Path,
+			Format: out.Format,
+			Exec:   out.Exec,  // NEW
+		})
+		if err != nil {
+			return nil, fmt.Errorf("sink %q: %w", out.Type, err)
+		}
+		sinks = append(sinks, sink)
+	}
+	return sinks, nil
 }
 
-func newUADetector(cfg config.Config, _ SharedResources) detector.Detector {
-	if !cfg.Detectors.UserAgent.Enabled {
-		return nil
+// sourceMetadata returns the name and type of the first source for ThreatEvent metadata.
+// With multiple sources merged, Phase 1 uses the first source's identity as the stream label.
+func sourceMetadata(sources []plugin.Source) (name, sourceType string) {
+	if len(sources) == 0 {
+		return "", ""
 	}
-	return detector.NewUADetector(cfg.Detectors.UserAgent)
+	name = sources[0].Name()
+	if strings.HasPrefix(name, "file:") {
+		return name, "file"
+	}
+	return name, "stdin"
 }
 
-func newBruteforceDetector(cfg config.Config, _ SharedResources) detector.Detector {
-	if !cfg.Detectors.Bruteforce.Enabled {
-		return nil
+// sinkTypeFromName extracts the sink type string from a sink Name() value.
+// "file:/path/…" → "file", "stdout" → "stdout".
+func sinkTypeFromName(name string) string {
+	if strings.HasPrefix(name, "file:") {
+		return "file"
 	}
-	return detector.NewBruteforceDetector(cfg.Detectors.Bruteforce)
+	return name
 }
 
-func newCrawlerDetector(cfg config.Config, _ SharedResources) detector.Detector {
-	if !cfg.Detectors.Crawler.Enabled {
-		return nil
+// streamSourceLabel returns a short human-readable source description for startup logging.
+// Checks pipelines when top-level inputs are absent (post-migration configs).
+func streamSourceLabel(streamCfg config.StreamConfig, cfg config.Config) string {
+	inputs := streamCfg.Inputs
+	if len(inputs) == 0 && len(streamCfg.Pipelines) > 0 {
+		// After Migrate(), inputs live in Pipelines[0].Inputs.
+		inputs = streamCfg.Pipelines[0].Inputs
 	}
-	return detector.NewCrawlerDetector(cfg.Detectors.Crawler)
+	if len(inputs) == 0 {
+		inputs = cfg.Inputs
+	}
+	if len(inputs) == 0 {
+		return "(none)"
+	}
+	if inputs[0].Type == "stdin" {
+		return "stdin"
+	}
+	return inputs[0].Path
 }
 
-func newNoAssetDetector(cfg config.Config, _ SharedResources) detector.Detector {
-	if !cfg.Detectors.NoAsset.Enabled {
-		return nil
+// parseFlagInputs converts the --input flag value into an InputConfig slice.
+func parseFlagInputs(flagVal string, cfg config.Config) []config.InputConfig {
+	switch flagVal {
+	case "stdin":
+		return []config.InputConfig{{Type: "stdin", Parser: cfg.Parser.LogFormat}}
+	default:
+		return []config.InputConfig{{Type: "file", Path: flagVal, Parser: cfg.Parser.LogFormat}}
 	}
-	return detector.NewNoAssetDetector(cfg.Detectors.NoAsset)
 }
 
-func newOverflowDetector(cfg config.Config, _ SharedResources) detector.Detector {
-	if !cfg.Detectors.Overflow.Enabled {
-		return nil
+// parseFlagOutputs converts the --output flag value into a SinkConfig slice.
+// Accepted forms: "stdout", "stdout,json", "stdout,fail2ban".
+func parseFlagOutputs(flagVal string) ([]config.SinkConfig, error) {
+	parts := strings.SplitN(flagVal, ",", 2)
+	sinkType := parts[0]
+	format := "fail2ban"
+	if len(parts) == 2 {
+		format = parts[1]
 	}
-	return detector.NewOverflowDetector(cfg.Detectors.Overflow)
-}
-
-// newBadBotDetector creates a BadBotDetector backed by the shared blocklist Manager.
-// No goroutines — all refresh logic is owned by shared.BlocklistManager.
-func newBadBotDetector(cfg config.Config, shared SharedResources) detector.Detector {
-	if !cfg.Detectors.BadBot.Enabled {
-		return nil
+	switch sinkType {
+	case "stdout":
+		return []config.SinkConfig{{Type: "stdout", Format: format}}, nil
+	default:
+		return nil, fmt.Errorf("unknown output type %q; supported: stdout", sinkType)
 	}
-	return detector.NewBadBotDetector(cfg.Detectors.BadBot, shared.BlocklistManager)
 }
 
 // ========================== PID file ====================================================
@@ -699,9 +976,11 @@ func removePID(path string) {
 	_ = os.Remove(path)
 }
 
-// processLine processes a single log line:
+// processLine processes a single parsed log entry:
 //
-//	parse → whitelist early-exit → tracking → fake bot penalty → scoring → threat log.
+//	whitelist early-exit → tracking → fake bot penalty → scoring → sinks.
+//
+// The entry is already parsed by the Source — processLine receives a *plugin.LogEntry.
 //
 // WHITELIST EARLY-EXIT ARCHITECTURE:
 //
@@ -711,21 +990,14 @@ func removePID(path string) {
 //	Step 4 — fake bot → tracker.Update + add FakeBotScore BEFORE scorer.Evaluate
 //
 // KNOWN LIMITATION (Task 7.x): Verify makes a DNS request synchronously in the pipeline goroutine.
-// On cache miss a single request blocks the lines channel processing for a DNS round-trip (~200ms).
+// On cache miss a single request blocks the entries channel for a DNS round-trip (~200ms).
 // Mitigation: IPCache caches the result — DNS is only done on the first request for a new IP.
 // With a targeted attack using bot UA and many unique IPs, delay is possible.
-// Maximum wait is bounded by dnsVerifyTimeout (config whitelist.dns_verify_timeout, default 2s). On timeout → isFakeBot=true.
-//
-// Change (Flow #4, Task 4.0): added whitelist integration and fake bot penalty.
-func processLine(ctx context.Context, line string, pipe *PipelineContext) {
-	entry, ok := pipe.Parser.Parse(line)
-	if !ok {
-		utils.Log("PARSER", fmt.Sprintf("skipping malformed line: %.80s", line), "debug")
-		return
-	}
-	// Only successfully parsed lines are counted — malformed entries are excluded.
+// Maximum wait is bounded by dnsVerifyTimeout (config whitelist.dns_verify_timeout, default 2s).
+func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineContext) {
 	pipe.processedCount.Add(1)
-	metrics.RecordLine(pipe.StreamName)
+	metrics.RecordLine(pipe.StreamName, pipe.PipelineName)
+	metrics.RecordInputLine(pipe.StreamName, pipe.PipelineName, pipe.SourceName, pipe.SourceType)
 
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
@@ -740,10 +1012,10 @@ func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 	// what ArxSentinel actually received from the network stack.
 	if pipe.Shared.ChainChecker != nil && pipe.Shared.WarningsWriter != nil {
 		if result := pipe.Shared.ChainChecker.Check(entry.RemoteAddr); result != nil {
-			_ = pipe.Shared.WarningsWriter.WriteChainWarning(result, pipe.LogFile)
+			_ = pipe.Shared.WarningsWriter.WriteChainWarning(result, pipe.SourceName)
 			utils.Log("CHAIN_WARN",
-				fmt.Sprintf("%s-ip-as-client ip=%s cidr=%s log=%s",
-					result.Kind, result.IP, result.MatchedCIDR, pipe.LogFile),
+				fmt.Sprintf("%s-ip-as-client ip=%s cidr=%s source=%s",
+					result.Kind, result.IP, result.MatchedCIDR, pipe.SourceName),
 				"warning")
 		}
 	}
@@ -792,19 +1064,44 @@ func processLine(ctx context.Context, line string, pipe *PipelineContext) {
 		utils.Log("WHITELIST", fmt.Sprintf("fake bot %s +%d (fake bot score)", entry.RealIP, pipe.FakeBotScore), "warn")
 	}
 
-	// ── Scoring → threat log ──────────────────────────────────────────────────────────
+	// ── Scoring → sinks ──────────────────────────────────────────────────────────────
 	// Evaluate: decay accumulated score + run detectors + issue verdict.
 	// Returned *IPState implements detector.ScoreAccess.
 	level, score, modules, reason := pipe.Scorer.Evaluate(ipState, entry)
 
-	// Write to threat log and record metrics only on WARN or THREAT.
-	if level != "" {
-		metrics.RecordThreat(pipe.StreamName, level)
-		for _, mod := range modules {
-			metrics.RecordDetectorHit(pipe.StreamName, mod)
-		}
+	// Write to sinks and record metrics only on WARN or THREAT.
+	if level == "" {
+		return
 	}
-	pipe.ThreatLogger.Log(entry.RealIP, score, level, modules, reason)
+
+	if level == "THREAT" {
+		pipe.threatCount.Add(1)
+	}
+	metrics.RecordThreat(pipe.StreamName, pipe.PipelineName, level)
+	for _, mod := range modules {
+		metrics.RecordDetectorHit(pipe.StreamName, pipe.PipelineName, mod)
+	}
+
+	event := plugin.ThreatEvent{
+		Timestamp:  time.Now().UTC(),
+		Level:      level,
+		Stream:     pipe.StreamName,
+		Source:     pipe.SourceName,
+		SourceType: pipe.SourceType,
+		IP:         entry.RealIP,
+		Score:      score,
+		Modules:    modules,
+		Reason:     reason,
+	}
+	utils.Log("THREAT", fmt.Sprintf("%s score=%d modules=%s reason=%q",
+		entry.RealIP, score, strings.Join(modules, ","), reason), "warning")
+	for _, sink := range pipe.Sinks {
+		if err := sink.Write(event); err != nil {
+			utils.Log("ERROR", fmt.Sprintf("stream %q: sink %s: %v", pipe.StreamName, sink.Name(), err), "error")
+			continue
+		}
+		metrics.RecordOutputEvent(pipe.StreamName, pipe.PipelineName, sink.Name(), sinkTypeFromName(sink.Name()))
+	}
 }
 
 // ========================== systemd notify ===============================================
@@ -855,4 +1152,24 @@ func metricsHandler(username, passwordHash string) http.Handler {
 		}
 		inner.ServeHTTP(w, r)
 	})
+}
+
+// ========================== Env var diagnostics =========================================
+
+// activeEnvOverrides returns sorted ARXSENTINEL_* keys found in the environment.
+// Used at startup to log which env var overrides are active — helps users verify
+// their env vars were read. Misspelled or unsupported keys produce no log but also
+// no error; the user can spot them missing from the output.
+func activeEnvOverrides() []string {
+	prefix := "ARXSENTINEL_"
+	var vars []string
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, prefix) {
+			if idx := strings.IndexByte(e, '='); idx > 0 {
+				vars = append(vars, e[:idx])
+			}
+		}
+	}
+	sort.Strings(vars)
+	return vars
 }

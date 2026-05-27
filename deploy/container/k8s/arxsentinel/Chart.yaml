@@ -2,8 +2,8 @@ apiVersion: v2
 name: arxsentinel
 description: Real-time web server threat detection with Fail2Ban integration
 type: application
-version: 0.1.0
-appVersion: "1.1.0"
+version: 1.3.8
+appVersion: "1.3.8"
 home: https://github.com/mr-addams/arxsentinel
 sources:
   - https://github.com/mr-addams/arxsentinel

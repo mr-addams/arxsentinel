@@ -69,14 +69,93 @@ type Config struct {
 	Blocklist  blocklist.Config  `yaml:"blocklist"`   // YAML: blocklist — lists managed by blocklist.Manager (sources, refresh, bbolt). Consumer: main.go NewManager
 	ChainGuard ChainGuardConfig  `yaml:"chain_guard"` // YAML: chain_guard — proxy chain integrity checker. Consumer: main.go NewChecker
 	Streams    []StreamConfig    `yaml:"streams"`     // YAML: streams — multi-stream mode; mutually exclusive with general.log_file
+
+	// Universal I/O (Flow #030) — top-level for single-stream / no-streams mode.
+	// Migrated from general.log_file + output.threat_log by Migrate().
+	Inputs   []InputConfig  `yaml:"inputs"`   // YAML: inputs — top-level source list; alternative to general.log_file
+	Outputs  []SinkConfig   `yaml:"outputs"`  // YAML: outputs — top-level sink list; alternative to output.threat_log
+	Pipeline PipelineRuntimeConfig `yaml:"pipeline"` // YAML: pipeline — buffer_size and shutdown_timeout; top-level default for all pipelines
 }
 
-// StreamConfig defines one log-watching pipeline.
-// Each stream has its own tracker, scorer, whitelist, and threat log — full isolation.
+// ========================== Universal I/O config (Flow #030) ==========================
+
+// InputConfig — configuration for a single log source.
+// New syntax: inputs: [{type: file, path: /var/log/nginx/access.log, parser: combined}]
+// Migration: general.log_file / streams[i].log_file → InputConfig automatically.
+type InputConfig struct {
+	Type   string `yaml:"type"`   // YAML: "file" | "stdin". Consumer: cmd/arxsentinel input.NewFileSource / input.NewStdinSource
+	Path   string `yaml:"path"`   // YAML: path to log file; required when type=file. Consumer: input.NewFileSource
+	Parser string `yaml:"parser"` // YAML: "combined" | "json" | "regex" | profile-name; default inherited from parser.log_format. Consumer: main.go buildParser
+	Exec   string `yaml:"exec"`   // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSource
+}
+
+// SinkConfig — configuration for a single threat event output.
+// New syntax: outputs: [{type: file, path: /var/log/arxsentinel/threats.log, format: fail2ban}]
+// Migration: output.threat_log / streams[i].threat_log → SinkConfig automatically.
+type SinkConfig struct {
+	Type   string `yaml:"type"`   // YAML: "file" | "stdout". Consumer: cmd/arxsentinel output.NewFileSink / output.NewStdoutSink
+	Path   string `yaml:"path"`   // YAML: path to output file; required when type=file. Consumer: output.NewFileSink
+	Format string `yaml:"format"` // YAML: "fail2ban" | "json"; default "fail2ban". Consumer: output.FileSink / output.StdoutSink
+	Exec   string `yaml:"exec"`   // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSink
+}
+
+// PipelineRuntimeConfig — tuning parameters for the Source→Merge→Pipeline channel.
+// Applied per-pipeline; top-level value is the default for pipelines without override.
+type PipelineRuntimeConfig struct {
+	BufferSize      int      `yaml:"buffer_size"`      // YAML: pipeline.buffer_size, default 8192 — bounded channel size between Merge and processor; increase for burst traffic. Consumer: input.Merge
+	ShutdownTimeout Duration `yaml:"shutdown_timeout"` // YAML: pipeline.shutdown_timeout, default "15s" — max drain time on SIGTERM before forced close. Consumer: cmd/arxsentinel runPipeline
+}
+
+// DetectorConfig — per-pipeline configuration for a single detector.
+// Enabled controls whether the detector runs in this pipeline.
+// Params holds detector-specific parameters parsed by each detector's factory.
+//
+// Example YAML (inside a pipeline's detectors: map):
+//
+//	probe:
+//	  enabled: true
+//	  score: 10
+//	  paths: [/.env, /.git/config]
+type DetectorConfig struct {
+	Enabled bool                   `yaml:"enabled"`
+	Exec    string                 `yaml:"exec"`    // YAML: path to exec plugin binary; exec-based detector. Consumer: pkg/execplugin.NewDetector
+	Params  map[string]interface{} `yaml:",inline"` // detector-specific params; deserialized by each factory
+}
+
+// PipelineConfig — one isolated processing unit within a stream.
+// Each pipeline owns its Sources, Detectors, Sinks, and Tracker (or a shared Tracker group).
+// Multiple pipelines within a stream run concurrently and are fully isolated by default.
+//
+// TrackerGroup: pipelines with the same non-empty group name share one *state.Tracker;
+// an empty TrackerGroup means isolated (implicit group = pipeline Name).
+type PipelineConfig struct {
+	Name         string                    `yaml:"name"`          // YAML: pipelines[].name — label for metrics and logs; empty for auto-wrapped single pipeline
+	TrackerGroup string                    `yaml:"tracker_group"` // YAML: pipelines[].tracker_group — shared IP-state group; "" → isolated
+	Inputs       []InputConfig             `yaml:"inputs"`        // YAML: pipelines[].inputs — log sources for this pipeline
+	Outputs      []SinkConfig              `yaml:"outputs"`       // YAML: pipelines[].outputs — threat sinks for this pipeline
+	Detectors    map[string]DetectorConfig `yaml:"detectors"`     // YAML: pipelines[].detectors — per-detector config; nil → all registered with defaults
+	Pipeline     PipelineRuntimeConfig     `yaml:"pipeline"`      // YAML: pipelines[].pipeline — buffer_size, shutdown_timeout
+}
+
+// StreamConfig — a named logical group of pipelines sharing the same namespace for metrics and logs.
+// Each stream has its own whitelist configuration; pipelines within a stream share whitelisting.
 type StreamConfig struct {
-	Name      string `yaml:"name"`       // YAML: streams[].name — label used in metrics and log output
-	LogFile   string `yaml:"log_file"`   // YAML: streams[].log_file — path to the access log to watch
-	ThreatLog string `yaml:"threat_log"` // YAML: streams[].threat_log — path to the per-stream threat log (Fail2Ban reads this)
+	Name string `yaml:"name"` // YAML: streams[].name — label used in metrics and log output
+
+	// Multi-pipeline syntax (Flow #034): each pipeline is an isolated processing unit.
+	// If Pipelines is empty after YAML parsing, Migrate() auto-wraps Inputs/Outputs into Pipelines[0].
+	Pipelines []PipelineConfig `yaml:"pipelines"` // YAML: streams[].pipelines — list of isolated pipelines
+
+	// Single-pipeline I/O syntax (Flow #030): used when pipelines: is not specified.
+	// Migrate() wraps these into Pipelines[0] before runStream() is called.
+	Inputs   []InputConfig        `yaml:"inputs"`   // YAML: streams[].inputs — Deprecated in favour of pipelines[].inputs; auto-wrapped by Migrate()
+	Outputs  []SinkConfig         `yaml:"outputs"`  // YAML: streams[].outputs — Deprecated in favour of pipelines[].outputs; auto-wrapped by Migrate()
+	Pipeline PipelineRuntimeConfig `yaml:"pipeline"` // YAML: streams[].pipeline — per-stream pipeline tuning; overrides top-level
+
+	// Deprecated: use inputs/outputs instead. Kept for backward compatibility and
+	// auto-migration via config.Migrate(). Will be removed in a future major version.
+	LogFile   string `yaml:"log_file"`   // YAML: streams[].log_file — Deprecated: use inputs: [{type: file, path: ...}]
+	ThreatLog string `yaml:"threat_log"` // YAML: streams[].threat_log — Deprecated: use outputs: [{type: file, path: ..., format: fail2ban}]
 }
 
 // ++++++++++++++++++++++++++ Section: general +++++++++++++++++++++++++++++++++++++++++++
@@ -363,6 +442,7 @@ func LoadConfig(path string) (Config, error) {
 	cfg.Parser.LogFormat = strings.ToLower(cfg.Parser.LogFormat)
 
 	// Backward compat: single general.log_file → synthesize a single unnamed stream.
+	// Must happen BEFORE Migrate() so the synthesized stream is auto-wrapped into a pipeline.
 	// Mutually exclusive with streams: — operator must not specify both.
 	if cfg.General.LogFile != "" && len(cfg.Streams) > 0 {
 		return cfg, fmt.Errorf("invalid config %q: general.log_file and streams: are mutually exclusive — use one or the other", path)
@@ -378,6 +458,15 @@ func LoadConfig(path string) (Config, error) {
 			LogFile:   cfg.General.LogFile,
 			ThreatLog: cfg.Output.ThreatLog,
 		}}
+	}
+
+	// Universal I/O migration (Flow #030, #034): convert deprecated log_file/threat_log fields
+	// to the new inputs/outputs syntax, then auto-wrap into pipelines.
+	// Warnings are written to stderr so they appear in systemd journal before utils.Init() is called.
+	if warnings := Migrate(&cfg); len(warnings) > 0 {
+		for _, w := range warnings {
+			fmt.Fprintf(os.Stderr, "[CONFIG] deprecation: %s\n", w)
+		}
 	}
 
 	if err := validateConfig(&cfg); err != nil {
@@ -758,21 +847,79 @@ func validateConfig(cfg *Config) error {
 	}
 	// Detector validation: zero thresholds cause panic or silent misconfiguration
 	// with partial YAML (yaml.v3 partial merge zeroes unset fields in a section).
-	if cfg.Detectors.Crawler.Enabled && cfg.Detectors.Crawler.MinSequential <= 0 {
-		return fmt.Errorf("detectors.crawler.min_sequential must be > 0, got %d",
-			cfg.Detectors.Crawler.MinSequential)
+	// Detector score validation: every enabled detector must have score > 0.
+	// Without this check a partial YAML section can silently zero the score,
+	// causing the detector to trigger on every single request with accumulated score 0.
+	if cfg.Detectors.Probe.Enabled && cfg.Detectors.Probe.Score <= 0 {
+		return fmt.Errorf("detectors.probe.score must be > 0, got %d", cfg.Detectors.Probe.Score)
 	}
-	if cfg.Detectors.Bruteforce.Enabled && cfg.Detectors.Bruteforce.MinRequests <= 0 {
-		return fmt.Errorf("detectors.bruteforce.min_requests must be > 0, got %d",
-			cfg.Detectors.Bruteforce.MinRequests)
+	if cfg.Detectors.Bruteforce.Enabled {
+		if cfg.Detectors.Bruteforce.MinRequests <= 0 {
+			return fmt.Errorf("detectors.bruteforce.min_requests must be > 0, got %d",
+				cfg.Detectors.Bruteforce.MinRequests)
+		}
+		if cfg.Detectors.Bruteforce.Score <= 0 {
+			return fmt.Errorf("detectors.bruteforce.score must be > 0, got %d",
+				cfg.Detectors.Bruteforce.Score)
+		}
 	}
-	if cfg.Detectors.NoAsset.Enabled && cfg.Detectors.NoAsset.MinPageRequests <= 0 {
-		return fmt.Errorf("detectors.noasset.min_page_requests must be > 0, got %d",
-			cfg.Detectors.NoAsset.MinPageRequests)
+	if cfg.Detectors.Crawler.Enabled {
+		if cfg.Detectors.Crawler.MinSequential <= 0 {
+			return fmt.Errorf("detectors.crawler.min_sequential must be > 0, got %d",
+				cfg.Detectors.Crawler.MinSequential)
+		}
+		if cfg.Detectors.Crawler.Score <= 0 {
+			return fmt.Errorf("detectors.crawler.score must be > 0, got %d",
+				cfg.Detectors.Crawler.Score)
+		}
 	}
-	if cfg.Detectors.Overflow.Enabled && cfg.Detectors.Overflow.MaxURLLength <= 0 {
-		return fmt.Errorf("detectors.overflow.max_url_length must be > 0, got %d",
-			cfg.Detectors.Overflow.MaxURLLength)
+	if cfg.Detectors.NoAsset.Enabled {
+		if cfg.Detectors.NoAsset.MinPageRequests <= 0 {
+			return fmt.Errorf("detectors.noasset.min_page_requests must be > 0, got %d",
+				cfg.Detectors.NoAsset.MinPageRequests)
+		}
+		if cfg.Detectors.NoAsset.Score <= 0 {
+			return fmt.Errorf("detectors.noasset.score must be > 0, got %d",
+				cfg.Detectors.NoAsset.Score)
+		}
+	}
+	if cfg.Detectors.Rate.Enabled {
+		if cfg.Detectors.Rate.Threshold <= 0 {
+			return fmt.Errorf("detectors.rate.threshold must be > 0, got %d",
+				cfg.Detectors.Rate.Threshold)
+		}
+		if cfg.Detectors.Rate.Score <= 0 {
+			return fmt.Errorf("detectors.rate.score must be > 0, got %d",
+				cfg.Detectors.Rate.Score)
+		}
+	}
+	if cfg.Detectors.UserAgent.Enabled {
+		if cfg.Detectors.UserAgent.ScannerScore <= 0 {
+			return fmt.Errorf("detectors.useragent.scanner_score must be > 0, got %d",
+				cfg.Detectors.UserAgent.ScannerScore)
+		}
+		if cfg.Detectors.UserAgent.GrabberScore <= 0 {
+			return fmt.Errorf("detectors.useragent.grabber_score must be > 0, got %d",
+				cfg.Detectors.UserAgent.GrabberScore)
+		}
+		if cfg.Detectors.UserAgent.AutomationScore <= 0 {
+			return fmt.Errorf("detectors.useragent.automation_score must be > 0, got %d",
+				cfg.Detectors.UserAgent.AutomationScore)
+		}
+		if cfg.Detectors.UserAgent.EmptyUAScore <= 0 {
+			return fmt.Errorf("detectors.useragent.empty_ua_score must be > 0, got %d",
+				cfg.Detectors.UserAgent.EmptyUAScore)
+		}
+	}
+	if cfg.Detectors.Overflow.Enabled {
+		if cfg.Detectors.Overflow.MaxURLLength <= 0 {
+			return fmt.Errorf("detectors.overflow.max_url_length must be > 0, got %d",
+				cfg.Detectors.Overflow.MaxURLLength)
+		}
+		if cfg.Detectors.Overflow.Score <= 0 {
+			return fmt.Errorf("detectors.overflow.score must be > 0, got %d",
+				cfg.Detectors.Overflow.Score)
+		}
 	}
 	if cfg.Detectors.BadBot.Enabled {
 		if cfg.Detectors.BadBot.Score <= 0 {
@@ -810,12 +957,87 @@ func validateConfig(cfg *Config) error {
 	if cfg.Metrics.Username != "" && cfg.Metrics.PasswordHash == "" {
 		return fmt.Errorf("metrics.password_hash must be set when metrics.username is configured")
 	}
+	// Pipeline validation (Flow #034): after Migrate(), every stream must have at least
+	// one pipeline. Auto-wrap ensures this for legacy and single-pipeline configs.
 	for i, s := range cfg.Streams {
-		if s.LogFile == "" {
-			return fmt.Errorf("streams[%d].log_file must not be empty", i)
+		if len(s.Pipelines) == 0 {
+			return fmt.Errorf("streams[%d]: must have at least one pipeline (Migrate() should have auto-wrapped inputs/outputs)", i)
 		}
-		if s.ThreatLog == "" {
-			return fmt.Errorf("streams[%d].threat_log must not be empty", i)
+		// Check for duplicate pipeline names within a stream.
+		pipelineNames := make(map[string]bool)
+		for j, p := range s.Pipelines {
+			if p.Name != "" {
+				if pipelineNames[p.Name] {
+					return fmt.Errorf("streams[%d]: duplicate pipeline name %q", i, p.Name)
+				}
+				pipelineNames[p.Name] = true
+			}
+			if len(p.Inputs) == 0 {
+				return fmt.Errorf("streams[%d].pipelines[%d]: must have at least one input", i, j)
+			}
+			if len(p.Outputs) == 0 {
+				// A pipeline without outputs silently drops all threat events — almost certainly a
+				// misconfiguration. Require at least one sink to prevent silent data loss.
+				return fmt.Errorf("streams[%d].pipelines[%d]: must have at least one output", i, j)
+			}
+			if err := validateInputs(p.Inputs); err != nil {
+				return fmt.Errorf("streams[%d].pipelines[%d].inputs: %w", i, j, err)
+			}
+			if err := validateSinks(p.Outputs); err != nil {
+				return fmt.Errorf("streams[%d].pipelines[%d].outputs: %w", i, j, err)
+			}
+		}
+	}
+
+	// Top-level I/O validation (Flow #030) — these are intermediate fields used by Migrate().
+	if err := validateInputs(cfg.Inputs); err != nil {
+		return err
+	}
+	if err := validateSinks(cfg.Outputs); err != nil {
+		return err
+	}
+	if cfg.Pipeline.BufferSize < 0 {
+		return fmt.Errorf("pipeline.buffer_size must be >= 0, got %d", cfg.Pipeline.BufferSize)
+	}
+	if cfg.Pipeline.ShutdownTimeout < 0 {
+		return fmt.Errorf("pipeline.shutdown_timeout must be >= 0")
+	}
+	return nil
+}
+
+// validateInputs checks a slice of InputConfig for structural errors.
+func validateInputs(inputs []InputConfig) error {
+	seen := make(map[string]bool)
+	for i, in := range inputs {
+		if in.Type != "file" && in.Type != "stdin" {
+			return fmt.Errorf("inputs[%d]: unknown type %q (want file or stdin)", i, in.Type)
+		}
+		key := in.Type + ":" + in.Path
+		if seen[key] {
+			return fmt.Errorf("inputs[%d]: duplicate source %q", i, key)
+		}
+		seen[key] = true
+		if in.Type == "file" && in.Path == "" {
+			return fmt.Errorf("inputs[%d]: type=file requires path", i)
+		}
+	}
+	return nil
+}
+
+// validateSinks checks a slice of SinkConfig for structural errors.
+func validateSinks(sinks []SinkConfig) error {
+	seen := make(map[string]bool)
+	for i, s := range sinks {
+		key := s.Type + ":" + s.Path
+		if seen[key] {
+			return fmt.Errorf("outputs[%d]: duplicate sink %q", i, key)
+		}
+		seen[key] = true
+		if s.Type == "file" && s.Path == "" {
+			return fmt.Errorf("outputs[%d]: type=file requires path", i)
+		}
+		if s.Format != "" && s.Format != "fail2ban" && s.Format != "json" {
+			return fmt.Errorf("outputs[%d]: unknown format %q (want fail2ban or json)", i, s.Format)
 		}
 	}
 	return nil
@@ -928,6 +1150,10 @@ func defaultConfig() Config {
 		Output: OutputConfig{
 			ThreatLog:      "/var/log/arxsentinel/threats.log",
 			OperationalLog: "/var/log/arxsentinel/sentinel.log",
+		},
+		Pipeline: PipelineRuntimeConfig{
+			BufferSize:      8192,
+			ShutdownTimeout: Duration(15 * time.Second),
 		},
 		Metrics: MetricsConfig{
 			Enabled:    false,

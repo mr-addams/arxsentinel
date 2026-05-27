@@ -3,18 +3,20 @@ package main
 import (
 	"context"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/output"
 	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/core/scorer"
 	"github.com/mr-addams/arxsentinel/internal/core/state"
 	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
+	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
+	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 // TestStartupShutdownInvariants enforces the mandatory startup/shutdown specification
@@ -135,34 +137,328 @@ general:
 	}
 
 	var count atomic.Int64
-	// ThreatLogger with a no-op write function — we do not assert on threat output here.
-	tl := output.NewThreatLogger(func(ip string, score int, level string, modules []string, reason string) {})
+	var threatCount atomic.Int64
 
 	pipe := &PipelineContext{
-		StreamName:     "test",
-		processedCount: &count,
-		Tracker:        tracker,
-		Scorer:         scorer.NewScorer(cfg.Scoring, nil, func(tag, msg, level string) {}),
-		ThreatLogger:   tl,
-		Matcher:        matcher,
-		Verifier:       whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, func(tag, msg, level string) {}),
-		Parser:         &parser.CombinedParser{},
-		FakeBotScore:   cfg.Whitelist.FakeBotScore,
+		StreamName:       "test",
+		PipelineName:     "", // explicit: auto-wrapped legacy pipeline — no name
+		processedCount:   &count,
+		threatCount:      &threatCount,
+		Tracker:          tracker,
+		Scorer:           scorer.NewScorer(cfg.Scoring, nil, func(tag, msg, level string) {}),
+		Sinks:            []plugin.Sink{}, // no-op sink list — we do not assert on threat output here
+		Matcher:          matcher,
+		Verifier:         whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, func(tag, msg, level string) {}),
+		FakeBotScore:     cfg.Whitelist.FakeBotScore,
 		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
 		// Shared is zero-value: ChainChecker == nil, WarningsWriter == nil.
 		// This simulates chain_guard.enabled = false (the default).
-		Shared:  SharedResources{},
-		LogFile: "/var/log/nginx/access.log",
+		Shared:     SharedResources{},
+		SourceName: "file:/var/log/nginx/access.log",
+		SourceType: "file",
 	}
 
 	// A valid nginx combined + real_ip log line (the format CombinedParser expects).
 	// Format: $remote_addr ... "$http_user_agent" "$real_ip"
-	line := `203.0.113.1 - - [20/May/2026:10:00:00 +0000] "GET /wp-login.php HTTP/1.1" 200 512 "-" "curl/7.88" "203.0.113.1"`
+	rawLine := `203.0.113.1 - - [20/May/2026:10:00:00 +0000] "GET /wp-login.php HTTP/1.1" 200 512 "-" "curl/7.88" "203.0.113.1"`
+	entry, ok := (&parser.CombinedParser{}).Parse(rawLine)
+	if !ok {
+		t.Fatal("test setup: CombinedParser failed to parse the test line")
+	}
 
 	// Must not panic.
-	processLine(context.Background(), line, pipe)
+	processLine(context.Background(), entry, pipe)
 
 	if count.Load() == 0 {
-		t.Error("processLine returned without incrementing processedCount for a valid log line")
+		t.Error("processLine returned without incrementing processedCount for a valid log entry")
+	}
+}
+
+// ── Pipeline abstraction unit tests (Flow #034, Task 5) ───────────────────────────────────
+
+// loadMinimalConfig creates a temp config file with the minimum required fields and loads it.
+// All defaults are filled by LoadConfig; tests can rely on cfg.Detectors.*.Enabled == true.
+func loadMinimalConfig(t *testing.T) config.Config {
+	t.Helper()
+	tmp, err := os.CreateTemp(t.TempDir(), "cfg-*.yaml")
+	if err != nil {
+		t.Fatalf("create temp config: %v", err)
+	}
+	_, _ = tmp.WriteString("general:\n  log_file: /dev/null\n  threat_log: /dev/null\n")
+	_ = tmp.Close()
+	cfg, err := config.LoadConfig(tmp.Name())
+	if err != nil {
+		t.Fatalf("config.LoadConfig: %v", err)
+	}
+	return cfg
+}
+
+// TestResolveTrackerGroup verifies tracker group key resolution:
+//   - named pipeline, empty TrackerGroup → group = pipeline name (isolated)
+//   - named pipeline, non-empty TrackerGroup → group = TrackerGroup
+//   - auto-wrapped pipeline (Name="", TrackerGroup="") → group = "" (shared per stream)
+func TestResolveTrackerGroup(t *testing.T) {
+	cases := []struct {
+		desc      string
+		pipeCfg   config.PipelineConfig
+		wantGroup string
+	}{
+		{
+			desc:      "named_pipeline_no_group_isolated",
+			pipeCfg:   config.PipelineConfig{Name: "api"},
+			wantGroup: "api",
+		},
+		{
+			desc:      "named_pipeline_with_group_shared",
+			pipeCfg:   config.PipelineConfig{Name: "api", TrackerGroup: "web"},
+			wantGroup: "web",
+		},
+		{
+			desc:      "auto_wrapped_legacy_empty_name_empty_group",
+			pipeCfg:   config.PipelineConfig{Name: "", TrackerGroup: ""},
+			wantGroup: "",
+		},
+		{
+			desc:      "empty_name_non_empty_group",
+			pipeCfg:   config.PipelineConfig{Name: "", TrackerGroup: "shared"},
+			wantGroup: "shared",
+		},
+		{
+			desc:      "named_pipeline_same_group_as_another",
+			pipeCfg:   config.PipelineConfig{Name: "admin", TrackerGroup: "web"},
+			wantGroup: "web",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := resolveTrackerGroup(tc.pipeCfg)
+			if got != tc.wantGroup {
+				t.Errorf("resolveTrackerGroup(%+v) = %q, want %q", tc.pipeCfg, got, tc.wantGroup)
+			}
+		})
+	}
+}
+
+// TestBuildTrackerGroups_SharedAndIsolated verifies that:
+//   - two pipelines with the same tracker_group share one *state.Tracker
+//   - a pipeline with a different (implicit) group gets a distinct *state.Tracker
+func TestBuildTrackerGroups_SharedAndIsolated(t *testing.T) {
+	cfg := loadMinimalConfig(t)
+
+	streamCfg := config.StreamConfig{
+		Pipelines: []config.PipelineConfig{
+			{Name: "api", TrackerGroup: "web"},   // group "web"
+			{Name: "admin", TrackerGroup: "web"}, // same group "web" — shares tracker with api
+			{Name: "mgmt", TrackerGroup: ""},     // isolated: implicit group = "mgmt"
+		},
+	}
+
+	trackers := buildTrackerGroups(cfg, streamCfg)
+
+	// Exactly two distinct groups: "web" and "mgmt".
+	if len(trackers) != 2 {
+		t.Fatalf("expected 2 tracker groups (\"web\", \"mgmt\"), got %d", len(trackers))
+	}
+	if trackers["web"] == nil {
+		t.Fatal("tracker for group \"web\" must not be nil")
+	}
+	if trackers["mgmt"] == nil {
+		t.Fatal("tracker for group \"mgmt\" must not be nil")
+	}
+
+	// api and admin both resolve to group "web" — must point to the same tracker.
+	apiGroup := resolveTrackerGroup(streamCfg.Pipelines[0])   // "web"
+	adminGroup := resolveTrackerGroup(streamCfg.Pipelines[1]) // "web"
+	if trackers[apiGroup] != trackers[adminGroup] {
+		t.Error("api and admin with tracker_group=\"web\" must share the same *state.Tracker")
+	}
+
+	// mgmt resolves to group "mgmt" — must be a different pointer.
+	mgmtGroup := resolveTrackerGroup(streamCfg.Pipelines[2]) // "mgmt"
+	if trackers[mgmtGroup] == trackers["web"] {
+		t.Error("mgmt with isolated tracker_group must not share the tracker with the \"web\" group")
+	}
+}
+
+// TestBuildTrackerGroups_AutoWrapped verifies that legacy auto-wrapped pipelines
+// (Name="", TrackerGroup="") all resolve to the same group key ""
+// and share one tracker per stream — identical to pre-Task-3 behaviour.
+func TestBuildTrackerGroups_AutoWrapped(t *testing.T) {
+	cfg := loadMinimalConfig(t)
+
+	// Two auto-wrapped pipelines (Migrate() would produce this for a stream with inputs+outputs).
+	streamCfg := config.StreamConfig{
+		Pipelines: []config.PipelineConfig{
+			{Name: "", TrackerGroup: ""},
+		},
+	}
+
+	trackers := buildTrackerGroups(cfg, streamCfg)
+
+	if len(trackers) != 1 {
+		t.Fatalf("auto-wrapped stream: expected 1 tracker group, got %d", len(trackers))
+	}
+	if trackers[""] == nil {
+		t.Fatal("auto-wrapped tracker (group=\"\") must not be nil")
+	}
+}
+
+// TestBuildPipelineDetectors_ExplicitSubset verifies that when pipeCfg.Detectors is non-nil,
+// only the listed detectors are built — not all globally registered ones.
+func TestBuildPipelineDetectors_ExplicitSubset(t *testing.T) {
+	cfg := loadMinimalConfig(t)
+
+	pipeCfg := config.PipelineConfig{
+		Name: "api",
+		Detectors: map[string]config.DetectorConfig{
+			"probe": {Enabled: true, Params: map[string]interface{}{"score": 25}},
+			"rate":  {Enabled: true, Params: map[string]interface{}{"threshold": 100}},
+		},
+	}
+
+	// Silence detector config logging during the test.
+	// t.Cleanup is used (vs defer) to make the intent explicit — t.Cleanup runs
+	// after all subtests complete and after t.Fatalf() via runtime.Goexit().
+	if err := utils.Init(false, false, "", ""); err != nil {
+		t.Fatalf("utils.Init: %v", err)
+	}
+	t.Cleanup(utils.Close)
+
+	detectors := buildPipelineDetectors(cfg, pipeCfg, SharedResources{})
+
+	if len(detectors) != 2 {
+		t.Fatalf("expected 2 detectors (probe, rate), got %d", len(detectors))
+	}
+	names := make([]string, len(detectors))
+	for i, d := range detectors {
+		names[i] = d.Name()
+	}
+	sort.Strings(names)
+	if names[0] != "probe" || names[1] != "rate" {
+		t.Errorf("expected detectors [probe rate], got %v", names)
+	}
+}
+
+// TestBuildPipelineDetectors_DisabledSkipped verifies that disabled detectors
+// in the explicit list are not included in the result.
+func TestBuildPipelineDetectors_DisabledSkipped(t *testing.T) {
+	cfg := loadMinimalConfig(t)
+
+	pipeCfg := config.PipelineConfig{
+		Name: "api",
+		Detectors: map[string]config.DetectorConfig{
+			"probe": {Enabled: true},
+			"rate":  {Enabled: false}, // disabled — must be excluded
+		},
+	}
+
+	if err := utils.Init(false, false, "", ""); err != nil {
+		t.Fatalf("utils.Init: %v", err)
+	}
+	t.Cleanup(utils.Close)
+
+	detectors := buildPipelineDetectors(cfg, pipeCfg, SharedResources{})
+
+	if len(detectors) != 1 {
+		t.Fatalf("expected 1 detector (probe only), got %d", len(detectors))
+	}
+	if detectors[0].Name() != "probe" {
+		t.Errorf("expected probe detector, got %q", detectors[0].Name())
+	}
+}
+
+// TestBuildPipelineDetectors_NilFallsBackToGlobal verifies that when pipeCfg.Detectors is nil
+// (auto-wrapped legacy pipeline), globalDetectorSpecs() is used and all 8 registered detectors
+// are built — preserving backward compat for existing configs.
+func TestBuildPipelineDetectors_NilFallsBackToGlobal(t *testing.T) {
+	cfg := loadMinimalConfig(t) // all 8 detectors enabled by default
+
+	pipeCfg := config.PipelineConfig{
+		Name:      "",
+		Detectors: nil, // nil → globalDetectorSpecs path
+	}
+
+	if err := utils.Init(false, false, "", ""); err != nil {
+		t.Fatalf("utils.Init: %v", err)
+	}
+	t.Cleanup(utils.Close)
+
+	detectors := buildPipelineDetectors(cfg, pipeCfg, SharedResources{})
+
+	// All 8 registered detectors should be present.
+	want := pkgdetector.Names() // sorted list of all registered names
+	if len(detectors) != len(want) {
+		t.Fatalf("expected %d detectors (%v), got %d", len(want), want, len(detectors))
+	}
+}
+
+// TestPipelineLogTag verifies formatting for all name combinations.
+func TestPipelineLogTag(t *testing.T) {
+	cases := []struct {
+		stream, pipeline, want string
+	}{
+		{"", "", "(default)"},
+		{"nginx", "", `stream "nginx"`},
+		{"nginx", "api", `stream "nginx" pipeline "api"`},
+		{"", "api", `stream "" pipeline "api"`},
+	}
+	for _, tc := range cases {
+		got := pipelineLogTag(tc.stream, tc.pipeline)
+		if got != tc.want {
+			t.Errorf("pipelineLogTag(%q, %q) = %q, want %q", tc.stream, tc.pipeline, got, tc.want)
+		}
+	}
+}
+
+// TestFindPipelineCfg_ByName verifies that named pipelines are found by name across SIGHUP reloads.
+func TestFindPipelineCfg_ByName(t *testing.T) {
+	target := config.PipelineConfig{Name: "admin", TrackerGroup: "web"}
+	other := config.PipelineConfig{Name: "api", TrackerGroup: "web"}
+	streamCfg := config.StreamConfig{
+		Pipelines: []config.PipelineConfig{other, target},
+	}
+	fallback := config.PipelineConfig{Name: "fallback"}
+
+	got := findPipelineCfg(streamCfg, "admin", 0, fallback)
+	if got.Name != "admin" {
+		t.Errorf("findPipelineCfg by name: got %q, want \"admin\"", got.Name)
+	}
+}
+
+// TestFindPipelineCfg_ByIndex verifies that auto-wrapped pipelines (Name="") are found by index.
+func TestFindPipelineCfg_ByIndex(t *testing.T) {
+	pipe0 := config.PipelineConfig{Name: "", TrackerGroup: ""}
+	pipe1 := config.PipelineConfig{Name: "", TrackerGroup: "other"}
+	streamCfg := config.StreamConfig{
+		Pipelines: []config.PipelineConfig{pipe0, pipe1},
+	}
+	fallback := config.PipelineConfig{Name: "fallback"}
+
+	// Index 1 should return pipe1.
+	got := findPipelineCfg(streamCfg, "", 1, fallback)
+	if got.TrackerGroup != "other" {
+		t.Errorf("findPipelineCfg by index 1: TrackerGroup=%q, want \"other\"", got.TrackerGroup)
+	}
+}
+
+// TestFindPipelineCfg_FallbackOnMissing verifies that a removed pipeline returns the fallback.
+func TestFindPipelineCfg_FallbackOnMissing(t *testing.T) {
+	streamCfg := config.StreamConfig{
+		Pipelines: []config.PipelineConfig{
+			{Name: "api"},
+		},
+	}
+	fallback := config.PipelineConfig{Name: "fallback"}
+
+	// "admin" was removed from config on SIGHUP — must return fallback, not panic.
+	got := findPipelineCfg(streamCfg, "admin", 0, fallback)
+	if got.Name != "fallback" {
+		t.Errorf("findPipelineCfg missing pipeline: got %q, want \"fallback\"", got.Name)
+	}
+
+	// Index out of range — also returns fallback.
+	got2 := findPipelineCfg(streamCfg, "", 5, fallback)
+	if got2.Name != "fallback" {
+		t.Errorf("findPipelineCfg out-of-range index: got %q, want \"fallback\"", got2.Name)
 	}
 }

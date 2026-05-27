@@ -1,0 +1,71 @@
+# ArxSentinel DaemonSet — one pod per node, reads host access logs via hostPath.
+# Adjust logVolume.hostPath to the log directory on your nodes.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: arxsentinel
+  namespace: monitoring
+  labels:
+    app: arxsentinel
+spec:
+  selector:
+    matchLabels:
+      app: arxsentinel
+  template:
+    metadata:
+      labels:
+        app: arxsentinel
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9117"
+    spec:
+      serviceAccountName: arxsentinel
+      containers:
+        - name: arxsentinel
+          image: ghcr.io/mr-addams/arxsentinel:latest
+          args: ["-config", "/etc/arxsentinel/config.yaml"]
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+          ports:
+            - name: metrics
+              containerPort: 9117
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9117
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9117
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/arxsentinel
+              readOnly: true
+            - name: host-logs
+              mountPath: /var/log/nginx
+              readOnly: true
+            - name: arxsentinel-logs
+              mountPath: /var/log/arxsentinel
+      volumes:
+        - name: config
+          configMap:
+            name: arxsentinel-config
+        - name: host-logs
+          hostPath:
+            # Adjust to the access log directory on your nodes.
+            path: /var/log/nginx
+            type: DirectoryOrCreate
+        - name: arxsentinel-logs
+          hostPath:
+            path: /var/log/arxsentinel
+            type: DirectoryOrCreate

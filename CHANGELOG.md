@@ -11,6 +11,98 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Multi-Pipeline Streams** (Flow #034) — introduce `pipeline` as an isolated processing
+  unit inside a `stream`. Each pipeline has its own Sources, Detectors (from registry),
+  Sinks, and Tracker (or shared via `tracker_group`).
+
+  New `pipelines:` syntax:
+  ```yaml
+  streams:
+    - name: nginx-monitoring
+      pipelines:
+        - name: api-scanner
+          tracker_group: web
+          inputs:
+            - type: file
+              path: /var/log/nginx/api.log
+          detectors:
+            probe:
+              enabled: true
+            rate:
+              enabled: true
+              threshold: 100
+          outputs:
+            - type: stdout
+              format: json
+        - name: admin-watcher
+          tracker_group: web        # shares IP state with api-scanner
+          inputs:
+            - type: file
+              path: /var/log/nginx/admin.log
+          detectors:
+            bruteforce:
+              enabled: true
+            badbot:
+              enabled: true
+          outputs:
+            - type: file
+              path: /var/log/threats-admin.log
+  ```
+
+  Tracker sharing: pipelines with the same `tracker_group` within a stream share IP state.
+  A pipeline without `tracker_group` (or with a unique group) is isolated.
+
+  New `pkg/detector` package with detector registry (`Register` / `Build` / `Names`).
+  All 8 built-in detectors self-register via `init()` and are accessible by name.
+
+  New Prometheus label on all metrics:
+  - All existing vectors gain `pipeline` label: `arx_sentinel_lines_processed_total{stream, pipeline}`, etc.
+  - Legacy single-pipeline configs use `pipeline=""` — existing Grafana dashboards unaffected.
+
+  **Zero breaking changes** — existing configs (streams with `inputs:`/`outputs:`, or the
+  classic `general.log_file`) are auto-wrapped into a single unnamed pipeline by `Migrate()`.
+
+- **Universal I/O** (Flow #030) — Source/Sink abstraction layer replacing the hardwired
+  TailReader→threats.log pipeline.
+
+  Sources (`pkg/plugin.Source`):
+  - `file` — watches a log file via inotify, handles logrotate (existing behaviour)
+  - `stdin` — reads log lines from standard input; enables pipe/container/sidecar mode
+
+  Sinks (`pkg/plugin.Sink`):
+  - `file` — writes to a file in `fail2ban` or `json` format (existing behaviour)
+  - `stdout` — writes to standard output in `fail2ban` or `json` format
+
+  CLI flags for pipe mode:
+  ```bash
+  # Pipe nginx access log, emit JSON threat events to stdout
+  docker logs -f nginx | arxsentinel --input=stdin --output=stdout,json
+  ```
+
+  Config syntax (`inputs:`/`outputs:` sections):
+  ```yaml
+  inputs:
+    - type: file
+      path: /var/log/nginx/access.log
+  outputs:
+    - type: file
+      path: /var/log/arxsentinel/threats.log
+      format: fail2ban
+    - type: stdout
+      format: json
+  ```
+
+  Backward compatible — existing `general.log_file` + `output.threat_log` configs
+  are auto-migrated to the new syntax at startup with a deprecation notice.
+
+  New Prometheus metrics:
+  - `arxsentinel_input_lines_total{stream, source, source_type}`
+  - `arxsentinel_output_events_total{stream, sink, sink_type}`
+  - `arxsentinel_output_dropped_total{stream, sink, reason}`
+
+  New CLI flag:
+  - `--config PATH` — override config file path (alternative to `ARXSENTINEL_CONFIG` env var)
+
 - **Chain Guard** (`chain_guard`) — new subsystem for IP chain integrity detection.
   Runs before the detector pipeline on every log entry; writes infrastructure warnings
   to a dedicated `warnings.log` — separate from `threats.log`.

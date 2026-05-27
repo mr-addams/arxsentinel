@@ -39,11 +39,84 @@ go test -tags e2e ./... -v
 
 ## Adding a new detector
 
-1. Create `internal/core/detector/yourdetector.go` implementing the `Detector` interface
-2. Add config fields to `internal/sys/config/config.go`
-3. Register the detector in `cmd/arxsentinel/main.go` `buildDetectors()`
-4. Add a test in `internal/core/detector/yourdetector_test.go`
-5. Document the detector in `README.md` under the Detectors table
+ArxSentinel uses a self-registration pattern via `init()` — no edits to `main.go` required.
+
+### 1. Implement the `plugin.Detector` interface
+
+Create `pkg/detector/yourdetector.go`:
+
+```go
+package detector
+
+import (
+    "github.com/mr-addams/arxsentinel/pkg/plugin"
+)
+
+type MyDetector struct {
+    score int
+}
+
+func (d *MyDetector) Name() string { return "mydetector" }
+
+func (d *MyDetector) Detect(sv plugin.IPView, entry *plugin.LogEntry) plugin.DetectResult {
+    // sv gives read-only access to per-IP accumulated state
+    // entry is the current log line
+    if entry.Path == "/suspicious" {
+        return plugin.DetectResult{Score: d.score, Module: "mydetector", Reason: "custom:1"}
+    }
+    return plugin.DetectResult{}
+}
+```
+
+### 2. Register via `init()`
+
+Add to the same file:
+
+```go
+import pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
+
+func init() {
+    pkgdetector.Register("mydetector", func(cfg pkgdetector.DetectorConfig, shared pkgdetector.SharedResources) (plugin.Detector, error) {
+        score := 25
+        // YAML numbers are decoded as float64 via the inline map — cast accordingly.
+        if v, ok := cfg.Params["score"].(float64); ok {
+            score = int(v)
+        }
+        return &MyDetector{score: score}, nil
+    })
+}
+```
+
+### 3. Make the package importable
+
+**Option A — separate package** (recommended for detectors you maintain separately):
+
+Place code in `pkg/detector/mydetector/mydetector.go` (package `mydetector`), then
+add a blank import to `cmd/arxsentinel/main.go` so `init()` runs at startup:
+
+```go
+import (
+    _ "github.com/mr-addams/arxsentinel/pkg/detector/mydetector"
+)
+```
+
+**Option B — same package** (for detectors kept in the main tree):
+
+Place the file directly in `pkg/detector/yourdetector.go` (package `detector`).
+The package is already imported by `main.go`, so `init()` runs automatically —
+no extra import needed.
+
+### 4. Add tests
+
+Create `pkg/detector/yourdetector_test.go` with at minimum a happy-path test and one boundary case.
+
+### 5. Document in README.md
+
+Add a row to the **Detectors** table: name, description, key params.
+
+### External detectors (no recompile)
+
+For site-specific logic in any language, use the exec+JSON plugin protocol — see `docs/PLUGIN_DEV.md`.
 
 ## Coding style
 

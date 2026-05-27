@@ -64,7 +64,7 @@ ArxSentinel развёрнут за обратным прокси (nginx, Caddy,
 
 ## Дополнительная информация
 
-- **Правила Whitelist:** [../../README.whitelist.ru.md](../../README.whitelist.ru.md)
+- **Правила Whitelist:** [./README.whitelist.ru.md](./README.whitelist.ru.md)
 - **Проверка цепи и защита от bogon:** [reverse-proxy/README.ru.md](reverse-proxy/README.ru.md)
 - **Метрики и мониторинг:** [../../deploy/grafana/README.md](../../deploy/grafana/README.md)
-- **Пользовательские форматы логов:** [../../README.log-formats.ru.md](../../README.log-formats.ru.md)
+- **Пользовательские форматы логов:** [./README.log-formats.ru.md](./README.log-formats.ru.md)
