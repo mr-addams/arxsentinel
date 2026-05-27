@@ -85,6 +85,8 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/metrics"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
+	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
+	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -849,19 +851,18 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 		if err != nil {
 			return nil, fmt.Errorf("input %q: %w", in.Type, err)
 		}
-		switch in.Type {
-		case "stdin":
-			sources = append(sources, coreinput.NewStdinSource(p, utils.Log))
-		case "file":
-			src, err := coreinput.NewFileSource(in.Path, p,
-				time.Duration(cfg.General.TailRetryInterval), utils.Log)
-			if err != nil {
-				return nil, fmt.Errorf("file source %q: %w", in.Path, err)
-			}
-			sources = append(sources, src)
-		default:
-			return nil, fmt.Errorf("unknown input type %q", in.Type)
+		src, err := pkgsource.Build(in.Type, pkgsource.InputConfig{
+			Type: in.Type,
+			Path: in.Path,
+		}, pkgsource.BuildOptions{
+			Parser:        p,
+			RetryInterval: time.Duration(cfg.General.TailRetryInterval),
+			LogFn:         utils.Log,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("source %q: %w", in.Type, err)
 		}
+		sources = append(sources, src)
 	}
 	return sources, nil
 }
@@ -874,22 +875,15 @@ func buildSinks(outputs []config.SinkConfig) ([]plugin.Sink, error) {
 	}
 	sinks := make([]plugin.Sink, 0, len(outputs))
 	for _, out := range outputs {
-		switch out.Type {
-		case "stdout":
-			sink, err := output.NewStdoutSink(out.Format)
-			if err != nil {
-				return nil, fmt.Errorf("stdout sink: %w", err)
-			}
-			sinks = append(sinks, sink)
-		case "file":
-			sink, err := output.NewFileSink(out.Path, out.Format)
-			if err != nil {
-				return nil, fmt.Errorf("file sink %q: %w", out.Path, err)
-			}
-			sinks = append(sinks, sink)
-		default:
-			return nil, fmt.Errorf("unknown output type %q", out.Type)
+		sink, err := pkgsink.Build(pkgsink.SinkConfig{
+			Type:   out.Type,
+			Path:   out.Path,
+			Format: out.Format,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("sink %q: %w", out.Type, err)
 		}
+		sinks = append(sinks, sink)
 	}
 	return sinks, nil
 }
