@@ -21,6 +21,27 @@ severity, description, and proposed resolution.
 
 ## Open
 
+### [034-1] Dynamic plugin runtime: external detectors via gRPC or WASM
+
+- **Flow:** #034 — Pipeline Abstraction
+- **Severity:** low
+- **Area:** `pkg/detector/`, `cmd/arxsentinel/main.go`
+- **Problem:** The detector registry (`pkg/detector`) supports only compiled-in (Go) detectors
+  self-registered via `init()`. Users who want site-specific detection logic (custom ML
+  classifiers, application-layer rules) must fork the project and recompile.
+- **Resolution:** Two viable paths:
+  1. **gRPC plugins** — each external detector runs as a separate process exposing a
+     `Detect(LogEntry) → DetectResult` RPC. The factory in `pkg/detector` spawns the
+     subprocess and wraps it as `plugin.Detector`. Requires protobuf schema for LogEntry.
+  2. **WASM plugins** — compile detector logic to WASM module; host runtime (wazero or
+     wasmtime-go) calls the `detect()` export. Sandboxed, no subprocess overhead, but
+     requires WASM toolchain for plugin authors.
+  In both cases the registry `Build()` interface stays unchanged — the change is internal
+  to the factory registered under the plugin name.
+- **Status:** open — deferred to a future flow; blocked on agreeing on the plugin contract
+
+---
+
 ### [002] main.go should move to cmd/arxsentinel/main.go
 
 - **Flow:** #027 — Repo Cleanup & Structure

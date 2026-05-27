@@ -74,7 +74,7 @@ deploy/examples/
 - **8 detectors:** probe scanning, rate anomaly, suspicious User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
 - **Chain Guard:** detects Cloudflare/CDN edge IPs and bogon/RFC 1918/CGNAT addresses appearing as client IPs — signals a misconfigured proxy chain before ArxSentinel's detectors go blind
 - **Bot DNS verification:** Googlebot, Bingbot, Yandex, DuckDuckGo and others are verified via rDNS/fDNS — legitimate crawlers are never banned
-- **Multi-stream:** watch multiple log files in one process — full pipeline isolation per stream
+- **Multi-stream + Multi-pipeline:** watch multiple log files in one process; within each stream, define independent pipelines with their own detectors, sources, sinks and IP-state tracker (or share state via `tracker_group`)
 - **Whitelist:** IPs, CIDRs, UA substrings — configurable exclusion lists
 - **Linear score decay:** points decay over `observation_window`, no false bans from old traffic
 - **Prometheus metrics:** `/metrics` on configurable port (default `:9117`), optional bcrypt basic auth; Grafana dashboard included
@@ -401,6 +401,52 @@ Each stream gets its own tracker, scorer, whitelist state, and threat log. A cra
 ### Backward compatibility
 
 The classic single-file config (`general.log_file`) keeps working — it is silently converted to a single unnamed stream (`stream=""` label on metrics). No config migration needed.
+
+---
+
+## Multi-Pipeline Configuration
+
+Within a single stream, define independent pipelines — each with its own Sources, Detectors, Sinks and IP-state tracker. Use `tracker_group` to share IP state between pipelines that watch related traffic.
+
+```yaml
+streams:
+  - name: nginx-monitoring
+    pipelines:
+      - name: api-scanner
+        tracker_group: web                    # pipelines with the same group share IP state
+        inputs:
+          - type: file
+            path: /var/log/nginx/api.log
+        detectors:
+          probe:
+            enabled: true
+          rate:
+            enabled: true
+            threshold: 100
+        outputs:
+          - type: file
+            path: /var/log/arxsentinel/api-threats.log
+      - name: admin-watcher
+        tracker_group: web                    # shares IP state with api-scanner
+        inputs:
+          - type: file
+            path: /var/log/nginx/admin.log
+        detectors:
+          bruteforce:
+            enabled: true
+          badbot:
+            enabled: true
+        outputs:
+          - type: file
+            path: /var/log/arxsentinel/admin-threats.log
+```
+
+**TrackerGroup rules:**
+- `tracker_group: web` — pipelines with the same group share one `*state.Tracker`; an attacker scored in `api-scanner` is also tracked by `admin-watcher`
+- `tracker_group: ""` (or omitted) — isolated; the pipeline's `name` is used as the implicit group key
+- Legacy configs (no `pipelines:` key) — auto-wrapped into one unnamed pipeline; behaviour is identical to previous versions
+
+**Prometheus metrics** gain a `pipeline` label on all vectors (e.g. `arx_sentinel_lines_processed_total{stream="nginx-monitoring", pipeline="api-scanner"}`). Legacy pipelines use `pipeline=""` so existing Grafana dashboards work without changes.
 
 ### Fail2Ban multi-stream
 

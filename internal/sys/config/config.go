@@ -74,7 +74,7 @@ type Config struct {
 	// Migrated from general.log_file + output.threat_log by Migrate().
 	Inputs   []InputConfig  `yaml:"inputs"`   // YAML: inputs — top-level source list; alternative to general.log_file
 	Outputs  []SinkConfig   `yaml:"outputs"`  // YAML: outputs — top-level sink list; alternative to output.threat_log
-	Pipeline PipelineConfig `yaml:"pipeline"` // YAML: pipeline — buffer_size and shutdown_timeout for the pipeline
+	Pipeline PipelineRuntimeConfig `yaml:"pipeline"` // YAML: pipeline — buffer_size and shutdown_timeout; top-level default for all pipelines
 }
 
 // ========================== Universal I/O config (Flow #030) ==========================
@@ -97,22 +97,57 @@ type SinkConfig struct {
 	Format string `yaml:"format"` // YAML: "fail2ban" | "json"; default "fail2ban". Consumer: output.FileSink / output.StdoutSink
 }
 
-// PipelineConfig — tuning parameters for the Source→Merge→Pipeline channel.
-// Applied per-stream; top-level value is the default for streams without override.
-type PipelineConfig struct {
+// PipelineRuntimeConfig — tuning parameters for the Source→Merge→Pipeline channel.
+// Applied per-pipeline; top-level value is the default for pipelines without override.
+type PipelineRuntimeConfig struct {
 	BufferSize      int      `yaml:"buffer_size"`      // YAML: pipeline.buffer_size, default 8192 — bounded channel size between Merge and processor; increase for burst traffic. Consumer: input.Merge
-	ShutdownTimeout Duration `yaml:"shutdown_timeout"` // YAML: pipeline.shutdown_timeout, default "15s" — max drain time on SIGTERM before forced close. Consumer: cmd/arxsentinel runStream
+	ShutdownTimeout Duration `yaml:"shutdown_timeout"` // YAML: pipeline.shutdown_timeout, default "15s" — max drain time on SIGTERM before forced close. Consumer: cmd/arxsentinel runPipeline
 }
 
-// StreamConfig defines one log-watching pipeline.
-// Each stream has its own tracker, scorer, whitelist, and threat log — full isolation.
+// DetectorConfig — per-pipeline configuration for a single detector.
+// Enabled controls whether the detector runs in this pipeline.
+// Params holds detector-specific parameters parsed by each detector's factory.
+//
+// Example YAML (inside a pipeline's detectors: map):
+//
+//	probe:
+//	  enabled: true
+//	  score: 10
+//	  paths: [/.env, /.git/config]
+type DetectorConfig struct {
+	Enabled bool                   `yaml:"enabled"`
+	Params  map[string]interface{} `yaml:",inline"` // detector-specific params; deserialized by each factory
+}
+
+// PipelineConfig — one isolated processing unit within a stream.
+// Each pipeline owns its Sources, Detectors, Sinks, and Tracker (or a shared Tracker group).
+// Multiple pipelines within a stream run concurrently and are fully isolated by default.
+//
+// TrackerGroup: pipelines with the same non-empty group name share one *state.Tracker;
+// an empty TrackerGroup means isolated (implicit group = pipeline Name).
+type PipelineConfig struct {
+	Name         string                    `yaml:"name"`          // YAML: pipelines[].name — label for metrics and logs; empty for auto-wrapped single pipeline
+	TrackerGroup string                    `yaml:"tracker_group"` // YAML: pipelines[].tracker_group — shared IP-state group; "" → isolated
+	Inputs       []InputConfig             `yaml:"inputs"`        // YAML: pipelines[].inputs — log sources for this pipeline
+	Outputs      []SinkConfig              `yaml:"outputs"`       // YAML: pipelines[].outputs — threat sinks for this pipeline
+	Detectors    map[string]DetectorConfig `yaml:"detectors"`     // YAML: pipelines[].detectors — per-detector config; nil → all registered with defaults
+	Pipeline     PipelineRuntimeConfig     `yaml:"pipeline"`      // YAML: pipelines[].pipeline — buffer_size, shutdown_timeout
+}
+
+// StreamConfig — a named logical group of pipelines sharing the same namespace for metrics and logs.
+// Each stream has its own whitelist configuration; pipelines within a stream share whitelisting.
 type StreamConfig struct {
 	Name string `yaml:"name"` // YAML: streams[].name — label used in metrics and log output
 
-	// New I/O syntax (Flow #030).
-	Inputs   []InputConfig  `yaml:"inputs"`   // YAML: streams[].inputs — list of log sources; replaces log_file
-	Outputs  []SinkConfig   `yaml:"outputs"`  // YAML: streams[].outputs — list of threat sinks; replaces threat_log
-	Pipeline PipelineConfig `yaml:"pipeline"` // YAML: streams[].pipeline — per-stream pipeline tuning; overrides top-level
+	// Multi-pipeline syntax (Flow #034): each pipeline is an isolated processing unit.
+	// If Pipelines is empty after YAML parsing, Migrate() auto-wraps Inputs/Outputs into Pipelines[0].
+	Pipelines []PipelineConfig `yaml:"pipelines"` // YAML: streams[].pipelines — list of isolated pipelines
+
+	// Single-pipeline I/O syntax (Flow #030): used when pipelines: is not specified.
+	// Migrate() wraps these into Pipelines[0] before runStream() is called.
+	Inputs   []InputConfig        `yaml:"inputs"`   // YAML: streams[].inputs — Deprecated in favour of pipelines[].inputs; auto-wrapped by Migrate()
+	Outputs  []SinkConfig         `yaml:"outputs"`  // YAML: streams[].outputs — Deprecated in favour of pipelines[].outputs; auto-wrapped by Migrate()
+	Pipeline PipelineRuntimeConfig `yaml:"pipeline"` // YAML: streams[].pipeline — per-stream pipeline tuning; overrides top-level
 
 	// Deprecated: use inputs/outputs instead. Kept for backward compatibility and
 	// auto-migration via config.Migrate(). Will be removed in a future major version.
@@ -403,16 +438,8 @@ func LoadConfig(path string) (Config, error) {
 	// Normalize log_format to lowercase so buildParser() can compare without case sensitivity.
 	cfg.Parser.LogFormat = strings.ToLower(cfg.Parser.LogFormat)
 
-	// Universal I/O migration (Flow #030): convert deprecated log_file/threat_log fields
-	// to the new inputs/outputs syntax. Warnings are written to stderr so they appear
-	// in systemd journal before utils.Init() is called.
-	if warnings := Migrate(&cfg); len(warnings) > 0 {
-		for _, w := range warnings {
-			fmt.Fprintf(os.Stderr, "[CONFIG] deprecation: %s\n", w)
-		}
-	}
-
 	// Backward compat: single general.log_file → synthesize a single unnamed stream.
+	// Must happen BEFORE Migrate() so the synthesized stream is auto-wrapped into a pipeline.
 	// Mutually exclusive with streams: — operator must not specify both.
 	if cfg.General.LogFile != "" && len(cfg.Streams) > 0 {
 		return cfg, fmt.Errorf("invalid config %q: general.log_file and streams: are mutually exclusive — use one or the other", path)
@@ -428,6 +455,15 @@ func LoadConfig(path string) (Config, error) {
 			LogFile:   cfg.General.LogFile,
 			ThreatLog: cfg.Output.ThreatLog,
 		}}
+	}
+
+	// Universal I/O migration (Flow #030, #034): convert deprecated log_file/threat_log fields
+	// to the new inputs/outputs syntax, then auto-wrap into pipelines.
+	// Warnings are written to stderr so they appear in systemd journal before utils.Init() is called.
+	if warnings := Migrate(&cfg); len(warnings) > 0 {
+		for _, w := range warnings {
+			fmt.Fprintf(os.Stderr, "[CONFIG] deprecation: %s\n", w)
+		}
 	}
 
 	if err := validateConfig(&cfg); err != nil {
@@ -918,32 +954,44 @@ func validateConfig(cfg *Config) error {
 	if cfg.Metrics.Username != "" && cfg.Metrics.PasswordHash == "" {
 		return fmt.Errorf("metrics.password_hash must be set when metrics.username is configured")
 	}
+	// Pipeline validation (Flow #034): after Migrate(), every stream must have at least
+	// one pipeline. Auto-wrap ensures this for legacy and single-pipeline configs.
 	for i, s := range cfg.Streams {
-		// Accept EITHER new I/O syntax (after Migrate) OR legacy fields.
-		// Migrate() populates Inputs/Outputs from LogFile/ThreatLog, so after
-		// migration both will be set when the old syntax was used.
-		if len(s.Inputs) == 0 && s.LogFile == "" {
-			return fmt.Errorf("streams[%d]: must specify inputs or log_file", i)
+		if len(s.Pipelines) == 0 {
+			return fmt.Errorf("streams[%d]: must have at least one pipeline (Migrate() should have auto-wrapped inputs/outputs)", i)
 		}
-		if len(s.Outputs) == 0 && s.ThreatLog == "" {
-			return fmt.Errorf("streams[%d]: must specify outputs or threat_log", i)
+		// Check for duplicate pipeline names within a stream.
+		pipelineNames := make(map[string]bool)
+		for j, p := range s.Pipelines {
+			if p.Name != "" {
+				if pipelineNames[p.Name] {
+					return fmt.Errorf("streams[%d]: duplicate pipeline name %q", i, p.Name)
+				}
+				pipelineNames[p.Name] = true
+			}
+			if len(p.Inputs) == 0 {
+				return fmt.Errorf("streams[%d].pipelines[%d]: must have at least one input", i, j)
+			}
+			if len(p.Outputs) == 0 {
+				// A pipeline without outputs silently drops all threat events — almost certainly a
+				// misconfiguration. Require at least one sink to prevent silent data loss.
+				return fmt.Errorf("streams[%d].pipelines[%d]: must have at least one output", i, j)
+			}
+			if err := validateInputs(p.Inputs); err != nil {
+				return fmt.Errorf("streams[%d].pipelines[%d].inputs: %w", i, j, err)
+			}
+			if err := validateSinks(p.Outputs); err != nil {
+				return fmt.Errorf("streams[%d].pipelines[%d].outputs: %w", i, j, err)
+			}
 		}
 	}
 
-	// Universal I/O validation (Flow #030).
+	// Top-level I/O validation (Flow #030) — these are intermediate fields used by Migrate().
 	if err := validateInputs(cfg.Inputs); err != nil {
 		return err
 	}
 	if err := validateSinks(cfg.Outputs); err != nil {
 		return err
-	}
-	for i := range cfg.Streams {
-		if err := validateInputs(cfg.Streams[i].Inputs); err != nil {
-			return fmt.Errorf("streams[%d].inputs: %w", i, err)
-		}
-		if err := validateSinks(cfg.Streams[i].Outputs); err != nil {
-			return fmt.Errorf("streams[%d].outputs: %w", i, err)
-		}
 	}
 	if cfg.Pipeline.BufferSize < 0 {
 		return fmt.Errorf("pipeline.buffer_size must be >= 0, got %d", cfg.Pipeline.BufferSize)
@@ -1100,7 +1148,7 @@ func defaultConfig() Config {
 			ThreatLog:      "/var/log/arxsentinel/threats.log",
 			OperationalLog: "/var/log/arxsentinel/sentinel.log",
 		},
-		Pipeline: PipelineConfig{
+		Pipeline: PipelineRuntimeConfig{
 			BufferSize:      8192,
 			ShutdownTimeout: Duration(15 * time.Second),
 		},

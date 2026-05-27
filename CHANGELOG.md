@@ -11,6 +11,57 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **Multi-Pipeline Streams** (Flow #034) — introduce `pipeline` as an isolated processing
+  unit inside a `stream`. Each pipeline has its own Sources, Detectors (from registry),
+  Sinks, and Tracker (or shared via `tracker_group`).
+
+  New `pipelines:` syntax:
+  ```yaml
+  streams:
+    - name: nginx-monitoring
+      pipelines:
+        - name: api-scanner
+          tracker_group: web
+          inputs:
+            - type: file
+              path: /var/log/nginx/api.log
+          detectors:
+            probe:
+              enabled: true
+            rate:
+              enabled: true
+              threshold: 100
+          outputs:
+            - type: stdout
+              format: json
+        - name: admin-watcher
+          tracker_group: web        # shares IP state with api-scanner
+          inputs:
+            - type: file
+              path: /var/log/nginx/admin.log
+          detectors:
+            bruteforce:
+              enabled: true
+            badbot:
+              enabled: true
+          outputs:
+            - type: file
+              path: /var/log/threats-admin.log
+  ```
+
+  Tracker sharing: pipelines with the same `tracker_group` within a stream share IP state.
+  A pipeline without `tracker_group` (or with a unique group) is isolated.
+
+  New `pkg/detector` package with detector registry (`Register` / `Build` / `Names`).
+  All 8 built-in detectors self-register via `init()` and are accessible by name.
+
+  New Prometheus label on all metrics:
+  - All existing vectors gain `pipeline` label: `arx_sentinel_lines_processed_total{stream, pipeline}`, etc.
+  - Legacy single-pipeline configs use `pipeline=""` — existing Grafana dashboards unaffected.
+
+  **Zero breaking changes** — existing configs (streams with `inputs:`/`outputs:`, or the
+  classic `general.log_file`) are auto-wrapped into a single unnamed pipeline by `Migrate()`.
+
 - **Universal I/O** (Flow #030) — Source/Sink abstraction layer replacing the hardwired
   TailReader→threats.log pipeline.
 
