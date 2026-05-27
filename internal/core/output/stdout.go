@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 )
 
 // StdoutSink writes threat events to os.Stdout.
@@ -94,4 +95,12 @@ func (s *StdoutSink) Write(event plugin.ThreatEvent) error {
 	}
 	s.eventsWritten.Add(1)
 	return nil
+}
+
+// init registers StdoutSink with the global registry.
+// Called at module init time, making "stdout" available as a sink type in YAML config.
+func init() {
+	pkgsink.Register("stdout", func(cfg pkgsink.SinkConfig) (plugin.Sink, error) {
+		return NewStdoutSink(cfg.Format)
+	})
 }
