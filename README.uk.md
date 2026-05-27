@@ -7,91 +7,133 @@
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
-Пильний страж вашого вебсервера: читає HTTP access-логи в реальному часі, оцінює кожен IP через 8 поведінкових детекторів і блокує зловмисників через Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed.
-
-Підтримує **nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed** через вбудовані профілі. nginx працює з коробки без налаштування профілю. Caddy та HAProxy потребують мінімального одноразового налаштування. Довільні формати логів — через regex. Декілька лог-файлів в одному процесі.
+**Конвеєр обробки подій безпеки для будь-якого HTTP-сервера** — від одного nginx VPS до повноцінного K8s-кластера.  
+~12 МБ RAM · єдиний бінарник · без залежностей у runtime · розширюється через exec+JSON-плагіни на будь-якій мові.
 
 ```
-access.log (або stdin) → Source → Merge → whitelist → tracker → scorer → Sink → Fail2Ban / stdout JSON / …
+  [nginx / Apache / Caddy / ...]       [exec+JSON Source — any language]
+           │                                        │
+           └─────────────────┬──────────────────────┘
+                      Source (file │ stdin │ http)
+                             │
+                       Merge & Parse
+                             │
+             ┌───────────────┼───────────────┐
+        Whitelist       ChainGuard       BotVerifier
+             └───────────────┼───────────────┘
+                      Tracker (IP state)
+                             │
+                   Scorer + 8 Detectors
+                             │
+          ┌──────────────────┼──────────────────┐
+    Fail2Ban sink       stdout JSON        exec+JSON Sink
+    (threats.log)    (Loki / Splunk / ...)  (any script)
 ```
 
-## Підтримувані HTTP-сервери
+## Сценарії використання
 
-### Таблиця сумісності
+ArxSentinel масштабується від класичного VPS до розподіленого Kubernetes-кластера — кожен сценарій нижче — готова стартова точка.
 
-| Сервер | Профіль | Необхідне налаштування |
-|--------|---------|------------------------|
-| nginx | *(за замовчуванням — профіль не потрібен)* | Нема — nginx combined log format працює з коробки |
-| Apache | `apache` | Нема — стандартний CLF |
-| Traefik | `traefik` | Нема — стандартний access log (CLF) |
-| Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + плагін [transform-encoder](https://github.com/caddyserver/transform-encoder) |
-| HAProxy | `haproxy-http` | `option httplog` у haproxy.cfg + rsyslog для запису у файл |
-| LiteSpeed / OpenLiteSpeed | `litespeed` | Нема — стандартний CLF |
+### 1. Класичний захист вебу — nginx + Fail2Ban
 
-> У кожному релізі публікується таблиця **Tested product versions** з точними версіями серверів, на яких валідувалась збірка — див. [GitHub Releases](https://github.com/mr-addams/arxsentinel/releases).
-
-> **nginx:** налаштування `profile:` не потрібне. Стандартний CombinedParser обробляє nginx combined log format з коробки. Вкажіть лише `general.log_file` зі шляхом до вашого access.log.
-
-Вбудовані профілі — налаштування regex та маппінгу полів не потрібне. Вкажіть `parser.profile` з іменем сервера для Apache, Traefik, Caddy, HAProxy, LiteSpeed або OpenLiteSpeed:
-
-**Приклад — Apache:**
+Один конфіг, профіль не потрібен. Працює з коробки:
 
 ```yaml
-parser:
-  profile: "apache"
-
 general:
-  log_file: /var/log/apache2/access.log
-
+  log_file: /var/log/nginx/access.log
 output:
   threat_log: /var/log/arxsentinel/threats.log
 ```
 
-Готові конфіги для кожного сервера знаходяться в [`deploy/examples/`](deploy/examples/):
+### 2. Docker Compose sidecar
 
+Монтуйте обсяг nginx-логів; ArxSentinel читає його як sidecar. Див. [`deploy/examples/docker/`](deploy/examples/docker/):
+
+```yaml
+# docker-compose.yml — витяг
+services:
+  arxsentinel:
+    image: ghcr.io/mr-addams/arxsentinel:latest
+    volumes:
+      - nginx_logs:/var/log/nginx:ro
+    environment:
+      ARXSENTINEL_LOG_FILE: /var/log/nginx/access.log
 ```
-deploy/examples/
-├── apache/      httpd.conf + sentinel-config.yaml
-├── caddy/       Caddyfile + sentinel-config.yaml
-├── traefik/     traefik.yml + sentinel-config.yaml
-├── haproxy/     haproxy.cfg + sentinel-config.yaml
-└── litespeed/   httpd_config.conf + sentinel-config.yaml
+
+### 3. Kubernetes DaemonSet
+
+По одному pod на вузол, читає хост-логи через `hostPath`. Див. [`deploy/examples/kubernetes/`](deploy/examples/kubernetes/) та [README Helm-чарту](deploy/container/k8s/arxsentinel/README.md):
+
+```bash
+helm install arxsentinel ./deploy/container/k8s/arxsentinel \
+  --set logVolume.hostPath=/var/log/nginx
 ```
 
-> **Примітка — HAProxy:** HAProxy включає мілісекунди у мітку часу
-> (`14:30:00.123`). ArxSentinel парсить цей формат через запасний шаблон
-> `haproxyTimeLayout` — всі детектори, включно з rate, отримують коректну мітку часу.
+### 4. Агрегація з кількох серверів
 
-> **Примітка — Caddy:** Вбудований JSON-енкодер Caddy v2 виводить вкладені об'єкти.
-> Профіль `caddy` потребує плагіна
-> [caddy-transform-encoder](https://github.com/caddyserver/transform-encoder)
-> для виводу у форматі CLF. Дивіться `deploy/examples/caddy/Caddyfile` для налаштування.
+Спостерігайте за кількома серверами в одному процесі — повна ізоляція IP-стану для кожного потоку:
 
-> **Примітка — LiteSpeed / OpenLiteSpeed:** Обидва сервери (LSWS та OLS) за замовчуванням пишуть Apache CLF —
-> налаштування формату лога не потрібне. Якщо sentinel стоїть за проксі, увімкніть «Use Client IP in Header»
-> у WebAdmin («Server Configuration → Use Client IP in Header»), щоб реальний IP клієнта писався
-> до `%h` безпосередньо. Дивіться `deploy/examples/litespeed/` для повного конфігу.
+```yaml
+streams:
+  - name: frontend
+    log_file: /var/log/nginx/access.log
+  - name: api
+    log_file: /var/log/apache2/api.log
+    profile: apache
+```
 
-## Можливості
+### 5. Користувацький формат логу
 
-- **8 детекторів:** probe-сканування, rate-аномалія, підозрілий User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
-- **Chain Guard:** виявляє IP-адреси Cloudflare/CDN і bogon/RFC 1918/CGNAT у позиції client IP — сигналізує про неправильно налаштований ланцюжок проксі до того, як детектори ArxSentinel втратять здатність визначати справжніх зловмисників
-- **DNS-верифікація ботів:** Googlebot, Bingbot, Yandex, DuckDuckGo та інші верифікуються через rDNS/fDNS — легітимні краулери не потрапляють у бан
-- **Multi-stream + Multi-pipeline:** декілька лог-файлів в одному процесі; всередині кожного потоку — незалежні pipeline з власними детекторами, джерелами, sink'ами та трекером IP-стану (або спільний трекер через `tracker_group`)
-- **Whitelist:** IP, CIDR, UA-підрядки — конфігуровані списки винятків
-- **Лінійний decay score:** очки затухають за `observation_window`, немає хибних банів від старого трафіку
-- **Prometheus-метрики:** `/metrics` на налаштовуваному порту (за замовчуванням `:9117`), опційна basic auth з bcrypt; дашборд Grafana в комплекті
-- **Health endpoint:** `/health` завжди повертає `200 {"status":"ok"}` без авторизації — готовий для Docker `HEALTHCHECK`, k8s probes та балансувальників
-- **JSON-формат логів:** перемикання на JSON-парсинг через `parser.log_format: "json"` без перекомпіляції
-- **SIGHUP reload:** конфіг, scorer, парсер і whitelist перестворюються без перезапуску демона
-- **Graceful shutdown:** дренування буфера рядків при SIGTERM
-- **Systemd + logrotate + Fail2Ban:** готові deploy-конфіги в комплекті
+API-шлюз, власний лог додатку, довільний текстовий формат — надайте regex із именованими групами:
 
-## Вимоги
+```yaml
+parser:
+  log_format: "custom"
+  custom_regex: '(?P<ip>\S+) \S+ \S+ \[.*?\] "\S+ (?P<path>\S+) \S+" (?P<status>\d+) (?P<size>\d+) "(?P<ua>[^"]*)"'
+```
 
-- Linux x86_64 або arm64 з systemd
-- Fail2Ban
-- HTTP-сервер, що пише access.log у підтримуваному форматі (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — або довільний regex)
+### 6. Зовнішній детектор-плагін — exec+JSON
+
+Будь-який скрипт або бінарник як додатковий детектор; викликається на запит через stdin/stdout на будь-якій мові. Див. [Розробка плагінів](#розробка-плагінів):
+
+```yaml
+detectors:
+  plugins:
+    - name: ml-classifier
+      exec: /opt/plugins/classify.py
+      score: 45
+```
+
+### 7. Користувацький вихідний sink — exec+JSON
+
+Маршрутизуйте загрози до будь-якої мети — SIEM, webhook, Telegram, власний скрипт:
+
+```yaml
+sinks:
+  - type: exec
+    exec: /opt/plugins/send-to-siem.sh
+```
+
+---
+
+## Швидкий старт
+
+Встановлює пакет, додає systemd-сервіс та одразу працює з nginx:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash
+```
+
+Відредагуйте конфіг під ваш сервер, потім перезавантажте без перезапуску:
+
+```bash
+sudo nano /etc/arxsentinel/config.yaml
+sudo systemctl kill -s HUP arxsentinel
+```
+
+Для Docker, Kubernetes та інших способів встановлення — див. [Встановлення](#встановлення) далі.
+
+---
 
 ## Встановлення
 
@@ -221,6 +263,80 @@ helm install arxsentinel ./deploy/container/k8s/arxsentinel \
 
 Детальніше: [README.helm.md](deploy/container/k8s/arxsentinel/README.md) — опис values, Prometheus Operator, деплой у хмару.
 
+## Підтримувані HTTP-сервери
+
+### Таблиця сумісності
+
+| Сервер | Профіль | Необхідне налаштування |
+|--------|---------|------------------------|
+| nginx | *(за замовчуванням — профіль не потрібен)* | Нема — nginx combined log format працює з коробки |
+| Apache | `apache` | Нема — стандартний CLF |
+| Traefik | `traefik` | Додайте `fields.headers.names.User-Agent/Referer: keep` до accessLog — див. [`deploy/examples/traefik/`](deploy/examples/traefik/) |
+| LiteSpeed / OpenLiteSpeed | `litespeed` | Нема — стандартний CLF |
+| Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + плагін [transform-encoder](https://github.com/caddyserver/transform-encoder) — див. [`deploy/examples/caddy/`](deploy/examples/caddy/) |
+| HAProxy | `haproxy-http` | `http-request capture` + користувацький `log-format` з UA — див. [`deploy/examples/haproxy/`](deploy/examples/haproxy/) |
+
+> У кожному релізі публікується таблиця **Tested product versions** з точними версіями серверів, на яких валідувалась збірка — див. [GitHub Releases](https://github.com/mr-addams/arxsentinel/releases).
+
+> **nginx:** налаштування `profile:` не потрібне. Стандартний CombinedParser обробляє nginx combined log format з коробки. Вкажіть лише `general.log_file` зі шляхом до вашого access.log.
+
+Вбудовані профілі — налаштування regex та маппінгу полів не потрібне. Вкажіть `parser.profile` з іменем сервера для Apache, Traefik, Caddy, HAProxy, LiteSpeed або OpenLiteSpeed:
+
+**Приклад — Apache:**
+
+```yaml
+parser:
+  profile: "apache"
+
+general:
+  log_file: /var/log/apache2/access.log
+
+output:
+  threat_log: /var/log/arxsentinel/threats.log
+```
+
+Готові конфіги для кожного сервера знаходяться в [`deploy/examples/`](deploy/examples/):
+
+```
+deploy/examples/
+├── apache/      httpd.conf + sentinel-config.yaml
+├── caddy/       Caddyfile + sentinel-config.yaml
+├── traefik/     traefik.yml + sentinel-config.yaml
+├── haproxy/     haproxy.cfg + sentinel-config.yaml
+└── litespeed/   httpd_config.conf + sentinel-config.yaml
+```
+
+> **Примітка — LiteSpeed / OpenLiteSpeed:** Обидва сервери (LSWS та OLS) за замовчуванням пишуть Apache CLF —
+> налаштування формату лога не потрібне. Шлях логу: `/usr/local/lsws/logs/access.log`
+> (глобально) або `/usr/local/lsws/logs/<vhostname>/access.log` (за віртуальним хостом).
+> За зворотним проксі: увімкніть "Use Client IP in Header" у WebAdmin, щоб `%h` логував
+> справжній IP клієнта. Див. `deploy/examples/litespeed/` для повного конфігу.
+
+> **Примітка — Caddy:** Вбудований JSON-енкодер Caddy v2 виводить вкладені об'єкти. Профіль `caddy` потребує плагіна
+> [caddy-transform-encoder](https://github.com/caddyserver/transform-encoder)
+> для виводу у форматі CLF. Див. `deploy/examples/caddy/Caddyfile` для налаштування.
+
+## Можливості
+
+- **8 детекторів:** probe-сканування, rate-аномалія, підозрілий User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
+- **Chain Guard:** виявляє IP-адреси Cloudflare/CDN і bogon/RFC 1918/CGNAT у позиції client IP — сигналізує про неправильно налаштований ланцюжок проксі до того, як детектори ArxSentinel втратять здатність визначати справжніх зловмисників
+- **DNS-верифікація ботів:** Googlebot, Bingbot, Yandex, DuckDuckGo та інші верифікуються через rDNS/fDNS — легітимні краулери не потрапляють у бан
+- **Multi-stream + Multi-pipeline:** декілька лог-файлів в одному процесі; всередині кожного потоку — незалежні pipeline з власними детекторами, джерелами, sink'ами та трекером IP-стану (або спільний трекер через `tracker_group`)
+- **Whitelist:** IP, CIDR, UA-підрядки — конфігуровані списки винятків
+- **Лінійний decay score:** очки затухають за `observation_window`, немає хибних банів від старого трафіку
+- **Prometheus-метрики:** `/metrics` на налаштовуваному порту (за замовчуванням `:9117`), опційна basic auth з bcrypt; дашборд Grafana в комплекті
+- **Health endpoint:** `/health` завжди повертає `200 {"status":"ok"}` без авторизації — готовий для Docker `HEALTHCHECK`, k8s probes та балансувальників
+- **JSON-формат логів:** перемикання на JSON-парсинг через `parser.log_format: "json"` без перекомпіляції
+- **SIGHUP reload:** конфіг, scorer, парсер і whitelist перестворюються без перезапуску демона
+- **Graceful shutdown:** дренування буфера рядків при SIGTERM
+- **Systemd + logrotate + Fail2Ban:** готові deploy-конфіги в комплекті
+
+## Вимоги
+
+- Linux x86_64 або arm64 з systemd
+- Fail2Ban
+- HTTP-сервер, що пише access.log у підтримуваному форматі (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — або довільний regex)
+
 ## Конфігурація
 
 Конфіг: `/etc/arxsentinel/config.yaml` (створюється з `config.yaml` при встановленні).  
@@ -330,13 +446,37 @@ output:
 | **crawler** | ≥5 послідовних числових URL (/page/1..N) | 20 |
 | **noasset** | <10% запитів до статики при ≥3 сторінках | 20 |
 | **overflow** | URL >2048 символів або WAF bypass keywords | 30 |
-| **badbot** | UA (або Referer) збігається з community-blocklist (~685 паттернів). Дані: [nginx-ultimate-bad-bot-blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker) | 60 |
+| **badbot** | UA (або Referer) збігається з community-blocklist (~685 паттернів) | 60 |
 
 Score накопичується з лінійним decay за `observation_window`. При досягненні `alert_threshold` — запис WARN, при `ban_threshold` — THREAT + Fail2Ban.
 
+## Розгортання
+
+### systemd — bare metal
+
+Охоплено встановниками пакетів вище. Використовуйте `systemctl` для управління сервісом та `kill -HUP` для живого перезавантаження. Повна довідка команд — див. [Керування](#керування).
+
+### Docker Compose
+
+ArxSentinel працює як sidecar поряд з HTTP-сервером, читаючи спільні обсяги логів.
+Готовий Compose-файл та конфіг: [`deploy/examples/docker/`](deploy/examples/docker/).
+Повний Docker-гайд: [README.docker.md](deploy/container/docker/README.md).
+
+### Kubernetes
+
+DaemonSet (один pod на вузол, читає хост-логи) або sidecar (читає з emptyDir, спільної з контейнером додатку).
+Готові маніфести: [`deploy/examples/kubernetes/`](deploy/examples/kubernetes/).
+Helm-чарт з довідкою values: [README.helm.md](deploy/container/k8s/arxsentinel/README.md).
+
+## Розробка плагінів
+
+Source, Sink та Detector плагіни спілкуються з ArxSentinel через **stdin/stdout JSON** — пишіть їх на будь-якій мові. Плагін отримує JSON-об'єкт на запис (або подію) і повертає JSON-відповідь. ArxSentinel управляє жизненним циклом subprocessu.
+
+Повна специфікація протоколу та приклади: [`docs/PLUGIN_DEV.md`](docs/PLUGIN_DEV.md).
+
 ## Whitelist
 
-ArxSentinel пропонує автоматичну верифікацію ботів (пошукові системи)
+ArxSentinel надає автоматичну верифікацію ботів (пошукові системи)
 та кастомні списки винятків (IP, CIDR, підрядки User-Agent). Занесені до whitelist
 запити пропускають усі детектори повністю.
 
@@ -376,10 +516,12 @@ ArxSentinel пропонує автоматичну верифікацію бо�
 налаштування `general.log_file` та `output.threat_log` працюють без змін.
 
 Фонові горутини:
-- **TailReader** — спостереження за файлом через fsnotify, обробка mv/copytruncate logrotate
+- **FileSource** — спостереження за файлом через fsnotify, обробка mv/copytruncate logrotate
 - **GC** — видалення неактивних IP кожні `gc_interval` (дефолт 60s)
 - **Stats** — вивід `STATS processed/tracked/threats/suspicious` кожні `stats_interval`
 - **SIGHUP listener** — конвертує сигнал у канал для головного loop
+
+Повна ієрархія компонентів та схеми потоків даних: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Моніторинг кількох потоків
 
@@ -410,7 +552,7 @@ streams:
 
 ## Мультипайплайнова конфігурація
 
-Всередині одного потоку можна задати незалежні pipeline — кожен зі своїми Sources, Detectors, Sinks та трекером IP-стану. Використовуйте `tracker_group` для спільного IP-стану між pipeline одного потоку.
+Всередину одного потоку можна задати незалежні pipeline — кожен зі своїми Sources, Detectors, Sinks та трекером IP-стану. Використовуйте `tracker_group` для спільного IP-стану між pipeline одного потоку.
 
 ```yaml
 streams:
@@ -509,8 +651,7 @@ Fail2Ban failregex: `THREAT <HOST> score=\d+` (файл `deploy/fail2ban/filter.
 ```
 
 Попередження відрізняються від загроз: `CHAIN_WARN` означає, що ArxSentinel не може надійно
-визначити справжній IP зловмисника. Усуньте причину (див. [Chain Guard](#chain-guard----виявлення-зламаного-ланцюжка-ip))
-і попередження припиняться.
+визначити справжній IP зловмисника. Усуньте причину та попередження припиняться.
 
 ## Керування
 
@@ -533,7 +674,7 @@ fail2ban-client set arxsentinel unbanip 1.2.3.4
 ```
 
 **Що оновлюється при SIGHUP:** scorer (детектори + пороги), whitelist matcher, debug/color прапори, шляхи до лог-файлів.  
-**Що НЕ оновлюється:** tracker (state IP), DNS cache, TailReader (шлях до access.log потребує перезапуску).
+**Що НЕ оновлюється:** tracker (state IP), DNS cache, FileSource (шлях до access.log потребує перезапуску).
 
 ## Формати логів
 
@@ -543,7 +684,7 @@ ArxSentinel підтримує три режими форматів: **combined*
 
 ## Зворотний проксі та Chain Guard
 
-Повне керівництво по деплойю за зворотним проксі (HAProxy, Traefik, Caddy, nginx), включаючи конфігурацію вилучення справжнього IP та Chain Guard (виявлення зламаного ланцюжка IP).
+Повне керівництво по деплойму за зворотним проксі (HAProxy, Traefik, Caddy, nginx), включаючи конфігурацію вилучення справжнього IP та Chain Guard (виявлення зламаного ланцюжка IP).
 
 Див. [`deploy/examples/reverse-proxy/README.uk.md`](deploy/examples/reverse-proxy/README.uk.md).
 
@@ -580,6 +721,16 @@ ArxSentinel підтримує три режими форматів: **combined*
 
 ---
 
+## Дорожна карта
+
+В активній розробці для v2.x:
+
+- **Executor interface** — staneful, двосторонні інтеграції (замість fire-and-forget Sink); постійний subprocess з протоколом запит/відповідь
+- **Cloudflare WAF executor** — блокування IP на краю через Cloudflare API; не потребує iptables, працює для CDN-fronted deployments
+- **AWS WAF executor** — оновлення IP-наборів для AWS WAF rule-груп
+
+---
+
 ## Вирішення проблем
 
 **Демон не запускається — помилка threat log:**  
@@ -607,7 +758,7 @@ logging:
 
 ## Сторонні дані
 
-Детектор **badbot** отримує свої списки з проекту [nginx-ultimate-bad-bot-blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker), створеного **[Mitchell Krog (@mitchellkrogza)](https://github.com/mitchellkrogza)** та командою супроводжувачів. Це масштабний community-проект, що підтримує актуальні blocklists для ~685 поганих User-Agent та ~7108 небажаних доменів-реферерів, які оновлюються практично щодня.
+Детектор **badbot** отримує свої списки з проекту [nginx-ultimate-bad-bot-blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker), створеного **[Mitchell Krog (@mitchellkrogza)](https://github.com/mitchellkrogza)** та команди супроводжувачів. Це масштабний community-проект, що підтримує актуальні blocklists для ~685 поганих User-Agent та ~7108 небажаних доменів-реферерів, які оновлюються практично щодня.
 
 Ліцензія: [MIT](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/blob/master/LICENSE.md). Списки завантажуються ArxSentinel при запуску в режимі реального часу та не входять до складу дистрибутиву.
 
@@ -615,4 +766,4 @@ logging:
 
 ---
 
-[English documentation → README.md](README.md) | [Документація російською → README.ru.md](README.ru.md)
+[Документація англійською → README.md](README.md) | [Документація російською → README.ru.md](README.ru.md)

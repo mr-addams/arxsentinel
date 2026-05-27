@@ -1,0 +1,36 @@
+# ArxSentinel — Docker Compose sidecar example
+# ArxSentinel reads nginx access logs via a shared volume.
+# Prometheus metrics available at http://localhost:9117/metrics
+version: "3.8"
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - nginx_logs:/var/log/nginx
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped
+
+  arxsentinel:
+    image: ghcr.io/mr-addams/arxsentinel:latest
+    volumes:
+      - nginx_logs:/var/log/nginx:ro
+      - arxsentinel_logs:/var/log/arxsentinel
+      - ./config.yaml:/etc/arxsentinel/config.yaml:ro
+    environment:
+      ARXSENTINEL_CONFIG: /etc/arxsentinel/config.yaml
+    ports:
+      - "127.0.0.1:9117:9117"   # Prometheus metrics — bind to localhost only
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9117/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  nginx_logs:
+  arxsentinel_logs:

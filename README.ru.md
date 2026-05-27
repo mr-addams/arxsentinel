@@ -7,99 +7,140 @@
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
-Бдительный страж вашего веб-сервера: читает HTTP access-логи в реальном времени, оценивает каждый IP через 8 поведенческих детекторов и блокирует атакующих через Fail2Ban. Работает с nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed и OpenLiteSpeed.
-
-Поддерживает **nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed и OpenLiteSpeed** через встроенные профили. nginx работает из коробки без настройки профиля. Caddy и HAProxy требуют минимальной однократной настройки. Произвольные форматы логов — через regex. Несколько лог-файлов в одном процессе.
+**Пайплайн обработки событий безопасности для любого HTTP-сервера** — от одного nginx VPS до полноценного K8s-кластера.  
+~12 МБ RAM · единый бинарник · без зависимостей в runtime · расширяется через exec+JSON-плагины на любом языке.
 
 ```
-access.log (или stdin) → Source → Merge → whitelist → tracker → scorer → Sink → Fail2Ban / stdout JSON / …
+  [nginx / Apache / Caddy / ...]       [exec+JSON Source — любой язык]
+           │                                        │
+           └─────────────────┬──────────────────────┘
+                      Source (file │ stdin │ http)
+                             │
+                       Merge & Parse
+                             │
+             ┌───────────────┼───────────────┐
+        Whitelist       ChainGuard       BotVerifier
+             └───────────────┼───────────────┘
+                      Tracker (IP state)
+                             │
+                   Scorer + 8 Detectors
+                             │
+          ┌──────────────────┼──────────────────┐
+    Fail2Ban sink       stdout JSON        exec+JSON Sink
+    (threats.log)    (Loki / Splunk / ...)  (любой скрипт)
 ```
 
-## Поддерживаемые HTTP-серверы
+## Сценарии использования
 
-### Таблица совместимости
+ArxSentinel масштабируется от классического bare-metal VPS до распределённого Kubernetes-кластера — каждый сценарий ниже — это самодостаточная стартовая точка.
 
-| Сервер | Профиль | Требуемая настройка |
-|--------|---------|---------------------|
-| nginx | *(по умолчанию — профиль не нужен)* | Нет — nginx combined log format работает из коробки |
-| Apache | `apache` | Нет — стандартный CLF |
-| Traefik | `traefik` | Нет — стандартный access log (CLF) |
-| Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + плагин [transform-encoder](https://github.com/caddyserver/transform-encoder) |
-| HAProxy | `haproxy-http` | `option httplog` в haproxy.cfg + rsyslog для записи в файл |
-| LiteSpeed / OpenLiteSpeed | `litespeed` | Нет — стандартный CLF |
+### 1. Классическая защита веб-сервера — nginx + Fail2Ban
 
-> В каждом релизе публикуется таблица **Tested product versions** с точными версиями серверов, на которых валидировалась сборка — см. [GitHub Releases](https://github.com/mr-addams/arxsentinel/releases).
-
-> **nginx:** настройка `profile:` не нужна. Стандартный CombinedParser обрабатывает nginx combined log format из коробки. Укажите только `general.log_file` с путём к вашему access.log.
-
-Встроенные профили — настройка regex и маппинга полей не требуется. Укажите `parser.profile` с именем сервера для Apache, Traefik, Caddy, HAProxy, LiteSpeed или OpenLiteSpeed:
-
-**Пример — Apache:**
+Один конфиг, никакой дополнительной настройки. Работает из коробки:
 
 ```yaml
-parser:
-  profile: "apache"
-
 general:
-  log_file: /var/log/apache2/access.log
-
+  log_file: /var/log/nginx/access.log
 output:
   threat_log: /var/log/arxsentinel/threats.log
 ```
 
-Готовые конфиги для каждого сервера находятся в [`deploy/examples/`](deploy/examples/):
+### 2. Docker Compose sidecar
 
+Примонтируйте том логов nginx; ArxSentinel будет читать их как sidecar. Смотрите [`deploy/examples/docker/`](deploy/examples/docker/):
+
+```yaml
+# docker-compose.yml — выдержка
+services:
+  arxsentinel:
+    image: ghcr.io/mr-addams/arxsentinel:latest
+    volumes:
+      - nginx_logs:/var/log/nginx:ro
+    environment:
+      ARXSENTINEL_LOG_FILE: /var/log/nginx/access.log
 ```
-deploy/examples/
-├── apache/      httpd.conf + sentinel-config.yaml
-├── caddy/       Caddyfile + sentinel-config.yaml
-├── traefik/     traefik.yml + sentinel-config.yaml
-├── haproxy/     haproxy.cfg + sentinel-config.yaml
-└── litespeed/   httpd_config.conf + sentinel-config.yaml
+
+### 3. Kubernetes DaemonSet
+
+Один под на узел, читает логи хоста через `hostPath`. Смотрите [`deploy/examples/kubernetes/`](deploy/examples/kubernetes/) и [Helm README](deploy/container/k8s/arxsentinel/README.md):
+
+```bash
+helm install arxsentinel ./deploy/container/k8s/arxsentinel \
+  --set logVolume.hostPath=/var/log/nginx
 ```
 
-> **Замечание — HAProxy:** HAProxy включает миллисекунды в временную метку
-> (`14:30:00.123`), что не соответствует ожидаемому формату. Sentinel использует
-> `time.Time{}` для этого поля. Обнаружение rate-окон работает по системному
-> времени, поэтому все детекторы функционируют корректно.
+### 4. Агрегация нескольких серверов
 
-> **Замечание — Caddy:** Встроенный JSON-энкодер Caddy v2 выводит вложенные объекты.
-> Профиль `caddy` требует плагина
-> [caddy-transform-encoder](https://github.com/caddyserver/transform-encoder)
-> для вывода в формате CLF. Смотрите `deploy/examples/caddy/Caddyfile` для настройки.
+Наблюдайте за несколькими серверами в одном процессе — полная изоляция IP-состояния на поток:
 
-> **Замечание — LiteSpeed / OpenLiteSpeed:** Оба сервера (LSWS и OLS) по умолчанию пишут Apache CLF —
-> настройка формата лога не требуется. Если sentinel стоит за прокси, включите «Use Client IP in Header»
-> в WebAdmin («Server Configuration → Use Client IP in Header»), чтобы реальный IP клиента писался
-> в `%h` напрямую. Смотрите `deploy/examples/litespeed/` для полного конфига.
+```yaml
+streams:
+  - name: frontend
+    log_file: /var/log/nginx/access.log
+  - name: api
+    log_file: /var/log/apache2/api.log
+    profile: apache
+```
 
-## Возможности
+### 5. Произвольный формат логов
 
-- **8 детекторов:** probe-сканирование, rate-аномалия, подозрительный User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
-- **Chain Guard:** обнаруживает IP-адреса Cloudflare/CDN и bogon/RFC 1918/CGNAT в позиции client IP — сигнализирует о неправильно настроенной цепочке прокси до того, как детекторы ArxSentinel потеряют способность определять реальных атакующих
-- **DNS-верификация ботов:** Googlebot, Bingbot, Yandex, DuckDuckGo и другие верифицируются по rDNS/fDNS — легитимные краулеры в бан не попадают
-- **Multi-stream + Multi-pipeline:** несколько лог-файлов в одном процессе; внутри каждого потока — независимые pipeline с собственными детекторами, источниками, sink'ами и трекером IP-состояния (или общий трекер через `tracker_group`)
-- **Whitelist:** IP, CIDR, UA-подстроки — конфигурируемые списки исключений
-- **Линейный decay score:** очки затухают за `observation_window`, нет ложных банов от старого трафика
-- **Prometheus-метрики:** `/metrics` на настраиваемом порту (по умолчанию `:9117`), опциональная basic auth с bcrypt; дашборд Grafana в комплекте
-- **Health endpoint:** `/health` всегда возвращает `200 {"status":"ok"}` без авторизации — готов для Docker `HEALTHCHECK`, k8s probes и балансировщиков
-- **JSON-формат логов:** переключение на JSON-парсинг через `parser.log_format: "json"` без перекомпиляции
-- **SIGHUP reload:** конфиг, scorer, парсер и whitelist пересоздаются без перезапуска демона
-- **Graceful shutdown:** дренирование буфера строк при SIGTERM
-- **Systemd + logrotate + Fail2Ban:** готовые deploy-конфиги в комплекте
+API gateway, логи пользовательского приложения, любой текстовый формат — предоставьте regex с именованными группами:
 
-## Требования
+```yaml
+parser:
+  log_format: "custom"
+  custom_regex: '(?P<ip>\S+) \S+ \S+ \[.*?\] "\S+ (?P<path>\S+) \S+" (?P<status>\d+) (?P<size>\d+) "(?P<ua>[^"]*)"'
+```
 
-- Linux x86_64 или arm64 с systemd
-- Fail2Ban
-- HTTP-сервер, пишущий access.log в поддерживаемом формате (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — или произвольный regex)
+### 6. Плагин-детектор через exec+JSON
+
+Любой скрипт или бинарник как дополнительный детектор; вызывается для каждого запроса через stdin/stdout на любом языке. Смотрите [Разработка плагинов](#разработка-плагинов):
+
+```yaml
+detectors:
+  plugins:
+    - name: ml-classifier
+      exec: /opt/plugins/classify.py
+      score: 45
+```
+
+### 7. Пользовательский output sink — exec+JSON
+
+Маршрутизируйте угрозы в любое место — SIEM, webhook, Telegram, пользовательский скрипт:
+
+```yaml
+sinks:
+  - type: exec
+    exec: /opt/plugins/send-to-siem.sh
+```
+
+---
+
+## Быстрый старт
+
+Устанавливает пакет, включает systemd-сервис и сразу работает с nginx:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash
+```
+
+Отредактируйте конфиг для вашего сервера, затем перезагрузитесь без рестарта:
+
+```bash
+sudo nano /etc/arxsentinel/config.yaml
+sudo systemctl kill -s HUP arxsentinel
+```
+
+Для Docker, Kubernetes и других методов установки — смотрите [Установка](#установка) ниже.
+
+---
 
 ## Установка
 
 ### Быстрая установка — любой дистрибутив (рекомендуется)
 
-Скрипт автоматически определяет дистрибутив и архитектуру, скачивает нужный пакет из GitHub Releases,
-устанавливает его через штатный менеджер пакетов, добавляет в автозагрузку и запускает сервис:
+Автоматически определяет дистрибутив и архитектуру, загружает правильный пакет из GitHub Releases,
+устанавливает его менеджером пакетов вашей системы, включает и запускает сервис:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash
@@ -108,7 +149,7 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/
 Работает на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux и Arch Linux.
 Требует `curl` и `sudo`. Fail2Ban устанавливается автоматически, если отсутствует.
 
-Сервис запускается сразу и работает с nginx из коробки — профиль не нужен. Чтобы переключиться на другой сервер (apache, caddy, traefik, haproxy-http, litespeed или произвольный regex):
+Сервис запускается сразу и работает с nginx из коробки — никаких профилей не нужно. Чтобы переключиться на другой сервер (apache, caddy, traefik, haproxy-http, litespeed или произвольный regex):
 
 ```bash
 sudo nano /etc/arxsentinel/config.yaml
@@ -222,6 +263,81 @@ helm install arxsentinel ./deploy/container/k8s/arxsentinel \
 
 Подробнее: [README.helm.md](deploy/container/k8s/arxsentinel/README.md) — описание values, Prometheus Operator, деплой в облако.
 
+## Поддерживаемые HTTP-серверы
+
+### Таблица совместимости
+
+| Сервер | Профиль | Требуемая настройка |
+|--------|---------|---------------------|
+| nginx | *(по умолчанию — профиль не нужен)* | Нет — nginx combined log format работает из коробки |
+| Apache | `apache` | Нет — стандартный CLF |
+| Traefik | `traefik` | Добавьте `fields.headers.names.User-Agent/Referer: keep` в accessLog — смотрите [`deploy/examples/traefik/`](deploy/examples/traefik/) |
+| LiteSpeed / OpenLiteSpeed | `litespeed` | Нет — стандартный CLF |
+| Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + плагин [transform-encoder](https://github.com/caddyserver/transform-encoder) — смотрите [`deploy/examples/caddy/`](deploy/examples/caddy/) |
+| HAProxy | `haproxy-http` | `http-request capture` + пользовательский `log-format` с UA — смотрите [`deploy/examples/haproxy/`](deploy/examples/haproxy/) |
+
+> В каждом релизе публикуется таблица **Tested product versions** с точными версиями серверов, на которых валидировалась сборка — смотрите [GitHub Releases](https://github.com/mr-addams/arxsentinel/releases).
+
+> **nginx:** настройка `profile:` не нужна. Стандартный CombinedParser обрабатывает nginx combined log format из коробки. Укажите только `general.log_file` с путём к вашему access.log.
+
+Встроенные профили — настройка regex и маппинга полей не требуется. Укажите `parser.profile` с именем сервера для Apache, Traefik, Caddy, HAProxy, LiteSpeed или OpenLiteSpeed:
+
+**Пример — Apache:**
+
+```yaml
+parser:
+  profile: "apache"
+
+general:
+  log_file: /var/log/apache2/access.log
+
+output:
+  threat_log: /var/log/arxsentinel/threats.log
+```
+
+Готовые конфиги для каждого сервера находятся в [`deploy/examples/`](deploy/examples/):
+
+```
+deploy/examples/
+├── apache/      httpd.conf + sentinel-config.yaml
+├── caddy/       Caddyfile + sentinel-config.yaml
+├── traefik/     traefik.yml + sentinel-config.yaml
+├── haproxy/     haproxy.cfg + sentinel-config.yaml
+└── litespeed/   httpd_config.conf + sentinel-config.yaml
+```
+
+> **Замечание — LiteSpeed / OpenLiteSpeed:** Оба сервера (LSWS и OLS) по умолчанию пишут Apache CLF —
+> настройка формата лога не требуется. Путь логов: `/usr/local/lsws/logs/access.log`
+> (server-wide) или `/usr/local/lsws/logs/<vhostname>/access.log` (per virtual host).
+> Если сервер работает за reverse proxy, включите "Use Client IP in Header" в WebAdmin, чтобы реальный IP клиента писался
+> в `%h` напрямую. Смотрите `deploy/examples/litespeed/` для полного конфига.
+
+> **Замечание — Caddy:** Встроенный JSON-энкодер Caddy v2 выводит вложенные объекты. Профиль
+> `caddy` требует плагина
+> [caddy-transform-encoder](https://github.com/caddyserver/transform-encoder)
+> для вывода в формате CLF. Смотрите `deploy/examples/caddy/Caddyfile` для настройки.
+
+## Возможности
+
+- **8 детекторов:** probe-сканирование, rate-аномалия, подозрительный User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
+- **Chain Guard:** обнаруживает IP-адреса Cloudflare/CDN и bogon/RFC 1918/CGNAT в позиции client IP — сигнализирует о неправильно настроенной цепочке прокси до того, как детекторы ArxSentinel потеряют способность определять реальных атакующих
+- **DNS-верификация ботов:** Googlebot, Bingbot, Yandex, DuckDuckGo и другие верифицируются по rDNS/fDNS — легитимные краулеры в бан не попадают
+- **Multi-stream + Multi-pipeline:** несколько лог-файлов в одном процессе; внутри каждого потока — независимые pipeline с собственными детекторами, источниками, sink'ами и трекером IP-состояния (или общий трекер через `tracker_group`)
+- **Whitelist:** IP, CIDR, UA-подстроки — конфигурируемые списки исключений
+- **Линейный decay score:** очки затухают за `observation_window`, нет ложных банов от старого трафика
+- **Prometheus-метрики:** `/metrics` на настраиваемом порту (по умолчанию `:9117`), опциональная basic auth с bcrypt; дашборд Grafana в комплекте
+- **Health endpoint:** `/health` всегда возвращает `200 {"status":"ok"}` без авторизации — готов для Docker `HEALTHCHECK`, k8s probes и балансировщиков
+- **JSON-формат логов:** переключение на JSON-парсинг через `parser.log_format: "json"` без перекомпиляции
+- **SIGHUP reload:** конфиг, scorer, парсер и whitelist пересоздаются без перезапуска демона
+- **Graceful shutdown:** дренирование буфера строк при SIGTERM
+- **Systemd + logrotate + Fail2Ban:** готовые deploy-конфиги в комплекте
+
+## Требования
+
+- Linux x86_64 или arm64 с systemd
+- Fail2Ban
+- HTTP-сервер, пишущий access.log в поддерживаемом формате (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — или произвольный regex)
+
 ## Конфигурация
 
 Конфиг: `/etc/arxsentinel/config.yaml` (создаётся из `config.yaml` при установке).  
@@ -331,9 +447,33 @@ output:
 | **crawler** | ≥5 последовательных числовых URL (/page/1..N) | 20 |
 | **noasset** | <10% запросов к статике при ≥3 страницах | 20 |
 | **overflow** | URL >2048 символов или WAF bypass keywords | 30 |
-| **badbot** | UA (или Referer) совпадает с community-blocklist (~685 паттернов). Данные: [nginx-ultimate-bad-bot-blocker](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker) | 60 |
+| **badbot** | UA (или Referer) совпадает с community-blocklist (~685 паттернов) | 60 |
 
 Score накапливается с линейным decay за `observation_window`. При достижении `alert_threshold` — запись WARN, при `ban_threshold` — THREAT + Fail2Ban.
+
+## Развёртывание
+
+### systemd — bare metal
+
+Полностью охватывается установщиками пакетов выше. Используйте `systemctl` для управления сервисом и `kill -HUP` для live reload. Смотрите [Управление](#управление) для полного справочника команд.
+
+### Docker Compose
+
+ArxSentinel работает как sidecar рядом с HTTP-сервером, читая общие тома логов.
+Готовые Compose файл и конфиг: [`deploy/examples/docker/`](deploy/examples/docker/).
+Полное руководство Docker: [README.docker.md](deploy/container/docker/README.md).
+
+### Kubernetes
+
+DaemonSet (один под на узел, читает логи хоста) или sidecar (читает из emptyDir, шарёного с контейнером приложения).
+Готовые манифесты: [`deploy/examples/kubernetes/`](deploy/examples/kubernetes/).
+Helm-чарт с описанием values: [README.helm.md](deploy/container/k8s/arxsentinel/README.md).
+
+## Разработка плагинов
+
+Source, Sink и Detector плагины взаимодействуют с ArxSentinel через **stdin/stdout JSON** — пишите их на любом языке. Плагин получает JSON-объект для каждой записи логов (или события) и возвращает JSON-ответ. ArxSentinel управляет жизненным циклом подпроцесса.
+
+Полный протокол и примеры: [`docs/PLUGIN_DEV.md`](docs/PLUGIN_DEV.md).
 
 ## Whitelist
 
@@ -341,7 +481,7 @@ ArxSentinel предоставляет автоматическую верифи
 и кастомные списки исключений (IP, CIDR, подстроки User-Agent). Занесённые в whitelist
 запросы пропускают все детекторы полностью.
 
-Подробно — см. [README.whitelist.ru.md](deploy/examples/README.whitelist.ru.md), примеры и настройка.
+Подробно — смотрите [README.whitelist.ru.md](deploy/examples/README.whitelist.ru.md), примеры и настройка.
 
 ## Архитектура
 
@@ -377,10 +517,12 @@ ArxSentinel предоставляет автоматическую верифи
 настройки `general.log_file` и `output.threat_log` работают без изменений.
 
 Фоновые горутины:
-- **TailReader** — слежение за файлом через fsnotify, обработка mv/copytruncate logrotate
+- **FileSource** — слежение за файлом через fsnotify, обработка mv/copytruncate logrotate
 - **GC** — удаление неактивных IP каждые `gc_interval` (дефолт 60s)
 - **Stats** — вывод `STATS processed/tracked/threats/suspicious` каждые `stats_interval`
 - **SIGHUP listener** — конвертирует сигнал в канал для главного loop
+
+Полная иерархия компонентов и схемы потоков данных: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Мониторинг нескольких потоков
 
@@ -510,7 +652,7 @@ Fail2Ban failregex: `THREAT <HOST> score=\d+` (файл `deploy/fail2ban/filter.
 ```
 
 Предупреждения отличаются от угроз: `CHAIN_WARN` означает, что ArxSentinel не может надёжно
-определить реальный IP атакующего. Устраните причину (см. [Chain Guard](#chain-guard----обнаружение-сломанной-цепочки-ip))
+определить реальный IP атакующего. Устраните причину (смотрите [Chain Guard](#обратный-прокси-и-chain-guard))
 и предупреждения прекратятся.
 
 ## Управление
@@ -544,9 +686,9 @@ ArxSentinel поддерживает три режима форматов: **com
 
 ## Обратный прокси и Chain Guard
 
-Полное руководство по деплойю за обратным прокси (HAProxy, Traefik, Caddy, nginx), включая конфигурацию извлечения реального IP и Chain Guard (обнаружение сломанной цепочки IP).
+Полное руководство по деплойму за обратным прокси (HAProxy, Traefik, Caddy, nginx), включая конфигурацию извлечения реального IP и Chain Guard (обнаружение сломанной цепочки IP).
 
-См. [`deploy/examples/reverse-proxy/README.ru.md`](deploy/examples/reverse-proxy/README.ru.md).
+Смотрите [`deploy/examples/reverse-proxy/README.ru.md`](deploy/examples/reverse-proxy/README.ru.md).
 
 ## Конфигурации для CMS
 
@@ -581,7 +723,17 @@ ArxSentinel поддерживает три режима форматов: **com
 
 ---
 
-## Решение проблем
+## Дорожная карта
+
+В активной разработке для v2.x:
+
+- **Executor interface** — stateful, двусторонние интеграции (vs fire-and-forget Sink); persistent subprocess с request/response протоколом
+- **Cloudflare WAF executor** — блокировка IP на edge через Cloudflare API; без iptables, работает для CDN-fronted развёртываний
+- **AWS WAF executor** — обновления IP-сетов для AWS WAF rule groups
+
+---
+
+## Устранение неполадок
 
 **Демон не запускается — ошибка threat log:**  
 Проверьте права на `/var/log/arxsentinel/` — директория должна принадлежать пользователю `arxsentinel`.

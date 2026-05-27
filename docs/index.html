@@ -406,6 +406,36 @@
         }
         .whitelist-card p { font-size: 0.9rem; color: var(--text-muted); }
 
+        /* ── Roadmap section ──────────────────────────────────────────────── */
+        .roadmap-section {
+            max-width: 1200px; margin: 6rem auto;
+            background: linear-gradient(135deg, rgba(189, 0, 255, 0.04) 0%, transparent 60%);
+            border: 1px solid rgba(189, 0, 255, 0.12); border-radius: 12px; padding: 3rem 2rem;
+        }
+        .roadmap-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; margin-top: 0; }
+        .roadmap-card {
+            flex: 0 1 260px; position: relative; overflow: hidden;
+            background: rgba(13, 13, 31, 0.6); border: 1px solid rgba(189, 0, 255, 0.15);
+            border-left: 3px solid var(--accent-purple);
+            border-radius: 6px; padding: 1.75rem; transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        .roadmap-card::before {
+            content: 'IN DEV'; position: absolute; top: 0.75rem; right: 0.75rem;
+            font-family: var(--font-mono); font-size: 0.65rem; letter-spacing: 0.08em;
+            color: var(--accent-purple); background: rgba(189, 0, 255, 0.1);
+            border: 1px solid rgba(189, 0, 255, 0.3); border-radius: 2px;
+            padding: 0.15rem 0.4rem;
+        }
+        .roadmap-card:hover {
+            border-color: rgba(189, 0, 255, 0.4);
+            box-shadow: 0 0 20px rgba(189, 0, 255, 0.08);
+        }
+        .roadmap-card h3 {
+            font-family: var(--font-cyber); font-size: 1.1rem; color: #fff;
+            margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;
+        }
+        .roadmap-card p { font-size: 0.9rem; color: var(--text-muted); }
+
         footer {
             border-top: 1px solid rgba(255, 255, 255, 0.05); padding: 3rem 2rem;
             text-align: center; background: rgba(4, 4, 10, 0.9); margin-top: 6rem;
@@ -674,14 +704,14 @@
             <span class="badge">Linux</span>
         </div>
         <h1>
-            <span class="shimmer-text">A vigilant sentinel</span><br>
-            that sees what<br>
-            your server misses
+            <span class="shimmer-text">From a single VPS</span><br>
+            to Kubernetes —<br>
+            one binary, zero overhead
         </h1>
-        <p>Eight behavioural detectors analyse every HTTP access log in real time and route confirmed attackers to any output — Fail2Ban, custom scripts, or your own sink. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.</p>
+        <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Stream-based security event multiprocessing engine for any HTTP server — and far beyond</p>
+        <p>Eight behavioural detectors analyse every HTTP access log in real time and route confirmed attackers to any output — Fail2Ban, custom scripts, or your own exec+JSON sink in any language. Bare-metal, Docker Compose, or Kubernetes DaemonSet. Cloudflare-ready.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Install</a>
-            <a href="https://github.com/mr-addams/arxsentinel/releases" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Releases</a>
             <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">View on GitHub</a>
         </div>
     </section>
@@ -706,9 +736,9 @@
 
     <section class="stats-grid">
         <div class="stat-card"><div class="stat-number">8</div><div class="stat-label">Behavioural detectors</div></div>
-        <div class="stat-card"><div class="stat-number">6</div><div class="stat-label">Server profiles</div></div>
+        <div class="stat-card"><div class="stat-number">3</div><div class="stat-label">Topologies · bare-metal · Docker · K8s</div></div>
         <div class="stat-card"><div class="stat-number">11</div><div class="stat-label">Verified bot families</div></div>
-        <div class="stat-card"><div class="stat-number">3</div><div class="stat-label">Package formats</div></div>
+        <div class="stat-card"><div class="stat-number">∞</div><div class="stat-label">Plugins · any language · exec+JSON</div></div>
         <div class="stat-card"><div class="stat-number">2</div><div class="stat-label">Architectures (amd64 · arm64)</div></div>
         <div class="stat-card"><div class="stat-number js-binary-size" data-unit="MB">11 MB</div><div class="stat-label">Single binary · arm64 ready</div></div>
     </section>
@@ -797,7 +827,7 @@
 
     <section id="detectors" class="detectors-section">
         <div class="section-header">
-            <span class="section-tag">Anomalies Analysis</span>
+            <span class="section-tag">Threat Detection</span>
             <h2 class="section-title">8 detectors, one score</h2>
             <p style="color: var(--text-muted); max-width: 600px; margin: 1rem auto 0;">Each detector adds points to an IP's score. Score decays linearly over the observation window — no false bans from old traffic.</p>
         </div>
@@ -864,7 +894,7 @@
     <section class="performance-section">
         <div class="section-header">
             <span class="section-tag">Resource footprint</span>
-            <h2 class="section-title">Zero bloat. Runs anywhere.</h2>
+            <h2 class="section-title">11 MB. Runs anywhere.</h2>
         </div>
         <div class="perf-grid">
             <div class="perf-metrics-block">
@@ -972,7 +1002,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
     <section class="whitelist-section">
         <div class="section-header">
             <span class="section-tag">v1.3.8 Capabilities</span>
-            <h2 class="section-title">Universal by design</h2>
+            <h2 class="section-title">One process. Any topology.</h2>
         </div>
         <div class="whitelist-grid">
             <div class="whitelist-card">
@@ -986,6 +1016,14 @@ sudo systemctl enable --now arxsentinel</span></pre>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🔧</span> Server profiles</h3>
                 <p>Ship-ready profiles for popular servers. Override field positions, date formats and delimiter rules per log source without touching core logic.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🐳</span> Docker Compose sidecar</h3>
+                <p>Deploy alongside any containerised HTTP server via a shared log volume — no changes to your app container. Ready-to-use <code>docker-compose.yml</code> and config in <code>deploy/examples/docker/</code>. Prometheus metrics exposed on <code>:9117</code> for scraping.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">☸️</span> Kubernetes DaemonSet</h3>
+                <p>One pod per node reads host access logs via <code>hostPath</code>. Helm chart included with values reference and Prometheus Operator integration. Sidecar topology also supported for managed clusters without host log access.</p>
             </div>
         </div>
     </section>
@@ -1006,11 +1044,11 @@ sudo systemctl enable --now arxsentinel</span></pre>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🔄</span> Live reload</h3>
-                <p>All config changes — whitelist, detector scores, thresholds — reload with <code>systemctl kill -s HUP arxsentinel</code>. IP state and DNS cache are preserved.</p>
+                <p>All config changes — whitelist, detector scores, thresholds — apply instantly on SIGHUP. No restart. IP state and DNS cache are preserved.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🌐</span> Cloudflare support</h3>
-                <p><code>ngx_http_realip_module</code> replaces <code>$remote_addr</code> with the real client IP from <code>CF-Connecting-IP</code> or <code>X-Forwarded-For</code> — detectors always score the actual attacker, never the proxy.</p>
+                <p>Detectors always score the real attacker — never Cloudflare or your load balancer. Supports CF-Connecting-IP, X-Forwarded-For chains, and trusted proxy CIDR ranges out of the box.</p>
             </div>
         </div>
     </section>
@@ -1057,6 +1095,30 @@ sudo systemctl enable --now arxsentinel</span></pre>
             <code style="background: var(--bg-card); padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 0.9rem; color: var(--text-muted);">
                 docker logs nginx | arxsentinel --input=stdin --output=stdout,json
             </code>
+        </div>
+    </section>
+
+    <section class="roadmap-section">
+        <div class="section-header">
+            <span class="section-tag" style="color: var(--accent-purple); border-color: rgba(189,0,255,0.3); background: rgba(189,0,255,0.08);">Roadmap</span>
+            <h2 class="section-title">What's coming in v2.x</h2>
+        </div>
+        <div class="roadmap-grid">
+            <div class="roadmap-card">
+                <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-green);border:1px solid rgba(0,255,136,0.35);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">NEXT</span>
+                <h3><span style="color: var(--accent-purple)">⚡</span> Executor interface</h3>
+                <p>Stateful, bidirectional integrations via persistent subprocesses — request/response protocol, unlike the fire-and-forget Sink. Designed for cloud API integrations that require session or rate-limit awareness.</p>
+            </div>
+            <div class="roadmap-card">
+                <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
+                <h3><span style="color: var(--accent-purple)">☁️</span> Cloudflare WAF executor</h3>
+                <p>Block IPs at the network edge via Cloudflare API — no iptables, no host-level firewall rules. Designed for CDN-fronted deployments where the origin server cannot ban at the IP layer.</p>
+            </div>
+            <div class="roadmap-card">
+                <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
+                <h3><span style="color: var(--accent-purple)">🛡️</span> AWS WAF executor</h3>
+                <p>Push threat IPs directly into AWS WAF IP set rules. Integrates with existing WAF rule groups — no Lambda or custom infrastructure required.</p>
+            </div>
         </div>
     </section>
 

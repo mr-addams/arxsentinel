@@ -7,88 +7,133 @@
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
-A vigilant sentinel for your web server — reads HTTP access logs in real time, scores every IP through 8 behavioural detectors, and bans attackers via Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, and OpenLiteSpeed.
-
-Supports **nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, and OpenLiteSpeed** via built-in profiles. nginx works out of the box with no profile needed. Caddy and HAProxy require minimal one-time setup. Custom log formats supported via regex. Watch multiple log files in a single process.
+**Security event pipeline for any HTTP server** — from a single nginx VPS to a full K8s cluster.  
+~12 MB RAM · single binary · zero runtime deps · extends via exec+JSON plugins in any language.
 
 ```
-access.log (or stdin) → Source → Merge → whitelist → tracker → scorer → Sink → Fail2Ban / stdout JSON / …
+  [nginx / Apache / Caddy / ...]       [exec+JSON Source — any language]
+           │                                        │
+           └─────────────────┬──────────────────────┘
+                      Source (file │ stdin │ http)
+                             │
+                       Merge & Parse
+                             │
+             ┌───────────────┼───────────────┐
+        Whitelist       ChainGuard       BotVerifier
+             └───────────────┼───────────────┘
+                      Tracker (IP state)
+                             │
+                   Scorer + 8 Detectors
+                             │
+          ┌──────────────────┼──────────────────┐
+    Fail2Ban sink       stdout JSON        exec+JSON Sink
+    (threats.log)    (Loki / Splunk / ...)  (any script)
 ```
 
-## Supported HTTP servers
+## Use Cases
 
-### Compatibility table
+ArxSentinel scales from a classic bare-metal VPS to a distributed Kubernetes cluster — each scenario below is a self-contained starting point.
 
-| Server | Profile | Setup required |
-|--------|---------|----------------|
-| nginx | *(default — no profile needed)* | None — nginx combined log format works out of the box |
-| Apache | `apache` | None — default CLF format |
-| Traefik | `traefik` | Add `fields.headers.names.User-Agent/Referer: keep` to accessLog — see [`deploy/examples/traefik/`](deploy/examples/traefik/) |
-| LiteSpeed / OpenLiteSpeed | `litespeed` | None — default CLF format |
-| Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + [transform-encoder](https://github.com/caddyserver/transform-encoder) plugin — see [`deploy/examples/caddy/`](deploy/examples/caddy/) |
-| HAProxy | `haproxy-http` | `http-request capture` + custom `log-format` with UA — see [`deploy/examples/haproxy/`](deploy/examples/haproxy/) |
+### 1. Classic web protection — nginx + Fail2Ban
 
-> Each release includes a **Tested product versions** table with the exact server versions the build was validated against — see [GitHub Releases](https://github.com/mr-addams/arxsentinel/releases).
-
-> **nginx:** no `profile:` setting is needed. The default CombinedParser handles nginx combined log format out of the box. Set only `general.log_file` pointing to your access log.
-
-Built-in profiles — no regex or field mapping required. Set `parser.profile` to the server name for Apache, Traefik, Caddy, HAProxy, LiteSpeed, or OpenLiteSpeed:
-
-**Example — Apache:**
+One config file, no profile needed. Works out of the box:
 
 ```yaml
-parser:
-  profile: "apache"
-
 general:
-  log_file: /var/log/apache2/access.log
-
+  log_file: /var/log/nginx/access.log
 output:
   threat_log: /var/log/arxsentinel/threats.log
 ```
 
-Ready-made configs for each server are in [`deploy/examples/`](deploy/examples/):
+### 2. Docker Compose sidecar
 
+Mount the nginx log volume; ArxSentinel reads it as a sidecar. See [`deploy/examples/docker/`](deploy/examples/docker/):
+
+```yaml
+# docker-compose.yml — excerpt
+services:
+  arxsentinel:
+    image: ghcr.io/mr-addams/arxsentinel:latest
+    volumes:
+      - nginx_logs:/var/log/nginx:ro
+    environment:
+      ARXSENTINEL_LOG_FILE: /var/log/nginx/access.log
 ```
-deploy/examples/
-├── apache/      httpd.conf + sentinel-config.yaml
-├── caddy/       Caddyfile + sentinel-config.yaml
-├── traefik/     traefik.yml + sentinel-config.yaml
-├── haproxy/     haproxy.cfg + sentinel-config.yaml
-└── litespeed/   httpd_config.conf + sentinel-config.yaml
+
+### 3. Kubernetes DaemonSet
+
+One pod per node, reads host logs via `hostPath`. See [`deploy/examples/kubernetes/`](deploy/examples/kubernetes/) and the [Helm README](deploy/container/k8s/arxsentinel/README.md):
+
+```bash
+helm install arxsentinel ./deploy/container/k8s/arxsentinel \
+  --set logVolume.hostPath=/var/log/nginx
 ```
 
-> **Note — LiteSpeed / OpenLiteSpeed:** Both LSWS and OLS emit Apache CLF by default —
-> no server-side changes required. Log path: `/usr/local/lsws/logs/access.log`
-> (server-wide) or `/usr/local/lsws/logs/<vhostname>/access.log` (per virtual host).
-> Behind a reverse proxy: enable "Use Client IP in Header" in WebAdmin so `%h` logs
-> the real client IP. See `deploy/examples/litespeed/` for the full config.
+### 4. Multi-server aggregation
 
-> **Note — Caddy:** Caddy v2's built-in JSON encoder outputs nested objects. The
-> `caddy` profile requires the
-> [caddy-transform-encoder](https://github.com/caddyserver/transform-encoder) plugin
-> to produce CLF output. See `deploy/examples/caddy/Caddyfile` for the setup.
+Watch multiple servers in one process — full IP-state isolation per stream:
 
-## Features
+```yaml
+streams:
+  - name: frontend
+    log_file: /var/log/nginx/access.log
+  - name: api
+    log_file: /var/log/apache2/api.log
+    profile: apache
+```
 
-- **8 detectors:** probe scanning, rate anomaly, suspicious User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
-- **Chain Guard:** detects Cloudflare/CDN edge IPs and bogon/RFC 1918/CGNAT addresses appearing as client IPs — signals a misconfigured proxy chain before ArxSentinel's detectors go blind
-- **Bot DNS verification:** Googlebot, Bingbot, Yandex, DuckDuckGo and others are verified via rDNS/fDNS — legitimate crawlers are never banned
-- **Multi-stream + Multi-pipeline:** watch multiple log files in one process; within each stream, define independent pipelines with their own detectors, sources, sinks and IP-state tracker (or share state via `tracker_group`)
-- **Whitelist:** IPs, CIDRs, UA substrings — configurable exclusion lists
-- **Linear score decay:** points decay over `observation_window`, no false bans from old traffic
-- **Prometheus metrics:** `/metrics` on configurable port (default `:9117`), optional bcrypt basic auth; Grafana dashboard included
-- **Health endpoint:** `/health` always returns `200 {"status":"ok"}` — no credentials required; ready for Docker `HEALTHCHECK`, k8s probes, and load balancers
-- **JSON log format:** switch to JSON log parsing via `parser.log_format: "json"` — no recompilation needed
-- **SIGHUP reload:** config, scorer, parser and whitelist are rebuilt without restarting the daemon
-- **Graceful shutdown:** line buffer is drained on SIGTERM
-- **Systemd + logrotate + Fail2Ban:** ready-to-use deploy configs included
+### 5. Custom log format
 
-## Requirements
+API gateway, custom app log, any text format — supply a regex with named capture groups:
 
-- Linux x86_64 or arm64 with systemd
-- Fail2Ban
-- An HTTP server writing access logs in a supported format (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — or custom regex)
+```yaml
+parser:
+  log_format: "custom"
+  custom_regex: '(?P<ip>\S+) \S+ \S+ \[.*?\] "\S+ (?P<path>\S+) \S+" (?P<status>\d+) (?P<size>\d+) "(?P<ua>[^"]*)"'
+```
+
+### 6. External detector plugin — exec+JSON
+
+Any script or binary as an additional detector; called per request over stdin/stdout in any language. See [Plugin Development](#plugin-development):
+
+```yaml
+detectors:
+  plugins:
+    - name: ml-classifier
+      exec: /opt/plugins/classify.py
+      score: 45
+```
+
+### 7. Custom output sink — exec+JSON
+
+Route threats to any destination — SIEM, webhook, Telegram, custom script:
+
+```yaml
+sinks:
+  - type: exec
+    exec: /opt/plugins/send-to-siem.sh
+```
+
+---
+
+## Quick Start
+
+Installs the package, enables the systemd service, and works with nginx immediately:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash
+```
+
+Edit config for your server, then reload without restart:
+
+```bash
+sudo nano /etc/arxsentinel/config.yaml
+sudo systemctl kill -s HUP arxsentinel
+```
+
+For Docker, Kubernetes, and other installation methods — see [Installation](#installation) below.
+
+---
 
 ## Installation
 
@@ -218,6 +263,81 @@ helm install arxsentinel ./deploy/container/k8s/arxsentinel \
 
 See [README.helm.md](deploy/container/k8s/arxsentinel/README.md) for values reference, Prometheus Operator integration, and cloud deployment notes.
 
+## Supported HTTP servers
+
+### Compatibility table
+
+| Server | Profile | Setup required |
+|--------|---------|----------------|
+| nginx | *(default — no profile needed)* | None — nginx combined log format works out of the box |
+| Apache | `apache` | None — default CLF format |
+| Traefik | `traefik` | Add `fields.headers.names.User-Agent/Referer: keep` to accessLog — see [`deploy/examples/traefik/`](deploy/examples/traefik/) |
+| LiteSpeed / OpenLiteSpeed | `litespeed` | None — default CLF format |
+| Caddy | `caddy` | [xcaddy](https://github.com/caddyserver/xcaddy) + [transform-encoder](https://github.com/caddyserver/transform-encoder) plugin — see [`deploy/examples/caddy/`](deploy/examples/caddy/) |
+| HAProxy | `haproxy-http` | `http-request capture` + custom `log-format` with UA — see [`deploy/examples/haproxy/`](deploy/examples/haproxy/) |
+
+> Each release includes a **Tested product versions** table with the exact server versions the build was validated against — see [GitHub Releases](https://github.com/mr-addams/arxsentinel/releases).
+
+> **nginx:** no `profile:` setting is needed. The default CombinedParser handles nginx combined log format out of the box. Set only `general.log_file` pointing to your access log.
+
+Built-in profiles — no regex or field mapping required. Set `parser.profile` to the server name for Apache, Traefik, Caddy, HAProxy, LiteSpeed, or OpenLiteSpeed:
+
+**Example — Apache:**
+
+```yaml
+parser:
+  profile: "apache"
+
+general:
+  log_file: /var/log/apache2/access.log
+
+output:
+  threat_log: /var/log/arxsentinel/threats.log
+```
+
+Ready-made configs for each server are in [`deploy/examples/`](deploy/examples/):
+
+```
+deploy/examples/
+├── apache/      httpd.conf + sentinel-config.yaml
+├── caddy/       Caddyfile + sentinel-config.yaml
+├── traefik/     traefik.yml + sentinel-config.yaml
+├── haproxy/     haproxy.cfg + sentinel-config.yaml
+└── litespeed/   httpd_config.conf + sentinel-config.yaml
+```
+
+> **Note — LiteSpeed / OpenLiteSpeed:** Both LSWS and OLS emit Apache CLF by default —
+> no server-side changes required. Log path: `/usr/local/lsws/logs/access.log`
+> (server-wide) or `/usr/local/lsws/logs/<vhostname>/access.log` (per virtual host).
+> Behind a reverse proxy: enable "Use Client IP in Header" in WebAdmin so `%h` logs
+> the real client IP. See `deploy/examples/litespeed/` for the full config.
+
+> **Note — Caddy:** Caddy v2's built-in JSON encoder outputs nested objects. The
+> `caddy` profile requires the
+> [caddy-transform-encoder](https://github.com/caddyserver/transform-encoder) plugin
+> to produce CLF output. See `deploy/examples/caddy/Caddyfile` for the setup.
+
+## Features
+
+- **8 detectors:** probe scanning, rate anomaly, suspicious User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
+- **Chain Guard:** detects Cloudflare/CDN edge IPs and bogon/RFC 1918/CGNAT addresses appearing as client IPs — signals a misconfigured proxy chain before ArxSentinel's detectors go blind
+- **Bot DNS verification:** Googlebot, Bingbot, Yandex, DuckDuckGo and others are verified via rDNS/fDNS — legitimate crawlers are never banned
+- **Multi-stream + Multi-pipeline:** watch multiple log files in one process; within each stream, define independent pipelines with their own detectors, sources, sinks and IP-state tracker (or share state via `tracker_group`)
+- **Whitelist:** IPs, CIDRs, UA substrings — configurable exclusion lists
+- **Linear score decay:** points decay over `observation_window`, no false bans from old traffic
+- **Prometheus metrics:** `/metrics` on configurable port (default `:9117`), optional bcrypt basic auth; Grafana dashboard included
+- **Health endpoint:** `/health` always returns `200 {"status":"ok"}` — no credentials required; ready for Docker `HEALTHCHECK`, k8s probes, and load balancers
+- **JSON log format:** switch to JSON log parsing via `parser.log_format: "json"` — no recompilation needed
+- **SIGHUP reload:** config, scorer, parser and whitelist are rebuilt without restarting the daemon
+- **Graceful shutdown:** line buffer is drained on SIGTERM
+- **Systemd + logrotate + Fail2Ban:** ready-to-use deploy configs included
+
+## Requirements
+
+- Linux x86_64 or arm64 with systemd
+- Fail2Ban
+- An HTTP server writing access logs in a supported format (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — or custom regex)
+
 ## Configuration
 
 Config file: `/etc/arxsentinel/config.yaml` (created from `config.yaml` during installation).  
@@ -331,6 +451,30 @@ output:
 
 Score accumulates with linear decay over `observation_window`. Reaching `alert_threshold` writes a WARN; reaching `ban_threshold` writes a THREAT and triggers Fail2Ban.
 
+## Deployment
+
+### systemd — bare metal
+
+Covered by the package installers above. Use `systemctl` to manage the service and `kill -HUP` for live reloads. See [Management](#management) for the full command reference.
+
+### Docker Compose
+
+ArxSentinel runs as a sidecar alongside your HTTP server, reading shared log volumes.
+Ready-to-use Compose file and config: [`deploy/examples/docker/`](deploy/examples/docker/).
+Full Docker guide: [README.docker.md](deploy/container/docker/README.md).
+
+### Kubernetes
+
+DaemonSet (one pod per node, reads host logs) or sidecar (reads from an emptyDir shared with the app container).
+Ready-to-use manifests: [`deploy/examples/kubernetes/`](deploy/examples/kubernetes/).
+Helm chart with values reference: [README.helm.md](deploy/container/k8s/arxsentinel/README.md).
+
+## Plugin Development
+
+Source, Sink, and Detector plugins communicate with ArxSentinel over **stdin/stdout JSON** — write them in any language. The plugin receives a JSON object per log entry (or event) and returns a JSON response. ArxSentinel manages the subprocess lifecycle.
+
+Full protocol spec and examples: [`docs/PLUGIN_DEV.md`](docs/PLUGIN_DEV.md).
+
 ## Whitelist
 
 ArxSentinel provides automatic bot verification (search engines) and custom exclusion lists
@@ -376,6 +520,8 @@ Background goroutines:
 - **GC** — removes inactive IPs every `gc_interval` (default 60s)
 - **Stats** — prints `STATS processed/tracked/threats/suspicious` every `stats_interval`
 - **SIGHUP listener** — converts the signal into a channel event for the main loop
+
+Full component hierarchy and data-flow diagrams: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Multi-stream monitoring
 
@@ -573,6 +719,16 @@ To use only your custom list, set `detectors.probe.paths:` to exactly the paths 
 Enable metrics in `config.yaml`, configure Prometheus scraping, set up bcrypt password hashing, and import the Grafana dashboard.
 
 Full guide: [`deploy/grafana/README.md`](deploy/grafana/README.md)
+
+---
+
+## Roadmap
+
+In active development for v2.x:
+
+- **Executor interface** — stateful, bidirectional integrations (vs fire-and-forget Sink); persistent subprocess with request/response protocol
+- **Cloudflare WAF executor** — block IPs at the edge via Cloudflare API; no iptables needed, works for CDN-fronted deployments
+- **AWS WAF executor** — IP set updates for AWS WAF rule groups
 
 ---
 
