@@ -737,6 +737,7 @@ func buildPipelineDetectors(cfg config.Config, pipeCfg config.PipelineConfig, sh
 			specs[name] = pkgdetector.DetectorConfig{
 				Enabled: dc.Enabled,
 				Params:  dc.Params,
+				Exec:    dc.Exec,  // exec plugin binary path (empty for built-in detectors)
 			}
 		}
 	}
@@ -854,6 +855,7 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 		src, err := pkgsource.Build(in.Type, pkgsource.InputConfig{
 			Type: in.Type,
 			Path: in.Path,
+			Exec: in.Exec,  // NEW
 		}, pkgsource.BuildOptions{
 			Parser:        p,
 			RetryInterval: time.Duration(cfg.General.TailRetryInterval),
@@ -879,6 +881,7 @@ func buildSinks(outputs []config.SinkConfig) ([]plugin.Sink, error) {
 			Type:   out.Type,
 			Path:   out.Path,
 			Format: out.Format,
+			Exec:   out.Exec,  // NEW
 		})
 		if err != nil {
 			return nil, fmt.Errorf("sink %q: %w", out.Type, err)

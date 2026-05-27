@@ -38,6 +38,7 @@ type SinkConfig struct {
 	Type   string // "file", "stdout", etc.
 	Path   string // for type="file"; ignored for others
 	Format string // "fail2ban", "json", etc.
+	Exec   string // path to exec plugin binary; used when type="exec"
 }
 
 // Factory — constructor function for a named sink.

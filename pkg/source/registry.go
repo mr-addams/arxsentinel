@@ -39,6 +39,7 @@ import (
 type InputConfig struct {
 	Type string // "file", "stdin", etc.
 	Path string // for type="file"; ignored for others
+	Exec string // path to exec plugin binary; used when type="exec"
 }
 
 // LineParser — read-only view of a log line parser.
