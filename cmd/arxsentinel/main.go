@@ -550,7 +550,7 @@ func runPipeline(
 					"%s processed=%d tracked=%d threats=%d suspicious=%d",
 					logTag, processedCount.Load(), st.TrackedIPs, threatCount.Load(), st.Suspicious,
 				), "info")
-				metrics.UpdateGauges(streamCfg.Name, st.TrackedIPs, st.Suspicious)
+				metrics.UpdateGauges(streamCfg.Name, pipeCfg.Name, st.TrackedIPs, st.Suspicious)
 			}
 		}
 	}()
@@ -999,8 +999,8 @@ func removePID(path string) {
 // Maximum wait is bounded by dnsVerifyTimeout (config whitelist.dns_verify_timeout, default 2s).
 func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineContext) {
 	pipe.processedCount.Add(1)
-	metrics.RecordLine(pipe.StreamName)
-	metrics.RecordInputLine(pipe.StreamName, pipe.SourceName, pipe.SourceType)
+	metrics.RecordLine(pipe.StreamName, pipe.PipelineName)
+	metrics.RecordInputLine(pipe.StreamName, pipe.PipelineName, pipe.SourceName, pipe.SourceType)
 
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
@@ -1080,9 +1080,9 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	if level == "THREAT" {
 		pipe.threatCount.Add(1)
 	}
-	metrics.RecordThreat(pipe.StreamName, level)
+	metrics.RecordThreat(pipe.StreamName, pipe.PipelineName, level)
 	for _, mod := range modules {
-		metrics.RecordDetectorHit(pipe.StreamName, mod)
+		metrics.RecordDetectorHit(pipe.StreamName, pipe.PipelineName, mod)
 	}
 
 	event := plugin.ThreatEvent{
@@ -1103,7 +1103,7 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 			utils.Log("ERROR", fmt.Sprintf("stream %q: sink %s: %v", pipe.StreamName, sink.Name(), err), "error")
 			continue
 		}
-		metrics.RecordOutputEvent(pipe.StreamName, sink.Name(), sinkTypeFromName(sink.Name()))
+		metrics.RecordOutputEvent(pipe.StreamName, pipe.PipelineName, sink.Name(), sinkTypeFromName(sink.Name()))
 	}
 }
 
