@@ -271,7 +271,8 @@ echo "[scenarios] all scenarios done"
 # They run the arxsentinel binary directly and do not need a Docker network.
 # Skipped when the binary is not present in the expected location.
 
-ARX_BIN="${INT_DIR}/arxsentinel/arxsentinel"
+# ARX_BIN can be injected by run.sh (which builds to bin/); fallback covers standalone runs.
+ARX_BIN="${ARX_BIN:-${INT_DIR}/arxsentinel/arxsentinel}"
 ARX_CONFIG="${INT_DIR}/configs/default.yaml"
 
 run_stdin_scenario() {
