@@ -276,19 +276,25 @@ ARX_BIN="${ARX_BIN:-${INT_DIR}/arxsentinel/arxsentinel}"
 ARX_CONFIG="${INT_DIR}/configs/default.yaml"
 
 run_stdin_scenario() {
-    # Pipe a known probe attack line through stdin and verify JSON output on stdout.
-    # The line triggers the probe detector (/.env access with score above WARN threshold).
+    # Pipe probe attack lines through stdin and verify JSON output on stdout.
+    # Uses BADBOT_UA (downloaded by run.sh) as the request User-Agent — realistic payload.
+    # 10 lines × probe(25) = 250 >> alert_threshold(50), so detection is guaranteed
+    # even before the blocklist async-loads. Badbot(60) fires as a bonus if it loads in time.
     if [[ ! -x "$ARX_BIN" ]]; then
         echo "[scenarios/stdin] SKIP — binary not found at $ARX_BIN"
         return
     fi
     echo "[scenarios/stdin] testing --input=stdin --output=stdout,json"
-    # Generate multiple probe lines to exceed the detection threshold.
-    local attack_line='1.2.3.4 - - [01/Jan/2026:00:00:00 +0000] "GET /.env HTTP/1.1" 404 0 "-" "curl/7.88" "1.2.3.4"'
-    local output
-    output=$(printf '%s\n%.0s' "$attack_line" {1..5} \
-        | timeout 10 "$ARX_BIN" --input=stdin --output=stdout,json \
-            --config "$ARX_CONFIG" 2>/dev/null || true)
+    local ua="${BADBOT_UA:-AhrefsBot/7.0}"
+    local attack_line="1.2.3.4 - - [01/Jan/2026:00:00:00 +0000] \"GET /.env HTTP/1.1\" 404 0 \"-\" \"${ua}\" \"1.2.3.4\""
+    local output n=0
+    output=$(
+        while [ "$n" -lt 10 ]; do
+            printf '%s\n' "$attack_line"
+            n=$((n + 1))
+        done | timeout 10 "$ARX_BIN" --input=stdin --output=stdout,json \
+            --config "$ARX_CONFIG" 2>/dev/null || true
+    )
     if echo "$output" | grep -q '"ip":"1.2.3.4"'; then
         echo "[scenarios/stdin] PASS — threat event detected in JSON output"
     else
@@ -307,16 +313,23 @@ run_stdin_scenario
 # format (no pipelines: key) produces identical threat output to before Task 3.
 # Migrate() wraps it in a single unnamed pipeline transparently.
 run_compat_pipeline_scenario() {
+    # Same attack payload as run_stdin_scenario — but config uses legacy inputs:/outputs: syntax.
+    # Migrate() transparently wraps it in a single unnamed pipeline; output must be identical.
     if [[ ! -x "$ARX_BIN" ]]; then
         echo "[scenarios/pipeline-compat] SKIP — binary not found at $ARX_BIN"
         return
     fi
     echo "[scenarios/pipeline-compat] testing backward compat: legacy inputs/outputs → single pipeline"
-    local attack_line='1.2.3.4 - - [01/Jan/2026:00:00:00 +0000] "GET /.env HTTP/1.1" 404 0 "-" "curl/7.88" "1.2.3.4"'
-    local output
-    output=$(printf '%s\n%.0s' "$attack_line" {1..5} \
-        | timeout 10 "$ARX_BIN" --input=stdin --output=stdout,json \
-            --config "$ARX_CONFIG" 2>/dev/null || true)
+    local ua="${BADBOT_UA:-AhrefsBot/7.0}"
+    local attack_line="1.2.3.4 - - [01/Jan/2026:00:00:00 +0000] \"GET /.env HTTP/1.1\" 404 0 \"-\" \"${ua}\" \"1.2.3.4\""
+    local output n=0
+    output=$(
+        while [ "$n" -lt 10 ]; do
+            printf '%s\n' "$attack_line"
+            n=$((n + 1))
+        done | timeout 10 "$ARX_BIN" --input=stdin --output=stdout,json \
+            --config "$ARX_CONFIG" 2>/dev/null || true
+    )
     if echo "$output" | grep -q '"ip":"1.2.3.4"'; then
         echo "[scenarios/pipeline-compat] PASS — threat event detected with legacy config format"
     else
