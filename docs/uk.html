@@ -367,6 +367,36 @@
             padding: 0.1rem 0.3rem; border-radius: 2px; font-size: 0.85rem;
         }
 
+        /* ── Roadmap section ──────────────────────────────────────────────── */
+        .roadmap-section {
+            max-width: 1200px; margin: 6rem auto;
+            background: linear-gradient(135deg, rgba(189, 0, 255, 0.04) 0%, transparent 60%);
+            border: 1px solid rgba(189, 0, 255, 0.12); border-radius: 12px; padding: 3rem 2rem;
+        }
+        .roadmap-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; margin-top: 0; }
+        .roadmap-card {
+            flex: 0 1 260px; position: relative; overflow: hidden;
+            background: rgba(13, 13, 31, 0.6); border: 1px solid rgba(189, 0, 255, 0.15);
+            border-left: 3px solid var(--accent-purple);
+            border-radius: 6px; padding: 1.75rem; transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        .roadmap-card::before {
+            content: 'В РОЗРОБЦІ'; position: absolute; top: 0.75rem; right: 0.75rem;
+            font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.06em;
+            color: var(--accent-purple); background: rgba(189, 0, 255, 0.1);
+            border: 1px solid rgba(189, 0, 255, 0.3); border-radius: 2px;
+            padding: 0.15rem 0.4rem;
+        }
+        .roadmap-card:hover {
+            border-color: rgba(189, 0, 255, 0.4);
+            box-shadow: 0 0 20px rgba(189, 0, 255, 0.08);
+        }
+        .roadmap-card h3 {
+            font-family: var(--font-cyber); font-size: 1.1rem; color: #fff;
+            margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;
+        }
+        .roadmap-card p { font-size: 0.9rem; color: var(--text-muted); }
+
         footer {
             border-top: 1px solid rgba(255, 255, 255, 0.05); padding: 3rem 2rem;
             text-align: center; background: rgba(4, 4, 10, 0.9); margin-top: 6rem;
@@ -514,14 +544,14 @@
             <span class="badge">Linux</span>
         </div>
         <h1>
-            <span class="shimmer-text">Пильний вартовий</span><br>
-            бачить те, чого<br>
-            не помічає сервер
+            <span class="shimmer-text">Від одного VPS</span><br>
+            до Kubernetes —<br>
+            один бінарник, нульові накладні витрати
         </h1>
-        <p>Сім поведінкових детекторів аналізують кожен HTTP-запит у реальному часі та передають підтверджених нападників напряму до Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed. Підтримка Cloudflare.</p>
+        <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Потоковий рушій обробки подій безпеки для будь-якого HTTP-сервера — і не тільки</p>
+        <p>Вісім поведінкових детекторів аналізують HTTP access-логи в реальному часі та спрямовують підтверджених зловмисників на будь-який вивід — Fail2Ban, кастомні скрипти або власний exec+JSON-sink на будь-якій мові. Працює на одному VPS, у Docker Compose або як Kubernetes DaemonSet.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Встановити</a>
-            <a href="https://github.com/mr-addams/arxsentinel/releases" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Релізи</a>
             <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">GitHub</a>
         </div>
     </section>
@@ -546,9 +576,9 @@
 
     <section class="stats-grid">
         <div class="stat-card"><div class="stat-number">8</div><div class="stat-label">Поведінкових детекторів</div></div>
-        <div class="stat-card"><div class="stat-number">6</div><div class="stat-label">Профілів серверів</div></div>
+        <div class="stat-card"><div class="stat-number">3</div><div class="stat-label">Топології · bare-metal · Docker · K8s</div></div>
         <div class="stat-card"><div class="stat-number">11</div><div class="stat-label">Родин ботів</div></div>
-        <div class="stat-card"><div class="stat-number">3</div><div class="stat-label">Формати пакетів</div></div>
+        <div class="stat-card"><div class="stat-number">∞</div><div class="stat-label">Плагіни · будь-яка мова · exec+JSON</div></div>
         <div class="stat-card"><div class="stat-number">2</div><div class="stat-label">Архітектури (amd64 · arm64)</div></div>
         <div class="stat-card"><div class="stat-number js-binary-size" data-unit="МБ">11 МБ</div><div class="stat-label">Один бінарник · arm64 готовий</div></div>
     </section>
@@ -637,7 +667,7 @@
 
     <section id="detectors" class="detectors-section">
         <div class="section-header">
-            <span class="section-tag">Аналіз аномалій</span>
+            <span class="section-tag">Виявлення загроз</span>
             <h2 class="section-title">8 детекторів — один score</h2>
             <p style="color: var(--text-muted); max-width: 600px; margin: 1rem auto 0;">Кожен детектор додає очки до рахунку IP. Score загасає лінійно за час observation_window — жодних хибних банів від старого трафіку.</p>
         </div>
@@ -704,7 +734,7 @@
     <section class="performance-section">
         <div class="section-header">
             <span class="section-tag">Споживання ресурсів</span>
-            <h2 class="section-title">Нуль залежностей. Працює скрізь.</h2>
+            <h2 class="section-title">11 МБ. Працює скрізь.</h2>
         </div>
         <div class="perf-grid">
             <div class="perf-metrics-block">
@@ -812,7 +842,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
     <section class="whitelist-section">
         <div class="section-header">
             <span class="section-tag">Можливості v1.3.8</span>
-            <h2 class="section-title">Універсальність за замовчуванням</h2>
+            <h2 class="section-title">Один процес. Будь-яка топологія.</h2>
         </div>
         <div class="whitelist-grid">
             <div class="whitelist-card">
@@ -826,6 +856,14 @@ sudo systemctl enable --now arxsentinel</span></pre>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🔧</span> Профілі серверів</h3>
                 <p>Готові профілі для популярних серверів. Перевизначайте позиції полів, формати дат та правила роздільників для кожного джерела логу без зміни ядра.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🐳</span> Docker Compose sidecar</h3>
+                <p>Розгортається поруч із будь-яким контейнеризованим HTTP-сервером через спільний том логів — без змін у контейнері застосунку. Готові <code>docker-compose.yml</code> та конфіг у <code>deploy/examples/docker/</code>. Метрики Prometheus доступні на <code>:9117</code>.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">☸️</span> Kubernetes DaemonSet</h3>
+                <p>Один pod на вузол читає host-логи через <code>hostPath</code>. Включено Helm-чарт з довідкою по values та інтеграцією Prometheus Operator. Підтримується також sidecar-топологія для managed-кластерів без доступу до host-логів.</p>
             </div>
         </div>
     </section>
@@ -846,11 +884,35 @@ sudo systemctl enable --now arxsentinel</span></pre>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🔄</span> Гаряче перезавантаження</h3>
-                <p>Всі зміни конфігу — whitelist, очки детекторів, пороги — застосовуються командою <code>systemctl kill -s HUP arxsentinel</code>. Стан IP і DNS-кеш зберігаються.</p>
+                <p>Усі зміни конфігурації — білі списки, ваги детекторів, пороги — застосовуються миттєво по SIGHUP. Без перезапуску. IP-стан і DNS-кеш зберігаються.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🌐</span> Підтримка Cloudflare</h3>
-                <p><code>ngx_http_realip_module</code> замінює <code>$remote_addr</code> реальним IP з <code>CF-Connecting-IP</code> або <code>X-Forwarded-For</code> — детектори завжди бачать реального зловмисника, а не проксі.</p>
+                <p>Детектори завжди оцінюють реального зловмисника — ніколи Cloudflare або балансувальник навантаження. Підтримує CF-Connecting-IP, ланцюжки X-Forwarded-For і CIDR довірених проксі з коробки.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="roadmap-section">
+        <div class="section-header">
+            <span class="section-tag" style="color: var(--accent-purple); border-color: rgba(189,0,255,0.3); background: rgba(189,0,255,0.08);">Дорожна карта</span>
+            <h2 class="section-title">Що з'явиться у v2.x</h2>
+        </div>
+        <div class="roadmap-grid">
+            <div class="roadmap-card">
+                <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-green);border:1px solid rgba(0,255,136,0.35);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">NEXT</span>
+                <h3><span style="color: var(--accent-purple)">⚡</span> Executor interface</h3>
+                <p>Stateful двонаправлені інтеграції через персистентні субпроцеси — протокол запит/відповідь, на відміну від fire-and-forget Sink. Розроблено для інтеграцій з cloud API, що потребують обліку сесій або rate-limit.</p>
+            </div>
+            <div class="roadmap-card">
+                <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
+                <h3><span style="color: var(--accent-purple)">☁️</span> Cloudflare WAF executor</h3>
+                <p>Блокування IP на рівні мережі через Cloudflare API — без iptables та правил хостового файрволу. Для розгортань з CDN-фронтендом, де origin-сервер не може банити на рівні IP.</p>
+            </div>
+            <div class="roadmap-card">
+                <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
+                <h3><span style="color: var(--accent-purple)">🛡️</span> AWS WAF executor</h3>
+                <p>Додає IP загроз до правил IP-набору AWS WAF. Інтегрується з наявними групами WAF-правил — без Lambda та кастомної інфраструктури.</p>
             </div>
         </div>
     </section>

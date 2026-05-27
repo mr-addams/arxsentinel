@@ -1,0 +1,63 @@
+# ArxSentinel config for Docker Compose deployment.
+# Reads nginx access log from shared volume; writes threats to stdout JSON
+# so they flow into your container log aggregator (Loki, Splunk, Datadog).
+
+general:
+  log_file: /var/log/nginx/access.log
+  stats_interval: 300s
+
+# parser.profile is not set — nginx combined format works out of the box.
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: 300s
+
+detectors:
+  probe:
+    enabled: true
+    score: 25
+  rate:
+    enabled: true
+    threshold: 100
+    window: 60s
+    score: 25
+  useragent:
+    enabled: true
+    scanner_score: 40
+    grabber_score: 20
+    automation_score: 15
+    empty_ua_score: 30
+  bruteforce:
+    enabled: true
+    min_requests: 10
+    ratio_threshold: 0.6
+    score: 30
+  crawler:
+    enabled: true
+    min_sequential: 5
+    score: 20
+  noasset:
+    enabled: true
+    min_page_requests: 3
+    asset_ratio_threshold: 0.1
+    score: 20
+  overflow:
+    enabled: true
+    max_url_length: 2048
+    score: 30
+  badbot:
+    enabled: true
+    score: 60
+    check_ua: true
+    check_referrer: false
+
+output:
+  # Threat log — bind-mounted from host so Fail2Ban can read it.
+  # Remove this and use stdout_json sink only if no Fail2Ban integration needed.
+  threat_log: /var/log/arxsentinel/threats.log
+  operational_log: /var/log/arxsentinel/sentinel.log
+
+metrics:
+  enabled: true
+  addr: ":9117"

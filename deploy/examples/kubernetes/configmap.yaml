@@ -1,0 +1,65 @@
+# ArxSentinel ConfigMap — config for Kubernetes deployment.
+# stdout JSON sink: threats flow into your log aggregator (Loki, Datadog, etc.).
+# Replace with a Fail2Ban file sink if running Fail2Ban on the node.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arxsentinel-config
+  namespace: monitoring
+data:
+  config.yaml: |
+    general:
+      log_file: /var/log/nginx/access.log
+      stats_interval: 300s
+
+    scoring:
+      alert_threshold: 50
+      ban_threshold: 80
+      observation_window: 300s
+
+    detectors:
+      probe:
+        enabled: true
+        score: 25
+      rate:
+        enabled: true
+        threshold: 100
+        window: 60s
+        score: 25
+      useragent:
+        enabled: true
+        scanner_score: 40
+        grabber_score: 20
+        automation_score: 15
+        empty_ua_score: 30
+      bruteforce:
+        enabled: true
+        min_requests: 10
+        ratio_threshold: 0.6
+        score: 30
+      crawler:
+        enabled: true
+        min_sequential: 5
+        score: 20
+      noasset:
+        enabled: true
+        min_page_requests: 3
+        asset_ratio_threshold: 0.1
+        score: 20
+      overflow:
+        enabled: true
+        max_url_length: 2048
+        score: 30
+      badbot:
+        enabled: true
+        score: 60
+        check_ua: true
+        check_referrer: false
+
+    output:
+      threat_log: /var/log/arxsentinel/threats.log
+      operational_log: /var/log/arxsentinel/sentinel.log
+
+    metrics:
+      enabled: true
+      addr: ":9117"
