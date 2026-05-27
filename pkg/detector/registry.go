@@ -27,6 +27,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/mr-addams/arxsentinel/pkg/execplugin"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -39,6 +40,7 @@ import (
 type DetectorConfig struct {
 	Enabled bool
 	Params  map[string]interface{} // arbitrary detector-specific parameters from YAML
+	Exec    string                 // path to exec plugin binary; if set and name not in registry, build ExecDetector
 }
 
 // Matcher — read-only view of a blocklist, satisfied by *blocklist.Manager.
@@ -95,6 +97,11 @@ func Build(name string, cfg DetectorConfig, shared SharedResources) (plugin.Dete
 	f, ok := factories[name]
 	mu.RUnlock()
 	if !ok {
+		// Exec fallback: if a plugin binary is configured, build an ExecDetector.
+		// Allows arbitrary plugin names without pre-registration in the compiled binary.
+		if cfg.Exec != "" {
+			return execplugin.NewDetector(name, cfg.Exec, cfg.Params)
+		}
 		return nil, fmt.Errorf("pkg/detector: unknown detector %q; registered: %v", name, Names())
 	}
 	return f(cfg, shared)

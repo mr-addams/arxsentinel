@@ -86,6 +86,7 @@ type InputConfig struct {
 	Type   string `yaml:"type"`   // YAML: "file" | "stdin". Consumer: cmd/arxsentinel input.NewFileSource / input.NewStdinSource
 	Path   string `yaml:"path"`   // YAML: path to log file; required when type=file. Consumer: input.NewFileSource
 	Parser string `yaml:"parser"` // YAML: "combined" | "json" | "regex" | profile-name; default inherited from parser.log_format. Consumer: main.go buildParser
+	Exec   string `yaml:"exec"`   // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSource
 }
 
 // SinkConfig — configuration for a single threat event output.
@@ -95,6 +96,7 @@ type SinkConfig struct {
 	Type   string `yaml:"type"`   // YAML: "file" | "stdout". Consumer: cmd/arxsentinel output.NewFileSink / output.NewStdoutSink
 	Path   string `yaml:"path"`   // YAML: path to output file; required when type=file. Consumer: output.NewFileSink
 	Format string `yaml:"format"` // YAML: "fail2ban" | "json"; default "fail2ban". Consumer: output.FileSink / output.StdoutSink
+	Exec   string `yaml:"exec"`   // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSink
 }
 
 // PipelineRuntimeConfig — tuning parameters for the Source→Merge→Pipeline channel.
@@ -116,6 +118,7 @@ type PipelineRuntimeConfig struct {
 //	  paths: [/.env, /.git/config]
 type DetectorConfig struct {
 	Enabled bool                   `yaml:"enabled"`
+	Exec    string                 `yaml:"exec"`    // YAML: path to exec plugin binary; exec-based detector. Consumer: pkg/execplugin.NewDetector
 	Params  map[string]interface{} `yaml:",inline"` // detector-specific params; deserialized by each factory
 }
 
