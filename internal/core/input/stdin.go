@@ -23,6 +23,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 )
 
 // stdinScanBufSize — scanner buffer for stdin lines.
@@ -135,4 +136,10 @@ func (s *StdinSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) erro
 			return err
 		}
 	}
+}
+
+func init() {
+	pkgsource.Register("stdin", func(cfg pkgsource.InputConfig, opts pkgsource.BuildOptions) (plugin.Source, error) {
+		return NewStdinSource(opts.Parser, opts.LogFn), nil
+	})
 }
