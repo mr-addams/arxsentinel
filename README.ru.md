@@ -78,7 +78,7 @@ deploy/examples/
 - **8 детекторов:** probe-сканирование, rate-аномалия, подозрительный User-Agent, bruteforce (404 ratio), sequential crawler, no-asset bot, URL overflow / WAF bypass, community bad-bot blocklist
 - **Chain Guard:** обнаруживает IP-адреса Cloudflare/CDN и bogon/RFC 1918/CGNAT в позиции client IP — сигнализирует о неправильно настроенной цепочке прокси до того, как детекторы ArxSentinel потеряют способность определять реальных атакующих
 - **DNS-верификация ботов:** Googlebot, Bingbot, Yandex, DuckDuckGo и другие верифицируются по rDNS/fDNS — легитимные краулеры в бан не попадают
-- **Multi-stream:** несколько лог-файлов в одном процессе — полная изоляция конвейера на поток
+- **Multi-stream + Multi-pipeline:** несколько лог-файлов в одном процессе; внутри каждого потока — независимые pipeline с собственными детекторами, источниками, sink'ами и трекером IP-состояния (или общий трекер через `tracker_group`)
 - **Whitelist:** IP, CIDR, UA-подстроки — конфигурируемые списки исключений
 - **Линейный decay score:** очки затухают за `observation_window`, нет ложных банов от старого трафика
 - **Prometheus-метрики:** `/metrics` на настраиваемом порту (по умолчанию `:9117`), опциональная basic auth с bcrypt; дашборд Grafana в комплекте
@@ -406,6 +406,52 @@ streams:
 ### Обратная совместимость
 
 Классическая конфигурация с `general.log_file` продолжает работать — она автоматически конвертируется в один безымянный поток (метка `stream=""` в Prometheus). Миграция конфига не требуется.
+
+---
+
+## Мультипайплайновая конфигурация
+
+Внутри одного потока можно задать независимые pipeline — каждый со своими Sources, Detectors, Sinks и трекером IP-состояния. Используйте `tracker_group` для совместного IP-состояния между pipeline одного потока.
+
+```yaml
+streams:
+  - name: nginx-monitoring
+    pipelines:
+      - name: api-scanner
+        tracker_group: web                    # pipeline с одинаковым group делят IP-состояние
+        inputs:
+          - type: file
+            path: /var/log/nginx/api.log
+        detectors:
+          probe:
+            enabled: true
+          rate:
+            enabled: true
+            threshold: 100
+        outputs:
+          - type: file
+            path: /var/log/arxsentinel/api-threats.log
+      - name: admin-watcher
+        tracker_group: web                    # делит IP-состояние с api-scanner
+        inputs:
+          - type: file
+            path: /var/log/nginx/admin.log
+        detectors:
+          bruteforce:
+            enabled: true
+          badbot:
+            enabled: true
+        outputs:
+          - type: file
+            path: /var/log/arxsentinel/admin-threats.log
+```
+
+**Правила TrackerGroup:**
+- `tracker_group: web` — pipeline с одинаковым именем группы разделяют один `*state.Tracker`; атакующий, набравший очки в `api-scanner`, также отслеживается в `admin-watcher`
+- `tracker_group: ""` (или отсутствует) — изолированный; в качестве ключа группы используется `name` pipeline
+- Существующие конфиги (без ключа `pipelines:`) — автоматически оборачиваются в один безымянный pipeline; поведение идентично предыдущим версиям
+
+**Prometheus-метрики** получают лейбл `pipeline` во всех векторах. Legacy-pipeline используют `pipeline=""`, поэтому существующие Grafana-дашборды работают без изменений.
 
 ### Fail2Ban при нескольких потоках
 

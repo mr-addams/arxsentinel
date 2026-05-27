@@ -980,8 +980,8 @@ sudo systemctl enable --now arxsentinel</span></pre>
                 <p>Not using a built-in profile? Define your own regex with named capture groups, or switch to JSON log parsing — both work without recompilation. Any format that captures IP, timestamp, method, path, status and bytes maps to the full detection pipeline.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">📂</span> Multi-stream parsing</h3>
-                <p>Watch multiple log files simultaneously — different vhosts, ports or servers in a single daemon instance. Each stream is parsed independently.</p>
+                <h3><span style="color: var(--accent-blue)">📂</span> Multi-stream & pipeline routing</h3>
+                <p>Watch multiple log files in one process. Within each stream, define independent pipelines — each with its own detectors, sources, sinks and IP state. Share IP state between pipelines via <code>tracker_group</code> for correlated multi-log analysis.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🔧</span> Server profiles</h3>
