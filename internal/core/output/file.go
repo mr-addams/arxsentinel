@@ -25,6 +25,7 @@ import (
 	"sync/atomic"
 
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 )
 
 // FileSink writes threat events to a file.
@@ -153,4 +154,12 @@ func ensureSinkDir(path string) error {
 		return nil
 	}
 	return os.MkdirAll(dir, 0755)
+}
+
+// init registers FileSink with the global registry.
+// Called at module init time, making "file" available as a sink type in YAML config.
+func init() {
+	pkgsink.Register("file", func(cfg pkgsink.SinkConfig) (plugin.Sink, error) {
+		return NewFileSink(cfg.Path, cfg.Format)
+	})
 }

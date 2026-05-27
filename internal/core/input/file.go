@@ -26,6 +26,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 )
 
 // defaultLinesBufSize — internal TailReader channel buffer.
@@ -115,4 +116,10 @@ func (s *FileSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 		}
 	}
 	return nil
+}
+
+func init() {
+	pkgsource.Register("file", func(cfg pkgsource.InputConfig, opts pkgsource.BuildOptions) (plugin.Source, error) {
+		return NewFileSource(cfg.Path, opts.Parser, opts.RetryInterval, opts.LogFn)
+	})
 }
