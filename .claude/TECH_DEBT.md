@@ -21,37 +21,37 @@ severity, description, and proposed resolution.
 
 ## Open
 
-### [034-1] Dynamic plugin runtime: external detectors via gRPC or WASM
+### [030-1] Alert Sinks with dedup/rate limit (Telegram, Slack, PagerDuty, Zapier)
 
-- **Flow:** #034 — Pipeline Abstraction
-- **Severity:** low
-- **Area:** `pkg/detector/`, `cmd/arxsentinel/main.go`
-- **Problem:** The detector registry (`pkg/detector`) supports only compiled-in (Go) detectors
-  self-registered via `init()`. Users who want site-specific detection logic (custom ML
-  classifiers, application-layer rules) must fork the project and recompile.
-- **Resolution:** Two viable paths:
-  1. **gRPC plugins** — each external detector runs as a separate process exposing a
-     `Detect(LogEntry) → DetectResult` RPC. The factory in `pkg/detector` spawns the
-     subprocess and wraps it as `plugin.Detector`. Requires protobuf schema for LogEntry.
-  2. **WASM plugins** — compile detector logic to WASM module; host runtime (wazero or
-     wasmtime-go) calls the `detect()` export. Sandboxed, no subprocess overhead, but
-     requires WASM toolchain for plugin authors.
-  In both cases the registry `Build()` interface stays unchanged — the change is internal
-  to the factory registered under the plugin name.
-- **Status:** open — deferred to a future flow; blocked on agreeing on the plugin contract
+- **Flow:** #030 — Universal I/O Phase 2
+- **Severity:** medium
+- **Area:** `internal/core/output/`, `pkg/plugin/sink.go`
+- **Problem:** Phase 1 only implements file and stdout sinks. Teams often need real-time
+  alert delivery to Telegram/Slack/PagerDuty. Without dedup and rate-limiting, a flood
+  attack would generate thousands of alerts.
+- **Resolution:** Add `AlertSink` wrapper with dedup cache (IP+level → last-sent timestamp)
+  and token bucket rate limiter per-sink. Config: `min_level`, `dedup_window`, `rate_limit`.
+  Implement alongside `HTTPSink` in Phase 2.
+- **Status:** open
 
 ---
 
-### [002] main.go should move to cmd/arxsentinel/main.go
+### [036-gRPC] gRPC/protobuf external plugin runtime (long-term)
 
-- **Flow:** #027 — Repo Cleanup & Structure
+- **Flow:** #036 — External Plugin Runtime (long-term evolution)
 - **Severity:** low
-- **Area:** project layout, goreleaser, CI, Dockerfiles
-- **Problem:** main.go in root is non-standard for Go projects with tooling. Standard layout
-  expects cmd/<binary>/main.go. Deferred due to high coordination cost (6+ files to update).
-- **Resolution:** Dedicated flow — update goreleaser, Dockerfiles, install.sh, packaging,
-  CI workflow, all documentation references in one atomic set of commits.
-- **Status:** resolved (Flow #028)
+- **Area:** `pkg/execplugin/`, `pkg/plugin/`
+- **Problem:** The exec+JSON runtime (Flow #036) runs plugins as trusted local processes.
+  Enterprise use cases need stronger isolation (sandboxed execution), better performance
+  under high RPC rates, and cross-host plugin deployment. exec+JSON cannot provide these.
+- **Resolution:** Implement gRPC sidecar protocol with protobuf schema:
+  - `proto/plugin.proto` — LogEntry, ThreatEvent, DetectResult, IPView messages
+  - `DetectorService.Detect`, `SinkService.Write`, `SourceService.Run` RPCs
+  - Host-side adapters: `GrpcDetector`, `GrpcSink`, `GrpcSource` in `pkg/grpcplugin/`
+  - Precedents: HashiCorp go-plugin, Terraform providers, Vault plugins
+  - Requires: `google.golang.org/grpc` + `google.golang.org/protobuf` in go.mod
+- **Status:** open long-term — blocked on deciding whether to add gRPC dependency to this
+  minimalist-dependency codebase
 
 ---
 
@@ -77,21 +77,20 @@ severity, description, and proposed resolution.
   passed to all streams via `SharedResources`. `BadBotDetector` is now a thin wrapper over
   `Manager.Match()`. A single bbolt file is opened by the Manager; no per-stream duplication.
 
-
 ---
 
-### [030-1] Alert Sinks with dedup/rate limit (Telegram, Slack, PagerDuty, Zapier)
+### [002] main.go should move to cmd/arxsentinel/main.go
 
-- **Flow:** #030 — Universal I/O Phase 2
-- **Severity:** medium
-- **Area:** `internal/core/output/`, `pkg/plugin/sink.go`
-- **Problem:** Phase 1 only implements file and stdout sinks. Teams often need real-time
-  alert delivery to Telegram/Slack/PagerDuty. Without dedup and rate-limiting, a flood
-  attack would generate thousands of alerts.
-- **Resolution:** Add `AlertSink` wrapper with dedup cache (IP+level → last-sent timestamp)
-  and token bucket rate limiter per-sink. Config: `min_level`, `dedup_window`, `rate_limit`.
-  Implement alongside `HTTPSink` in Phase 2.
-- **Status:** open
+- **Flow:** #027 — Repo Cleanup & Structure
+- **Severity:** low
+- **Area:** project layout, goreleaser, CI, Dockerfiles
+- **Problem:** main.go in root is non-standard for Go projects with tooling. Standard layout
+  expects cmd/<binary>/main.go. Deferred due to high coordination cost (6+ files to update).
+- **Resolution:** Dedicated flow — update goreleaser, Dockerfiles, install.sh, packaging,
+  CI workflow, all documentation references in one atomic set of commits.
+- **Status:** resolved (Flow #028)
+
+---
 
 ### [030-2] Static Plugin Registry (name → factory function)
 
@@ -103,28 +102,52 @@ severity, description, and proposed resolution.
   ≥3 Sink types, a registry pattern becomes worthwhile.
 - **Resolution:** `plugin.RegisterSource(name, factory)` / `plugin.RegisterSink(name, factory)`
   called from `init()` in each implementation package. YAML `type:` maps to registry lookup.
-- **Status:** open
+  Implemented in Flow #035: `pkg/source/registry.go` and `pkg/sink/registry.go` follow
+  the pattern established by `pkg/detector/registry.go`.
+- **Status:** resolved (Flow #035)
 
-### [030-3] Dynamic Plugin Runtime (gRPC sidecar or WASM)
+---
+
+### [030-3] Dynamic Plugin Runtime (exec+JSON)
 
 - **Flow:** #030 — Universal I/O long-term
 - **Severity:** low
-- **Area:** `pkg/plugin/`
+- **Area:** `pkg/plugin/`, `pkg/execplugin/`
 - **Problem:** External developers cannot add custom Sources/Sinks without forking and
   recompiling. Limits extensibility for enterprise use cases.
-- **Resolution:** Implement a gRPC sidecar protocol or WASM plugin runtime.
-  Precedents: Terraform providers, Vault plugins, Packer builders.
-- **Status:** open
+- **Resolution:** Implemented exec+JSON subprocess protocol in Flow #036:
+  `pkg/execplugin/` with ExecDetector, ExecSink, ExecSource. Zero new Go dependencies.
+  Any language can implement a plugin via stdin/stdout NDJSON.
+  Full gRPC/WASM runtime tracked separately as [036-gRPC] (long-term).
+- **Status:** resolved (Flow #036)
+
+---
 
 ### [030-4] Slogan and hero section landing — dual audience positioning
 
 - **Flow:** #030 — Universal I/O
 - **Severity:** low
 - **Area:** `docs/index.html`
-- **Problem:** Current slogan is nginx-centric ("watches every HTTP request and hands
-  confirmed attackers straight to Fail2Ban"). After Universal I/O, ArxSentinel works
-  with any web server and any output sink, but the slogan does not reflect this.
-  Changing the hero copy requires copywriter input and A/B testing considerations.
-- **Resolution:** Separate flow for slogan/hero redesign. Interim: add "Works with your
-  stack" section below the hero (done in Flow #030).
-- **Status:** open (hero section deferred)
+- **Problem:** Slogan was nginx-centric ("watches every HTTP request and hands confirmed
+  attackers straight to Fail2Ban"). After Universal I/O, ArxSentinel works with any web
+  server and any output sink, but the hero copy did not reflect this.
+- **Resolution:** Updated hero description in Flow #037: "analyse every HTTP access log" +
+  "route confirmed attackers to any output — Fail2Ban, custom scripts, or your own sink".
+  Full slogan redesign and A/B testing deferred indefinitely (low priority).
+- **Status:** resolved (Flow #037)
+
+---
+
+### [034-1] Dynamic plugin runtime: external detectors via gRPC or WASM
+
+- **Flow:** #034 — Pipeline Abstraction
+- **Severity:** low
+- **Area:** `pkg/detector/`, `cmd/arxsentinel/main.go`
+- **Problem:** The detector registry (`pkg/detector`) supports only compiled-in (Go) detectors
+  self-registered via `init()`. Users who want site-specific detection logic (custom ML
+  classifiers, application-layer rules) must fork the project and recompile.
+- **Resolution:** Implemented exec+JSON subprocess protocol in Flow #036.
+  `pkg/detector/registry.go Build()` falls back to `execplugin.NewDetector()` when a detector
+  name is not registered but `cfg.Exec` is set. Plugin binary path configured via `exec:` field.
+  Full gRPC/WASM tracked as [036-gRPC] (long-term).
+- **Status:** resolved (Flow #036)
