@@ -57,3 +57,21 @@ tests/integration/blocklist/
 # Локальный контекст Claude (TECH_DEBT, флоу, правила, настройки — не коммитить)
 .claude/
 .opencode/
+
+# Opsera pre-commit scan artifacts (generated in repo root by the hook)
+gitleaks-report.json
+gitleaks-stderr.txt
+package-leakage-report.json
+precommit-scan-*.md
+
+# Downloaded packages and test binaries (produced during local install testing)
+*.deb
+*.rpm
+*.pkg.tar.zst
+
+# Leftover backup files
+*.go.bak
+*.bak
+
+# MCP local config (editor tooling, not project config)
+.mcp.json
