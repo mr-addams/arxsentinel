@@ -4,13 +4,20 @@
 # Install: ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit
 #
 # Checks (in order):
+#   0. check-config-sync.sh          — verifies all env vars and YAML sections are
+#      documented across the entire config chain (config.go → config.yaml →
+#      config.docker.yaml → .env.example → README tables). Must pass before tests.
 #   1. TestStartupShutdownInvariants — verifies that main.go satisfies all
 #      startup/shutdown sequence and WaitGroup tracking invariants (see CLAUDE.md).
 #   2. go test ./...                  — full test suite across all packages.
-#   3. go vet ./...                   — catches context misuse, WaitGroup errors,
+#   3. integration tests             — 6 server types × 7 detectors + chain scenarios.
+#   4. go vet ./...                   — catches context misuse, WaitGroup errors,
 #      unreachable code, and other static issues.
 
 set -euo pipefail
+
+echo "[pre-commit] checking config chain consistency..."
+bash scripts/check-config-sync.sh
 
 echo "[pre-commit] checking startup/shutdown invariants..."
 go test ./cmd/arxsentinel -run TestStartupShutdownInvariants -count=1 -timeout 30s

@@ -15,6 +15,8 @@
 //     "badbot-ua"  — User-Agent blocklist
 //     "badbot-ref" — Referrer blocklist
 //     If a list is not loaded yet, Match returns false (graceful degradation).
+//     These list names MUST match blocklist.lists[].name values in config.yaml.
+//     If the names diverge, the detector silently finds no patterns — no error is returned.
 //
 //   SharedResources:
 //     Blocklist() returns the Matcher satisfied by *blocklist.Manager.

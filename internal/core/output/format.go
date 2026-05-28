@@ -34,6 +34,8 @@ import (
 // LogThreat() in sys/utils — Fail2Ban filter regex must match all three.
 // stream and source fields are intentionally omitted — Fail2Ban only needs
 // the timestamp, level, and IP.
+// Regex in deploy/fail2ban/filter.d/arxsentinel.conf must match this format —
+// update the filter in the same commit if the format changes.
 func FormatFailban(e plugin.ThreatEvent) string {
 	timestamp := e.Timestamp.UTC().Format(time.RFC3339)
 	modulesStr := strings.Join(e.Modules, ",")

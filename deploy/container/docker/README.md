@@ -77,6 +77,14 @@ They take priority over the mounted `config.yaml`.
 | `ARXSENTINEL_PARSER_LOG_FORMAT` | string | `combined` | Log format: `combined`, `json`, `regex` |
 | `ARXSENTINEL_PARSER_REGEX_PATTERN` | string | `` | Go regex (required when `log_format=regex`) |
 | `ARXSENTINEL_PARSER_TIMEZONE` | string | `UTC` | Timezone (reserved, not connected) |
+| `ARXSENTINEL_PARSER_JSON_REMOTE_ADDR` | string | `remote_addr` | JSON key → client IP (log_format=json) |
+| `ARXSENTINEL_PARSER_JSON_TIME` | string | `time_iso8601` | JSON key → timestamp |
+| `ARXSENTINEL_PARSER_JSON_REQUEST` | string | `request` | JSON key → request line |
+| `ARXSENTINEL_PARSER_JSON_STATUS` | string | `status` | JSON key → HTTP status |
+| `ARXSENTINEL_PARSER_JSON_BYTES_SENT` | string | `bytes_sent` | JSON key → response size |
+| `ARXSENTINEL_PARSER_JSON_REFERER` | string | `http_referer` | JSON key → Referer header |
+| `ARXSENTINEL_PARSER_JSON_USER_AGENT` | string | `http_user_agent` | JSON key → User-Agent header |
+| `ARXSENTINEL_PARSER_JSON_REAL_IP` | string | `real_ip` | JSON key → real client IP (behind proxy) |
 
 #### Scoring and state
 
@@ -136,13 +144,18 @@ They take priority over the mounted `config.yaml`.
 | `ARXSENTINEL_WHITELIST_CUSTOM_CIDRS` | CSV | `` | Trusted subnets (comma-separated) |
 | `ARXSENTINEL_CHAIN_GUARD_ENABLED` | bool | `false` | Enable proxy chain integrity check |
 | `ARXSENTINEL_CHAIN_GUARD_WARNINGS_LOG` | string | `` | Warning log path (required if enabled) |
+| `ARXSENTINEL_CHAIN_GUARD_CLOUDFLARE_ENABLED` | bool | `true` | Enable Cloudflare IP range check |
+| `ARXSENTINEL_CHAIN_GUARD_CLOUDFLARE_REFRESH_INTERVAL` | duration | `24h` | Cloudflare IP list refresh interval |
+| `ARXSENTINEL_CHAIN_GUARD_BOGON_ENABLED` | bool | `true` | Enable bogon/RFC1918/CGNAT check |
 | `ARXSENTINEL_BLOCKLIST_STORAGE` | string | `` | Persistent blocklist cache path |
 | `ARXSENTINEL_OUTPUT_THREAT_LOG` | string | `/var/log/arxsentinel/threats.log` | Threat log path |
 | `ARXSENTINEL_OUTPUT_OPERATIONAL_LOG` | string | `/var/log/arxsentinel/sentinel.log` | Operational log path |
-| `ARXSENTINEL_METRICS_ENABLED` | bool | `true` | Enable Prometheus endpoint |
+| `ARXSENTINEL_METRICS_ENABLED` | bool | `false` | Enable Prometheus endpoint |
 | `ARXSENTINEL_METRICS_LISTEN_ADDR` | string | `:9117` | Metrics listen address |
 | `ARXSENTINEL_METRICS_USERNAME` | string | `` | Basic auth username |
 | `ARXSENTINEL_METRICS_PASSWORD_HASH` | string | `` | bcrypt hash of password |
+| `ARXSENTINEL_PIPELINE_BUFFER_SIZE` | int | `8192` | Channel buffer depth (increase for burst traffic) |
+| `ARXSENTINEL_PIPELINE_SHUTDOWN_TIMEOUT` | duration | `15s` | Graceful shutdown drain window |
 
 Full list: all `ARXSENTINEL_<SECTION>_<FIELD>` variables are defined in
 `internal/sys/config/config.go` (`applyEnvOverrides` function).

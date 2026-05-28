@@ -265,6 +265,14 @@ metrics:
   username: ""
   password_hash: ""
 
+# ── pipeline ──────────────────────────────────────────────────────────────────────────────
+# Bounded channel between log-source readers and the processing pipeline.
+# Increase buffer_size for burst traffic (e.g. 16384 for high-load nginx).
+# shutdown_timeout: max drain time on SIGTERM before forced close.
+pipeline:
+  buffer_size: 8192
+  shutdown_timeout: "15s"
+
 # ── output ────────────────────────────────────────────────────────────────────────────────
 # Mount /var/log/arxsentinel as a writable volume.
 # For Fail2Ban integration: host Fail2Ban reads threats.log via bind-mount or hostPath.

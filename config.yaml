@@ -42,10 +42,40 @@ logging:
   debug: false          # true = show PARSER/TAIL/DEBUG tags in console / показывать PARSER/TAIL/DEBUG теги
   console_color: true   # false = plain text without ANSI (for pipe/journalctl) / plain text без ANSI (для pipe/journalctl)
 
-# ── parser: nginx log format / формат nginx лога ────────────────────────────────────────
+# ── parser: log format configuration / конфигурация формата лога ────────────────────────
 parser:
-  log_format: combined  # combined + real_ip (see nginx.conf $real_ip / см. nginx.conf $real_ip)
-  timezone: UTC         # timezone of dates in the log / часовой пояс дат в логе
+  # Standard nginx combined log format with real_ip support (most common).
+  # Стандартный nginx combined формат с поддержкой real_ip (наиболее распространённый).
+  log_format: combined
+
+  # Reserved — currently reads timezone from the offset embedded in the log line (+0000).
+  # Зарезервировано — парсер читает timezone из офсета в строке лога (+0000).
+  timezone: UTC
+
+  # profile: built-in server profile; takes priority over log_format.
+  # profile: встроенный профиль сервера; имеет приоритет над log_format.
+  # Options: apache | caddy | traefik | haproxy-http
+  # profile: caddy
+
+  # regex_pattern: Go regex with named groups; required when log_format: regex.
+  # regex_pattern: Go-регулярка с именованными группами; нужна при log_format: regex.
+  # regex_pattern: '^(?P<remote_addr>\S+).*"(?P<request>[^"]+)" (?P<status>\d+).*'
+
+  # json_fields: field name mapping for JSON log format (log_format: json).
+  # json_fields: маппинг имён полей для JSON-формата (log_format: json).
+  # All fields default to standard nginx variable names — override only if your
+  # nginx log_format json uses different key names.
+  # Все поля по умолчанию — стандартные имена nginx-переменных. Переопределять
+  # только если в вашем nginx log_format json используются другие имена ключей.
+  # json_fields:
+  #   remote_addr: "remote_addr"   # default / по умолчанию
+  #   time: "time_iso8601"
+  #   request: "request"
+  #   status: "status"
+  #   bytes_sent: "bytes_sent"
+  #   referer: "http_referer"
+  #   user_agent: "http_user_agent"
+  #   real_ip: "real_ip"
 
 # ── scoring: thresholds and accumulation window / пороги и окно накопления ──────────────
 scoring:
@@ -425,3 +455,35 @@ output:
   # Dev / Local:
   # threat_log: ./logs/threats.log
   # operational_log: ./logs/sentinel.log
+
+# ── metrics: Prometheus /metrics endpoint / Prometheus-эндпоинт ─────────────────────────
+#
+# Exposes Prometheus-compatible metrics for scrapers (Grafana, Victoria Metrics, etc.).
+# Предоставляет Prometheus-метрики для сбора (Grafana, Victoria Metrics и т.д.).
+#
+# Security: protect the endpoint with basic auth (bcrypt hash) or restrict via firewall.
+# Безопасность: защитите эндпоинт basic auth (bcrypt-хэш) или ограничьте файрволом.
+#
+# Generate a password hash:
+# Сгенерировать хэш пароля:
+#   htpasswd -bnBC 10 "" "your-password" | tr -d ':\n'
+#
+metrics:
+  enabled: false          # set true to start the /metrics HTTP server / true = запустить /metrics HTTP-сервер
+  listen_addr: ":9117"    # bind address for the metrics server / адрес привязки метрик-сервера
+  username: ""            # basic auth username; leave empty to disable auth / имя пользователя basic auth; пусто = без авторизации
+  password_hash: ""       # bcrypt hash (cost ≥ 10); required when username is set / bcrypt-хэш (cost ≥ 10); нужен при заданном username
+
+# ── pipeline: channel buffer and shutdown tuning / буфер канала и завершение ───────────
+#
+# Controls the bounded channel between log-source readers and the processing pipeline.
+# Управляет ограниченным каналом между читателями лога и обработчиком.
+#
+# buffer_size: increase for burst traffic (e.g. 16384 for high-load nginx).
+#   Увеличить при пиковых нагрузках (например 16384 для высоконагруженного nginx).
+# shutdown_timeout: max time to drain the channel on SIGTERM before forced close.
+#   Максимальное время дренажа канала при SIGTERM до принудительного завершения.
+#
+pipeline:
+  buffer_size: 8192          # bounded channel depth between Merge and processor / глубина буферного канала
+  shutdown_timeout: "15s"    # graceful shutdown drain window / окно graceful-завершения
