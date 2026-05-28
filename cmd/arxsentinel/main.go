@@ -85,6 +85,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/metrics"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
+	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
@@ -108,7 +109,8 @@ type PipelineContext struct {
 	threatCount      *atomic.Int64    // per-pipeline threat counter, owned by runPipeline
 	Tracker          *state.Tracker
 	Scorer           *scorer.Scorer
-	Sinks            []plugin.Sink    // ordered list of output sinks for this stream
+	Sinks            []plugin.Sink     // ordered list of output sinks for this stream
+	Executors        []plugin.Executor // ordered list of executors run after sinks; nil when none configured
 	Matcher          *whitelist.Matcher
 	Verifier         *whitelist.Verifier
 	FakeBotScore     int
@@ -511,6 +513,20 @@ func runPipeline(
 		}
 	}()
 
+	// Executors are optional — empty cfg.Executors is not an error.
+	// Executor lifecycle is NOT reset on SIGHUP: executors hold state (ban list, TTL
+	// goroutines) that must survive config reloads, same as sinks.
+	executors, err := buildExecutors(cfg.Executors)
+	if err != nil {
+		utils.Log("ERROR", fmt.Sprintf("%s: executor init error: %v", logTag, err), "error")
+		return
+	}
+	defer func() {
+		for _, ex := range executors {
+			_ = ex.Close()
+		}
+	}()
+
 	sourceName, sourceType := sourceMetadata(sources)
 
 	// Choose buffer size: pipeline-level override or stream-level default.
@@ -527,6 +543,7 @@ func runPipeline(
 		Tracker:          tracker,
 		Scorer:           scorer.NewScorer(cfg.Scoring, buildPipelineDetectors(cfg, pipeCfg, shared), utils.Log),
 		Sinks:            sinks,
+		Executors:        executors,
 		Matcher:          matcher,
 		Verifier:         verifier,
 		FakeBotScore:     cfg.Whitelist.FakeBotScore,
@@ -622,7 +639,8 @@ func runPipeline(
 				threatCount:      &threatCount,
 				Tracker:          tracker,
 				Scorer:           scorer.NewScorer(cfg.Scoring, buildPipelineDetectors(cfg, pipeCfg, shared), utils.Log),
-				Sinks:            sinks, // same sinks — already reloaded above
+				Sinks:            sinks,     // same sinks — already reloaded above
+				Executors:        executors, // same executors — state (ban list, TTL) must survive reload
 				Matcher:          newMatcher,
 				Verifier:         verifier,
 				FakeBotScore:     cfg.Whitelist.FakeBotScore,
@@ -869,6 +887,30 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 	return sources, nil
 }
 
+// buildExecutors constructs the Executor list from the config.Executors section.
+// Returns (nil, nil) when the list is empty — executors are optional; an empty
+// section does not change pipeline behaviour.
+func buildExecutors(items []config.ExecutorItem) ([]plugin.Executor, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+	executors := make([]plugin.Executor, 0, len(items))
+	for _, item := range items {
+		ex, err := pkgexecutor.Build(pkgexecutor.ExecutorConfig{
+			Name:   item.Name,
+			Type:   item.Type,
+			Exec:   item.Exec,
+			Params: item.Params,
+			Config: item.Config,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("executor %q: %w", item.Name, err)
+		}
+		executors = append(executors, ex)
+	}
+	return executors, nil
+}
+
 // buildSinks constructs the Sink list from an explicit outputs slice.
 // Called from runPipeline with pipeCfg.Outputs — each pipeline owns its sinks directly.
 func buildSinks(outputs []config.SinkConfig) ([]plugin.Sink, error) {
@@ -1101,6 +1143,14 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 			continue
 		}
 		metrics.RecordOutputEvent(pipe.StreamName, pipe.PipelineName, sink.Name(), sinkTypeFromName(sink.Name()))
+	}
+
+	// Executor loop — runs after all sinks have written the event.
+	// Errors are logged but do not stop other executors from running.
+	for _, ex := range pipe.Executors {
+		if err := ex.Execute(ctx, event); err != nil {
+			utils.Log("EXECUTOR_ERROR", fmt.Sprintf("stream %q: executor %s: %v", pipe.StreamName, ex.Name(), err), "error")
+		}
 	}
 }
 
