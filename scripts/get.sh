@@ -166,7 +166,8 @@ fetch_release() {
       ;;
     dev)
       section "Fetching latest dev pre-release"
-      api_endpoint="https://api.github.com/repos/${REPO}/releases"
+      # per_page=10 limits the response — we only need the first pre-release.
+      api_endpoint="https://api.github.com/repos/${REPO}/releases?per_page=10"
       fetch_desc="latest dev pre-release"
       ;;
     version)
@@ -177,8 +178,9 @@ fetch_release() {
   esac
 
   step "Querying GitHub API for ${fetch_desc}..."
-  RELEASE_JSON=$(curl -fsSL "$api_endpoint" 2>/dev/null) \
-    || fail "Failed to reach GitHub API. Check your internet connection."
+  # --max-time 30: fail fast if the API is unreachable rather than hanging forever.
+  RELEASE_JSON=$(curl -fsSL --max-time 30 "$api_endpoint" 2>/dev/null) \
+    || fail "Failed to reach GitHub API (timeout or network error)."
 
   # For --dev mode the API returns an array; extract tag_name and download URLs
   # from the first pre-release entry. awk is used because tag_name appears BEFORE
