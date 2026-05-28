@@ -6,6 +6,7 @@
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
+> 🌐 [Русская документация](README.ru.md) | [Українська документація](README.uk.md)
 
 **Security event pipeline for any HTTP server** — from a single nginx VPS to a full K8s cluster.  
 ~12 MB RAM · single binary · zero runtime deps · extends via exec+JSON plugins in any language.
@@ -777,5 +778,3 @@ Licensed under [MIT](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-bl
 Heartfelt thanks to Mitchell Krog and every contributor to that project — your dedication makes the web a safer place for everyone.
 
 ---
-
-[Русская документация → README.ru.md](README.ru.md) | [Українська документація → README.uk.md](README.uk.md)

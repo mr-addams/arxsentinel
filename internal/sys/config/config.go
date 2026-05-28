@@ -12,11 +12,12 @@
 //     - Business logic (core/)
 //     - Logging (sys/utils)
 //
-//   YAML PARSING LIMITATION:
-//     yaml.v3 overlays values on top of defaults at the section level as a whole.
-//     If config.yaml specifies a scoring: section, it must contain ALL fields —
-//     otherwise unspecified fields will be zeroed (yaml.v3 does not support partial merge).
-//     Sections absent from the file entirely retain their Go defaults.
+//   YAML PARSING:
+//     yaml.v3 overlays the YAML document on top of Go defaults field-by-field.
+//     Fields present in the file → set from YAML.
+//     Fields absent from the file (even inside a present section) → retain Go defaults.
+//     Sections absent from the file entirely → retain Go defaults unchanged.
+//     Verified empirically: partial sections are safe; omitted fields are never zeroed.
 
 package config
 
@@ -362,7 +363,7 @@ type OutputConfig struct {
 // MetricsConfig holds Prometheus /metrics endpoint settings.
 type MetricsConfig struct {
 	Enabled      bool   `yaml:"enabled"`       // YAML: metrics.enabled, default false — enable Prometheus /metrics endpoint. Consumer: main.go metrics server
-	ListenAddr   string `yaml:"listen_addr"`   // YAML: metrics.listen_addr, default ":9117" — address for the metrics HTTP server. Consumer: main.go metrics server
+	ListenAddr   string `yaml:"listen_addr"`   // YAML: metrics.listen_addr, default ":9117" — address for the metrics HTTP server. Consumer: main.go metrics server. Port 9117 also appears in: Dockerfile EXPOSE, docker-compose.yml, .env.example, Docker README, K8s README — update all if default changes.
 	Username     string `yaml:"username"`      // YAML: metrics.username — basic auth username; empty disables auth. Consumer: main.go metrics server
 	PasswordHash string `yaml:"password_hash"` // YAML: metrics.password_hash — bcrypt hash of the password (cost ≥ 10). Consumer: main.go metrics server
 }
@@ -382,15 +383,15 @@ type ChainGuardConfig struct {
 
 // CloudflareGuardConfig controls Cloudflare IP range fetching and caching.
 type CloudflareGuardConfig struct {
-	Enabled         bool     `yaml:"enabled"`          // default true
-	RefreshInterval Duration `yaml:"refresh_interval"` // default 24h
-	Sources         []string `yaml:"sources"`          // default: cloudflare.com/ips-v4/ and ips-v6/
+	Enabled         bool     `yaml:"enabled"`          // ENV: ARXSENTINEL_CHAIN_GUARD_CLOUDFLARE_ENABLED, default true
+	RefreshInterval Duration `yaml:"refresh_interval"` // ENV: ARXSENTINEL_CHAIN_GUARD_CLOUDFLARE_REFRESH_INTERVAL, default 24h
+	Sources         []string `yaml:"sources"`          // YAML only (slice) — default: cloudflare.com/ips-v4/ and ips-v6/
 }
 
 // BogonGuardConfig controls bogon/RFC1918/CGNAT IP detection.
 // Uses a static built-in list — no network fetch required.
 type BogonGuardConfig struct {
-	Enabled bool `yaml:"enabled"` // default true
+	Enabled bool `yaml:"enabled"` // ENV: ARXSENTINEL_CHAIN_GUARD_BOGON_ENABLED, default true
 }
 
 // ToChainCheckConfig converts ChainGuardConfig to the chaincheck package Config.
@@ -658,12 +659,22 @@ func applyEnvOverrides(cfg *Config) error {
 		return err
 	}
 	// ── chain_guard ───────────────────────────────────────────────────────────────────
-	// Detailed source overrides (URLs, refresh intervals) are configured via YAML.
-	// Enabled flag and warnings_log path can be overridden via env for Docker deployments.
+	// Source URL lists are configured via YAML only (complex slices).
+	// All scalar fields (enabled flags, path, refresh interval) support env overrides
+	// so container deployments can toggle chain_guard behaviour without a YAML mount.
 	if err := envBool("ARXSENTINEL_CHAIN_GUARD_ENABLED", &cfg.ChainGuard.Enabled); err != nil {
 		return err
 	}
 	envStr("ARXSENTINEL_CHAIN_GUARD_WARNINGS_LOG", &cfg.ChainGuard.WarningsLog)
+	if err := envBool("ARXSENTINEL_CHAIN_GUARD_CLOUDFLARE_ENABLED", &cfg.ChainGuard.Cloudflare.Enabled); err != nil {
+		return err
+	}
+	if err := envDur("ARXSENTINEL_CHAIN_GUARD_CLOUDFLARE_REFRESH_INTERVAL", &cfg.ChainGuard.Cloudflare.RefreshInterval); err != nil {
+		return err
+	}
+	if err := envBool("ARXSENTINEL_CHAIN_GUARD_BOGON_ENABLED", &cfg.ChainGuard.Bogon.Enabled); err != nil {
+		return err
+	}
 
 	// ── blocklist ─────────────────────────────────────────────────────────────────────
 	// Detailed source overrides (URLs, refresh intervals) are configured via YAML.
@@ -706,6 +717,16 @@ func applyEnvOverrides(cfg *Config) error {
 	envStr("ARXSENTINEL_METRICS_LISTEN_ADDR", &cfg.Metrics.ListenAddr)
 	envStr("ARXSENTINEL_METRICS_USERNAME", &cfg.Metrics.Username)
 	envStr("ARXSENTINEL_METRICS_PASSWORD_HASH", &cfg.Metrics.PasswordHash)
+
+	// ── pipeline ──────────────────────────────────────────────────────────────────────
+	// Top-level pipeline tuning — allows container deployments to override buffer size
+	// and shutdown timeout without modifying the YAML file.
+	if err := envInt("ARXSENTINEL_PIPELINE_BUFFER_SIZE", &cfg.Pipeline.BufferSize); err != nil {
+		return err
+	}
+	if err := envDur("ARXSENTINEL_PIPELINE_SHUTDOWN_TIMEOUT", &cfg.Pipeline.ShutdownTimeout); err != nil {
+		return err
+	}
 
 	return nil
 }
