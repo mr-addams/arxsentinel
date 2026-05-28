@@ -469,6 +469,17 @@ DaemonSet (one pod per node, reads host logs) or sidecar (reads from an emptyDir
 Ready-to-use manifests: [`deploy/examples/kubernetes/`](deploy/examples/kubernetes/).
 Helm chart with values reference: [README.helm.md](deploy/container/k8s/arxsentinel/README.md).
 
+## Executors
+
+Executors are stateful action plugins that run after threat scoring. Unlike Sinks (passive log writers), Executors actively manage external resources: they maintain a local dedup map, apply TTL-based expiry, and track execution statistics.
+
+| Executor | Package | Description |
+|---|---|---|
+| **cloudflare** |  | Adds threat IPs to a Cloudflare IP List; auto-removes expired entries via TTL sweep |
+
+See [docs/executors.md](docs/executors.md) for the framework overview and how to add custom executors.
+See [docs/executor-cloudflare.md](docs/executor-cloudflare.md) for Cloudflare-specific configuration and troubleshooting.
+
 ## Plugin Development
 
 Source, Sink, and Detector plugins communicate with ArxSentinel over **stdin/stdout JSON** — write them in any language. The plugin receives a JSON object per log entry (or event) and returns a JSON response. ArxSentinel manages the subprocess lifecycle.
