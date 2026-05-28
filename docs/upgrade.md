@@ -41,11 +41,18 @@ sudo cp -r /etc/arxsentinel/ ~/arxsentinel-backup/
 
 **Option A — Quick installer (recommended, any distro):**
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash
-```
-
 The installer auto-detects your distro and architecture, downloads the correct package from GitHub Releases, and upgrades in place.
+
+```bash
+# Latest stable release
+curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash
+
+# Latest dev pre-release
+curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash -s -- --dev
+
+# Specific version/tag
+curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash -s -- --version v2.0.1-dev.2
+```
 
 **Option B — Debian / Ubuntu (manual):**
 
