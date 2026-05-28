@@ -18,6 +18,9 @@ go test ./cmd/arxsentinel -run TestStartupShutdownInvariants -count=1 -timeout 3
 echo "[pre-commit] running full test suite..."
 go test ./... -count=1 -timeout 120s
 
+echo "[pre-commit] running integration tests..."
+bash tests/integration/run.sh
+
 echo "[pre-commit] go vet..."
 go vet ./...
 
