@@ -101,6 +101,33 @@ or they are removed externally.
 - **Rate limits**: The Cloudflare API rate-limits List operations; the executor does not implement
   retry logic (depends on the HTTP client timeout).
 
+## WAF Setup (required for blocking)
+
+The executor only manages the **IP List**. To actually block traffic, you must create a WAF Custom Rule in the Cloudflare Dashboard that references the list.
+
+### Step-by-step
+
+1. Go to **Cloudflare Dashboard** → your domain → **Security** → **WAF** → **Custom Rules**
+2. Click **Create rule**
+3. Configure:
+   - **Rule name**: `Block arxsentinel threats`
+   - **Field**: IP Source Address
+   - **Operator**: is in list
+   - **Value**: `arxsentinel-blocklist` (or your configured `list_name`)
+   - **Action**: Block
+4. Click **Deploy**
+
+> Without this rule, IPs are added to the list but traffic is **not blocked**.
+
+### Verify it works
+
+After the rule is deployed and the executor has processed a THREAT event:
+
+1. Go to **Cloudflare Dashboard** → your domain → **Security** → **WAF** → **IP Lists**
+2. Open the `arxsentinel-blocklist` list and confirm new IPs are being added
+3. Check the WAF Custom Rule under **Security** → **WAF** → **Custom Rules** — the rule should show a non-zero match count
+4. (Optional) Test from a blocked IP — requests should receive a Cloudflare block page
+
 ## Troubleshooting
 
 ### 1. `APIToken must not be empty`
