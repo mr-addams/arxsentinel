@@ -74,6 +74,7 @@ type Config struct {
 	// Migrated from general.log_file + output.threat_log by Migrate().
 	Inputs   []InputConfig  `yaml:"inputs"`   // YAML: inputs — top-level source list; alternative to general.log_file
 	Outputs  []SinkConfig   `yaml:"outputs"`  // YAML: outputs — top-level sink list; alternative to output.threat_log
+	Executors []ExecutorItem `yaml:"executors"` // YAML: executors — top-level executor list; instantiated by pipeline for threat response actions
 	Pipeline PipelineRuntimeConfig `yaml:"pipeline"` // YAML: pipeline — buffer_size and shutdown_timeout; top-level default for all pipelines
 }
 
@@ -97,6 +98,18 @@ type SinkConfig struct {
 	Path   string `yaml:"path"`   // YAML: path to output file; required when type=file. Consumer: output.NewFileSink
 	Format string `yaml:"format"` // YAML: "fail2ban" | "json"; default "fail2ban". Consumer: output.FileSink / output.StdoutSink
 	Exec   string `yaml:"exec"`   // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSink
+}
+
+// ExecutorItem — configuration for a single executor instance.
+// Executors are registered by type name in pkg/executor; each executor handles
+// a threat response action (e.g., API call, script, notification).
+// New syntax: executors: [{name: my-action, type: cloudflare, params: {zone: example.com}}]
+type ExecutorItem struct {
+	Name   string                 `yaml:"name"`   // YAML: unique name for this executor instance. Consumer: pipeline executor registry
+	Type   string                 `yaml:"type"`   // YAML: executor type registered in pkg/executor. Consumer: pkg/executor.Build
+	Exec   string                 `yaml:"exec"`   // YAML: path to exec plugin binary; used when type is not in registry. Consumer: pkg/execplugin.NewExecutor
+	Params map[string]interface{} `yaml:"params,inline"` // YAML: params — arbitrary key-value pairs passed to the executor factory or exec plugin
+	Config map[string]interface{} `yaml:"config"`        // YAML: config — executor-specific structured configuration
 }
 
 // PipelineRuntimeConfig — tuning parameters for the Source→Merge→Pipeline channel.
