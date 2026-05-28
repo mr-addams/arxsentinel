@@ -222,6 +222,30 @@ func (m *Manager) Match(list string, text string) bool {
 	return len(matcher.FindAllString(text)) > 0
 }
 
+// MatchResult returns the first matched pattern from the named list, or ("", false) if no match.
+// Returns ("", false) if the list does not exist or has not been loaded yet (graceful degradation).
+// Never panics. Safe for concurrent use.
+func (m *Manager) MatchResult(list string, text string) (string, bool) {
+	m.mu.RLock()
+	s, ok := m.lists[list]
+	m.mu.RUnlock()
+
+	if !ok {
+		return "", false
+	}
+
+	matcher := s.getMatcher()
+	if matcher == nil {
+		return "", false
+	}
+
+	results := matcher.FindAllString(text)
+	if len(results) > 0 {
+		return string(results[0].Word), true
+	}
+	return "", false
+}
+
 // Close cancels all per-list goroutines and closes the bbolt database.
 // After Close, Match always returns false.
 func (m *Manager) Close() {
