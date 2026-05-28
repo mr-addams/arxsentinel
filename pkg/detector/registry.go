@@ -49,6 +49,10 @@ type DetectorConfig struct {
 // *blocklist.Manager satisfies this interface implicitly (Go structural typing).
 type Matcher interface {
 	Match(list string, text string) bool
+	// MatchResult returns (pattern, true) if the text matches a blocklist entry in the named list,
+	// and the matched pattern is returned for inclusion in the reason field of DetectResult.
+	// Returns ("", false) if no match is found.
+	MatchResult(list string, text string) (string, bool)
 }
 
 // SharedResources — external runtime dependencies injected into detector factories.
