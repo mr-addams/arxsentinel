@@ -469,6 +469,17 @@ DaemonSet (один под на узел, читает логи хоста) ил
 Готовые манифесты: [`deploy/examples/kubernetes/`](deploy/examples/kubernetes/).
 Helm-чарт с описанием values: [README.helm.md](deploy/container/k8s/arxsentinel/README.md).
 
+## Исполнители
+
+Исполнители — это плагины с состоянием, которые выполняются после оценки угроз. В отличие от Sink (пассивная запись в лог), исполнители активно управляют внешними ресурсами: ведут локальный dedup-словарь, применяют TTL-истечение и собирают статистику.
+
+| Исполнитель | Пакет | Описание |
+|---|---|---|
+| **cloudflare** | `internal/core/executor/cloudflare` | Добавляет угрожающие IP в Cloudflare IP List; автоматически удаляет устаревшие записи через TTL sweep | в Cloudflare IP List; автоматически удаляет устаревшие записи через TTL sweep |
+
+Подробнее: [docs/executors.md](docs/executors.md) — обзор фреймворка и добавление собственных исполнителей.
+Подробнее: [docs/executor-cloudflare.md](docs/executor-cloudflare.md) — конфигурация и устранение неполадок Cloudflare.
+
 ## Разработка плагинов
 
 Source, Sink и Detector плагины взаимодействуют с ArxSentinel через **stdin/stdout JSON** — пишите их на любом языке. Плагин получает JSON-объект для каждой записи логов (или события) и возвращает JSON-ответ. ArxSentinel управляет жизненным циклом подпроцесса.
