@@ -5,6 +5,7 @@
 package detector_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -210,10 +211,13 @@ func TestBadBotDetector_ViaRegistry(t *testing.T) {
 
 	sv := newStubView(0, 0, nil, 0)
 
-	// Matching UA should trigger.
+	// Matching UA should trigger and include pattern in Reason.
 	result := d.Detect(sv, &plugin.LogEntry{UserAgent: "badbotua"})
 	if result.Score == 0 {
 		t.Error("badbot should score on matched UA, got 0")
+	}
+	if !strings.HasPrefix(result.Reason, "ua=") {
+		t.Errorf("badbot Reason should start with 'ua=', got %q", result.Reason)
 	}
 
 	// Non-matching UA should not trigger.
@@ -404,6 +408,13 @@ type stubMatcher struct{ matchUA string }
 
 func (m *stubMatcher) Match(list, text string) bool {
 	return list == "badbot-ua" && text == m.matchUA
+}
+
+func (m *stubMatcher) MatchResult(list, text string) (string, bool) {
+	if list == "badbot-ua" && text == m.matchUA {
+		return text, true
+	}
+	return "", false
 }
 
 // stubShared wraps a Matcher into a SharedResources implementation.
