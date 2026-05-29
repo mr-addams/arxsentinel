@@ -25,6 +25,7 @@ import (
 
 	// ── Internal dependencies ──────────────────────────────────────────────
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -427,10 +428,17 @@ func (e *CloudflareExecutor) sweepOnce(ctx context.Context) {
 	// if Execute re-added the same IP between RemoveItems and this lock,
 	// the new record will have a later addedAt and must not be deleted.
 	e.mu.Lock()
+	var unbanned []string
 	for _, ip := range expiredIPs {
 		if rec, ok := e.banned[ip]; ok && time.Since(rec.addedAt) >= e.cfg.TTL {
 			delete(e.banned, ip)
+			unbanned = append(unbanned, ip)
 		}
 	}
 	e.mu.Unlock()
+
+	// Log each IP that was actually deleted from the local map, outside the lock.
+	for _, ip := range unbanned {
+		utils.Log("EXECUTOR", fmt.Sprintf("cloudflare: unbanned %s (TTL expired)", ip), "info")
+	}
 }

@@ -44,10 +44,9 @@ nfpms:
       postremove:  packaging/scripts/postrm
 
     contents:
-      # type: config prevents apt from overwriting the example on upgrade.
+      # .example is a reference file — always overwritten on upgrade (unlike the real config).
       - src: config.yaml
         dst: /etc/arxsentinel/config.yaml.example
-        type: config
 
       # Systemd unit uses /usr/bin/ (differs from deploy/ scripts which use /usr/local/bin/).
       - src: packaging/arxsentinel.service
@@ -92,7 +91,6 @@ nfpms:
     contents:
       - src: config.yaml
         dst: /etc/arxsentinel/config.yaml.example
-        type: config
 
       # RPM/systemd convention: /usr/lib/systemd/system/ (not /lib/)
       - src: packaging/arxsentinel.service
@@ -136,7 +134,6 @@ nfpms:
     contents:
       - src: config.yaml
         dst: /etc/arxsentinel/config.yaml.example
-        type: config
 
       # Arch Linux systemd convention: /usr/lib/systemd/system/
       - src: packaging/arxsentinel.service
