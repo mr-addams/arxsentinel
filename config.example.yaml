@@ -426,14 +426,135 @@ output:
   # threat_log: ./logs/threats.log
   # operational_log: ./logs/sentinel.log
 
-# ── executors: external action executors / внешние исполнители действий ───────────────
+# ── executors: automated threat response / автоматический ответ на угрозы ───────────────
+#
+# Executors run after every threat event and perform automated response actions.
+# Each executor is instantiated once at startup and receives every THREAT event.
+# Исполнители запускаются после каждого события угрозы и выполняют автоматические действия.
+#
+# Two kinds:
+#   typed  — built-in implementation selected by type: (e.g. cloudflare)
+#   exec   — external script via exec plugin protocol (any language)
+#
 executors:
+  # ── Typed executor: Cloudflare IP Lists ────────────────────────────────────────
   - name: cloudflare-blocklist
     type: cloudflare
     config:
-      api_token: "YOUR_CF_API_TOKEN"
-      account_id: "YOUR_CF_ACCOUNT_ID"
-      list_name: "arxsentinel-blocklist"
-      min_level: "THREAT"
-      ttl: "24h"
-      max_items: 10000
+      api_token: "YOUR_CF_API_TOKEN"       # Cloudflare API token with Lists:Edit permission
+      account_id: "YOUR_CF_ACCOUNT_ID"     # Cloudflare account ID
+      list_name: "arxsentinel-blocklist"   # IP list name (created automatically if absent)
+      min_level: "THREAT"                  # minimum threat level to ban: ALERT | THREAT
+      ttl: "24h"                           # auto-unban after this duration (0 = no auto-unban)
+      max_items: 10000                     # Cloudflare Free: 10000, Pro/Business: 100000
+
+  # ── Exec-fallback executor: custom script via exec plugin protocol ──────────────
+  # Use when no built-in type matches your response action.
+  # The script receives threat events as JSON on stdin; see docs/exec-protocol.md.
+  # Используй когда нет подходящего встроенного типа.
+  # - name: iptables-ban
+  #   # type: not specified → exec plugin fallback
+  #   exec: /usr/local/lib/arxsentinel/plugins/iptables-ban.sh
+  #   config:
+  #     chain: INPUT
+  #     comment: arxsentinel-autoban
+
+# ── inputs: universal log source syntax / универсальный синтаксис источников ────────────
+#
+# Alternative to general.log_file — supports multiple sources, stdin, and exec plugins.
+# Used at top level (applies to implicit single-stream) or inside streams[].
+# Альтернатива general.log_file — поддерживает несколько источников, stdin, exec-плагины.
+#
+# inputs:
+#   - type: file
+#     path: /var/log/nginx/access.log
+#     parser: combined        # combined | json | regex; default: parser.log_format
+#   - type: stdin             # read from stdin (e.g. pipe from journalctl -f)
+#     parser: combined
+#   - type: exec              # exec plugin: binary writes log lines to stdout
+#     exec: /usr/local/lib/arxsentinel/plugins/my-source.sh
+#     parser: json
+
+# ── outputs: universal threat sink syntax / универсальный синтаксис приёмников ──────────
+#
+# Alternative to output.threat_log — supports multiple sinks, stdout, and exec plugins.
+# Used at top level or inside streams[].
+# Альтернатива output.threat_log — поддерживает несколько приёмников, stdout, exec-плагины.
+#
+# outputs:
+#   - type: file
+#     path: /var/log/arxsentinel/threats.log
+#     format: fail2ban        # fail2ban | json
+#   - type: stdout            # print to stdout (useful for piping or debugging)
+#     format: json
+#   - type: exec              # exec plugin: events written as JSON to plugin stdin
+#     exec: /usr/local/lib/arxsentinel/plugins/my-sink.sh
+
+# ── streams: multi-stream mode / мультистрим-режим ───────────────────────────────────────
+#
+# Use streams: when monitoring multiple independent log sources.
+# Mutually exclusive with general.log_file — remove general.log_file when using streams.
+# Each stream has isolated scoring, state, and output.
+# Используй streams: для мониторинга нескольких независимых источников.
+#
+# streams:
+#
+#   # ── Simple stream: single source → single sink ────────────────────────────────
+#   # Auto-wraps inputs/outputs into one pipeline internally.
+#   - name: nginx
+#     inputs:
+#       - type: file
+#         path: /var/log/nginx/access.log
+#         parser: combined
+#     outputs:
+#       - type: file
+#         path: /var/log/arxsentinel/nginx-threats.log
+#         format: fail2ban
+#
+#   # ── Advanced stream: explicit pipelines with shared IP state ──────────────────
+#   # Use pipelines: when you need per-source detector tuning or shared scoring.
+#   # tracker_group: pipelines with the same group name share one IP score tracker.
+#   - name: frontend
+#     pipelines:
+#       - name: api
+#         tracker_group: frontend       # share IP state with "static" pipeline
+#         inputs:
+#           - type: file
+#             path: /var/log/nginx/api.access.log
+#             parser: combined
+#         outputs:
+#           - type: file
+#             path: /var/log/arxsentinel/frontend-threats.log
+#             format: fail2ban
+#         detectors:
+#           rate:
+#             enabled: true
+#             threshold: 200            # higher limit for API traffic
+#           probe:
+#             enabled: true
+#       - name: static
+#         tracker_group: frontend       # same group → shared IP scoring with "api"
+#         inputs:
+#           - type: file
+#             path: /var/log/nginx/static.access.log
+#             parser: combined
+#         outputs:
+#           - type: file
+#             path: /var/log/arxsentinel/frontend-threats.log
+#             format: fail2ban
+#         detectors:
+#           rate:
+#             enabled: false            # static assets generate high rates — disable
+#           probe:
+#             enabled: true
+#
+#   # ── Exec plugin stream: external source and sink via plugin binary ─────────────
+#   # Use when your log format is not supported by built-in parsers.
+#   - name: custom-app
+#     inputs:
+#       - type: exec
+#         exec: /usr/local/lib/arxsentinel/plugins/app-log-source.sh
+#         parser: json
+#     outputs:
+#       - type: exec
+#         exec: /usr/local/lib/arxsentinel/plugins/custom-sink.sh
