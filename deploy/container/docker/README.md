@@ -218,18 +218,30 @@ The Fail2Ban filter and jail configs are in [`deploy/fail2ban/`](deploy/fail2ban
 
 ## Multi-stream monitoring
 
-To watch multiple log files, mount a custom `config.yaml` that uses the `streams:` section
-instead of `general.log_file`:
+To watch multiple log files independently, mount a custom `config.yaml` that uses the
+`streams:` section instead of `general.log_file`:
 
 ```yaml
 # config.yaml
 streams:
   - name: site1
-    log_file: /logs/site1.access.log
-    threat_log: /threats/site1.threats.log
+    inputs:
+      - type: file
+        path: /logs/site1.access.log
+        parser: combined
+    outputs:
+      - type: file
+        path: /threats/site1.threats.log
+        format: fail2ban
   - name: site2
-    log_file: /logs/site2.access.log
-    threat_log: /threats/site2.threats.log
+    inputs:
+      - type: file
+        path: /logs/site2.access.log
+        parser: combined
+    outputs:
+      - type: file
+        path: /threats/site2.threats.log
+        format: fail2ban
 ```
 
 ```bash
@@ -239,6 +251,12 @@ docker run -d \
   -v /var/log/arxsentinel:/threats \
   ghcr.io/mr-addams/arxsentinel:latest
 ```
+
+> **YAML-only features** — the following cannot be configured via env vars and require
+> a custom `config.yaml`:
+> `streams:`, `inputs:`, `outputs:`, `executors:`, `pipelines:`, per-detector `paths:` arrays.
+> Full copy-paste-ready examples: `/etc/arxsentinel/config.yaml.example` (inside the container)
+> or [`config.example.yaml`](../../../../config.example.yaml) in the repository.
 
 ## Building locally
 

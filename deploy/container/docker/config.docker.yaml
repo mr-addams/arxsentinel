@@ -279,3 +279,56 @@ pipeline:
 output:
   threat_log: /var/log/arxsentinel/threats.log
   operational_log: /var/log/arxsentinel/sentinel.log
+
+# ── Advanced / YAML-only features (reference — uncomment to enable) ───────────────────────
+#
+# These sections have no env var equivalents and are configured by editing this file.
+# Full copy-paste-ready examples: /etc/arxsentinel/config.yaml.example
+#
+# ── streams: multi-source monitoring ──────────────────────────────────────────────────────
+# Remove general.log_file above and uncomment streams: to monitor multiple log sources.
+#
+# streams:
+#   - name: nginx
+#     inputs:
+#       - type: file
+#         path: /var/log/nginx/access.log
+#         parser: combined
+#     outputs:
+#       - type: file
+#         path: /var/log/arxsentinel/threats.log
+#         format: fail2ban
+#   # Add more named streams for each additional log source.
+#
+# ── executors: automated threat response ───────────────────────────────────────────────────
+# Executors run after every THREAT event. See config.yaml.example for all options.
+#
+# executors:
+#   - name: cloudflare-blocklist
+#     type: cloudflare
+#     config:
+#       api_token: YOUR_CF_API_TOKEN       # set via ARXSENTINEL secret or bind-mounted config
+#       account_id: YOUR_CF_ACCOUNT_ID
+#       list_name: arxsentinel-blocklist
+#       min_level: THREAT
+#       ttl: 24h
+#       max_items: 10000
+#   - name: iptables-ban                   # exec-fallback: any script implementing the protocol
+#     exec: /usr/local/lib/arxsentinel/plugins/iptables-ban.sh
+#
+# ── inputs / outputs: universal I/O syntax ─────────────────────────────────────────────────
+# Use instead of general.log_file / output.threat_log for multi-source or exec plugin I/O.
+#
+# inputs:
+#   - type: file
+#     path: /var/log/nginx/access.log
+#     parser: combined
+#   - type: stdin
+#     parser: combined
+#
+# outputs:
+#   - type: file
+#     path: /var/log/arxsentinel/threats.log
+#     format: fail2ban
+#   - type: stdout
+#     format: json
