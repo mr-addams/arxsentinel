@@ -1150,6 +1150,8 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	for _, ex := range pipe.Executors {
 		if err := ex.Execute(ctx, event); err != nil {
 			utils.Log("EXECUTOR_ERROR", fmt.Sprintf("stream %q: executor %s: %v", pipe.StreamName, ex.Name(), err), "error")
+		} else {
+			utils.Log("EXECUTOR", fmt.Sprintf("stream %q: %s: banned %s score=%d reason=%q", pipe.StreamName, ex.Name(), event.IP, event.Score, event.Reason), "info")
 		}
 	}
 }
