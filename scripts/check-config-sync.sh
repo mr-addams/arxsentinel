@@ -23,7 +23,9 @@
 #   WHAT IS NOT CHECKED (intentionally YAML-only, env vars make no sense):
 #     streams, inputs, outputs, executors — multi-pipeline / exec plugin syntax;
 #     these are complex nested structures that cannot be expressed as env vars.
-#
+#     Detector arrays (probe.paths, overflow.suspicious_params, extra_*_patterns)
+#     are also YAML-only — no env var equivalents exist.
+#   Reference: full examples with all YAML-only sections are in config.example.yaml.
 #   Run manually:  bash scripts/check-config-sync.sh
 #   Pre-commit:    called automatically by scripts/hooks/pre-commit
 #
