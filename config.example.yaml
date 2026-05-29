@@ -409,8 +409,8 @@ whitelist:
   # Кастомный whitelist: добавьте свои IP, подсети, UA-паттерны.
   custom:
     ips: []      # example: ["10.99.99.1", "192.168.1.100"] / пример: ["10.99.99.1", "192.168.1.100"]
-    cidrs: []    # example: ["10.99.99.0/24"] / пример: ["10.99.99.0/24"]
-    ua_substrings: []  # example: ["MyInternalMonitor"] / пример: ["MyInternalMonitor"]
+    cidrs: []    # example: ["10.99.99.0/24", "192.168.0.0/16"] / пример: ["10.99.99.0/24", "192.168.0.0/16"]
+    ua_substrings: []  # example: ["MyInternalMonitor", "HealthCheck/1.0"] / пример: ["MyInternalMonitor", "HealthCheck/1.0"]
 
   # DNS cache for verification results / DNS-кэш результатов верификации.
   dns_cache:
