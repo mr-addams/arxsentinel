@@ -16,8 +16,15 @@
 
 set -euo pipefail
 
-echo "[pre-commit] checking config chain consistency..."
-bash scripts/check-config-sync.sh
+# Config chain check — only when config chain files are staged.
+# Chain: config.go → config.yaml → config.docker.yaml → .env.example → README tables.
+CONFIG_CHAIN_PATTERN='internal/sys/config/config\.go|^config\.yaml$|^config\.example\.yaml$|deploy/container/docker/config\.docker\.yaml|deploy/container/docker/\.env\.example|deploy/container/docker/README\.md|deploy/container/k8s/arxsentinel/README\.md'
+if git diff --cached --name-only | grep -qE "$CONFIG_CHAIN_PATTERN"; then
+  echo "[pre-commit] checking config chain consistency..."
+  bash scripts/check-config-sync.sh
+else
+  echo "[pre-commit] config chain not touched — skipping consistency check"
+fi
 
 echo "[pre-commit] checking startup/shutdown invariants..."
 go test ./cmd/arxsentinel -run TestStartupShutdownInvariants -count=1 -timeout 30s
