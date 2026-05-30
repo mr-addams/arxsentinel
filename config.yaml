@@ -516,63 +516,6 @@ pipeline:
 # ГРУППА: Advanced / YAML-only / расширенные возможности (только YAML)
 # ══════════════════════════════════════════════════════════════════════════════════════════
 
-# ── streams: multi-source monitoring / мониторинг нескольких источников ──────────────────
-#
-# Remove general.log_file above and uncomment streams: to monitor multiple log sources.
-# Удалите general.log_file выше и раскомментируйте streams: для мониторинга нескольких источников.
-#
-# streams:
-#   - name: nginx
-#     inputs:
-#       - type: file
-#         path: /var/log/nginx/access.log
-#         parser: combined
-#     outputs:
-#       - type: file
-#         path: /var/log/arxsentinel/threats.log
-#         format: fail2ban
-#   # Add more named streams for each additional log source.
-
-# ── executors: automated threat response / автоматический ответ на угрозы ─────────────────
-#
-# Executors perform automated actions when an IP reaches the ban threshold.
-# Исполнители выполняют автоматические действия при достижении IP порога бана.
-#
-# Only YAML configuration — no ENV overrides (multi-executor setup would require
-# dynamic ENV key generation). Configure directly in this file.
-# Только YAML — без ENV-переменных (мультиисполнитель требует динамических ENV-ключей).
-# Настраивайте напрямую в этом файле.
-#
-# executors:
-#   - name: cloudflare-blocklist         # unique executor instance name / уникальное имя экземпляра
-#     type: cloudflare                   # executor type registered in the system / тип исполнителя
-#     config:
-#       api_token: "YOUR_CF_API_TOKEN_HERE"   # Cloudflare API Token (list edit permissions) / токен API Cloudflare
-#       account_id: "YOUR_CF_ACCOUNT_ID_HERE" # Cloudflare Account ID / идентификатор аккаунта
-#       list_name: "arxsentinel-blocklist"    # IP-list name in Cloudflare / имя IP-списка в Cloudflare
-#       min_level: "THREAT"                   # minimum threat level: INFO / WARN / THREAT
-#       ttl: "24h"                            # cache lifetime for the list / время жизни кэша списка
-#       max_items: 10000                      # max entries (0 = unlimited, CF hard limit = 10000)
-
-# ── inputs / outputs: universal I/O syntax / универсальный I/O синтаксис ─────────────────
-#
-# Use instead of general.log_file / output.threat_log for multi-source or exec plugin I/O.
-# Используйте вместо general.log_file / output.threat_log для нескольких источников или exec-плагинов.
-#
-# inputs:
-#   - type: file
-#     path: /var/log/nginx/access.log
-#     parser: combined
-#   - type: stdin
-#     parser: combined
-#
-# outputs:
-#   - type: file
-#     path: /var/log/arxsentinel/threats.log
-#     format: fail2ban
-#   - type: stdout
-#     format: json
-
 # ── executors: automated threat response / автоматический ответ на угрозы ─────────────────
 #
 # Executors perform automated actions when an IP reaches the ban threshold.
