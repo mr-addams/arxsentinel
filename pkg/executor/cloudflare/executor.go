@@ -76,13 +76,16 @@ type banRecord struct {
 // Lifecycle:
 //  1. NewCloudflareExecutor — parse config, create client, resolve list,
 //     sync existing items, launch sweep goroutine.
-//  2. Execute — on each threat event, check threshold & dedup, add to CF.
+//  2. Run — reads ThreatEvents from channel, processes each via executeSingle.
 //  3. Sweep goroutine — periodically removes expired bans.
-//  4. Close — cancel sweep, wait for goroutine, release resources.
+//  4. Run returns when ctx is cancelled or channel is closed.
 type CloudflareExecutor struct {
 	// name is the human-readable identifier from ExecutorItem.Name,
 	// returned by Name() and used in pipeline logs / metrics.
 	name string
+
+	// execType is "cloudflare" — returned by Type().
+	execType string
 
 	// cfg is the parsed Cloudflare-specific configuration after validation.
 	cfg Config
@@ -113,10 +116,10 @@ type CloudflareExecutor struct {
 		errors   atomic.Int64
 	}
 
-	// stopSweep cancels the sweepExpired goroutine; set by Close().
+	// stopSweep cancels the sweepExpired goroutine.
 	stopSweep context.CancelFunc
 
-	// wg tracks the sweepExpired goroutine for clean shutdown.
+	// wg tracks background goroutines for clean shutdown.
 	wg sync.WaitGroup
 }
 
@@ -160,12 +163,13 @@ func NewCloudflareExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 
 	// ---- Build executor ----
 	exec := &CloudflareExecutor{
-		name:    cfg.Name,
-		cfg:     parsed,
-		client:  client,
-		listID:  listID,
-		banned:  make(map[string]banRecord),
-		deduped: make(map[string]time.Time),
+		name:     cfg.Name,
+		execType: "cloudflare",
+		cfg:      parsed,
+		client:   client,
+		listID:   listID,
+		banned:   make(map[string]banRecord),
+		deduped:  make(map[string]time.Time),
 	}
 
 	// ---- Sync existing list items ----
@@ -328,6 +332,38 @@ func (e *CloudflareExecutor) isBanned(ip string) bool {
 // Name returns the human-readable identifier assigned in the pipeline config.
 func (e *CloudflareExecutor) Name() string {
 	return e.name
+}
+
+// ++++++++++++++++++++++++++ Type +++++++++++++++++++++++++++++++++++++++++++
+
+// Type returns the registered executor type name ("cloudflare").
+func (e *CloudflareExecutor) Type() string {
+	return e.execType
+}
+
+// ++++++++++++++++++++++++++ Run ++++++++++++++++++++++++++++++++++++++++++++
+
+// Run reads ThreatEvents from in and calls Execute for each until ctx is done
+// or the channel is closed. It satisfies the plugin.Executor interface (Flow #042).
+// The sweep goroutine is already running from New(); Run does not start it again.
+func (e *CloudflareExecutor) Run(ctx context.Context, in <-chan plugin.ThreatEvent) error {
+	for {
+		select {
+		case <-ctx.Done():
+			e.stopSweep()
+			e.wg.Wait()
+			return nil
+		case event, ok := <-in:
+			if !ok {
+				e.stopSweep()
+				e.wg.Wait()
+				return nil
+			}
+			if err := e.Execute(ctx, event); err != nil {
+				utils.Log("EXECUTOR", fmt.Sprintf("%s: execute error: %v", e.name, err), "error")
+			}
+		}
+	}
 }
 
 // ++++++++++++++++++++++++++ Stats ++++++++++++++++++++++++++++++++++++++++++

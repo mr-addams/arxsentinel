@@ -37,20 +37,26 @@ type ExecutorStats struct {
 	Errors   int64
 }
 
-// Executor — public interface for stateful enforcement actions.
+// Executor — public interface for autonomous enforcement actions.
+//
+// Flow #042 changes: Executor is now an autonomous entity with its own
+// lifecycle. Run() is called as a goroutine, reads ThreatEvents from a
+// channel (sourced via Named Channel Hub), and returns when ctx is cancelled
+// or the channel is closed. Close() is removed — shutdown is via ctx.Done().
 //
 // Implementations are responsible for:
 //   - Startup sync (e.g., loading current ban list from remote API).
 //   - Deduplication (e.g., skipping already-banned IPs).
 //   - TTL management (e.g., auto-unban after configured duration).
 //   - Retry / circuit-breaker logic on external API failures.
+//   - Batch accumulation and flush (when applicable).
 //
-// Execute receives a fully-scored ThreatEvent from the pipeline.
-// Returning a non-nil error increments the Errors counter and is logged by the pipeline;
-// it does not stop the pipeline or prevent other executors from running.
+// Run receives ThreatEvents from a <-chan and must be safe for concurrent
+// access only via the channel — no external goroutines call methods on the
+// Executor after Run() starts.
 type Executor interface {
 	Name() string
-	Execute(ctx context.Context, event ThreatEvent) error
-	Close() error
+	Type() string
+	Run(ctx context.Context, in <-chan ThreatEvent) error
 	Stats() ExecutorStats
 }

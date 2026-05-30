@@ -1,6 +1,7 @@
 package execplugin
 
 import (
+	"context"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -19,16 +20,14 @@ func TestExecExecutor_Name(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewExecutor failed: %v", err)
 	}
-	defer executor.Close()
-
 	if name := executor.Name(); name != "my-executor" {
 		t.Errorf("Name() = %q, want %q", name, "my-executor")
 	}
 }
 
-// TestExecExecutor_Execute_success tests the happy path: sending a ThreatEvent
-// to the executor plugin and receiving an ok response.
-func TestExecExecutor_Execute_success(t *testing.T) {
+// TestExecExecutor_Run_success tests the happy path: sending a ThreatEvent via Run()
+// and verifying the stats counter increments.
+func TestExecExecutor_Run_success(t *testing.T) {
 	_, filename, _, _ := runtime.Caller(0)
 	testdataDir := filepath.Join(filepath.Dir(filename), "testdata")
 	scriptPath := filepath.Join(testdataDir, "executor.sh")
@@ -37,10 +36,16 @@ func TestExecExecutor_Execute_success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewExecutor failed: %v", err)
 	}
-	defer executor.Close()
 
-	// Create a test ThreatEvent
-	event := plugin.ThreatEvent{
+	ctx, cancel := context.WithCancel(context.Background())
+	in := make(chan plugin.ThreatEvent, 1)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- executor.Run(ctx, in)
+	}()
+
+	in <- plugin.ThreatEvent{
 		Timestamp:  time.Now(),
 		Level:      "THREAT",
 		Stream:     "main",
@@ -50,16 +55,11 @@ func TestExecExecutor_Execute_success(t *testing.T) {
 		Score:      200,
 		Modules:    []string{"probe", "rate"},
 		Reason:     "probe:admin:5,rate:300rps",
-		RawLine:    "",
 	}
 
-	// Call Execute
-	err = executor.Execute(nil, event)
-	if err != nil {
-		t.Errorf("Execute() failed: %v", err)
-	}
+	// Give Run() time to process the event before checking stats.
+	time.Sleep(100 * time.Millisecond)
 
-	// Check stats
 	stats := executor.Stats()
 	if stats.Executed != 1 {
 		t.Errorf("Stats().Executed = %d, want 1", stats.Executed)
@@ -67,6 +67,9 @@ func TestExecExecutor_Execute_success(t *testing.T) {
 	if stats.Errors != 0 {
 		t.Errorf("Stats().Errors = %d, want 0", stats.Errors)
 	}
+
+	cancel()
+	<-done
 }
 
 // TestExecExecutor_InvalidExec tests that NewExecutor fails with a nonexistent binary.

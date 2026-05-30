@@ -59,7 +59,10 @@ type mockExecutor struct {
 	name string
 }
 
-func (m *mockExecutor) Name() string                                     { return m.name }
-func (m *mockExecutor) Execute(_ context.Context, _ plugin.ThreatEvent) error { return nil }
-func (m *mockExecutor) Close() error                                     { return nil }
-func (m *mockExecutor) Stats() plugin.ExecutorStats                      { return plugin.ExecutorStats{} }
+func (m *mockExecutor) Name() string        { return m.name }
+func (m *mockExecutor) Type() string        { return "mock" }
+func (m *mockExecutor) Stats() plugin.ExecutorStats { return plugin.ExecutorStats{} }
+func (m *mockExecutor) Run(_ context.Context, in <-chan plugin.ThreatEvent) error {
+	for range in {}
+	return nil
+}

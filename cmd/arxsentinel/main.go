@@ -525,12 +525,6 @@ func runPipeline(
 		utils.Log("ERROR", fmt.Sprintf("%s: executor init error: %v", logTag, err), "error")
 		return
 	}
-	defer func() {
-		for _, ex := range executors {
-			_ = ex.Close()
-		}
-	}()
-
 	sourceName, sourceType := sourceMetadata(sources)
 
 	// Choose buffer size: pipeline-level override or stream-level default.
@@ -643,9 +637,6 @@ func runPipeline(
 					utils.Log("CONFIG", fmt.Sprintf("%s: SIGHUP executor rebuild error, keeping old executors: %v", logTag, execErr), "warn")
 				} else {
 					// Close old executors that implement io.Closer.
-					for _, ex := range executors {
-						_ = ex.Close()
-					}
 					executors = newExecutors
 				}
 			}
@@ -1073,19 +1064,7 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	metrics.RecordLine(pipe.StreamName, pipe.PipelineName)
 	metrics.RecordInputLine(pipe.StreamName, pipe.PipelineName, pipe.SourceName, pipe.SourceType)
 
-	// ── Forwarder mode (Flow #041): pre-scored threat from sentinel-thread source ───
-	// Skip whitelist, tracker, scorer — dispatch directly to executors.
-	if entry.ThreatData != nil {
-		utils.Log("PARSER", fmt.Sprintf("forwarder: threat from %s ip=%s score=%d level=%s",
-			pipe.StreamName, entry.ThreatData.IP, entry.ThreatData.Score, entry.ThreatData.Level), "debug")
-		ev := *entry.ThreatData
-		for _, ex := range pipe.Executors {
-			if err := ex.Execute(ctx, ev); err != nil {
-				utils.Log("EXECUTOR", fmt.Sprintf("forwarder dispatch error: %v", err), "warn")
-			}
-		}
-		return
-	}
+	// Forwarder mode (Flow #041) removed: Flow #042 replaces with NCH-based dispatch (T5/T10).
 
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
@@ -1191,15 +1170,8 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 		metrics.RecordOutputEvent(pipe.StreamName, pipe.PipelineName, sink.Name(), sinkTypeFromName(sink.Name()))
 	}
 
-	// Executor loop — runs after all sinks have written the event.
-	// Errors are logged but do not stop other executors from running.
-	for _, ex := range pipe.Executors {
-		if err := ex.Execute(ctx, event); err != nil {
-			utils.Log("EXECUTOR_ERROR", fmt.Sprintf("stream %q: executor %s: %v", pipe.StreamName, ex.Name(), err), "error")
-		} else {
-			utils.Log("EXECUTOR", fmt.Sprintf("stream %q: %s: banned %s score=%d reason=%q", pipe.StreamName, ex.Name(), event.IP, event.Score, event.Reason), "info")
-		}
-	}
+	// Executor dispatch removed: Flow #042 executors are autonomous goroutines
+	// reading from Named Channel Hub (NCH). Wired in T4b/T5.
 }
 
 // ========================== systemd notify ===============================================
