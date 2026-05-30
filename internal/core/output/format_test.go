@@ -118,6 +118,56 @@ func TestFormatJSON_NoRawLine(t *testing.T) {
 	}
 }
 
+// ++++++++++++++++++++++++++ TestFormatSentinelThreat ++++++++++++++++++++++++++++++++++++++
+
+// TestFormatSentinelThreat verifies the JSON structure and valid JSON output.
+func TestFormatSentinelThreat(t *testing.T) {
+	e := testEvent
+	e.RawLine = "" // sentinel-threat format never includes raw_line
+
+	b, err := output.FormatSentinelThreat(e, "frontend")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	checks := map[string]any{
+		"ts":      "2026-04-05T14:33:12Z",
+		"ip":      "1.2.3.4",
+		"score":   float64(85),
+		"level":   "THREAT",
+		"reason":  "probe:env:3,bad_bot:known",
+		"source":  "frontend",
+	}
+	for key, want := range checks {
+		got, ok := m[key]
+		if !ok {
+			t.Errorf("missing key %q", key)
+			continue
+		}
+		if got != want {
+			t.Errorf("key %q: got %v, want %v", key, got, want)
+		}
+	}
+
+	// modules must be a JSON array
+	rawModules, ok := m["modules"]
+	if !ok {
+		t.Fatal("missing key modules")
+	}
+	modules, ok := rawModules.([]any)
+	if !ok {
+		t.Fatalf("modules must be array, got %T", rawModules)
+	}
+	if len(modules) != 2 || modules[0] != "probe" || modules[1] != "bad_bot" {
+		t.Errorf("unexpected modules: %v", modules)
+	}
+}
+
 func TestFormatJSON_TimestampRFC3339(t *testing.T) {
 	b, err := output.FormatJSON(testEvent)
 	if err != nil {

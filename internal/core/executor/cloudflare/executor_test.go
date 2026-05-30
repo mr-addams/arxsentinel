@@ -61,6 +61,7 @@ func newTestExecutor(client CFClient, cfg Config) *CloudflareExecutor {
 		client:    client,
 		listID:    "test-list-id",
 		banned:    make(map[string]banRecord),
+		deduped:   make(map[string]time.Time),
 		stopSweep: func() {}, // no-op; Close() won't panic if called
 	}
 }
@@ -319,5 +320,70 @@ func TestExecute_RollbackOnError(t *testing.T) {
 	// Verify rollback — IP must NOT be in banned after failure
 	if exec.isBanned("10.0.0.1") {
 		t.Error("expected IP 10.0.0.1 to be removed from banned after failed AddItem (rollback)")
+	}
+}
+
+// ++++++++++++++++++++++++++ TestExecute_DedupWindow ++++++++++++++++++++++++++++
+
+// TestExecute_DedupWindow verifies that DedupWindow blocks re-execution within
+// the window, but allows execution after the window expires.
+func TestExecute_DedupWindow(t *testing.T) {
+	mock := &mockCFClient{listID: "test-list-id"}
+	exec := newTestExecutor(mock, Config{
+		MinLevel:    "INFO",
+		DedupWindow: 1 * time.Hour,
+	})
+	// Manually set a fake dedup time in the future for an IP.
+	exec.mu.Lock()
+	exec.deduped["10.0.0.1"] = time.Now().Add(1 * time.Hour)
+	exec.mu.Unlock()
+
+	event := plugin.ThreatEvent{
+		IP:        "10.0.0.1",
+		Level:     "THREAT",
+		Timestamp: time.Now(),
+	}
+
+	// First call — should be skipped because deduped is active
+	if err := exec.Execute(context.Background(), event); err != nil {
+		t.Fatalf("Execute returned unexpected error: %v", err)
+	}
+	stats := exec.Stats()
+	if stats.Skipped != 1 {
+		t.Errorf("expected Skipped=1 (dedup window), got %d", stats.Skipped)
+	}
+	if len(mock.added) != 0 {
+		t.Errorf("expected 0 AddItem calls (dedup window), got %d", len(mock.added))
+	}
+}
+
+// TestExecute_DedupWindowExpired verifies that when DedupWindow has expired,
+// a new ban is allowed.
+func TestExecute_DedupWindowExpired(t *testing.T) {
+	mock := &mockCFClient{listID: "test-list-id"}
+	exec := newTestExecutor(mock, Config{
+		MinLevel:    "INFO",
+		DedupWindow: 1 * time.Hour,
+	})
+	// Set dedup time in the past — should be treated as expired.
+	exec.mu.Lock()
+	exec.deduped["10.0.0.1"] = time.Now().Add(-1 * time.Minute)
+	exec.mu.Unlock()
+
+	event := plugin.ThreatEvent{
+		IP:        "10.0.0.1",
+		Level:     "THREAT",
+		Timestamp: time.Now(),
+	}
+
+	if err := exec.Execute(context.Background(), event); err != nil {
+		t.Fatalf("Execute returned unexpected error: %v", err)
+	}
+	stats := exec.Stats()
+	if stats.Executed != 1 {
+		t.Errorf("expected Executed=1 (dedup window expired), got %d", stats.Executed)
+	}
+	if len(mock.added) != 1 {
+		t.Errorf("expected 1 AddItem call (dedup window expired), got %d", len(mock.added))
 	}
 }

@@ -93,13 +93,18 @@ type CloudflareExecutor struct {
 	// listID is the Cloudflare IP List identifier obtained at startup.
 	listID string
 
-	// mu protects the banned map — the only shared mutable state.
+	// mu protects the banned and deduped maps — the only shared mutable state.
 	mu sync.Mutex
 
 	// banned holds all IPs currently tracked by this executor, indexed by IP.
 	// Items may originate from our own Execute calls (addedByExecutor=true)
 	// or from pre-existing list entries discovered during syncExisting.
 	banned map[string]banRecord
+
+	// deduped tracks IPs that were recently banned and should not be re-banned
+	// within the DedupWindow. Only used when cfg.DedupWindow > 0.
+	// Map key is IP, value is the time until which the IP is deduped.
+	deduped map[string]time.Time
 
 	// stats accumulates operation counters for the Stats() snapshot.
 	stats struct {
@@ -155,11 +160,12 @@ func NewCloudflareExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 
 	// ---- Build executor ----
 	exec := &CloudflareExecutor{
-		name:   cfg.Name,
-		cfg:    parsed,
-		client: client,
-		listID: listID,
-		banned: make(map[string]banRecord),
+		name:    cfg.Name,
+		cfg:     parsed,
+		client:  client,
+		listID:  listID,
+		banned:  make(map[string]banRecord),
+		deduped: make(map[string]time.Time),
 	}
 
 	// ---- Sync existing list items ----
@@ -176,6 +182,12 @@ func NewCloudflareExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 	sweepCtx, exec.stopSweep = context.WithCancel(context.Background())
 	exec.wg.Add(1)
 	go exec.sweepExpired(sweepCtx)
+
+	// ---- Start dedup cleanup goroutine (only when DedupWindow > 0) ----
+	if time.Duration(parsed.DedupWindow) > 0 {
+		exec.wg.Add(1)
+		go exec.cleanupDeduped(sweepCtx)
+	}
 
 	return exec, nil
 }
@@ -233,6 +245,19 @@ func (e *CloudflareExecutor) Execute(ctx context.Context, event plugin.ThreatEve
 		return nil
 	}
 
+	// ---- DedupWindow check (Flow #041) ----
+	// Even if the IP is no longer in the banned map (TTL sweep), skip re-banning
+	// if DedupWindow > 0 and the IP is still within the dedup window.
+	if time.Duration(e.cfg.DedupWindow) > 0 {
+		e.mu.Lock()
+		if until, ok := e.deduped[event.IP]; ok && time.Now().Before(until) {
+			e.mu.Unlock()
+			e.stats.skipped.Add(1)
+			return nil
+		}
+		e.mu.Unlock()
+	}
+
 	// ---- Dedup with pre-registration under lock ----
 	// Pre-register the IP before the API call so that concurrent Execute calls
 	// for the same IP see it as already banned and skip without a duplicate request.
@@ -276,6 +301,10 @@ func (e *CloudflareExecutor) Execute(ctx context.Context, event plugin.ThreatEve
 	if rec, ok := e.banned[event.IP]; ok && rec.cfItemID == "" {
 		rec.cfItemID = itemID
 		e.banned[event.IP] = rec
+	}
+	// DedupWindow (Flow #041): record the ban time so we skip re-banning within window.
+	if time.Duration(e.cfg.DedupWindow) > 0 {
+		e.deduped[event.IP] = time.Now().Add(time.Duration(e.cfg.DedupWindow))
 	}
 	e.mu.Unlock()
 
@@ -440,5 +469,41 @@ func (e *CloudflareExecutor) sweepOnce(ctx context.Context) {
 	// Log each IP that was actually deleted from the local map, outside the lock.
 	for _, ip := range unbanned {
 		utils.Log("EXECUTOR", fmt.Sprintf("cloudflare: unbanned %s (TTL expired)", ip), "info")
+	}
+}
+
+// ++++++++++++++++++++++++++ cleanupDeduped ++++++++++++++++++++++++++++++++
+
+// cleanupDeduped periodically sweeps expired entries from the deduped map.
+// Runs only when DedupWindow > 0. Interval = max(DedupWindow/2, 1 minute).
+func (e *CloudflareExecutor) cleanupDeduped(ctx context.Context) {
+	defer e.wg.Done()
+
+	// Clamp cleanup interval: at least 10s (responsive for short windows),
+	// at most 5 minutes (avoids pointless sweeps for week-long windows).
+	interval := time.Duration(e.cfg.DedupWindow) / 2
+	if interval < 10*time.Second {
+		interval = 10 * time.Second
+	} else if interval > 5*time.Minute {
+		interval = 5 * time.Minute
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			e.mu.Lock()
+			now := time.Now()
+			for ip, until := range e.deduped {
+				if now.After(until) {
+					delete(e.deduped, ip)
+				}
+			}
+			e.mu.Unlock()
+		}
 	}
 }

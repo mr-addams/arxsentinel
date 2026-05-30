@@ -29,11 +29,9 @@ nfpms:
     formats:
       - deb
 
-    dependencies:
-      - fail2ban
-
     recommends:
       - nginx
+      - fail2ban
 
     # bindir: installation path for the binary produced by the builds section.
     bindir: /usr/bin
@@ -75,11 +73,9 @@ nfpms:
     formats:
       - rpm
 
-    dependencies:
-      - fail2ban
-
     recommends:
       - nginx
+      - fail2ban
 
     bindir: /usr/bin
 
@@ -118,11 +114,9 @@ nfpms:
     formats:
       - archlinux
 
-    dependencies:
-      - fail2ban
-
     recommends:
       - nginx
+      - fail2ban
 
     bindir: /usr/bin
 

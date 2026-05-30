@@ -147,6 +147,7 @@ type PipelineConfig struct {
 	TrackerGroup string                    `yaml:"tracker_group"` // YAML: pipelines[].tracker_group — shared IP-state group; "" → isolated
 	Inputs       []InputConfig             `yaml:"inputs"`        // YAML: pipelines[].inputs — log sources for this pipeline
 	Outputs      []SinkConfig              `yaml:"outputs"`       // YAML: pipelines[].outputs — threat sinks for this pipeline
+	Executors    []ExecutorItem            `yaml:"executors"`     // YAML: pipelines[].executors — per-pipeline executor override; nil inherits top-level cfg.Executors; [] means no executors. Consumer: main.runPipeline
 	Detectors    map[string]DetectorConfig `yaml:"detectors"`     // YAML: pipelines[].detectors — per-detector config; nil → all registered with defaults
 	Pipeline     PipelineRuntimeConfig     `yaml:"pipeline"`      // YAML: pipelines[].pipeline — buffer_size, shutdown_timeout
 }
@@ -164,6 +165,7 @@ type StreamConfig struct {
 	// Migrate() wraps these into Pipelines[0] before runStream() is called.
 	Inputs   []InputConfig        `yaml:"inputs"`   // YAML: streams[].inputs — Deprecated in favour of pipelines[].inputs; auto-wrapped by Migrate()
 	Outputs  []SinkConfig         `yaml:"outputs"`  // YAML: streams[].outputs — Deprecated in favour of pipelines[].outputs; auto-wrapped by Migrate()
+	Executors []ExecutorItem      `yaml:"executors"` // YAML: streams[].executors — shorthand; Migrate() propagates to pipelines with Executors==nil. Consumer: config.Migrate
 	Pipeline PipelineRuntimeConfig `yaml:"pipeline"` // YAML: streams[].pipeline — per-stream pipeline tuning; overrides top-level
 
 	// Deprecated: use inputs/outputs instead. Kept for backward compatibility and
@@ -1009,10 +1011,31 @@ func validateConfig(cfg *Config) error {
 			if len(p.Inputs) == 0 {
 				return fmt.Errorf("streams[%d].pipelines[%d]: must have at least one input", i, j)
 			}
-			if len(p.Outputs) == 0 {
+			// Forwarder mode: a pipeline with sentinel-threat input does not need outputs
+			// (threats are dispatched directly to executors, not written to sinks).
+			isForwarder := false
+			for _, inp := range p.Inputs {
+				if inp.Type == "sentinel-threat" {
+					isForwarder = true
+					break
+				}
+			}
+			if !isForwarder && len(p.Outputs) == 0 {
 				// A pipeline without outputs silently drops all threat events — almost certainly a
-				// misconfiguration. Require at least one sink to prevent silent data loss.
+				// misconfiguration. Require at least one sink for normal pipelines.
 				return fmt.Errorf("streams[%d].pipelines[%d]: must have at least one output", i, j)
+			}
+			if p.Executors != nil {
+				execNames := make(map[string]bool)
+				for k, ex := range p.Executors {
+					if ex.Name == "" {
+						return fmt.Errorf("streams[%d].pipelines[%d].executors[%d]: name must not be empty", i, j, k)
+					}
+					if execNames[ex.Name] {
+						return fmt.Errorf("streams[%d].pipelines[%d].executors: duplicate executor name %q", i, j, ex.Name)
+					}
+					execNames[ex.Name] = true
+				}
 			}
 			if err := validateInputs(p.Inputs); err != nil {
 				return fmt.Errorf("streams[%d].pipelines[%d].inputs: %w", i, j, err)
@@ -1043,9 +1066,9 @@ func validateConfig(cfg *Config) error {
 func validateInputs(inputs []InputConfig) error {
 	seen := make(map[string]bool)
 	for i, in := range inputs {
-		if in.Type != "file" && in.Type != "stdin" {
-			return fmt.Errorf("inputs[%d]: unknown type %q (want file or stdin)", i, in.Type)
-		}
+	if in.Type != "file" && in.Type != "stdin" && in.Type != "sentinel-threat" {
+		return fmt.Errorf("inputs[%d]: unknown type %q (want file, stdin, or sentinel-threat)", i, in.Type)
+	}
 		key := in.Type + ":" + in.Path
 		if seen[key] {
 			return fmt.Errorf("inputs[%d]: duplicate source %q", i, key)
@@ -1070,9 +1093,9 @@ func validateSinks(sinks []SinkConfig) error {
 		if s.Type == "file" && s.Path == "" {
 			return fmt.Errorf("outputs[%d]: type=file requires path", i)
 		}
-		if s.Format != "" && s.Format != "fail2ban" && s.Format != "json" {
-			return fmt.Errorf("outputs[%d]: unknown format %q (want fail2ban or json)", i, s.Format)
-		}
+	if s.Format != "" && s.Format != "fail2ban" && s.Format != "json" && s.Format != "sentinel-threat" {
+		return fmt.Errorf("outputs[%d]: unknown format %q (want fail2ban, json, or sentinel-threat)", i, s.Format)
+	}
 	}
 	return nil
 }

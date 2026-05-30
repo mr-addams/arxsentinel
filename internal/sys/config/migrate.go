@@ -119,7 +119,7 @@ func Migrate(cfg *Config) []string {
 		cfg.Pipeline.ShutdownTimeout = Duration(15 * time.Second)
 	}
 
-	// ── Pipeline auto-wrap (Flow #034) ───────────────────────────────────────────────────
+	// ── Auto-wrap: new syntax streams without explicit pipelines ──────────────────────────
 	// Streams that use the Flow #030 inputs/outputs syntax (or legacy log_file fields)
 	// are wrapped into a single unnamed pipeline so runStream() can always iterate
 	// over Pipelines without branching on the legacy path.
@@ -129,15 +129,9 @@ func Migrate(cfg *Config) []string {
 		if len(s.Pipelines) > 0 {
 			continue // new syntax — auto-wrap not needed
 		}
-		if len(s.Inputs) == 0 && len(s.Outputs) == 0 {
-			// Nothing to wrap — validateConfig will report the missing inputs/outputs error.
-			// Asymmetric states (inputs without outputs or vice versa) are intentionally allowed
-			// here: auto-wrap creates a PipelineConfig with whatever is set, and validateConfig
-			// enforces the "both inputs and outputs required" invariant in a single place.
-			// This is safe because Migrate() always runs immediately before validateConfig().
+		if len(s.Inputs) == 0 && len(s.Outputs) == 0 && s.Executors == nil {
 			continue
 		}
-		// Inherit runtime config from stream-level override or top-level default.
 		runtime := s.Pipeline
 		if runtime.BufferSize == 0 {
 			runtime.BufferSize = cfg.Pipeline.BufferSize
@@ -150,9 +144,25 @@ func Migrate(cfg *Config) []string {
 			TrackerGroup: "",
 			Inputs:       s.Inputs,
 			Outputs:      s.Outputs,
+			Executors:    s.Executors, // stream-level executors propagate to auto-wrapped pipeline
 			Pipeline:     runtime,
-			// Detectors: nil → all registered detectors with defaults (resolved in runPipeline)
 		}}
+	}
+
+	// ── Stream-level executors propagation (Flow #041) ─────────────────────────────────────
+	// After auto-wrap, propagate stream executors to pipelines that have Executors==nil.
+	// Pipelines with explicit Executors (including empty slice) are not overwritten.
+	for i := range cfg.Streams {
+		s := &cfg.Streams[i]
+		if s.Executors == nil {
+			continue
+		}
+		for j := range s.Pipelines {
+			p := &s.Pipelines[j]
+			if p.Executors == nil {
+				p.Executors = s.Executors
+			}
+		}
 	}
 
 	return warnings

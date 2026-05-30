@@ -285,20 +285,26 @@ output:
 # These sections have no env var equivalents and are configured by editing this file.
 # Full copy-paste-ready examples: /etc/arxsentinel/config.yaml.example
 #
+# streams: (see examples below)
 # ── streams: multi-source monitoring ──────────────────────────────────────────────────────
 # Remove general.log_file above and uncomment streams: to monitor multiple log sources.
 #
-# streams:
-#   - name: nginx
-#     inputs:
-#       - type: file
-#         path: /var/log/nginx/access.log
-#         parser: combined
-#     outputs:
-#       - type: file
-#         path: /var/log/arxsentinel/threats.log
-#         format: fail2ban
-#   # Add more named streams for each additional log source.
+# Per-stream executor — only this executor fires for this stream:
+# Поточный executor — только этот исполнитель срабатывает для данного потока:
+#  streams:
+#    - name: domain-a
+#      inputs:
+#        - type: file
+#          path: /var/log/nginx/domain-a.access.log
+#      outputs:
+#        - type: file
+#          path: /var/log/arxsentinel/domain-a.threats.log
+#      executors:
+#        - name: cf-account-a
+#          type: cloudflare
+#          config:
+#            api_token: "TOKEN_A"
+#            account_id: "ACCOUNT_A"
 #
 # ── executors: automated threat response ───────────────────────────────────────────────────
 # Executors run after every THREAT event. See config.yaml.example for all options.

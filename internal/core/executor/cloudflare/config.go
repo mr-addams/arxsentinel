@@ -46,6 +46,11 @@ type Config struct {
 	// MaxItems limits the number of items in the IP list (0 = no limit);
 	// protects against Cloudflare API quota overflow (maximum 10 000 entries).
 	MaxItems int `json:"max_items" yaml:"max_items"`
+	// DedupWindow skips re-banning an IP within this window after a successful ban;
+	// 0 means disabled. Applied on top of the existing banned-map dedup — even after
+	// the IP is removed from the banned map (TTL sweep), it won't be re-banned until
+	// DedupWindow expires.
+	DedupWindow time.Duration `json:"-" yaml:"dedup_window"`
 }
 
 // ++++++++++++++++++++++++++ Configuration parsing ++++++++++++++++++++++++++
@@ -67,7 +72,7 @@ func parseConfig(raw map[string]interface{}) (Config, error) {
 		MaxItems: 0,
 	}
 
-	// ---- TTL: parse before JSON serialization ----
+	// ---- Duration fields: parse before JSON serialization ----
 	// Copy the map to avoid mutating the original (the caller may need it
 	// for logging).
 	rawCopy := make(map[string]interface{}, len(raw))
@@ -88,6 +93,22 @@ func parseConfig(raw map[string]interface{}) (Config, error) {
 			cfg.TTL = d
 		case int:
 			cfg.TTL = time.Duration(v) * time.Second
+		}
+	}
+
+	if dwVal, ok := rawCopy["dedup_window"]; ok {
+		delete(rawCopy, "dedup_window")
+		switch v := dwVal.(type) {
+		case string:
+			d, err := time.ParseDuration(v)
+			if err != nil {
+				return Config{}, fmt.Errorf(
+					"cloudflare: parseConfig: invalid dedup_window format %q: %w", v, err,
+				)
+			}
+			cfg.DedupWindow = d
+		case int:
+			cfg.DedupWindow = time.Duration(v) * time.Second
 		}
 	}
 
