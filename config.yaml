@@ -16,6 +16,10 @@
 #
 # ========================================================================================
 
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# ГРУППА: Infrastructure & Runtime / инфраструктура и среда выполнения
+# ══════════════════════════════════════════════════════════════════════════════════════════
+
 # ── general: paths and infrastructure / пути и инфраструктура ───────────────────────────
 general:
   log_file: /var/log/nginx/access.log    # path to nginx access.log (data source) / путь к nginx access.log (источник данных)
@@ -41,6 +45,10 @@ general:
 logging:
   debug: false          # true = show PARSER/TAIL/DEBUG tags in console / показывать PARSER/TAIL/DEBUG теги
   console_color: true   # false = plain text without ANSI (for pipe/journalctl) / plain text без ANSI (для pipe/journalctl)
+
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# ГРУППА: Input & Parsing / входные данные и парсинг лога
+# ══════════════════════════════════════════════════════════════════════════════════════════
 
 # ── parser: log format configuration / конфигурация формата лога ────────────────────────
 parser:
@@ -76,6 +84,10 @@ parser:
   #   referer: "http_referer"
   #   user_agent: "http_user_agent"
   #   real_ip: "real_ip"
+
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# ГРУППА: Detection & Scoring / детекция угроз и система оценки
+# ══════════════════════════════════════════════════════════════════════════════════════════
 
 # ── scoring: thresholds and accumulation window / пороги и окно накопления ──────────────
 scoring:
@@ -309,6 +321,10 @@ detectors:
     check_ua: true
     check_referrer: false     # enable to also match the Referer header / включить для проверки Referer
 
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# ГРУППА: Threat Intelligence / управление угрозами и доверенными IP
+# ══════════════════════════════════════════════════════════════════════════════════════════
+
 # ── blocklist: pattern list management / управление блеклистами ────────────────────────────
 blocklist:
 
@@ -448,6 +464,10 @@ whitelist:
     negative_ttl: "1h"     # cache TTL for failed verification / кэш неуспешной верификации
     ip_list_refresh: "24h" # IP range refresh interval (Facebook, Telegram...) / обновление IP-диапазонов
 
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# ГРУППА: Output & Observability / вывод результатов и мониторинг
+# ══════════════════════════════════════════════════════════════════════════════════════════
+
 # ── output: log file paths / пути к лог-файлам ──────────────────────────────────────────
 output:
   threat_log: /var/log/arxsentinel/threats.log    # threat log for Fail2Ban (production) / threat-лог для Fail2Ban (продакшн)
@@ -474,6 +494,10 @@ metrics:
   username: ""            # basic auth username; leave empty to disable auth / имя пользователя basic auth; пусто = без авторизации
   password_hash: ""       # bcrypt hash (cost ≥ 10); required when username is set / bcrypt-хэш (cost ≥ 10); нужен при заданном username
 
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# ГРУППА: Pipeline / буфер канала и graceful shutdown
+# ══════════════════════════════════════════════════════════════════════════════════════════
+
 # ── pipeline: channel buffer and shutdown tuning / буфер канала и завершение ───────────
 #
 # Controls the bounded channel between log-source readers and the processing pipeline.
@@ -487,3 +511,123 @@ metrics:
 pipeline:
   buffer_size: 8192          # bounded channel depth between Merge and processor / глубина буферного канала
   shutdown_timeout: "15s"    # graceful shutdown drain window / окно graceful-завершения
+
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# ГРУППА: Advanced / YAML-only / расширенные возможности (только YAML)
+# ══════════════════════════════════════════════════════════════════════════════════════════
+
+# ── streams: multi-source monitoring / мониторинг нескольких источников ──────────────────
+#
+# Remove general.log_file above and uncomment streams: to monitor multiple log sources.
+# Удалите general.log_file выше и раскомментируйте streams: для мониторинга нескольких источников.
+#
+# streams:
+#   - name: nginx
+#     inputs:
+#       - type: file
+#         path: /var/log/nginx/access.log
+#         parser: combined
+#     outputs:
+#       - type: file
+#         path: /var/log/arxsentinel/threats.log
+#         format: fail2ban
+#   # Add more named streams for each additional log source.
+
+# ── executors: automated threat response / автоматический ответ на угрозы ─────────────────
+#
+# Executors perform automated actions when an IP reaches the ban threshold.
+# Исполнители выполняют автоматические действия при достижении IP порога бана.
+#
+# Only YAML configuration — no ENV overrides (multi-executor setup would require
+# dynamic ENV key generation). Configure directly in this file.
+# Только YAML — без ENV-переменных (мультиисполнитель требует динамических ENV-ключей).
+# Настраивайте напрямую в этом файле.
+#
+# executors:
+#   - name: cloudflare-blocklist         # unique executor instance name / уникальное имя экземпляра
+#     type: cloudflare                   # executor type registered in the system / тип исполнителя
+#     config:
+#       api_token: "YOUR_CF_API_TOKEN_HERE"   # Cloudflare API Token (list edit permissions) / токен API Cloudflare
+#       account_id: "YOUR_CF_ACCOUNT_ID_HERE" # Cloudflare Account ID / идентификатор аккаунта
+#       list_name: "arxsentinel-blocklist"    # IP-list name in Cloudflare / имя IP-списка в Cloudflare
+#       min_level: "THREAT"                   # minimum threat level: INFO / WARN / THREAT
+#       ttl: "24h"                            # cache lifetime for the list / время жизни кэша списка
+#       max_items: 10000                      # max entries (0 = unlimited, CF hard limit = 10000)
+
+# ── inputs / outputs: universal I/O syntax / универсальный I/O синтаксис ─────────────────
+#
+# Use instead of general.log_file / output.threat_log for multi-source or exec plugin I/O.
+# Используйте вместо general.log_file / output.threat_log для нескольких источников или exec-плагинов.
+#
+# inputs:
+#   - type: file
+#     path: /var/log/nginx/access.log
+#     parser: combined
+#   - type: stdin
+#     parser: combined
+#
+# outputs:
+#   - type: file
+#     path: /var/log/arxsentinel/threats.log
+#     format: fail2ban
+#   - type: stdout
+#     format: json
+
+# ── executors: automated threat response / автоматический ответ на угрозы ─────────────────
+#
+# Executors perform automated actions when an IP reaches the ban threshold.
+# Исполнители выполняют автоматические действия при достижении IP порога бана.
+#
+# Only YAML configuration — no ENV overrides (multi-executor setup would require
+# dynamic ENV key generation). Configure directly in this file.
+# Только YAML — без ENV-переменных (мультиисполнитель требует динамических ENV-ключей).
+# Настраивайте напрямую в этом файле.
+#
+# executors:
+#   - name: cloudflare-blocklist         # unique executor instance name / уникальное имя экземпляра
+#     type: cloudflare                   # executor type registered in the system / тип исполнителя
+#     config:
+#       api_token: "YOUR_CF_API_TOKEN_HERE"   # Cloudflare API Token (list edit permissions) / токен API Cloudflare
+#       account_id: "YOUR_CF_ACCOUNT_ID_HERE" # Cloudflare Account ID / идентификатор аккаунта
+#       list_name: "arxsentinel-blocklist"    # IP-list name in Cloudflare / имя IP-списка в Cloudflare
+#       min_level: "THREAT"                   # minimum threat level: INFO / WARN / THREAT
+#       ttl: "24h"                            # cache lifetime for the list / время жизни кэша списка
+#       max_items: 10000                      # max entries (0 = unlimited, CF hard limit = 10000)
+#   - name: iptables-ban                   # exec-fallback for bare-metal / fallback на exec для bare-metal
+#     exec: /usr/local/lib/arxsentinel/plugins/iptables-ban.sh
+#
+# ── streams: multi-source monitoring / мониторинг нескольких источников ───────────────────
+#
+# Remove general.log_file above and uncomment streams: to monitor multiple log sources.
+# Удалите general.log_file выше и раскомментируйте streams: для мониторинга нескольких источников.
+#
+# streams:
+#   - name: nginx
+#     inputs:
+#       - type: file
+#         path: /var/log/nginx/access.log
+#         parser: combined
+#     outputs:
+#       - type: file
+#         path: /var/log/arxsentinel/threats.log
+#         format: fail2ban
+#   # Add more named streams for each additional log source.
+#
+# ── inputs / outputs: universal I/O syntax / универсальный I/O синтаксис ─────────────────
+#
+# Use instead of general.log_file / output.threat_log for multi-source or exec plugin I/O.
+# Используйте вместо general.log_file / output.threat_log для нескольких источников или exec plugin I/O.
+#
+# inputs:
+#   - type: file
+#     path: /var/log/nginx/access.log
+#     parser: combined
+#   - type: stdin
+#     parser: combined
+#
+# outputs:
+#   - type: file
+#     path: /var/log/arxsentinel/threats.log
+#     format: fail2ban
+#   - type: stdout
+#     format: json

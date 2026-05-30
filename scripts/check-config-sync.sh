@@ -19,10 +19,10 @@
 #        advanced/migration-only ones) must appear in config.docker.yaml (file 3).
 #     C. Default values: TestEnvExampleDefaults verifies that documented defaults in
 #        .env.example match actual Go defaults from defaultConfig() + applyEnvOverrides().
+#     C2. YAML-only sections: every commented advanced section (streams, executors,
+#        inputs, outputs) must be present in both config.yaml and config.docker.yaml.
 #
 #   WHAT IS NOT CHECKED (intentionally YAML-only, env vars make no sense):
-#     streams, inputs, outputs, executors — multi-pipeline / exec plugin syntax;
-#     these are complex nested structures that cannot be expressed as env vars.
 #     Detector arrays (probe.paths, overflow.suspicious_params, extra_*_patterns)
 #     are also YAML-only — no env var equivalents exist.
 #   Reference: full examples with all YAML-only sections are in config.example.yaml.
@@ -160,6 +160,117 @@ else
   fail "TestEnvExampleDefaults FAILED — a default value in .env.example does not match config.go"
   echo "    Run: go test ./internal/sys/config -run TestEnvExampleDefaults -v to see details"
   FAIL=1
+fi
+
+# ── C2. YAML-only sections presence in both config yamls ────────────────────────────
+#
+# Every YAML-only advanced section (executors, streams, inputs, outputs) must appear
+# as a commented reference in BOTH config.yaml and config.docker.yaml.
+# These are intentional — no env var equivalents exist, but operators must discover them.
+
+info "C2. YAML-only sections presence in both config yamls"
+
+YAML_ONLY_SECTIONS="executors streams inputs outputs"
+YAML_FILES=("$MAIN_CONFIG" "$DOCKER_CONFIG")
+C2_COUNT=0
+C2_MISSING=0
+
+for section in $YAML_ONLY_SECTIONS; do
+  for yaml_file in "${YAML_FILES[@]}"; do
+    C2_COUNT=$((C2_COUNT + 1))
+    if grep -qE "^# ${section}:" "$yaml_file"; then
+      ok "# ${section}:  →  ${yaml_file}"
+    else
+      fail "# ${section}:  →  missing from ${yaml_file}"
+      C2_MISSING=$((C2_MISSING + 1))
+    fi
+  done
+done
+
+echo
+if [ $C2_MISSING -eq 0 ]; then
+  echo -e "  ${G}$((C2_COUNT / 2)) sections × 2 files = $C2_COUNT checks — all present${RESET}"
+else
+  echo -e "  ${R}$C2_MISSING of $C2_COUNT checks failed${RESET}"
+fi
+
+# ── C2. YAML-only sections presence in both config yamls ──────────────────────
+#
+# Ensures that every YAML-only advanced section (executors, streams, inputs,
+# outputs) is present in both config files, not just in one.
+
+info "C2. YAML-only sections presence in both config yamls"
+
+C2_SECTIONS="executors streams inputs outputs"
+C2_COUNT=0
+C2_MISSING=0
+
+for section in $C2_SECTIONS; do
+  C2_COUNT=$((C2_COUNT + 1))
+  c2_missing_files=()
+
+  if ! grep -qF "# $section:" "$MAIN_CONFIG"; then
+    c2_missing_files+=("$MAIN_CONFIG")
+  fi
+
+  if ! grep -qF "# $section:" "$DOCKER_CONFIG"; then
+    c2_missing_files+=("$DOCKER_CONFIG")
+  fi
+
+  if [ ${#c2_missing_files[@]} -gt 0 ]; then
+    for f in "${c2_missing_files[@]}"; do
+      fail "# $section:  missing from $f"
+    done
+    C2_MISSING=$((C2_MISSING + 1))
+  else
+    ok "# $section:"
+  fi
+done
+
+echo
+if [ $C2_MISSING -eq 0 ]; then
+  echo -e "  ${G}$C2_COUNT YAML-only sections — all covered${RESET}"
+else
+  echo -e "  ${R}$C2_MISSING of $C2_COUNT YAML-only sections missing${RESET}"
+fi
+
+# ── C2. YAML-only sections presence in both config yamls ──────────────────────
+#
+# Checks that the commented YAML-only advanced sections (executors, streams,
+# inputs, outputs) exist in both config.yaml and config.docker.yaml.
+# These are intentionally YAML-only (no ENV equivalents).
+
+info "C2. YAML-only sections presence in both config yamls"
+
+YAML_ONLY_SECTIONS="executors streams inputs outputs"
+C2_COUNT=0
+C2_MISSING=0
+
+while IFS= read -r section; do
+  C2_COUNT=$((C2_COUNT + 1))
+  missing_files=()
+
+  if ! grep -qE "^# ${section}:" "$MAIN_CONFIG"; then
+    missing_files+=("$MAIN_CONFIG")
+  fi
+
+  if ! grep -qE "^# ${section}:" "$DOCKER_CONFIG"; then
+    missing_files+=("$DOCKER_CONFIG")
+  fi
+
+  if [ ${#missing_files[@]} -gt 0 ]; then
+    fail "# ${section}:  — missing from: ${missing_files[*]}"
+    C2_MISSING=$((C2_MISSING + 1))
+  else
+    ok "# ${section}:"
+  fi
+done < <(printf '%s\n' $YAML_ONLY_SECTIONS)
+
+echo
+if [ $C2_MISSING -eq 0 ]; then
+  echo -e "  ${G}$C2_COUNT YAML-only sections — present in both configs${RESET}"
+else
+  echo -e "  ${R}$C2_MISSING of $C2_COUNT YAML-only sections not found in both configs${RESET}"
 fi
 
 # ── Result ─────────────────────────────────────────────────────────────────────
