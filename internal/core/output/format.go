@@ -58,6 +58,36 @@ type jsonEnvelope struct {
 	RawLine    string   `json:"raw_line,omitempty"`
 }
 
+// ========================== Sentinel-threat format (Flow #041) ===========================
+
+// sentinelThreatLine mirrors the JSON structure for sentinel-threat transport format.
+// Used both by FormatSentinelThreat (output) and SentinelThreatSource (input).
+type sentinelThreatLine struct {
+	TS      string   `json:"ts"`
+	IP      string   `json:"ip"`
+	Score   int      `json:"score"`
+	Level   string   `json:"level"`
+	Modules []string `json:"modules"`
+	Reason  string   `json:"reason"`
+	Source  string   `json:"source"`
+}
+
+// FormatSentinelThreat marshals a ThreatEvent to a sentinel-threat JSON line.
+// The format is a minimal transport JSON — only fields needed for re-ban.
+func FormatSentinelThreat(e plugin.ThreatEvent, streamName string) ([]byte, error) {
+	ts := e.Timestamp.UTC().Format(time.RFC3339)
+	line := sentinelThreatLine{
+		TS:      ts,
+		IP:      e.IP,
+		Score:   e.Score,
+		Level:   e.Level,
+		Modules: e.Modules,
+		Reason:  e.Reason,
+		Source:  streamName,
+	}
+	return json.Marshal(line)
+}
+
 // FormatJSON marshals a ThreatEvent to a JSON envelope (D7).
 //
 // raw_line is included only when e.RawLine is non-empty — omit it in production

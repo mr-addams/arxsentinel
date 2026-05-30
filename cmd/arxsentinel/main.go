@@ -513,10 +513,14 @@ func runPipeline(
 		}
 	}()
 
-	// Executors are optional — empty cfg.Executors is not an error.
-	// Executor lifecycle is NOT reset on SIGHUP: executors hold state (ban list, TTL
-	// goroutines) that must survive config reloads, same as sinks.
-	executors, err := buildExecutors(cfg.Executors)
+	// Executors are optional — empty list is not an error.
+	// Per-pipeline executor override (Flow #041): if pipeCfg.Executors is set, use it;
+	// otherwise inherit top-level cfg.Executors (backward compatible).
+	execItems := cfg.Executors
+	if pipeCfg.Executors != nil {
+		execItems = pipeCfg.Executors
+	}
+	executors, err := buildExecutors(execItems)
 	if err != nil {
 		utils.Log("ERROR", fmt.Sprintf("%s: executor init error: %v", logTag, err), "error")
 		return
@@ -628,6 +632,23 @@ func runPipeline(
 					}
 				}
 			}
+			// Executors with per-pipeline override must be rebuilt on SIGHUP (Flow #041).
+			// When pipeCfg.Executors != nil (per-pipeline override), rebuild executors from
+			// the new config. When pipeCfg.Executors == nil (inheriting top-level), keep
+			// existing executors — they are not affected by this pipeline's config change.
+			if newPipeCfg.Executors != nil {
+				newExecItems := newPipeCfg.Executors
+				newExecutors, execErr := buildExecutors(newExecItems)
+				if execErr != nil {
+					utils.Log("CONFIG", fmt.Sprintf("%s: SIGHUP executor rebuild error, keeping old executors: %v", logTag, execErr), "warn")
+				} else {
+					// Close old executors that implement io.Closer.
+					for _, ex := range executors {
+						_ = ex.Close()
+					}
+					executors = newExecutors
+				}
+			}
 			streamCfg = newStreamCfg
 			pipeCfg = newPipeCfg
 			cfg = newCfg
@@ -662,6 +683,17 @@ func runPipeline(
 }
 
 // ── TrackerGroup helpers ───────────────────────────────────────────────────────────────
+
+// hasSentinelThreatInput checks if any input in the slice is of type "sentinel-threat".
+// Used to identify forwarder mode pipelines.
+func hasSentinelThreatInput(inputs []config.InputConfig) bool {
+	for _, inp := range inputs {
+		if inp.Type == "sentinel-threat" {
+			return true
+		}
+	}
+	return false
+}
 
 // buildTrackerGroups creates one *state.Tracker per unique tracker group in the stream.
 // Pipelines that share the same group see the same IP state (shared tracker).
@@ -1040,6 +1072,20 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	pipe.processedCount.Add(1)
 	metrics.RecordLine(pipe.StreamName, pipe.PipelineName)
 	metrics.RecordInputLine(pipe.StreamName, pipe.PipelineName, pipe.SourceName, pipe.SourceType)
+
+	// ── Forwarder mode (Flow #041): pre-scored threat from sentinel-thread source ───
+	// Skip whitelist, tracker, scorer — dispatch directly to executors.
+	if entry.ThreatData != nil {
+		utils.Log("PARSER", fmt.Sprintf("forwarder: threat from %s ip=%s score=%d level=%s",
+			pipe.StreamName, entry.ThreatData.IP, entry.ThreatData.Score, entry.ThreatData.Level), "debug")
+		ev := *entry.ThreatData
+		for _, ex := range pipe.Executors {
+			if err := ex.Execute(ctx, ev); err != nil {
+				utils.Log("EXECUTOR", fmt.Sprintf("forwarder dispatch error: %v", err), "warn")
+			}
+		}
+		return
+	}
 
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,

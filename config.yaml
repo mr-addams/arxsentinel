@@ -539,22 +539,28 @@ pipeline:
 #   - name: iptables-ban                   # exec-fallback for bare-metal / fallback на exec для bare-metal
 #     exec: /usr/local/lib/arxsentinel/plugins/iptables-ban.sh
 #
+# streams: (see examples below)
 # ── streams: multi-source monitoring / мониторинг нескольких источников ───────────────────
 #
 # Remove general.log_file above and uncomment streams: to monitor multiple log sources.
 # Удалите general.log_file выше и раскомментируйте streams: для мониторинга нескольких источников.
 #
-# streams:
-#   - name: nginx
-#     inputs:
-#       - type: file
-#         path: /var/log/nginx/access.log
-#         parser: combined
-#     outputs:
-#       - type: file
-#         path: /var/log/arxsentinel/threats.log
-#         format: fail2ban
-#   # Add more named streams for each additional log source.
+# Per-stream executor — only this executor fires for this stream:
+# Поточный executor — только этот исполнитель срабатывает для данного потока:
+#  streams:
+#    - name: domain-a
+#      inputs:
+#        - type: file
+#          path: /var/log/nginx/domain-a.access.log
+#      outputs:
+#        - type: file
+#          path: /var/log/arxsentinel/domain-a.threats.log
+#      executors:
+#        - name: cf-account-a
+#          type: cloudflare
+#          config:
+#            api_token: "TOKEN_A"
+#            account_id: "ACCOUNT_A"
 #
 # ── inputs / outputs: universal I/O syntax / универсальный I/O синтаксис ─────────────────
 #

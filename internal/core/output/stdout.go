@@ -46,8 +46,8 @@ func NewStdoutSink(format string) (*StdoutSink, error) {
 // NewStdoutSinkWithWriter creates a StdoutSink writing to w.
 // Used in tests to inject a pipe without touching os.Stdout.
 func NewStdoutSinkWithWriter(w *os.File, format string) (*StdoutSink, error) {
-	if format != "fail2ban" && format != "json" {
-		return nil, fmt.Errorf("stdout sink: unknown format %q (want fail2ban or json)", format)
+	if format != "fail2ban" && format != "json" && format != "sentinel-threat" {
+		return nil, fmt.Errorf("stdout sink: unknown format %q (want fail2ban, json, or sentinel-threat)", format)
 	}
 	return &StdoutSink{
 		name:   "stdout",
@@ -80,6 +80,13 @@ func (s *StdoutSink) Write(event plugin.ThreatEvent) error {
 		if err != nil {
 			s.errors.Add(1)
 			return fmt.Errorf("stdout sink: json marshal: %w", err)
+		}
+		line = append(b, '\n')
+	case "sentinel-threat":
+		b, err := FormatSentinelThreat(event, "")
+		if err != nil {
+			s.errors.Add(1)
+			return fmt.Errorf("stdout sink: sentinel-threat marshal: %w", err)
 		}
 		line = append(b, '\n')
 	default: // "fail2ban"

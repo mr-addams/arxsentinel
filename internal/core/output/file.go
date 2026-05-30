@@ -51,8 +51,8 @@ func NewFileSink(path, format string) (*FileSink, error) {
 	if path == "" {
 		return nil, fmt.Errorf("file sink: path must not be empty")
 	}
-	if format != "fail2ban" && format != "json" {
-		return nil, fmt.Errorf("file sink %s: unknown format %q (want fail2ban or json)", path, format)
+	if format != "fail2ban" && format != "json" && format != "sentinel-threat" {
+		return nil, fmt.Errorf("file sink %s: unknown format %q (want fail2ban, json, or sentinel-threat)", path, format)
 	}
 	f, err := openSinkFile(path)
 	if err != nil {
@@ -100,6 +100,13 @@ func (s *FileSink) Write(event plugin.ThreatEvent) error {
 		if err != nil {
 			s.errors.Add(1)
 			return fmt.Errorf("file sink %s: json marshal: %w", s.path, err)
+		}
+		line = append(b, '\n')
+	case "sentinel-threat":
+		b, err := FormatSentinelThreat(event, "")
+		if err != nil {
+			s.errors.Add(1)
+			return fmt.Errorf("file sink %s: sentinel-threat marshal: %w", s.path, err)
 		}
 		line = append(b, '\n')
 	default: // "fail2ban"

@@ -148,7 +148,7 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/
 ```
 
 Works on Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, and Arch Linux.
-Requires `curl` and `sudo`. Fail2Ban is installed automatically if missing.
+Requires `curl` and `sudo`. Fail2Ban is installed automatically if missing (optional — see [Executors](#executors) for API-based alternatives).
 
 The service starts immediately and works with nginx out of the box — no profile needed. Edit the config to switch to another server (apache, caddy, traefik, haproxy-http, litespeed, or a custom regex):
 
@@ -171,7 +171,7 @@ sudo apt install ./arxsentinel_<version>_linux_amd64.deb
 sudo apt install ./arxsentinel_<version>_linux_arm64.deb
 ```
 
-`apt install` automatically resolves dependencies (`fail2ban`), installs the systemd unit, Fail2Ban filter/jail, logrotate config, and creates the `arxsentinel` system user.
+`apt install` automatically resolves dependencies, installs the systemd unit, Fail2Ban filter/jail (optional — for bare-metal setups), logrotate config, and creates the `arxsentinel` system user.
 
 After installation, edit the config and start the service:
 
@@ -336,7 +336,7 @@ deploy/examples/
 ## Requirements
 
 - Linux x86_64 or arm64 with systemd
-- Fail2Ban
+- Fail2Ban (optional — recommended for bare-metal; not needed with Cloudflare executor or other API-based integrations)
 - An HTTP server writing access logs in a supported format (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — or custom regex)
 
 ## Configuration
