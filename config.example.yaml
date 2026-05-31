@@ -444,7 +444,7 @@ executors:
     config:
       api_token: "YOUR_CF_API_TOKEN"   # Cloudflare API token with Lists:Edit permission
       account_id: "YOUR_CF_ACCOUNT_ID" # Cloudflare account ID
-      list_name: "arxsentinel-blocklist" # IP list name (created automatically if absent)
+      list_name: "arxsentinel_blocklist" # IP list name (created automatically if absent)
       min_level: "THREAT"              # minimum threat level to act on: INFO | WARN | THREAT
       ttl: "24h"                       # auto-unban after this duration (0 = no auto-unban)
       max_items: 10000                 # Cloudflare Free: 10000, Pro/Business: 100000

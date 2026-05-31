@@ -149,7 +149,7 @@ executors:
     config:
       api_token: "YOUR_CF_API_TOKEN"
       account_id: "YOUR_CF_ACCOUNT_ID"
-      list_name: "arxsentinel-blocklist"
+      list_name: "arxsentinel_blocklist"
       min_level: "THREAT"
       ttl: "24h"
 ```
