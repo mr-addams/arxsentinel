@@ -19,7 +19,7 @@ A periodic sweep removes expired bans based on a configurable TTL.
 |---|---|---|---|
 | `api_token` | `string` | *required* | Cloudflare API token — Account > Lists > Edit permission |
 | `account_id` | `string` | *required* | Cloudflare account ID |
-| `list_name` | `string` | `"arxsentinel-blocklist"` | IP list name (created automatically if absent) |
+| `list_name` | `string` | `"arxsentinel_blocklist"` | IP list name (created automatically if absent) |
 | `min_level` | `string` | `"THREAT"` | Minimum event level to act on: `INFO` \| `WARN` \| `THREAT` |
 | `ttl` | `duration` | `24h` | Auto-unban duration. Go format: `24h`, `1h30m`, `3600s` |
 | `max_items` | `int` | `0` (unlimited) | Max list size. Cloudflare Free tier hard limit: 10 000 |
@@ -93,7 +93,7 @@ executors:
     config:
       api_token: "YOUR_CF_API_TOKEN"
       account_id: "YOUR_CF_ACCOUNT_ID"
-      list_name: "arxsentinel-blocklist"
+      list_name: "arxsentinel_blocklist"
       min_level: "THREAT"
       ttl: "24h"
       batch_size: 100
@@ -182,7 +182,7 @@ The executor only manages the IP List. To block traffic, create a WAF Custom Rul
 
 1. Cloudflare Dashboard → your domain → **Security** → **WAF** → **Custom Rules** → **Create rule**
 2. Configure:
-   - Field: **IP Source Address** / is in list / `arxsentinel-blocklist`
+   - Field: **IP Source Address** / is in list / `arxsentinel_blocklist`
    - Action: **Block**
 3. Deploy.
 

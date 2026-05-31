@@ -39,7 +39,7 @@ type Config struct {
 	// right panel of Cloudflare Dashboard → Account ID.
 	AccountID string `json:"account_id" yaml:"account_id"`
 	// ListName specifies the IP-list name in Cloudflare — used as a key
-	// to identify the list during updates; defaults to "arxsentinel-blocklist".
+	// to identify the list during updates; defaults to "arxsentinel_blocklist".
 	ListName string `json:"list_name" yaml:"list_name"`
 	// MinLevel sets the minimum threat level for adding an IP to the block-list;
 	// value "THREAT" includes all threats except "INFO".
@@ -79,7 +79,7 @@ type Config struct {
 // DefaultConfig returns a Config with all defaults populated.
 func DefaultConfig() Config {
 	return Config{
-		ListName:      "arxsentinel-blocklist",
+		ListName:      "arxsentinel_blocklist",
 		MinLevel:      "THREAT",
 		TTL:           24 * time.Hour,
 		MaxItems:      0,
@@ -101,7 +101,7 @@ func DefaultConfig() Config {
 func parseConfig(raw map[string]interface{}) (Config, error) {
 	// ---- Default values ----
 	cfg := Config{
-		ListName:      "arxsentinel-blocklist",
+		ListName:      "arxsentinel_blocklist",
 		MinLevel:      "THREAT",
 		TTL:           24 * time.Hour,
 		MaxItems:      0,

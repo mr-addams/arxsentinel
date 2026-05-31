@@ -51,7 +51,7 @@ executors:
     config:
       api_token: "YOUR_CF_API_TOKEN"       # Cloudflare API token (Lists:Edit permission)
       account_id: "YOUR_CF_ACCOUNT_ID"     # Cloudflare account ID
-      list_name: "arxsentinel-blocklist"   # created automatically if absent
+      list_name: "arxsentinel_blocklist"   # created automatically if absent
       min_level: "THREAT"
       ttl: "24h"                           # auto-unban after 24h
       batch_size: 100
