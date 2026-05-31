@@ -43,7 +43,7 @@ nfpms:
 
     contents:
       # .example is a reference file — always overwritten on upgrade (unlike the real config).
-      - src: config.yaml
+      - src: config.nginx-example.yaml
         dst: /etc/arxsentinel/config.yaml.example
 
       # Systemd unit uses /usr/bin/ (differs from deploy/ scripts which use /usr/local/bin/).
@@ -85,7 +85,7 @@ nfpms:
       postremove:  packaging/scripts/rpm/postrm
 
     contents:
-      - src: config.yaml
+      - src: config.nginx-example.yaml
         dst: /etc/arxsentinel/config.yaml.example
 
       # RPM/systemd convention: /usr/lib/systemd/system/ (not /lib/)
@@ -126,7 +126,7 @@ nfpms:
       postremove:  packaging/scripts/arch/postrm
 
     contents:
-      - src: config.yaml
+      - src: config.nginx-example.yaml
         dst: /etc/arxsentinel/config.yaml.example
 
       # Arch Linux systemd convention: /usr/lib/systemd/system/

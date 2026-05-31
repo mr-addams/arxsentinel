@@ -390,8 +390,8 @@ func TestBlocklistSourceURLs(t *testing.T) {
 		t.Skip("skipping network test in short mode")
 	}
 
-	// Resolve config.yaml relative to this file's package root.
-	cfgPath := "../../../config.yaml"
+	// Resolve the nginx quick-start example relative to this file's package root.
+	cfgPath := "../../../config.nginx-example.yaml"
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatalf("cannot read config.yaml: %v", err)

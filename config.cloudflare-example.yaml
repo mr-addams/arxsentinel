@@ -1,0 +1,58 @@
+# ========================== config.cloudflare-example.yaml ============================
+#
+#   Quick-start config for nginx + Cloudflare automated IP banning.
+#   1 nginx site → threat detection → automatic Cloudflare IP list ban.
+#
+#   Use case: single nginx host behind Cloudflare, automated IP banning.
+#   For fail2ban / file-based logging only: see config.nginx-example.yaml
+#   For all configuration options: see config.example.yaml
+#
+#   Quick deploy:
+#     1. Copy this file to /etc/arxsentinel/config.yaml
+#     2. Set your Cloudflare credentials (api_token, account_id)
+#     3. Adjust log path if needed (general.log_file is unused — see streams below)
+#     4. sudo systemctl reload arxsentinel
+#
+# ======================================================================================
+
+# ── scoring: when to act ──────────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50   # log ALERT events (not acted on by executor)
+  ban_threshold: 75     # feed to executor → Cloudflare ban
+  observation_window: 5m
+  decay: 0
+
+# ── streams: nginx log source → threat detection → Cloudflare executor ────────────────
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: sentinel-cf                  # feeds THREAT events to the executor below
+
+# ── inputs: (not needed for this config — inputs are inlined under streams) ──────────
+# inputs:
+
+# ── outputs: (not needed for this config — outputs are inlined under streams) ────────
+# outputs:
+
+# ── executors: automated Cloudflare IP list bans ─────────────────────────────────────
+executors:
+  - name: cf-ban
+    type: cloudflare
+    sources:
+      - name: sentinel-cf                  # matches sentinel-threat sink name above
+    config:
+      api_token: "YOUR_CF_API_TOKEN"       # Cloudflare API token (Lists:Edit permission)
+      account_id: "YOUR_CF_ACCOUNT_ID"     # Cloudflare account ID
+      list_name: "arxsentinel-blocklist"   # created automatically if absent
+      min_level: "THREAT"
+      ttl: "24h"                           # auto-unban after 24h
+      batch_size: 100
+      flush_interval: "10s"

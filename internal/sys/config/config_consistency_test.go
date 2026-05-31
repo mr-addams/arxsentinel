@@ -146,7 +146,7 @@ func TestEnvExampleDefaults(t *testing.T) {
 // the detector silently finds no patterns — no error is returned.
 func TestBlocklistNamesInConfigYAML(t *testing.T) {
 	repoRoot := findRepoRoot(t)
-	cfgPath := filepath.Join(repoRoot, "config.yaml")
+	cfgPath := filepath.Join(repoRoot, "config.nginx-example.yaml")
 
 	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
@@ -186,7 +186,7 @@ func TestDefaultBotsMatchConfigYAML(t *testing.T) {
 	}
 
 	// Load config.yaml.
-	cfgPath := filepath.Join(repoRoot, "config.yaml")
+	cfgPath := filepath.Join(repoRoot, "config.nginx-example.yaml")
 	fileCfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
 		t.Fatalf("LoadConfig(%s): %v", cfgPath, err)

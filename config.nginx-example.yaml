@@ -1,7 +1,12 @@
-# ========================== arxsentinel config.yaml ====================================
+# ========================== config.nginx-example.yaml ==================================
 #
-#   Single source of all behavioral parameters.
-#   Единый источник всех поведенческих параметров.
+#   Quick-start config for nginx + fail2ban (or file-based threat log).
+#   Monitors one nginx access.log, detects threats, writes to threat log.
+#   Installed as /etc/arxsentinel/config.yaml.example — copy to config.yaml to use.
+#
+#   Use case: single nginx host, no automated bans, log-based alerting only.
+#   For automated Cloudflare bans: see config.cloudflare-example.yaml
+#   For all configuration options: see config.example.yaml
 #
 #   Changes are applied on SIGHUP without restarting the daemon.
 #   Изменения применяются по SIGHUP без перезапуска демона.
