@@ -44,6 +44,17 @@ func (m *mockCFClient) AddItem(_ context.Context, _, ip, _ string) (string, erro
 	return id, m.addErr
 }
 
+func (m *mockCFClient) GetAllItems(_ context.Context, _ string) ([]CFItem, error) {
+	return m.items, nil
+}
+
+func (m *mockCFClient) AddItems(_ context.Context, _ string, items []CFBatchItem) error {
+	for _, item := range items {
+		m.added = append(m.added, item.IP)
+	}
+	return m.addErr
+}
+
 func (m *mockCFClient) RemoveItems(_ context.Context, _ string, ids []string) error {
 	m.removed = append(m.removed, ids...)
 	return m.removeErr
