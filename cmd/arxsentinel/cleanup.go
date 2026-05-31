@@ -137,7 +137,7 @@ func runCFCleanup(ctx context.Context, info *cfInfo, dryRun bool, instanceID, li
 		if end > len(ids) {
 			end = len(ids)
 		}
-		if err := client.RemoveItems(ctx, effectiveListID, ids[i:end]); err != nil {
+		if _, err := client.RemoveItems(ctx, effectiveListID, ids[i:end]); err != nil {
 			return fmt.Errorf("delete batch %d-%d: %w", i, end, err)
 		}
 	}

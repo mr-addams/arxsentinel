@@ -37,16 +37,20 @@ func (m *mockCFClient) GetAllItems(_ context.Context, _ string) ([]CFItem, error
 	return m.items, nil
 }
 
-func (m *mockCFClient) AddItems(_ context.Context, _ string, items []CFBatchItem) error {
+func (m *mockCFClient) AddItems(_ context.Context, _ string, items []CFBatchItem) (string, error) {
 	for _, item := range items {
 		m.added = append(m.added, item.IP)
 	}
-	return m.addErr
+	return "op-add", m.addErr
 }
 
-func (m *mockCFClient) RemoveItems(_ context.Context, _ string, ids []string) error {
+func (m *mockCFClient) RemoveItems(_ context.Context, _ string, ids []string) (string, error) {
 	m.removed = append(m.removed, ids...)
-	return m.removeErr
+	return "op-remove", m.removeErr
+}
+
+func (m *mockCFClient) PollBulkOperation(_ context.Context, _ string) (string, error) {
+	return "completed", nil
 }
 
 func newTestExecutor(client CFClient, cfg Config) *CloudflareExecutor {
@@ -84,13 +88,13 @@ func TestRun_Batch250(t *testing.T) {
 	cfg.BatchSize = 100
 	cfg.MinLevel = "INFO"
 	ex := newTestExecutor(mock, cfg)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+
 	q := queue.NewMemoryQueue(250)
 	for i := 0; i < 250; i++ {
-		_ = q.Push(ctx, plugin.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"})
+		_ = q.Push(context.Background(), plugin.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"})
 	}
-	_ = ex.Run(ctx, q)
+	q.Close()
+	_ = ex.Run(context.Background(), q)
 	if len(mock.added) != 250 {
 		t.Errorf("expected 250 items added, got %d", len(mock.added))
 	}
@@ -238,5 +242,77 @@ func TestRun_ConcurrentSafe(t *testing.T) {
 
 	if len(mock.added) != 100 {
 		t.Errorf("expected 100 items, got %d", len(mock.added))
+	}
+}
+
+type mockCFClientWithPoll struct {
+	mockCFClient
+	pollCalls  int
+	pollStatus []string
+}
+
+func (m *mockCFClientWithPoll) PollBulkOperation(_ context.Context, _ string) (string, error) {
+	if m.pollCalls < len(m.pollStatus) {
+		s := m.pollStatus[m.pollCalls]
+		m.pollCalls++
+		return s, nil
+	}
+	return "completed", nil
+}
+
+func TestFlush_PollsPendingThenCompleted(t *testing.T) {
+	mock := &mockCFClientWithPoll{pollStatus: []string{"pending", "completed"}}
+	cfg := DefaultConfig()
+	cfg.MinLevel = "INFO"
+	ex := newTestExecutor(mock, cfg)
+
+	ex.pendingOpID = "op-prev"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ex.flush(ctx, []plugin.ThreatEvent{{IP: "1.2.3.4", Level: "THREAT"}})
+
+	if mock.pollCalls < 2 {
+		t.Errorf("expected at least 2 poll calls, got %d", mock.pollCalls)
+	}
+	if len(mock.added) != 1 {
+		t.Errorf("expected 1 item added after poll, got %d", len(mock.added))
+	}
+}
+
+type mockCFClientWith429 struct {
+	mockCFClient
+	addCalls  int
+	failUntil int
+}
+
+func (m *mockCFClientWith429) AddItems(ctx context.Context, listID string, items []CFBatchItem) (string, error) {
+	m.addCalls++
+	if m.addCalls <= m.failUntil {
+		return "", fmt.Errorf("cloudflare: 429 too many requests")
+	}
+	for _, item := range items {
+		m.added = append(m.added, item.IP)
+	}
+	return "op-ok", nil
+}
+
+func TestFlush_429Retry(t *testing.T) {
+	mock := &mockCFClientWith429{failUntil: 2}
+	cfg := DefaultConfig()
+	cfg.MinLevel = "INFO"
+	ex := newTestExecutor(mock, cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	ex.flush(ctx, []plugin.ThreatEvent{{IP: "1.2.3.4", Level: "THREAT"}})
+
+	if mock.addCalls != 3 {
+		t.Errorf("expected 3 AddItems calls (2 fail + 1 success), got %d", mock.addCalls)
+	}
+	if len(mock.added) != 1 {
+		t.Errorf("expected 1 item added, got %d", len(mock.added))
 	}
 }

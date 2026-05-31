@@ -19,8 +19,9 @@ type CFClient interface {
 	FindOrCreateList(ctx context.Context, name string) (listID string, err error)
 	ListItems(ctx context.Context, listID string) ([]CFItem, error)
 	AddItem(ctx context.Context, listID, ip, comment string) (string, error)
-	AddItems(ctx context.Context, listID string, items []CFBatchItem) error
-	RemoveItems(ctx context.Context, listID string, ids []string) error
+	AddItems(ctx context.Context, listID string, items []CFBatchItem) (operationID string, err error)
+	RemoveItems(ctx context.Context, listID string, ids []string) (operationID string, err error)
+	PollBulkOperation(ctx context.Context, operationID string) (status string, err error)
 	GetAllItems(ctx context.Context, listID string) ([]CFItem, error)
 }
 
@@ -49,6 +50,16 @@ type cfAPIResponse struct {
 type cfAPIError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+// cfBulkOpResponse parses the operation_id from async bulk-operation responses.
+type cfBulkOpResponse struct {
+	OperationID string `json:"operation_id"`
+}
+
+// cfBulkOpStatusResponse parses the status of a pending bulk operation.
+type cfBulkOpStatusResponse struct {
+	Status string `json:"status"` // "pending", "completed", "failed"
 }
 
 type HTTPCFClient struct {
@@ -206,7 +217,7 @@ func (c *HTTPCFClient) AddItem(ctx context.Context, listID, ip, comment string) 
 	return items[0].ID, nil
 }
 
-func (c *HTTPCFClient) AddItems(ctx context.Context, listID string, items []CFBatchItem) error {
+func (c *HTTPCFClient) AddItems(ctx context.Context, listID string, items []CFBatchItem) (string, error) {
 	path := fmt.Sprintf("/accounts/%s/rules/lists/%s/items", c.accountID, listID)
 	body := make([]map[string]string, len(items))
 	for i, item := range items {
@@ -216,14 +227,18 @@ func (c *HTTPCFClient) AddItems(ctx context.Context, listID string, items []CFBa
 		}
 	}
 
-	if _, err := c.doRequest(ctx, http.MethodPost, path, body); err != nil {
-		return fmt.Errorf("cloudflare: add items: %w", err)
+	resp, err := c.doRequest(ctx, http.MethodPost, path, body)
+	if err != nil {
+		return "", fmt.Errorf("cloudflare: add items: %w", err)
 	}
-
-	return nil
+	var result cfBulkOpResponse
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return "", fmt.Errorf("cloudflare: add items: parse operation_id: %w", err)
+	}
+	return result.OperationID, nil
 }
 
-func (c *HTTPCFClient) RemoveItems(ctx context.Context, listID string, ids []string) error {
+func (c *HTTPCFClient) RemoveItems(ctx context.Context, listID string, ids []string) (string, error) {
 	path := fmt.Sprintf("/accounts/%s/rules/lists/%s/items", c.accountID, listID)
 
 	type removeItem struct {
@@ -238,9 +253,28 @@ func (c *HTTPCFClient) RemoveItems(ctx context.Context, listID string, ids []str
 		"items": items,
 	}
 
-	if _, err := c.doRequest(ctx, http.MethodDelete, path, body); err != nil {
-		return fmt.Errorf("cloudflare: remove items: %w", err)
+	resp, err := c.doRequest(ctx, http.MethodDelete, path, body)
+	if err != nil {
+		return "", fmt.Errorf("cloudflare: remove items: %w", err)
 	}
+	var result cfBulkOpResponse
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return "", fmt.Errorf("cloudflare: remove items: parse operation_id: %w", err)
+	}
+	return result.OperationID, nil
+}
 
-	return nil
+// PollBulkOperation queries the status of an async bulk operation.
+// Returns status: "pending", "completed", or "failed".
+func (c *HTTPCFClient) PollBulkOperation(ctx context.Context, operationID string) (string, error) {
+	path := fmt.Sprintf("/accounts/%s/rules/lists/bulk_operations/%s", c.accountID, operationID)
+	resp, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return "", fmt.Errorf("cloudflare: poll bulk operation %s: %w", operationID, err)
+	}
+	var result cfBulkOpStatusResponse
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return "", fmt.Errorf("cloudflare: poll bulk operation: parse status: %w", err)
+	}
+	return result.Status, nil
 }
