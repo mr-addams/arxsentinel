@@ -395,6 +395,18 @@ func main() {
 		}
 	}()
 
+	// ── Start executor goroutines (top-level autonomous, Flow #042) ───────────────────────
+	// Executors are built from cfg.Executors and connect to Named Channel Hub sources
+	// that are registered by sentinel-threat sinks inside stream pipelines (T5).
+	// Must start after stream goroutines so NCH channels are registered first.
+
+	var execWg sync.WaitGroup
+	if len(cfg.Executors) > 0 {
+		if err := startExecutors(ctx, &cfg, &execWg); err != nil {
+			utils.Log("STARTUP", "executor startup error: "+err.Error(), "error")
+		}
+	}
+
 	// ── Launch streams ────────────────────────────────────────────────────────────────
 
 	var wg sync.WaitGroup
@@ -410,6 +422,16 @@ func main() {
 	metricsWg.Wait()
 	wg.Wait()
 	utils.Log("SHUTDOWN", "all streams done", "info")
+
+	// ── Graceful executor shutdown ──────────────────────────────────────────────────
+	// Unregister all NCH sources so executor Run() loops exit on closed channel.
+	for _, ec := range cfg.Executors {
+		for _, src := range ec.Sources {
+			pkgexecutor.Unregister(src.Name)
+		}
+	}
+	execWg.Wait()
+	utils.Log("SHUTDOWN", "all executors done", "info")
 }
 
 // runStream is the per-stream orchestrator.
@@ -888,26 +910,40 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 	return sources, nil
 }
 
-// buildExecutors constructs the Executor list from top-level config.Executors (Flow #042).
-// Each executor is an autonomous goroutine reading from Named Channel Hub.
-// Returns (nil, nil) when the list is empty.
-func buildExecutors(items []config.ExecutorTopConfig) ([]plugin.Executor, error) {
-	if len(items) == 0 {
-		return nil, nil
-	}
-	executors := make([]plugin.Executor, 0, len(items))
-	for _, item := range items {
+// startExecutors builds all top-level executors from config and launches them as goroutines.
+// Each executor connects to Named Channel Hub sources and runs until ctx is cancelled
+// or the source channel is closed. Must be called after all NCH sinks are registered.
+//
+// Returns an error if any executor cannot be built or any named source cannot be found.
+// On error, the caller should log and continue — executor startup failure is not fatal
+// for the rest of the pipeline (streams still process logs).
+func startExecutors(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup) error {
+	for _, ec := range cfg.Executors {
 		ex, err := pkgexecutor.Build(pkgexecutor.ExecutorConfig{
-			Name:   item.Name,
-			Type:   item.Type,
-			Config: item.Config,
+			Name:   ec.Name,
+			Type:   ec.Type,
+			Config: ec.Config,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("executor %q: %w", item.Name, err)
+			return fmt.Errorf("executor %q: build: %w", ec.Name, err)
 		}
-		executors = append(executors, ex)
+
+		for _, src := range ec.Sources {
+			ch, err := pkgexecutor.GetSource(src.Name)
+			if err != nil {
+				return fmt.Errorf("executor %q: source %q: %w", ec.Name, src.Name, err)
+			}
+
+			wg.Add(1)
+			go func(ex plugin.Executor, ch <-chan plugin.ThreatEvent) {
+				defer wg.Done()
+				if err := ex.Run(ctx, ch); err != nil && err != context.Canceled {
+					utils.Log("EXECUTOR", fmt.Sprintf("executor %s: %v", ex.Name(), err), "error")
+				}
+			}(ex, ch)
+		}
 	}
-	return executors, nil
+	return nil
 }
 
 // buildSinks constructs the Sink list from an explicit outputs slice.
