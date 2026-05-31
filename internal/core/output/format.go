@@ -34,6 +34,8 @@ import (
 // LogThreat() in sys/utils — Fail2Ban filter regex must match all three.
 // stream and source fields are intentionally omitted — Fail2Ban only needs
 // the timestamp, level, and IP.
+// Regex in deploy/fail2ban/filter.d/arxsentinel.conf must match this format —
+// update the filter in the same commit if the format changes.
 func FormatFailban(e plugin.ThreatEvent) string {
 	timestamp := e.Timestamp.UTC().Format(time.RFC3339)
 	modulesStr := strings.Join(e.Modules, ",")
@@ -54,6 +56,36 @@ type jsonEnvelope struct {
 	Modules    []string `json:"modules"`
 	Reason     string   `json:"reason"`
 	RawLine    string   `json:"raw_line,omitempty"`
+}
+
+// ========================== Sentinel-threat format (Flow #041) ===========================
+
+// sentinelThreatLine mirrors the JSON structure for sentinel-threat transport format.
+// Used both by FormatSentinelThreat (output) and SentinelThreatSource (input).
+type sentinelThreatLine struct {
+	TS      string   `json:"ts"`
+	IP      string   `json:"ip"`
+	Score   int      `json:"score"`
+	Level   string   `json:"level"`
+	Modules []string `json:"modules"`
+	Reason  string   `json:"reason"`
+	Source  string   `json:"source"`
+}
+
+// FormatSentinelThreat marshals a ThreatEvent to a sentinel-threat JSON line.
+// The format is a minimal transport JSON — only fields needed for re-ban.
+func FormatSentinelThreat(e plugin.ThreatEvent, streamName string) ([]byte, error) {
+	ts := e.Timestamp.UTC().Format(time.RFC3339)
+	line := sentinelThreatLine{
+		TS:      ts,
+		IP:      e.IP,
+		Score:   e.Score,
+		Level:   e.Level,
+		Modules: e.Modules,
+		Reason:  e.Reason,
+		Source:  streamName,
+	}
+	return json.Marshal(line)
 }
 
 // FormatJSON marshals a ThreatEvent to a JSON envelope (D7).

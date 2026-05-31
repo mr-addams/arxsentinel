@@ -129,3 +129,5 @@ type noopMatcher struct{}
 
 func (noopMatcher) Match(string, string) bool { return false }
 
+func (noopMatcher) MatchResult(string, string) (string, bool) { return "", false }
+

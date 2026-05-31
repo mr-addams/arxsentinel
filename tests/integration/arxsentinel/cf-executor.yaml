@@ -1,0 +1,49 @@
+general:
+  pid_file: /tmp/arxsentinel-cf-executor.pid
+  tail_retry_interval: 2s
+
+parser:
+  log_format: combined
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 51
+  observation_window: 60s
+
+output:
+  operational_log: logs/threats/sentinel-cf-executor.log
+
+logging:
+  console_color: false
+
+streams:
+  - name: cf-test
+    inputs:
+      - type: file
+        path: logs/nginx/access.log
+    outputs:
+      - type: file
+        path: logs/threats/cf-executor.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: cf-ban-queue
+
+executors:
+  - name: cf-ban
+    type: cloudflare
+    sources:
+      - name: cf-ban-queue
+    config:
+      api_token: test-token
+      account_id: test-account
+      list_id: test-list
+      list_name: test-list
+      ttl: 1h
+      batch_size: 1
+      flush_interval: 500ms
+      instance_id: test-sentinel
+      api_base_url: http://localhost:8091
+
+blocklist:
+  storage: ""
+  lists: []

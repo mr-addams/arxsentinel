@@ -103,6 +103,22 @@ type WriteAck struct {
 	OK bool `json:"ok"`
 }
 
+// ExecuteRequest is sent to an executor plugin stdin.
+// The plugin executes the action and returns ExecuteResponse.
+type ExecuteRequest struct {
+	V      string          `json:"v"`      // protocol version
+	Action string          `json:"action"` // always "execute"
+	Event  ThreatEventJSON `json:"event"`
+}
+
+// ExecuteResponse is read from executor plugin stdout.
+// OK indicates whether the action was successfully executed.
+// Error contains details when OK is false. If Error is empty, the execution succeeded.
+type ExecuteResponse struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
 // StartRequest is sent to a source plugin stdin to begin streaming.
 // The plugin should start reading its source and emit SourceEntry messages.
 type StartRequest struct {
@@ -224,4 +240,12 @@ func ParseSourceEntry(data []byte) (SourceEntry, error) {
 	var entry SourceEntry
 	err := json.Unmarshal(data, &entry)
 	return entry, err
+}
+
+// ParseExecuteResponse parses a JSON response from an executor plugin.
+// Returns an error if JSON is malformed.
+func ParseExecuteResponse(data []byte) (ExecuteResponse, error) {
+	var resp ExecuteResponse
+	err := json.Unmarshal(data, &resp)
+	return resp, err
 }

@@ -166,7 +166,8 @@ fetch_release() {
       ;;
     dev)
       section "Fetching latest dev pre-release"
-      api_endpoint="https://api.github.com/repos/${REPO}/releases"
+      # per_page=10 limits the response — we only need the first pre-release.
+      api_endpoint="https://api.github.com/repos/${REPO}/releases?per_page=10"
       fetch_desc="latest dev pre-release"
       ;;
     version)
@@ -177,16 +178,30 @@ fetch_release() {
   esac
 
   step "Querying GitHub API for ${fetch_desc}..."
-  RELEASE_JSON=$(curl -fsSL "$api_endpoint" 2>/dev/null) \
-    || fail "Failed to reach GitHub API. Check your internet connection."
+  # --max-time 30: fail fast if the API is unreachable rather than hanging forever.
+  RELEASE_JSON=$(curl -fsSL --max-time 30 "$api_endpoint" 2>/dev/null) \
+    || fail "Failed to reach GitHub API (timeout or network error)."
 
-  # For --dev mode, we need to find the first pre-release from the array
+  # For --dev mode the API returns an array; extract tag_name and download URLs
+  # from the first pre-release entry. awk is used because tag_name appears BEFORE
+  # prerelease in the JSON, so grep -A would miss it. awk is part of every base
+  # system (mawk on Debian, gawk on RHEL) — no extra dependencies needed.
   if [ "$RELEASE_MODE" = "dev" ]; then
-    # The response is an array; extract the first object with "prerelease": true
-    RELEASE_JSON=$(echo "$RELEASE_JSON" \
-      | grep -A 50 '"prerelease": true' \
-      | head -50)
-    [ -n "$RELEASE_JSON" ] || fail "No dev pre-release found."
+    RELEASE_JSON=$(echo "$RELEASE_JSON" | awk '
+      /"tag_name":/ {
+        f=$0; sub(/.*"tag_name": *"/, "", f); sub(/".*/, "", f); tag=f
+      }
+      /"prerelease": true/ && !done {
+        collecting=1; done=1
+        print "\"tag_name\": \"" tag "\""
+      }
+      collecting && /"browser_download_url":/ {
+        f=$0; sub(/.*"browser_download_url": *"/, "", f); sub(/".*/, "", f)
+        print "\"browser_download_url\": \"" f "\""
+      }
+      collecting && /^  [}\]]/ { exit }
+    ')
+    [ -n "$RELEASE_JSON" ] || fail "No dev pre-release found on GitHub."
   fi
 
   VERSION=$(echo "$RELEASE_JSON" | grep '"tag_name"' | cut -d'"' -f4 | head -1)

@@ -155,6 +155,11 @@ func TestValidate_FileInputWithoutPath(t *testing.T) {
 	t.Log("validateInputs enforcement covered by integration via LoadConfig")
 }
 
+// Note: stream-level and pipeline-level executors were removed in Flow #042 (D11).
+// Top-level executor tests are in config_test.go (TestTopLevelExecutors_*).
+
+// ── validateConfig tests for duplicate inputs ─────────────────────────────
+
 func TestValidate_DuplicateInputs(t *testing.T) {
 	// Two identical file inputs → duplicate key error.
 	cfg := config.Config{

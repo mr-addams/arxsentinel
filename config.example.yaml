@@ -409,8 +409,8 @@ whitelist:
   # Кастомный whitelist: добавьте свои IP, подсети, UA-паттерны.
   custom:
     ips: []      # example: ["10.99.99.1", "192.168.1.100"] / пример: ["10.99.99.1", "192.168.1.100"]
-    cidrs: []    # example: ["10.99.99.0/24"] / пример: ["10.99.99.0/24"]
-    ua_substrings: []  # example: ["MyInternalMonitor"] / пример: ["MyInternalMonitor"]
+    cidrs: []    # example: ["10.99.99.0/24", "192.168.0.0/16"] / пример: ["10.99.99.0/24", "192.168.0.0/16"]
+    ua_substrings: []  # example: ["MyInternalMonitor", "HealthCheck/1.0"] / пример: ["MyInternalMonitor", "HealthCheck/1.0"]
 
   # DNS cache for verification results / DNS-кэш результатов верификации.
   dns_cache:
@@ -425,3 +425,132 @@ output:
   # Dev / Local:
   # threat_log: ./logs/threats.log
   # operational_log: ./logs/sentinel.log
+
+# ── executors: automated threat response ─────────────────────────────────────────────────
+#
+# Executors run autonomously: each reads from a Named Channel Hub source (sentinel-threat
+# sink) and performs automated response actions (e.g. Cloudflare IP list bans).
+# Configure sources[] to wire an executor to a stream output.
+#
+executors:
+  # ── Cloudflare IP Lists executor ─────────────────────────────────────────────────────
+  - name: cloudflare-blocklist
+    type: cloudflare
+    sources:
+      - name: sentinel-cf              # matches sentinel-threat sink name in streams outputs
+        # queue:                       # optional persistent queue backend (default: memory)
+        #   type: bbolt                # "memory" | "bbolt" (bare-metal) | "redis" (k8s/cloud)
+        #   path: /var/lib/arxsentinel/queue-cf.db   # bbolt only
+    config:
+      api_token: "YOUR_CF_API_TOKEN"   # Cloudflare API token with Lists:Edit permission
+      account_id: "YOUR_CF_ACCOUNT_ID" # Cloudflare account ID
+      list_name: "arxsentinel_blocklist" # IP list name (created automatically if absent)
+      min_level: "THREAT"              # minimum threat level to act on: INFO | WARN | THREAT
+      ttl: "24h"                       # auto-unban after this duration (0 = no auto-unban)
+      max_items: 10000                 # Cloudflare Free: 10000, Pro/Business: 100000
+      batch_size: 100                  # IPs per bulk API call
+      flush_interval: "10s"            # max delay before flushing partial batch
+      instance_id: ""                  # auto-detected from hostname if empty
+      comment_extra: ""                # appended to ban comment: "sentinel-<id> <extra>"
+
+# ── inputs: universal log source syntax / универсальный синтаксис источников ────────────
+#
+# Alternative to general.log_file — supports multiple sources, stdin, and exec plugins.
+# Used at top level (applies to implicit single-stream) or inside streams[].
+# Альтернатива general.log_file — поддерживает несколько источников, stdin, exec-плагины.
+#
+# inputs:
+#   - type: file
+#     path: /var/log/nginx/access.log
+#     parser: combined        # combined | json | regex; default: parser.log_format
+#   - type: stdin             # read from stdin (e.g. pipe from journalctl -f)
+#     parser: combined
+#   - type: exec              # exec plugin: binary writes log lines to stdout
+#     exec: /usr/local/lib/arxsentinel/plugins/my-source.sh
+#     parser: json
+
+# ── outputs: universal threat sink syntax / универсальный синтаксис приёмников ──────────
+#
+# Alternative to output.threat_log — supports multiple sinks, stdout, and exec plugins.
+# Used at top level or inside streams[].
+# Альтернатива output.threat_log — поддерживает несколько приёмников, stdout, exec-плагины.
+#
+# outputs:
+#   - type: file
+#     path: /var/log/arxsentinel/threats.log
+#     format: fail2ban        # fail2ban | json
+#   - type: stdout            # print to stdout (useful for piping or debugging)
+#     format: json
+#   - type: sentinel-threat   # feed THREAT events to an executor via Named Channel Hub
+#     name: sentinel-cf       # must match executor sources[].name above
+#   - type: exec              # exec plugin: events written as JSON to plugin stdin
+#     exec: /usr/local/lib/arxsentinel/plugins/my-sink.sh
+
+# ── streams: multi-stream mode / мультистрим-режим ───────────────────────────────────────
+#
+# Use streams: when monitoring multiple independent log sources.
+# Mutually exclusive with general.log_file — remove general.log_file when using streams.
+# Each stream has isolated scoring, state, and output.
+# Используй streams: для мониторинга нескольких независимых источников.
+#
+# streams:
+#
+#   # ── Simple stream: single source → single sink ────────────────────────────────
+#   # Auto-wraps inputs/outputs into one pipeline internally.
+#   - name: nginx
+#     inputs:
+#       - type: file
+#         path: /var/log/nginx/access.log
+#         parser: combined
+#     outputs:
+#       - type: file
+#         path: /var/log/arxsentinel/nginx-threats.log
+#         format: fail2ban
+#
+#   # ── Advanced stream: explicit pipelines with shared IP state ──────────────────
+#   # Use pipelines: when you need per-source detector tuning or shared scoring.
+#   # tracker_group: pipelines with the same group name share one IP score tracker.
+#   - name: frontend
+#     pipelines:
+#       - name: api
+#         tracker_group: frontend       # share IP state with "static" pipeline
+#         inputs:
+#           - type: file
+#             path: /var/log/nginx/api.access.log
+#             parser: combined
+#         outputs:
+#           - type: file
+#             path: /var/log/arxsentinel/frontend-threats.log
+#             format: fail2ban
+#         detectors:
+#           rate:
+#             enabled: true
+#             threshold: 200            # higher limit for API traffic
+#           probe:
+#             enabled: true
+#       - name: static
+#         tracker_group: frontend       # same group → shared IP scoring with "api"
+#         inputs:
+#           - type: file
+#             path: /var/log/nginx/static.access.log
+#             parser: combined
+#         outputs:
+#           - type: file
+#             path: /var/log/arxsentinel/frontend-threats.log
+#             format: fail2ban
+#         detectors:
+#           rate:
+#             enabled: false            # static assets generate high rates — disable
+#           probe:
+#             enabled: true
+#
+#   # ── Exec plugin stream: external source and sink via plugin binary ─────────────
+#   # Use when your log format is not supported by built-in parsers.
+#   - name: custom-app
+#     inputs:
+#       - type: exec
+#         exec: /usr/local/lib/arxsentinel/plugins/app-log-source.sh
+#         parser: json
+#     outputs:
+#       - type: exec
+#         exec: /usr/local/lib/arxsentinel/plugins/custom-sink.sh

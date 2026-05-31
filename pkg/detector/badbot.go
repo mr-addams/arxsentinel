@@ -15,6 +15,8 @@
 //     "badbot-ua"  — User-Agent blocklist
 //     "badbot-ref" — Referrer blocklist
 //     If a list is not loaded yet, Match returns false (graceful degradation).
+//     These list names MUST match blocklist.lists[].name values in config.yaml.
+//     If the names diverge, the detector silently finds no patterns — no error is returned.
 //
 //   SharedResources:
 //     Blocklist() returns the Matcher satisfied by *blocklist.Manager.
@@ -74,25 +76,30 @@ func (d *badBotDetector) Name() string { return "badbot" }
 
 // Detect checks UA and optionally Referer against the blocklist.
 // Returns Score=0 when the list is not yet loaded (graceful degradation on startup).
+// Reason includes the matched pattern (e.g., "ua=googlebot") for operational diagnostics.
 func (d *badBotDetector) Detect(_ plugin.IPView, entry *plugin.LogEntry) plugin.DetectResult {
 	if d.checkUA {
 		ua := strings.ToLower(entry.UserAgent)
-		if ua != "" && ua != "-" && d.mgr.Match("badbot-ua", ua) {
-			return plugin.DetectResult{
-				Score:  d.score,
-				Module: "badbot",
-				Reason: "badbot:ua",
+		if ua != "" && ua != "-" {
+			if pattern, ok := d.mgr.MatchResult("badbot-ua", ua); ok {
+				return plugin.DetectResult{
+					Score:  d.score,
+					Module: "badbot",
+					Reason: "ua=" + pattern,
+				}
 			}
 		}
 	}
 
 	if d.checkReferrer {
 		ref := strings.ToLower(entry.Referer)
-		if ref != "" && ref != "-" && d.mgr.Match("badbot-ref", ref) {
-			return plugin.DetectResult{
-				Score:  d.score,
-				Module: "badbot",
-				Reason: "badbot:ref",
+		if ref != "" && ref != "-" {
+			if pattern, ok := d.mgr.MatchResult("badbot-ref", ref); ok {
+				return plugin.DetectResult{
+					Score:  d.score,
+					Module: "badbot",
+					Reason: "ref=" + pattern,
+				}
 			}
 		}
 	}

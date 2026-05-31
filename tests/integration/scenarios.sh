@@ -403,3 +403,31 @@ EOF
 
 run_compat_pipeline_scenario
 run_multi_pipeline_scenario
+
+# ── executor-cf-ban: verify that CF executor sends THREAT IP to CF API mock ──────────
+# Writes probe attack lines to nginx access log, waits for sentinel to detect THREAT
+# and flush to cf-api-mock. Records result to logs/executor-cf-ban.json for verify.sh.
+
+run_executor_cf_ban_scenario() {
+    echo "[scenarios] running: executor-cf-ban"
+
+    mkdir -p "$INT_DIR/logs/threats"
+
+    # Write 5 probe attack lines — enough to exceed alert_threshold=50 with score=60/hit.
+    local attack_ip="5.6.7.8"
+    local attack_line="${attack_ip} - - [01/Jan/2026:00:00:00 +0000] \"GET /.env HTTP/1.1\" 404 0 \"-\" \"curl/7.88\" \"${attack_ip}\""
+    for i in $(seq 1 5); do
+        echo "$attack_line" >> "$INT_DIR/logs/nginx/access.log"
+    done
+
+    # Wait for sentinel (started in run.sh) to detect + flush batch to cf-api-mock.
+    sleep 5
+
+    # Query cf-api-mock for recorded items (from host, port 8091 exposed).
+    local result
+    result=$(curl -sf http://localhost:8091/recorded-items 2>/dev/null || true)
+    echo "$result" > "$INT_DIR/logs/executor-cf-ban.json"
+    # Also log cf-executor sentinel output for debugging.
+    echo "[executor-cf-ban] recorded-items: $result" >&2
+}
+run_executor_cf_ban_scenario

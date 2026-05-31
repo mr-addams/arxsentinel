@@ -29,11 +29,9 @@ nfpms:
     formats:
       - deb
 
-    dependencies:
-      - fail2ban
-
     recommends:
       - nginx
+      - fail2ban
 
     # bindir: installation path for the binary produced by the builds section.
     bindir: /usr/bin
@@ -44,10 +42,16 @@ nfpms:
       postremove:  packaging/scripts/postrm
 
     contents:
-      # type: config prevents apt from overwriting the example on upgrade.
-      - src: config.yaml
+      # Example configs — always overwritten on upgrade (unlike the real config).
+      # config.yaml.example is the default quick-start (nginx + fail2ban).
+      - src: config.nginx-example.yaml
         dst: /etc/arxsentinel/config.yaml.example
-        type: config
+      - src: config.nginx-example.yaml
+        dst: /etc/arxsentinel/config.nginx-example.yaml
+      - src: config.cloudflare-example.yaml
+        dst: /etc/arxsentinel/config.cloudflare-example.yaml
+      - src: config.example.yaml
+        dst: /etc/arxsentinel/config.example.yaml
 
       # Systemd unit uses /usr/bin/ (differs from deploy/ scripts which use /usr/local/bin/).
       - src: packaging/arxsentinel.service
@@ -76,11 +80,9 @@ nfpms:
     formats:
       - rpm
 
-    dependencies:
-      - fail2ban
-
     recommends:
       - nginx
+      - fail2ban
 
     bindir: /usr/bin
 
@@ -90,9 +92,14 @@ nfpms:
       postremove:  packaging/scripts/rpm/postrm
 
     contents:
-      - src: config.yaml
+      - src: config.nginx-example.yaml
         dst: /etc/arxsentinel/config.yaml.example
-        type: config
+      - src: config.nginx-example.yaml
+        dst: /etc/arxsentinel/config.nginx-example.yaml
+      - src: config.cloudflare-example.yaml
+        dst: /etc/arxsentinel/config.cloudflare-example.yaml
+      - src: config.example.yaml
+        dst: /etc/arxsentinel/config.example.yaml
 
       # RPM/systemd convention: /usr/lib/systemd/system/ (not /lib/)
       - src: packaging/arxsentinel.service
@@ -120,11 +127,9 @@ nfpms:
     formats:
       - archlinux
 
-    dependencies:
-      - fail2ban
-
     recommends:
       - nginx
+      - fail2ban
 
     bindir: /usr/bin
 
@@ -134,9 +139,14 @@ nfpms:
       postremove:  packaging/scripts/arch/postrm
 
     contents:
-      - src: config.yaml
+      - src: config.nginx-example.yaml
         dst: /etc/arxsentinel/config.yaml.example
-        type: config
+      - src: config.nginx-example.yaml
+        dst: /etc/arxsentinel/config.nginx-example.yaml
+      - src: config.cloudflare-example.yaml
+        dst: /etc/arxsentinel/config.cloudflare-example.yaml
+      - src: config.example.yaml
+        dst: /etc/arxsentinel/config.example.yaml
 
       # Arch Linux systemd convention: /usr/lib/systemd/system/
       - src: packaging/arxsentinel.service

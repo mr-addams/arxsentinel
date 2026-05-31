@@ -1,5 +1,5 @@
 [Unit]
-Description=ArxSentinel — threat detector for nginx access logs
+Description=ArxSentinel — security event pipeline engine
 Documentation=https://github.com/mr-addams/arxsentinel
 After=network.target
 

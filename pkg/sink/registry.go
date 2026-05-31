@@ -35,7 +35,8 @@ import (
 // Format specifies the output format (e.g. "fail2ban", "json").
 // This type is independent of internal/config to avoid import cycles.
 type SinkConfig struct {
-	Type   string // "file", "stdout", etc.
+	Type   string // "file", "stdout", "sentinel-threat", etc.
+	Name   string // for type="sentinel-threat"; named channel binding
 	Path   string // for type="file"; ignored for others
 	Format string // "fail2ban", "json", etc.
 	Exec   string // path to exec plugin binary; used when type="exec"

@@ -265,9 +265,69 @@ metrics:
   username: ""
   password_hash: ""
 
+# ── pipeline ──────────────────────────────────────────────────────────────────────────────
+# Bounded channel between log-source readers and the processing pipeline.
+# Increase buffer_size for burst traffic (e.g. 16384 for high-load nginx).
+# shutdown_timeout: max drain time on SIGTERM before forced close.
+pipeline:
+  buffer_size: 8192
+  shutdown_timeout: "15s"
+
 # ── output ────────────────────────────────────────────────────────────────────────────────
 # Mount /var/log/arxsentinel as a writable volume.
 # For Fail2Ban integration: host Fail2Ban reads threats.log via bind-mount or hostPath.
 output:
   threat_log: /var/log/arxsentinel/threats.log
   operational_log: /var/log/arxsentinel/sentinel.log
+
+# ── Advanced / YAML-only features (reference — uncomment to enable) ───────────────────────
+#
+# These sections have no env var equivalents and are configured by editing this file.
+# Full copy-paste-ready examples: /etc/arxsentinel/config.yaml.example
+#
+# ── streams: multi-source monitoring ──────────────────────────────────────────────────────
+# Remove general.log_file above and uncomment streams: to monitor multiple log sources.
+#
+# streams:
+#   - name: main
+#     ...
+#     outputs:
+#       - type: sentinel-threat
+#         name: sentinel-cf
+#       - type: file
+#         path: /threats.log
+#
+# ── executors: automated threat response ───────────────────────────────────────────────────
+# Executors run after every THREAT event. See config.yaml.example for all options.
+#
+# executors:
+#   - name: cloudflare-blocklist
+#     type: cloudflare
+#     sources:
+#       - name: sentinel-cf              # matches sentinel-threat sink name in streams
+#     config:
+#       api_token: YOUR_CF_API_TOKEN     # via ARXSENTINEL secret or bind-mounted config
+#       account_id: YOUR_CF_ACCOUNT_ID
+#       list_name: arxsentinel_blocklist
+#       min_level: THREAT
+#       ttl: 24h
+#       batch_size: 100
+#       flush_interval: 10s
+#       comment_extra: ""                # optional: "sentinel-<id> <extra>"
+#
+# ── inputs / outputs: universal I/O syntax ─────────────────────────────────────────────────
+# Use instead of general.log_file / output.threat_log for multi-source or exec plugin I/O.
+#
+# inputs:
+#   - type: file
+#     path: /var/log/nginx/access.log
+#     parser: combined
+#   - type: stdin
+#     parser: combined
+#
+# outputs:
+#   - type: file
+#     path: /var/log/arxsentinel/threats.log
+#     format: fail2ban
+#   - type: stdout
+#     format: json

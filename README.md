@@ -6,6 +6,7 @@
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
+> 🌐 [Русская документация](README.ru.md) | [Українська документація](README.uk.md)
 
 **Security event pipeline for any HTTP server** — from a single nginx VPS to a full K8s cluster.  
 ~12 MB RAM · single binary · zero runtime deps · extends via exec+JSON plugins in any language.
@@ -147,7 +148,7 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/
 ```
 
 Works on Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, and Arch Linux.
-Requires `curl` and `sudo`. Fail2Ban is installed automatically if missing.
+Requires `curl` and `sudo`. Fail2Ban is installed automatically if missing (optional — see [Executors](#executors) for API-based alternatives).
 
 The service starts immediately and works with nginx out of the box — no profile needed. Edit the config to switch to another server (apache, caddy, traefik, haproxy-http, litespeed, or a custom regex):
 
@@ -170,7 +171,7 @@ sudo apt install ./arxsentinel_<version>_linux_amd64.deb
 sudo apt install ./arxsentinel_<version>_linux_arm64.deb
 ```
 
-`apt install` automatically resolves dependencies (`fail2ban`), installs the systemd unit, Fail2Ban filter/jail, logrotate config, and creates the `arxsentinel` system user.
+`apt install` automatically resolves dependencies, installs the systemd unit, Fail2Ban filter/jail (optional — for bare-metal setups), logrotate config, and creates the `arxsentinel` system user.
 
 After installation, edit the config and start the service:
 
@@ -335,7 +336,7 @@ deploy/examples/
 ## Requirements
 
 - Linux x86_64 or arm64 with systemd
-- Fail2Ban
+- Fail2Ban (optional — recommended for bare-metal; not needed with Cloudflare executor or other API-based integrations)
 - An HTTP server writing access logs in a supported format (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — or custom regex)
 
 ## Configuration
@@ -468,6 +469,17 @@ Full Docker guide: [README.docker.md](deploy/container/docker/README.md).
 DaemonSet (one pod per node, reads host logs) or sidecar (reads from an emptyDir shared with the app container).
 Ready-to-use manifests: [`deploy/examples/kubernetes/`](deploy/examples/kubernetes/).
 Helm chart with values reference: [README.helm.md](deploy/container/k8s/arxsentinel/README.md).
+
+## Executors
+
+Executors are stateful action plugins that run after threat scoring. Unlike Sinks (passive log writers), Executors actively manage external resources: they maintain a local dedup map, apply TTL-based expiry, and track execution statistics.
+
+| Executor | Package | Description |
+|---|---|---|
+| **cloudflare** |  | Adds threat IPs to a Cloudflare IP List; auto-removes expired entries via TTL sweep |
+
+See [docs/executors.md](docs/executors.md) for the framework overview and how to add custom executors.
+See [docs/executor-cloudflare.md](docs/executor-cloudflare.md) for Cloudflare-specific configuration and troubleshooting.
 
 ## Plugin Development
 
@@ -766,5 +778,3 @@ Licensed under [MIT](https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-bl
 Heartfelt thanks to Mitchell Krog and every contributor to that project — your dedication makes the web a safer place for everyone.
 
 ---
-
-[Русская документация → README.ru.md](README.ru.md) | [Українська документація → README.uk.md](README.uk.md)

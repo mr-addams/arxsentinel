@@ -28,6 +28,20 @@ func (s *stubMatcher) Match(list string, _ string) bool {
 	return false
 }
 
+func (s *stubMatcher) MatchResult(list string, text string) (string, bool) {
+	switch list {
+	case "badbot-ua":
+		if s.matchUA {
+			return text, true
+		}
+	case "badbot-ref":
+		if s.matchRef {
+			return text, true
+		}
+	}
+	return "", false
+}
+
 // ── Stub IPView ───────────────────────────────────────────────────────────────────────
 
 // stubIPView satisfies the IPView interface with zero values.
@@ -68,8 +82,9 @@ func TestDetect_UA_Match(t *testing.T) {
 	if res.Module != "badbot" {
 		t.Errorf("Module: want badbot, got %q", res.Module)
 	}
-	if res.Reason != "ua-match" {
-		t.Errorf("Reason: want ua-match, got %q", res.Reason)
+	// UA is lowercased before matching, so the pattern will be lowercase.
+	if res.Reason != "ua=mozilla/5.0 (compatible; ahrefsbot/7.0)" {
+		t.Errorf("Reason: want ua=mozilla/5.0 (compatible; ahrefsbot/7.0), got %q", res.Reason)
 	}
 }
 
@@ -144,8 +159,9 @@ func TestDetect_Referrer_Match(t *testing.T) {
 	if res.Score != 60 {
 		t.Errorf("Score: want 60, got %d", res.Score)
 	}
-	if res.Reason != "ref-match" {
-		t.Errorf("Reason: want ref-match, got %q", res.Reason)
+	// Referer is lowercased before matching.
+	if res.Reason != "ref=http://semalt.com/" {
+		t.Errorf("Reason: want ref=http://semalt.com/, got %q", res.Reason)
 	}
 }
 
@@ -217,4 +233,11 @@ type captureMatcher struct {
 
 func (c *captureMatcher) Match(list, text string) bool {
 	return c.fn(list, text)
+}
+
+func (c *captureMatcher) MatchResult(list, text string) (string, bool) {
+	if c.fn(list, text) {
+		return text, true
+	}
+	return "", false
 }

@@ -85,6 +85,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/metrics"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
+	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
@@ -108,7 +109,8 @@ type PipelineContext struct {
 	threatCount      *atomic.Int64    // per-pipeline threat counter, owned by runPipeline
 	Tracker          *state.Tracker
 	Scorer           *scorer.Scorer
-	Sinks            []plugin.Sink    // ordered list of output sinks for this stream
+	Sinks            []plugin.Sink     // ordered list of output sinks for this stream
+	Executors        []plugin.Executor // ordered list of executors run after sinks; nil when none configured
 	Matcher          *whitelist.Matcher
 	Verifier         *whitelist.Verifier
 	FakeBotScore     int
@@ -137,6 +139,12 @@ type SharedResources struct {
 const configPath = "/etc/arxsentinel/config.yaml"
 
 func main() {
+	// ── Subcommand dispatch ───────────────────────────────────────────────────────────
+	if len(os.Args) > 1 && os.Args[1] == "cleanup" {
+		handleCleanup(os.Args[2:])
+		return
+	}
+
 	// ── CLI flags ─────────────────────────────────────────────────────────────────────
 
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -393,12 +401,28 @@ func main() {
 		}
 	}()
 
+	// ── Start executor goroutines (top-level autonomous, Flow #042) ───────────────────────
+	// Executors are built from cfg.Executors and connect to Named Channel Hub sources
+	// that are registered by sentinel-threat sinks inside stream pipelines (T5).
 	// ── Launch streams ────────────────────────────────────────────────────────────────
 
 	var wg sync.WaitGroup
 	for i, streamCfg := range cfg.Streams {
 		wg.Add(1)
 		go runStream(ctx, path, cfg, streamCfg, ipCache, resolver, reloadChs[i], &wg, shared)
+	}
+
+	// Start executors AFTER stream goroutines so sentinel-threat sinks have time
+	// to register their Named Channel Hub channels. A brief yield lets pipeline
+	// goroutines reach runPipeline → buildSinks → RegisterSink before GetSource.
+	var execWg sync.WaitGroup
+	if len(cfg.Executors) > 0 {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			if err := startExecutors(ctx, &cfg, &execWg); err != nil {
+				utils.Log("STARTUP", "executor startup error: "+err.Error(), "error")
+			}
+		}()
 	}
 
 	// Notify systemd that all streams are running and the service is ready.
@@ -408,6 +432,16 @@ func main() {
 	metricsWg.Wait()
 	wg.Wait()
 	utils.Log("SHUTDOWN", "all streams done", "info")
+
+	// ── Graceful executor shutdown ──────────────────────────────────────────────────
+	// Unregister all NCH sources so executor Run() loops exit on closed channel.
+	for _, ec := range cfg.Executors {
+		for _, src := range ec.Sources {
+			pkgexecutor.Unregister(src.Name)
+		}
+	}
+	execWg.Wait()
+	utils.Log("SHUTDOWN", "all executors done", "info")
 }
 
 // runStream is the per-stream orchestrator.
@@ -511,6 +545,9 @@ func runPipeline(
 		}
 	}()
 
+	// Executors are top-level autonomous goroutines (Flow #042) started from main().
+	// Pipeline no longer owns executors — they read from Named Channel Hub (NCH).
+	var executors []plugin.Executor
 	sourceName, sourceType := sourceMetadata(sources)
 
 	// Choose buffer size: pipeline-level override or stream-level default.
@@ -527,6 +564,7 @@ func runPipeline(
 		Tracker:          tracker,
 		Scorer:           scorer.NewScorer(cfg.Scoring, buildPipelineDetectors(cfg, pipeCfg, shared), utils.Log),
 		Sinks:            sinks,
+		Executors:        executors,
 		Matcher:          matcher,
 		Verifier:         verifier,
 		FakeBotScore:     cfg.Whitelist.FakeBotScore,
@@ -611,6 +649,7 @@ func runPipeline(
 					}
 				}
 			}
+			// Executors are top-level autonomous goroutines (Flow #042) — not rebuilt on SIGHUP here.
 			streamCfg = newStreamCfg
 			pipeCfg = newPipeCfg
 			cfg = newCfg
@@ -622,7 +661,8 @@ func runPipeline(
 				threatCount:      &threatCount,
 				Tracker:          tracker,
 				Scorer:           scorer.NewScorer(cfg.Scoring, buildPipelineDetectors(cfg, pipeCfg, shared), utils.Log),
-				Sinks:            sinks, // same sinks — already reloaded above
+				Sinks:            sinks,     // same sinks — already reloaded above
+				Executors:        executors, // same executors — state (ban list, TTL) must survive reload
 				Matcher:          newMatcher,
 				Verifier:         verifier,
 				FakeBotScore:     cfg.Whitelist.FakeBotScore,
@@ -644,6 +684,8 @@ func runPipeline(
 }
 
 // ── TrackerGroup helpers ───────────────────────────────────────────────────────────────
+
+
 
 // buildTrackerGroups creates one *state.Tracker per unique tracker group in the stream.
 // Pipelines that share the same group see the same IP state (shared tracker).
@@ -869,6 +911,42 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 	return sources, nil
 }
 
+// startExecutors builds all top-level executors from config and launches them as goroutines.
+// Each executor connects to Named Channel Hub sources and runs until ctx is cancelled
+// or the source channel is closed. Must be called after all NCH sinks are registered.
+//
+// Returns an error if any executor cannot be built or any named source cannot be found.
+// On error, the caller should log and continue — executor startup failure is not fatal
+// for the rest of the pipeline (streams still process logs).
+func startExecutors(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup) error {
+	for _, ec := range cfg.Executors {
+		ex, err := pkgexecutor.Build(pkgexecutor.ExecutorConfig{
+			Name:   ec.Name,
+			Type:   ec.Type,
+			Config: ec.Config,
+		})
+		if err != nil {
+			return fmt.Errorf("executor %q: build: %w", ec.Name, err)
+		}
+
+		for _, src := range ec.Sources {
+			q, err := pkgexecutor.GetSource(src.Name)
+			if err != nil {
+				return fmt.Errorf("executor %q: source %q: %w", ec.Name, src.Name, err)
+			}
+
+			wg.Add(1)
+			go func(ex plugin.Executor, q plugin.EventSource) {
+				defer wg.Done()
+				if err := ex.Run(ctx, q); err != nil && err != context.Canceled {
+					utils.Log("EXECUTOR", fmt.Sprintf("executor %s: %v", ex.Name(), err), "error")
+				}
+			}(ex, q)
+		}
+	}
+	return nil
+}
+
 // buildSinks constructs the Sink list from an explicit outputs slice.
 // Called from runPipeline with pipeCfg.Outputs — each pipeline owns its sinks directly.
 func buildSinks(outputs []config.SinkConfig) ([]plugin.Sink, error) {
@@ -879,9 +957,10 @@ func buildSinks(outputs []config.SinkConfig) ([]plugin.Sink, error) {
 	for _, out := range outputs {
 		sink, err := pkgsink.Build(pkgsink.SinkConfig{
 			Type:   out.Type,
+			Name:   out.Name,
 			Path:   out.Path,
 			Format: out.Format,
-			Exec:   out.Exec,  // NEW
+			Exec:   out.Exec,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("sink %q: %w", out.Type, err)
@@ -999,6 +1078,8 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	metrics.RecordLine(pipe.StreamName, pipe.PipelineName)
 	metrics.RecordInputLine(pipe.StreamName, pipe.PipelineName, pipe.SourceName, pipe.SourceType)
 
+	// Forwarder mode (Flow #041) removed: Flow #042 replaces with NCH-based dispatch (T5/T10).
+
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
 	), "debug")
@@ -1102,6 +1183,9 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 		}
 		metrics.RecordOutputEvent(pipe.StreamName, pipe.PipelineName, sink.Name(), sinkTypeFromName(sink.Name()))
 	}
+
+	// Executor dispatch removed: Flow #042 executors are autonomous goroutines
+	// reading from Named Channel Hub (NCH). Wired in T4b/T5.
 }
 
 // ========================== systemd notify ===============================================

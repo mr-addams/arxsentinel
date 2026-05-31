@@ -886,6 +886,82 @@ chain_guard:
 	}
 }
 
+// ========================== Tests: Pipeline-level executors (Flow #041) ================
+
+// TestPipelineExecutors_ParseYAML verifies that a pipeline with per-pipeline executors
+// is parsed correctly and the field is populated.
+// TestTopLevelExecutors_ParseYAML verifies that top-level executors: section is parsed.
+// Flow #042: executors are top-level autonomous entities, not pipeline-level.
+func TestTopLevelExecutors_ParseYAML(t *testing.T) {
+	path := writeTempYAML(t, `
+executors:
+  - name: cf-main
+    type: cloudflare
+    sources:
+      - name: cf-main
+    config:
+      api_token: test
+      account_id: test
+      list_id: test
+streams:
+  - name: test
+    inputs:
+      - type: stdin
+    outputs:
+      - type: stdout
+        format: json
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if len(cfg.Executors) != 1 {
+		t.Fatalf("want 1 top-level executor, got %d", len(cfg.Executors))
+	}
+	if cfg.Executors[0].Name != "cf-main" {
+		t.Errorf("executor name: want %q, got %q", "cf-main", cfg.Executors[0].Name)
+	}
+	if cfg.Executors[0].Type != "cloudflare" {
+		t.Errorf("executor type: want %q, got %q", "cloudflare", cfg.Executors[0].Type)
+	}
+	if len(cfg.Executors[0].Sources) != 1 || cfg.Executors[0].Sources[0].Name != "cf-main" {
+		t.Errorf("executor sources: want [{cf-main}], got %v", cfg.Executors[0].Sources)
+	}
+}
+
+// TestTopLevelExecutors_DuplicateNames verifies that duplicate executor names fail validation.
+func TestTopLevelExecutors_DuplicateNames(t *testing.T) {
+	path := writeTempYAML(t, `
+executors:
+  - name: dup
+    type: cloudflare
+    config:
+      api_token: t
+      account_id: a
+      list_id: l
+  - name: dup
+    type: cloudflare
+    config:
+      api_token: t
+      account_id: a
+      list_id: l
+streams:
+  - name: test
+    inputs:
+      - type: stdin
+    outputs:
+      - type: stdout
+        format: json
+`)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("want error for duplicate executor name, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate executor name") {
+		t.Errorf("error should mention duplicate executor name, got: %v", err)
+	}
+}
+
 // ========================== Tests: Pipeline Abstraction (Flow #034) ===================
 
 // TestPipelineConfig_ParseYAML verifies that a multi-pipeline YAML config is parsed correctly.

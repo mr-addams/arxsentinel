@@ -62,4 +62,6 @@ data:
 
     metrics:
       enabled: true
-      addr: ":9117"
+      listen_addr: ":9117"
+      username: ""
+      password_hash: ""

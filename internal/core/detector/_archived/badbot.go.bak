@@ -22,6 +22,7 @@
 package detector
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/mr-addams/arxsentinel/internal/core/parser"
@@ -32,6 +33,7 @@ import (
 // Defined here to avoid importing the blocklist package in detector tests.
 type Matcher interface {
 	Match(list string, text string) bool
+	MatchResult(list string, text string) (string, bool)
 }
 
 // BadBotDetector matches incoming log entries against blocklist.Manager.
@@ -56,22 +58,24 @@ func (d *BadBotDetector) Name() string { return "badbot" }
 func (d *BadBotDetector) Detect(_ IPView, entry *parser.LogEntry) DetectResult {
 	if d.cfg.CheckUA {
 		ua := strings.ToLower(entry.UserAgent)
-		if ua != "" && ua != "-" && d.mgr.Match("badbot-ua", ua) {
-			return DetectResult{
-				Score:  d.cfg.Score,
-				Module: "badbot",
-				Reason: "ua-match",
+		if ua != "" && ua != "-" {
+			if pattern, ok := d.mgr.MatchResult("badbot-ua", ua); ok {
+				return DetectResult{
+					Score:  d.cfg.Score,
+					Module: "badbot",
+					Reason: fmt.Sprintf("ua=%s", pattern),
+				}
 			}
 		}
 	}
 
 	if d.cfg.CheckReferrer && entry.Referer != "" && entry.Referer != "-" {
 		ref := strings.ToLower(entry.Referer)
-		if d.mgr.Match("badbot-ref", ref) {
+		if pattern, ok := d.mgr.MatchResult("badbot-ref", ref); ok {
 			return DetectResult{
 				Score:  d.cfg.Score,
 				Module: "badbot",
-				Reason: "ref-match",
+				Reason: fmt.Sprintf("ref=%s", pattern),
 			}
 		}
 	}
