@@ -513,18 +513,9 @@ func runPipeline(
 		}
 	}()
 
-	// Executors are optional — empty list is not an error.
-	// Per-pipeline executor override (Flow #041): if pipeCfg.Executors is set, use it;
-	// otherwise inherit top-level cfg.Executors (backward compatible).
-	execItems := cfg.Executors
-	if pipeCfg.Executors != nil {
-		execItems = pipeCfg.Executors
-	}
-	executors, err := buildExecutors(execItems)
-	if err != nil {
-		utils.Log("ERROR", fmt.Sprintf("%s: executor init error: %v", logTag, err), "error")
-		return
-	}
+	// Executors are top-level autonomous goroutines (Flow #042) started from main().
+	// Pipeline no longer owns executors — they read from Named Channel Hub (NCH).
+	var executors []plugin.Executor
 	sourceName, sourceType := sourceMetadata(sources)
 
 	// Choose buffer size: pipeline-level override or stream-level default.
@@ -626,20 +617,7 @@ func runPipeline(
 					}
 				}
 			}
-			// Executors with per-pipeline override must be rebuilt on SIGHUP (Flow #041).
-			// When pipeCfg.Executors != nil (per-pipeline override), rebuild executors from
-			// the new config. When pipeCfg.Executors == nil (inheriting top-level), keep
-			// existing executors — they are not affected by this pipeline's config change.
-			if newPipeCfg.Executors != nil {
-				newExecItems := newPipeCfg.Executors
-				newExecutors, execErr := buildExecutors(newExecItems)
-				if execErr != nil {
-					utils.Log("CONFIG", fmt.Sprintf("%s: SIGHUP executor rebuild error, keeping old executors: %v", logTag, execErr), "warn")
-				} else {
-					// Close old executors that implement io.Closer.
-					executors = newExecutors
-				}
-			}
+			// Executors are top-level autonomous goroutines (Flow #042) — not rebuilt on SIGHUP here.
 			streamCfg = newStreamCfg
 			pipeCfg = newPipeCfg
 			cfg = newCfg
@@ -910,10 +888,10 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 	return sources, nil
 }
 
-// buildExecutors constructs the Executor list from the config.Executors section.
-// Returns (nil, nil) when the list is empty — executors are optional; an empty
-// section does not change pipeline behaviour.
-func buildExecutors(items []config.ExecutorItem) ([]plugin.Executor, error) {
+// buildExecutors constructs the Executor list from top-level config.Executors (Flow #042).
+// Each executor is an autonomous goroutine reading from Named Channel Hub.
+// Returns (nil, nil) when the list is empty.
+func buildExecutors(items []config.ExecutorTopConfig) ([]plugin.Executor, error) {
 	if len(items) == 0 {
 		return nil, nil
 	}
@@ -922,8 +900,6 @@ func buildExecutors(items []config.ExecutorItem) ([]plugin.Executor, error) {
 		ex, err := pkgexecutor.Build(pkgexecutor.ExecutorConfig{
 			Name:   item.Name,
 			Type:   item.Type,
-			Exec:   item.Exec,
-			Params: item.Params,
 			Config: item.Config,
 		})
 		if err != nil {

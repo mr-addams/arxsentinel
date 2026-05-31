@@ -75,8 +75,9 @@ type Config struct {
 	// Migrated from general.log_file + output.threat_log by Migrate().
 	Inputs   []InputConfig  `yaml:"inputs"`   // YAML: inputs — top-level source list; alternative to general.log_file
 	Outputs  []SinkConfig   `yaml:"outputs"`  // YAML: outputs — top-level sink list; alternative to output.threat_log
-	Executors []ExecutorItem `yaml:"executors"` // YAML: executors — top-level executor list; instantiated by pipeline for threat response actions
-	Pipeline PipelineRuntimeConfig `yaml:"pipeline"` // YAML: pipeline — buffer_size and shutdown_timeout; top-level default for all pipelines
+	DeprecatedExecutors []ExecutorItem          `yaml:"deprecated_executors,omitempty"` // YAML: deprecated_executors — legacy, replaced by top-level executors: (new format). Consumer: main.go, removed in v0.10.0
+	Executors           []ExecutorTopConfig     `yaml:"executors"`                       // YAML: executors — top-level executor list with named channel hub sources. Consumer: main.go startExecutors
+	Pipeline            PipelineRuntimeConfig   `yaml:"pipeline"`                        // YAML: pipeline — buffer_size and shutdown_timeout; top-level default for all pipelines
 }
 
 // ========================== Universal I/O config (Flow #030) ==========================
@@ -101,16 +102,29 @@ type SinkConfig struct {
 	Exec   string `yaml:"exec"`   // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSink
 }
 
-// ExecutorItem — configuration for a single executor instance.
-// Executors are registered by type name in pkg/executor; each executor handles
-// a threat response action (e.g., API call, script, notification).
-// New syntax: executors: [{name: my-action, type: cloudflare, params: {zone: example.com}}]
+// ExecutorItem — configuration for a single executor instance (legacy).
+// Deprecated in v0.10.0: use top-level executors with ExecutorTopConfig instead.
 type ExecutorItem struct {
-	Name   string                 `yaml:"name"`   // YAML: unique name for this executor instance. Consumer: pipeline executor registry
-	Type   string                 `yaml:"type"`   // YAML: executor type registered in pkg/executor. Consumer: pkg/executor.Build
-	Exec   string                 `yaml:"exec"`   // YAML: path to exec plugin binary; used when type is not in registry. Consumer: pkg/execplugin.NewExecutor
-	Params map[string]interface{} `yaml:"params,inline"` // YAML: params — arbitrary key-value pairs passed to the executor factory or exec plugin
-	Config map[string]interface{} `yaml:"config"`        // YAML: config — executor-specific structured configuration
+	Name   string                 `yaml:"name"`
+	Type   string                 `yaml:"type"`
+	Exec   string                 `yaml:"exec"`
+	Params map[string]interface{} `yaml:"params,inline"`
+	Config map[string]interface{} `yaml:"config"`
+}
+
+// ExecutorTopConfig — configuration for a single top-level executor instance.
+// New syntax: executors: [{name: my-action, type: cloudflare, sources: [{name: cf-stream}], config: {…}}]
+// Each executor reads ThreatEvents from Named Channel Hub sources listed in Sources.
+type ExecutorTopConfig struct {
+	Name    string              `yaml:"name"`    // YAML: unique name for this executor instance
+	Type    string              `yaml:"type"`    // YAML: executor type registered in pkg/executor
+	Sources []ExecutorSourceRef `yaml:"sources"` // YAML: named channels to read ThreatEvents from
+	Config  map[string]any      `yaml:"config"`  // YAML: executor-specific structured configuration
+}
+
+// ExecutorSourceRef — reference to a Named Channel Hub source.
+type ExecutorSourceRef struct {
+	Name string `yaml:"name"` // YAML: channel name registered by sentinel-threat sink
 }
 
 // PipelineRuntimeConfig — tuning parameters for the Source→Merge→Pipeline channel.
@@ -147,7 +161,6 @@ type PipelineConfig struct {
 	TrackerGroup string                    `yaml:"tracker_group"` // YAML: pipelines[].tracker_group — shared IP-state group; "" → isolated
 	Inputs       []InputConfig             `yaml:"inputs"`        // YAML: pipelines[].inputs — log sources for this pipeline
 	Outputs      []SinkConfig              `yaml:"outputs"`       // YAML: pipelines[].outputs — threat sinks for this pipeline
-	Executors    []ExecutorItem            `yaml:"executors"`     // YAML: pipelines[].executors — per-pipeline executor override; nil inherits top-level cfg.Executors; [] means no executors. Consumer: main.runPipeline
 	Detectors    map[string]DetectorConfig `yaml:"detectors"`     // YAML: pipelines[].detectors — per-detector config; nil → all registered with defaults
 	Pipeline     PipelineRuntimeConfig     `yaml:"pipeline"`      // YAML: pipelines[].pipeline — buffer_size, shutdown_timeout
 }
@@ -865,6 +878,16 @@ func envCIDRList(key string, dst *[]string) error {
 // Zero thresholds can occur if config.yaml specifies a scoring: section with
 // incomplete fields (yaml.v3 partial merge limitation) — protects against silent misconfiguration.
 func validateConfig(cfg *Config) error {
+	// Top-level executors: unique names required.
+	if len(cfg.Executors) > 0 {
+		seen := make(map[string]struct{}, len(cfg.Executors))
+		for _, ex := range cfg.Executors {
+			if _, dup := seen[ex.Name]; dup {
+				return fmt.Errorf("executors: duplicate executor name %q", ex.Name)
+			}
+			seen[ex.Name] = struct{}{}
+		}
+	}
 	if cfg.Scoring.AlertThreshold <= 0 {
 		return fmt.Errorf("scoring.alert_threshold must be > 0, got %d", cfg.Scoring.AlertThreshold)
 	}
@@ -1024,18 +1047,6 @@ func validateConfig(cfg *Config) error {
 				// A pipeline without outputs silently drops all threat events — almost certainly a
 				// misconfiguration. Require at least one sink for normal pipelines.
 				return fmt.Errorf("streams[%d].pipelines[%d]: must have at least one output", i, j)
-			}
-			if p.Executors != nil {
-				execNames := make(map[string]bool)
-				for k, ex := range p.Executors {
-					if ex.Name == "" {
-						return fmt.Errorf("streams[%d].pipelines[%d].executors[%d]: name must not be empty", i, j, k)
-					}
-					if execNames[ex.Name] {
-						return fmt.Errorf("streams[%d].pipelines[%d].executors: duplicate executor name %q", i, j, ex.Name)
-					}
-					execNames[ex.Name] = true
-				}
 			}
 			if err := validateInputs(p.Inputs); err != nil {
 				return fmt.Errorf("streams[%d].pipelines[%d].inputs: %w", i, j, err)
