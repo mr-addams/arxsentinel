@@ -57,6 +57,23 @@ type Config struct {
 	// FlushInterval is the maximum time between batch flushes. If BatchSize is not
 	// reached within this interval, a partial batch is flushed regardless.
 	FlushInterval time.Duration `json:"-" yaml:"flush_interval"`
+	// InstanceID overrides the auto-detected instance ID. Useful for cleanup
+	// or when running multiple instances on the same machine.
+	InstanceID string `json:"instance_id" yaml:"instance_id"`
+}
+
+// ++++++++++++++++++++++++++ Defaults ++++++++++++++++++++++++++++++++++++++++
+
+// DefaultConfig returns a Config with all defaults populated.
+func DefaultConfig() Config {
+	return Config{
+		ListName:      "arxsentinel-blocklist",
+		MinLevel:      "THREAT",
+		TTL:           24 * time.Hour,
+		MaxItems:      0,
+		BatchSize:     100,
+		FlushInterval: 10 * time.Second,
+	}
 }
 
 // ++++++++++++++++++++++++++ Configuration parsing ++++++++++++++++++++++++++
