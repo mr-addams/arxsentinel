@@ -25,14 +25,15 @@ import (
 // ExecExecutor implements plugin.Executor by communicating with an external
 // plugin process via NDJSON over stdin/stdout.
 //
-// Each Execute() call is mutex-serialized to ensure correct request/response
-// ordering. Multiple goroutines calling Execute() on the same instance will
-// be serialized (one at a time).
+// Each event received via Run() is mutex-serialized to ensure correct
+// request/response ordering. Multiple events on the channel are processed
+// sequentially (one at a time).
 //
-// If the plugin crashes or stdout closes unexpectedly, Execute() returns an error
+// If the plugin crashes or stdout closes unexpectedly, Run() returns an error
 // and increments the Errors counter.
 type ExecExecutor struct {
 	name     string
+	execType string
 	proc     *ManagedProcess
 	mu       sync.Mutex
 	executed atomic.Int64
@@ -40,7 +41,7 @@ type ExecExecutor struct {
 }
 
 // NewExecutor spawns the plugin binary at execPath and returns an ExecExecutor.
-// The subprocess is started immediately and kept alive for all Execute() calls.
+// The subprocess is started immediately and kept alive for all Run() calls.
 //
 // name is the executor identifier returned by Name().
 // params is passed to the plugin as ARXSENTINEL_PLUGIN_PARAMS environment variable
@@ -53,17 +54,40 @@ func NewExecutor(name, execPath string, params map[string]interface{}) (*ExecExe
 		return nil, fmt.Errorf("failed to spawn executor plugin %q at %s: %w", name, execPath, err)
 	}
 	return &ExecExecutor{
-		name: name,
-		proc: proc,
+		name:     name,
+		execType: "exec",
+		proc:     proc,
 	}, nil
 }
+
+// Type returns "exec" — the executor type for exec plugins.
+func (e *ExecExecutor) Type() string { return e.execType }
 
 // Name returns the executor name as registered in the plugin registry.
 func (e *ExecExecutor) Name() string {
 	return e.name
 }
 
-// Execute sends an ExecuteRequest to the plugin and reads back an ExecuteResponse.
+// Run reads ThreatEvents from the channel and delegates to executePlugin.
+// Blocks until ctx is cancelled or the channel is closed.
+func (e *ExecExecutor) Run(ctx context.Context, in <-chan plugin.ThreatEvent) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event, ok := <-in:
+			if !ok {
+				return nil
+			}
+			if err := e.executePlugin(ctx, event); err != nil {
+				// Log the error; continue processing remaining events.
+				continue
+			}
+		}
+	}
+}
+
+// executePlugin sends an ExecuteRequest to the plugin and reads back an ExecuteResponse.
 // The request/response cycle is mutex-serialized for thread safety.
 //
 // Returns an error if:
@@ -73,34 +97,28 @@ func (e *ExecExecutor) Name() string {
 //   - Response has non-empty Error field
 //
 // On success, increments the Executed counter. On any error, increments Errors.
-// Skipped events (e.g., below min_level) are not counted here — the pipeline
-// handles that logic; Execute is only called for events that should be acted upon.
-func (e *ExecExecutor) Execute(ctx context.Context, event plugin.ThreatEvent) error {
+func (e *ExecExecutor) executePlugin(ctx context.Context, event plugin.ThreatEvent) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// Build the request
 	req := ExecuteRequest{
 		V:      ProtoVersion,
 		Action: "execute",
 		Event:  threatEventToJSON(event),
 	}
 
-	// Marshal to JSON
 	reqData, err := json.Marshal(req)
 	if err != nil {
 		e.errors.Add(1)
 		return fmt.Errorf("[%s] Failed to marshal ExecuteRequest: %w", e.name, err)
 	}
 
-	// Send the request
 	if err := e.proc.Send(reqData); err != nil {
 		e.errors.Add(1)
 		fmt.Fprintf(os.Stderr, "[%s] Failed to send request: %v\n", e.name, err)
 		return fmt.Errorf("[%s] Failed to send request: %w", e.name, err)
 	}
 
-	// Receive the response
 	respData, err := e.proc.Recv()
 	if err != nil {
 		e.errors.Add(1)
@@ -108,7 +126,6 @@ func (e *ExecExecutor) Execute(ctx context.Context, event plugin.ThreatEvent) er
 		return fmt.Errorf("[%s] Failed to receive response: %w", e.name, err)
 	}
 
-	// Parse the response
 	resp, err := ParseExecuteResponse(respData)
 	if err != nil {
 		e.errors.Add(1)
@@ -116,20 +133,13 @@ func (e *ExecExecutor) Execute(ctx context.Context, event plugin.ThreatEvent) er
 		return fmt.Errorf("[%s] Failed to parse ExecuteResponse: %w", e.name, err)
 	}
 
-	// Check for explicit plugin error — non-empty Error field means the action failed.
 	if resp.Error != "" {
 		e.errors.Add(1)
 		return fmt.Errorf("[%s] Plugin returned error: %s", e.name, resp.Error)
 	}
 
-	// Success
 	e.executed.Add(1)
 	return nil
-}
-
-// Close shuts down the plugin subprocess gracefully.
-func (e *ExecExecutor) Close() error {
-	return e.proc.Close()
 }
 
 // Stats returns operational counters for this executor.

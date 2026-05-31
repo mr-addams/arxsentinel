@@ -890,68 +890,68 @@ chain_guard:
 
 // TestPipelineExecutors_ParseYAML verifies that a pipeline with per-pipeline executors
 // is parsed correctly and the field is populated.
-func TestPipelineExecutors_ParseYAML(t *testing.T) {
+// TestTopLevelExecutors_ParseYAML verifies that top-level executors: section is parsed.
+// Flow #042: executors are top-level autonomous entities, not pipeline-level.
+func TestTopLevelExecutors_ParseYAML(t *testing.T) {
 	path := writeTempYAML(t, `
+executors:
+  - name: cf-main
+    type: cloudflare
+    sources:
+      - name: cf-main
+    config:
+      api_token: test
+      account_id: test
+      list_id: test
 streams:
   - name: test
-    pipelines:
-      - name: p1
-        executors:
-          - name: cf-main
-            type: cloudflare
-            config:
-              api_token: test
-              account_id: test
-        inputs:
-          - type: stdin
-        outputs:
-          - type: stdout
-            format: json
+    inputs:
+      - type: stdin
+    outputs:
+      - type: stdout
+        format: json
 `)
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	s := cfg.Streams[0]
-	if len(s.Pipelines) != 1 {
-		t.Fatalf("want 1 pipeline, got %d", len(s.Pipelines))
+	if len(cfg.Executors) != 1 {
+		t.Fatalf("want 1 top-level executor, got %d", len(cfg.Executors))
 	}
-	p := s.Pipelines[0]
-	if len(p.Executors) != 1 {
-		t.Fatalf("want 1 executor, got %d", len(p.Executors))
+	if cfg.Executors[0].Name != "cf-main" {
+		t.Errorf("executor name: want %q, got %q", "cf-main", cfg.Executors[0].Name)
 	}
-	if p.Executors[0].Name != "cf-main" {
-		t.Errorf("executor name: want %q, got %q", "cf-main", p.Executors[0].Name)
+	if cfg.Executors[0].Type != "cloudflare" {
+		t.Errorf("executor type: want %q, got %q", "cloudflare", cfg.Executors[0].Type)
 	}
-	if p.Executors[0].Type != "cloudflare" {
-		t.Errorf("executor type: want %q, got %q", "cloudflare", p.Executors[0].Type)
+	if len(cfg.Executors[0].Sources) != 1 || cfg.Executors[0].Sources[0].Name != "cf-main" {
+		t.Errorf("executor sources: want [{cf-main}], got %v", cfg.Executors[0].Sources)
 	}
 }
 
-// TestPipelineExecutors_DuplicateNames verifies that duplicate executor names within
-// a pipeline fail validation.
-func TestPipelineExecutors_DuplicateNames(t *testing.T) {
+// TestTopLevelExecutors_DuplicateNames verifies that duplicate executor names fail validation.
+func TestTopLevelExecutors_DuplicateNames(t *testing.T) {
 	path := writeTempYAML(t, `
+executors:
+  - name: dup
+    type: cloudflare
+    config:
+      api_token: t
+      account_id: a
+      list_id: l
+  - name: dup
+    type: cloudflare
+    config:
+      api_token: t
+      account_id: a
+      list_id: l
 streams:
   - name: test
-    pipelines:
-      - name: p1
-        executors:
-          - name: dup
-            type: cloudflare
-            config:
-              api_token: t
-              account_id: a
-          - name: dup
-            type: cloudflare
-            config:
-              api_token: t
-              account_id: a
-        inputs:
-          - type: stdin
-        outputs:
-          - type: stdout
-            format: json
+    inputs:
+      - type: stdin
+    outputs:
+      - type: stdout
+        format: json
 `)
 	_, err := LoadConfig(path)
 	if err == nil {

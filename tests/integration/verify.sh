@@ -496,7 +496,32 @@ CHAIN_TOTAL=$((${#CHAIN_PROXIES[@]} * ${#CHAIN_BACKENDS[@]}))
 CF_DIRECT_TOTAL=${#CF_BACKENDS[@]}
 CF_CHAIN_TOTAL=$((${#CF_CHAIN_PROXIES[@]} * ${#CF_CHAIN_BACKENDS[@]}))
 CHAIN_GUARD_TOTAL=2
-TOTAL=$((DIRECT_TOTAL + BADBOT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL + CF_DIRECT_TOTAL + CF_CHAIN_TOTAL + CHAIN_GUARD_TOTAL))
+CHAIN_GUARD_TOTAL=2
+
+# ── executor-cf-ban: check that CF API mock received the attacker IP ──────────────────
+echo "--- Executor CF ban check ---"
+echo ""
+
+EXECUTOR_TOTAL=0
+EXECUTOR_BAN_JSON="$LOGS_DIR/executor-cf-ban.json"
+EXPECTED_EXECUTOR_IP="5.6.7.8"
+
+if [ ! -f "$EXECUTOR_BAN_JSON" ] || [ ! -s "$EXECUTOR_BAN_JSON" ]; then
+    echo "SKIP [executor/cf-ban]  (no recorded-items file — cf-api-mock may not be running)"
+else
+    EXECUTOR_TOTAL=1
+    if grep -q "$EXPECTED_EXECUTOR_IP" "$EXECUTOR_BAN_JSON"; then
+        echo "PASS [executor/cf-ban]  IP $EXPECTED_EXECUTOR_IP found in CF API mock"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL [executor/cf-ban]  IP $EXPECTED_EXECUTOR_IP not found in CF API mock"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
+echo ""
+
+TOTAL=$((DIRECT_TOTAL + BADBOT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL + CF_DIRECT_TOTAL + CF_CHAIN_TOTAL + CHAIN_GUARD_TOTAL + EXECUTOR_TOTAL))
 
 echo "================================"
 echo "Results: $PASS passed, $FAIL failed"
@@ -507,6 +532,7 @@ echo "(${#CHAIN_PROXIES[@]} proxies × ${#CHAIN_BACKENDS[@]} backends = ${CHAIN_
 echo "(${#CF_BACKENDS[@]} backends = ${CF_DIRECT_TOTAL} CF-direct checks)"
 echo "(${#CF_CHAIN_PROXIES[@]} proxies × ${#CF_CHAIN_BACKENDS[@]} backends = ${CF_CHAIN_TOTAL} CF-chain checks)"
 echo "(${CHAIN_GUARD_TOTAL} chain-guard warning checks)"
+echo "(${EXECUTOR_TOTAL} executor checks)"
 echo "(total: ${TOTAL} checks)"
 echo ""
 

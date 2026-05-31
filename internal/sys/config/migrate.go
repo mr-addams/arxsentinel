@@ -144,25 +144,8 @@ func Migrate(cfg *Config) []string {
 			TrackerGroup: "",
 			Inputs:       s.Inputs,
 			Outputs:      s.Outputs,
-			Executors:    s.Executors, // stream-level executors propagate to auto-wrapped pipeline
 			Pipeline:     runtime,
 		}}
-	}
-
-	// ── Stream-level executors propagation (Flow #041) ─────────────────────────────────────
-	// After auto-wrap, propagate stream executors to pipelines that have Executors==nil.
-	// Pipelines with explicit Executors (including empty slice) are not overwritten.
-	for i := range cfg.Streams {
-		s := &cfg.Streams[i]
-		if s.Executors == nil {
-			continue
-		}
-		for j := range s.Pipelines {
-			p := &s.Pipelines[j]
-			if p.Executors == nil {
-				p.Executors = s.Executors
-			}
-		}
 	}
 
 	return warnings

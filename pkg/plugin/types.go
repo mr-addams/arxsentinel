@@ -40,7 +40,6 @@ type LogEntry struct {
 	Referer    string    // $http_referer; "-" if absent
 	UserAgent  string    // $http_user_agent; "-" if absent
 	RealIP     string    // last IP from $real_ip; == RemoteAddr when real_ip field == "-"
-	ThreatData *ThreatEvent // non-nil when entry comes from sentinel-threat source; pipeline skips scoring
 }
 
 // SourceStats — operational counters emitted by a Source.

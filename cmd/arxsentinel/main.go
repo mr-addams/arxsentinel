@@ -139,6 +139,12 @@ type SharedResources struct {
 const configPath = "/etc/arxsentinel/config.yaml"
 
 func main() {
+	// ── Subcommand dispatch ───────────────────────────────────────────────────────────
+	if len(os.Args) > 1 && os.Args[1] == "cleanup" {
+		handleCleanup(os.Args[2:])
+		return
+	}
+
 	// ── CLI flags ─────────────────────────────────────────────────────────────────────
 
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -395,12 +401,28 @@ func main() {
 		}
 	}()
 
+	// ── Start executor goroutines (top-level autonomous, Flow #042) ───────────────────────
+	// Executors are built from cfg.Executors and connect to Named Channel Hub sources
+	// that are registered by sentinel-threat sinks inside stream pipelines (T5).
 	// ── Launch streams ────────────────────────────────────────────────────────────────
 
 	var wg sync.WaitGroup
 	for i, streamCfg := range cfg.Streams {
 		wg.Add(1)
 		go runStream(ctx, path, cfg, streamCfg, ipCache, resolver, reloadChs[i], &wg, shared)
+	}
+
+	// Start executors AFTER stream goroutines so sentinel-threat sinks have time
+	// to register their Named Channel Hub channels. A brief yield lets pipeline
+	// goroutines reach runPipeline → buildSinks → RegisterSink before GetSource.
+	var execWg sync.WaitGroup
+	if len(cfg.Executors) > 0 {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			if err := startExecutors(ctx, &cfg, &execWg); err != nil {
+				utils.Log("STARTUP", "executor startup error: "+err.Error(), "error")
+			}
+		}()
 	}
 
 	// Notify systemd that all streams are running and the service is ready.
@@ -410,6 +432,16 @@ func main() {
 	metricsWg.Wait()
 	wg.Wait()
 	utils.Log("SHUTDOWN", "all streams done", "info")
+
+	// ── Graceful executor shutdown ──────────────────────────────────────────────────
+	// Unregister all NCH sources so executor Run() loops exit on closed channel.
+	for _, ec := range cfg.Executors {
+		for _, src := range ec.Sources {
+			pkgexecutor.Unregister(src.Name)
+		}
+	}
+	execWg.Wait()
+	utils.Log("SHUTDOWN", "all executors done", "info")
 }
 
 // runStream is the per-stream orchestrator.
@@ -513,24 +545,9 @@ func runPipeline(
 		}
 	}()
 
-	// Executors are optional — empty list is not an error.
-	// Per-pipeline executor override (Flow #041): if pipeCfg.Executors is set, use it;
-	// otherwise inherit top-level cfg.Executors (backward compatible).
-	execItems := cfg.Executors
-	if pipeCfg.Executors != nil {
-		execItems = pipeCfg.Executors
-	}
-	executors, err := buildExecutors(execItems)
-	if err != nil {
-		utils.Log("ERROR", fmt.Sprintf("%s: executor init error: %v", logTag, err), "error")
-		return
-	}
-	defer func() {
-		for _, ex := range executors {
-			_ = ex.Close()
-		}
-	}()
-
+	// Executors are top-level autonomous goroutines (Flow #042) started from main().
+	// Pipeline no longer owns executors — they read from Named Channel Hub (NCH).
+	var executors []plugin.Executor
 	sourceName, sourceType := sourceMetadata(sources)
 
 	// Choose buffer size: pipeline-level override or stream-level default.
@@ -632,23 +649,7 @@ func runPipeline(
 					}
 				}
 			}
-			// Executors with per-pipeline override must be rebuilt on SIGHUP (Flow #041).
-			// When pipeCfg.Executors != nil (per-pipeline override), rebuild executors from
-			// the new config. When pipeCfg.Executors == nil (inheriting top-level), keep
-			// existing executors — they are not affected by this pipeline's config change.
-			if newPipeCfg.Executors != nil {
-				newExecItems := newPipeCfg.Executors
-				newExecutors, execErr := buildExecutors(newExecItems)
-				if execErr != nil {
-					utils.Log("CONFIG", fmt.Sprintf("%s: SIGHUP executor rebuild error, keeping old executors: %v", logTag, execErr), "warn")
-				} else {
-					// Close old executors that implement io.Closer.
-					for _, ex := range executors {
-						_ = ex.Close()
-					}
-					executors = newExecutors
-				}
-			}
+			// Executors are top-level autonomous goroutines (Flow #042) — not rebuilt on SIGHUP here.
 			streamCfg = newStreamCfg
 			pipeCfg = newPipeCfg
 			cfg = newCfg
@@ -684,16 +685,7 @@ func runPipeline(
 
 // ── TrackerGroup helpers ───────────────────────────────────────────────────────────────
 
-// hasSentinelThreatInput checks if any input in the slice is of type "sentinel-threat".
-// Used to identify forwarder mode pipelines.
-func hasSentinelThreatInput(inputs []config.InputConfig) bool {
-	for _, inp := range inputs {
-		if inp.Type == "sentinel-threat" {
-			return true
-		}
-	}
-	return false
-}
+
 
 // buildTrackerGroups creates one *state.Tracker per unique tracker group in the stream.
 // Pipelines that share the same group see the same IP state (shared tracker).
@@ -919,28 +911,40 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 	return sources, nil
 }
 
-// buildExecutors constructs the Executor list from the config.Executors section.
-// Returns (nil, nil) when the list is empty — executors are optional; an empty
-// section does not change pipeline behaviour.
-func buildExecutors(items []config.ExecutorItem) ([]plugin.Executor, error) {
-	if len(items) == 0 {
-		return nil, nil
-	}
-	executors := make([]plugin.Executor, 0, len(items))
-	for _, item := range items {
+// startExecutors builds all top-level executors from config and launches them as goroutines.
+// Each executor connects to Named Channel Hub sources and runs until ctx is cancelled
+// or the source channel is closed. Must be called after all NCH sinks are registered.
+//
+// Returns an error if any executor cannot be built or any named source cannot be found.
+// On error, the caller should log and continue — executor startup failure is not fatal
+// for the rest of the pipeline (streams still process logs).
+func startExecutors(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup) error {
+	for _, ec := range cfg.Executors {
 		ex, err := pkgexecutor.Build(pkgexecutor.ExecutorConfig{
-			Name:   item.Name,
-			Type:   item.Type,
-			Exec:   item.Exec,
-			Params: item.Params,
-			Config: item.Config,
+			Name:   ec.Name,
+			Type:   ec.Type,
+			Config: ec.Config,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("executor %q: %w", item.Name, err)
+			return fmt.Errorf("executor %q: build: %w", ec.Name, err)
 		}
-		executors = append(executors, ex)
+
+		for _, src := range ec.Sources {
+			ch, err := pkgexecutor.GetSource(src.Name)
+			if err != nil {
+				return fmt.Errorf("executor %q: source %q: %w", ec.Name, src.Name, err)
+			}
+
+			wg.Add(1)
+			go func(ex plugin.Executor, ch <-chan plugin.ThreatEvent) {
+				defer wg.Done()
+				if err := ex.Run(ctx, ch); err != nil && err != context.Canceled {
+					utils.Log("EXECUTOR", fmt.Sprintf("executor %s: %v", ex.Name(), err), "error")
+				}
+			}(ex, ch)
+		}
 	}
-	return executors, nil
+	return nil
 }
 
 // buildSinks constructs the Sink list from an explicit outputs slice.
@@ -953,9 +957,10 @@ func buildSinks(outputs []config.SinkConfig) ([]plugin.Sink, error) {
 	for _, out := range outputs {
 		sink, err := pkgsink.Build(pkgsink.SinkConfig{
 			Type:   out.Type,
+			Name:   out.Name,
 			Path:   out.Path,
 			Format: out.Format,
-			Exec:   out.Exec,  // NEW
+			Exec:   out.Exec,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("sink %q: %w", out.Type, err)
@@ -1073,19 +1078,7 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	metrics.RecordLine(pipe.StreamName, pipe.PipelineName)
 	metrics.RecordInputLine(pipe.StreamName, pipe.PipelineName, pipe.SourceName, pipe.SourceType)
 
-	// ── Forwarder mode (Flow #041): pre-scored threat from sentinel-thread source ───
-	// Skip whitelist, tracker, scorer — dispatch directly to executors.
-	if entry.ThreatData != nil {
-		utils.Log("PARSER", fmt.Sprintf("forwarder: threat from %s ip=%s score=%d level=%s",
-			pipe.StreamName, entry.ThreatData.IP, entry.ThreatData.Score, entry.ThreatData.Level), "debug")
-		ev := *entry.ThreatData
-		for _, ex := range pipe.Executors {
-			if err := ex.Execute(ctx, ev); err != nil {
-				utils.Log("EXECUTOR", fmt.Sprintf("forwarder dispatch error: %v", err), "warn")
-			}
-		}
-		return
-	}
+	// Forwarder mode (Flow #041) removed: Flow #042 replaces with NCH-based dispatch (T5/T10).
 
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
@@ -1191,15 +1184,8 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 		metrics.RecordOutputEvent(pipe.StreamName, pipe.PipelineName, sink.Name(), sinkTypeFromName(sink.Name()))
 	}
 
-	// Executor loop — runs after all sinks have written the event.
-	// Errors are logged but do not stop other executors from running.
-	for _, ex := range pipe.Executors {
-		if err := ex.Execute(ctx, event); err != nil {
-			utils.Log("EXECUTOR_ERROR", fmt.Sprintf("stream %q: executor %s: %v", pipe.StreamName, ex.Name(), err), "error")
-		} else {
-			utils.Log("EXECUTOR", fmt.Sprintf("stream %q: %s: banned %s score=%d reason=%q", pipe.StreamName, ex.Name(), event.IP, event.Score, event.Reason), "info")
-		}
-	}
+	// Executor dispatch removed: Flow #042 executors are autonomous goroutines
+	// reading from Named Channel Hub (NCH). Wired in T4b/T5.
 }
 
 // ========================== systemd notify ===============================================

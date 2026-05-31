@@ -51,6 +51,32 @@ type Config struct {
 	// the IP is removed from the banned map (TTL sweep), it won't be re-banned until
 	// DedupWindow expires.
 	DedupWindow time.Duration `json:"-" yaml:"dedup_window"`
+	// BatchSize limits the number of ThreatEvents accumulated before flushing to
+	// the Cloudflare API. Default 100. CF API limit is 1000 items per request.
+	BatchSize int `json:"batch_size" yaml:"batch_size"`
+	// FlushInterval is the maximum time between batch flushes. If BatchSize is not
+	// reached within this interval, a partial batch is flushed regardless.
+	FlushInterval time.Duration `json:"-" yaml:"flush_interval"`
+	// InstanceID overrides the auto-detected instance ID. Useful for cleanup
+	// or when running multiple instances on the same machine.
+	InstanceID string `json:"instance_id" yaml:"instance_id"`
+	// APIBaseURL overrides the default Cloudflare API endpoint. Intended for
+	// integration tests against a local CF API mock server.
+	APIBaseURL string `json:"api_base_url" yaml:"api_base_url"`
+}
+
+// ++++++++++++++++++++++++++ Defaults ++++++++++++++++++++++++++++++++++++++++
+
+// DefaultConfig returns a Config with all defaults populated.
+func DefaultConfig() Config {
+	return Config{
+		ListName:      "arxsentinel-blocklist",
+		MinLevel:      "THREAT",
+		TTL:           24 * time.Hour,
+		MaxItems:      0,
+		BatchSize:     100,
+		FlushInterval: 10 * time.Second,
+	}
 }
 
 // ++++++++++++++++++++++++++ Configuration parsing ++++++++++++++++++++++++++
@@ -66,10 +92,12 @@ type Config struct {
 func parseConfig(raw map[string]interface{}) (Config, error) {
 	// ---- Default values ----
 	cfg := Config{
-		ListName: "arxsentinel-blocklist",
-		MinLevel: "THREAT",
-		TTL:      24 * time.Hour,
-		MaxItems: 0,
+		ListName:      "arxsentinel-blocklist",
+		MinLevel:      "THREAT",
+		TTL:           24 * time.Hour,
+		MaxItems:      0,
+		BatchSize:     100,
+		FlushInterval: 10 * time.Second,
 	}
 
 	// ---- Duration fields: parse before JSON serialization ----
@@ -109,6 +137,22 @@ func parseConfig(raw map[string]interface{}) (Config, error) {
 			cfg.DedupWindow = d
 		case int:
 			cfg.DedupWindow = time.Duration(v) * time.Second
+		}
+	}
+
+	if fiVal, ok := rawCopy["flush_interval"]; ok {
+		delete(rawCopy, "flush_interval")
+		switch v := fiVal.(type) {
+		case string:
+			d, err := time.ParseDuration(v)
+			if err != nil {
+				return Config{}, fmt.Errorf(
+					"cloudflare: parseConfig: invalid flush_interval format %q: %w", v, err,
+				)
+			}
+			cfg.FlushInterval = d
+		case int:
+			cfg.FlushInterval = time.Duration(v) * time.Second
 		}
 	}
 
