@@ -401,7 +401,11 @@ func (e *CloudflareExecutor) isDuplicate(ip string) bool {
 }
 
 func (e *CloudflareExecutor) buildComment() string {
-	return fmt.Sprintf("sentinel-%s", e.instanceID)
+	base := fmt.Sprintf("sentinel-%s", e.instanceID)
+	if e.cfg.CommentExtra == "" {
+		return base
+	}
+	return base + " " + e.cfg.CommentExtra
 }
 
 func LoadInstanceID(cfg *Config) string {

@@ -3,6 +3,7 @@ package cloudflare
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -190,6 +191,28 @@ func TestBuildComment_WithInstanceID(t *testing.T) {
 	ex := &CloudflareExecutor{instanceID: "abc-123"}
 	if got := ex.buildComment(); got != "sentinel-abc-123" {
 		t.Errorf("expected sentinel-abc-123, got %s", got)
+	}
+}
+
+func TestBuildComment_WithExtra(t *testing.T) {
+	ex := &CloudflareExecutor{
+		instanceID: "abc-123",
+		cfg:        Config{CommentExtra: "prod-eu"},
+	}
+	if got := ex.buildComment(); got != "sentinel-abc-123 prod-eu" {
+		t.Errorf("expected 'sentinel-abc-123 prod-eu', got %s", got)
+	}
+}
+
+func TestBuildComment_ExtraTruncated(t *testing.T) {
+	long := strings.Repeat("x", 60)
+	ex := &CloudflareExecutor{
+		instanceID: "abc-123",
+		cfg:        Config{CommentExtra: long},
+	}
+	got := ex.buildComment()
+	if !strings.HasPrefix(got, "sentinel-abc-123 ") {
+		t.Errorf("expected prefix 'sentinel-abc-123 ', got %s", got)
 	}
 }
 

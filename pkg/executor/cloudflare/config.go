@@ -16,7 +16,11 @@ import (
 	// ── Group 1: standard library ──
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
+
+	// ── Group 2: internal ──
+	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 )
 
 // ========================== Config ==========================
@@ -60,6 +64,11 @@ type Config struct {
 	// InstanceID overrides the auto-detected instance ID. Useful for cleanup
 	// or when running multiple instances on the same machine.
 	InstanceID string `json:"instance_id" yaml:"instance_id"`
+	// CommentExtra is appended to the ban comment after a space separator.
+	// YAML: cloudflare.comment_extra, default "" — optional suffix for CF ban comment.
+	// Format: "sentinel-<id> <extra>". Max 50 chars (truncated if longer).
+	// Consumer: executor.buildComment
+	CommentExtra string `json:"comment_extra" yaml:"comment_extra"`
 	// APIBaseURL overrides the default Cloudflare API endpoint. Intended for
 	// integration tests against a local CF API mock server.
 	APIBaseURL string `json:"api_base_url" yaml:"api_base_url"`
@@ -153,6 +162,23 @@ func parseConfig(raw map[string]interface{}) (Config, error) {
 			cfg.FlushInterval = d
 		case int:
 			cfg.FlushInterval = time.Duration(v) * time.Second
+		}
+	}
+
+	// ---- Comment_extra: read before JSON round-trip ----
+	if v, ok := rawCopy["comment_extra"].(string); ok {
+		delete(rawCopy, "comment_extra")
+		cfg.CommentExtra = strings.TrimSpace(v)
+		cfg.CommentExtra = strings.Map(func(r rune) rune {
+			if r == '\n' || r == '\t' || r == '\r' {
+				return ' '
+			}
+			return r
+		}, cfg.CommentExtra)
+		if len(cfg.CommentExtra) > 50 {
+			// Log warning so operators notice their comment_extra was silently truncated.
+			utils.Log("CONFIG", fmt.Sprintf("cloudflare: comment_extra truncated from %d to 50 chars", len(cfg.CommentExtra)), "warning")
+			cfg.CommentExtra = cfg.CommentExtra[:50]
 		}
 	}
 
