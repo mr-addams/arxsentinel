@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -38,14 +39,14 @@ func TestExecExecutor_Run_success(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	in := make(chan plugin.ThreatEvent, 1)
+	q := queue.NewMemoryQueue(10)
 
 	done := make(chan error, 1)
 	go func() {
-		done <- executor.Run(ctx, in)
+		done <- executor.Run(ctx, q)
 	}()
 
-	in <- plugin.ThreatEvent{
+	_ = q.Push(ctx, plugin.ThreatEvent{
 		Timestamp:  time.Now(),
 		Level:      "THREAT",
 		Stream:     "main",
@@ -55,7 +56,7 @@ func TestExecExecutor_Run_success(t *testing.T) {
 		Score:      200,
 		Modules:    []string{"probe", "rate"},
 		Reason:     "probe:admin:5,rate:300rps",
-	}
+	})
 
 	// Give Run() time to process the event before checking stats.
 	time.Sleep(100 * time.Millisecond)

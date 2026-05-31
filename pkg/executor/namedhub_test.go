@@ -1,6 +1,7 @@
 package executor_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/mr-addams/arxsentinel/pkg/executor"
@@ -8,7 +9,8 @@ import (
 )
 
 func TestNamedHub_SendReceive(t *testing.T) {
-	ch, err := executor.RegisterSink("test-sr", 10)
+	ctx := context.Background()
+	q, err := executor.RegisterSink("test-sr", 10)
 	if err != nil {
 		t.Fatalf("RegisterSink error = %v, want nil", err)
 	}
@@ -19,9 +21,14 @@ func TestNamedHub_SendReceive(t *testing.T) {
 	}
 
 	event := plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}
-	ch <- event
+	if err := q.Push(ctx, event); err != nil {
+		t.Fatalf("Push error = %v, want nil", err)
+	}
 
-	got := <-src
+	got, err := src.Pop(ctx)
+	if err != nil {
+		t.Fatalf("Pop error = %v, want nil", err)
+	}
 	if got.IP != event.IP {
 		t.Errorf("received IP = %q, want %q", got.IP, event.IP)
 	}
@@ -47,7 +54,8 @@ func TestNamedHub_DuplicateName(t *testing.T) {
 }
 
 func TestNamedHub_Unregister(t *testing.T) {
-	ch, err := executor.RegisterSink("test-unreg", 3)
+	ctx := context.Background()
+	q, err := executor.RegisterSink("test-unreg", 3)
 	if err != nil {
 		t.Fatalf("RegisterSink error = %v, want nil", err)
 	}
@@ -57,12 +65,12 @@ func TestNamedHub_Unregister(t *testing.T) {
 		t.Fatalf("GetSource error = %v, want nil", err)
 	}
 
-	ch <- plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}
+	_ = q.Push(ctx, plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"})
 	executor.Unregister("test-unreg")
 
-	// After close, the channel yields zero values then blocks.
-	got, ok := <-src
-	if ok {
+	// After close, Pop returns ErrQueueClosed.
+	got, err := src.Pop(ctx)
+	if err == nil {
 		t.Logf("received value after close: %+v", got)
 	}
 }
