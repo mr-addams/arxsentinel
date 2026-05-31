@@ -404,21 +404,25 @@ func main() {
 	// ── Start executor goroutines (top-level autonomous, Flow #042) ───────────────────────
 	// Executors are built from cfg.Executors and connect to Named Channel Hub sources
 	// that are registered by sentinel-threat sinks inside stream pipelines (T5).
-	// Must start after stream goroutines so NCH channels are registered first.
-
-	var execWg sync.WaitGroup
-	if len(cfg.Executors) > 0 {
-		if err := startExecutors(ctx, &cfg, &execWg); err != nil {
-			utils.Log("STARTUP", "executor startup error: "+err.Error(), "error")
-		}
-	}
-
 	// ── Launch streams ────────────────────────────────────────────────────────────────
 
 	var wg sync.WaitGroup
 	for i, streamCfg := range cfg.Streams {
 		wg.Add(1)
 		go runStream(ctx, path, cfg, streamCfg, ipCache, resolver, reloadChs[i], &wg, shared)
+	}
+
+	// Start executors AFTER stream goroutines so sentinel-threat sinks have time
+	// to register their Named Channel Hub channels. A brief yield lets pipeline
+	// goroutines reach runPipeline → buildSinks → RegisterSink before GetSource.
+	var execWg sync.WaitGroup
+	if len(cfg.Executors) > 0 {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			if err := startExecutors(ctx, &cfg, &execWg); err != nil {
+				utils.Log("STARTUP", "executor startup error: "+err.Error(), "error")
+			}
+		}()
 	}
 
 	// Notify systemd that all streams are running and the service is ready.

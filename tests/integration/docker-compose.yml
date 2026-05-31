@@ -200,6 +200,16 @@ services:
       - nginx-rp
       - nginx-bare
 
+  # cf-api-mock: simulates Cloudflare API for integration test of CF executor.
+  cf-api-mock:
+    build:
+      context: ./cf-api-mock
+      dockerfile: Dockerfile
+    ports:
+      - "8091:8091"
+    networks:
+      - default
+
   # nginx-bare: nginx without real_ip extraction — logs the proxy IP, not the attacker IP.
   # Used for the "broken chain" test: cloudflare-sim IP appears as client in access log.
   # The chain_guard cloudflare-leak check must fire on these entries.

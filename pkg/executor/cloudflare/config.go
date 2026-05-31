@@ -60,6 +60,9 @@ type Config struct {
 	// InstanceID overrides the auto-detected instance ID. Useful for cleanup
 	// or when running multiple instances on the same machine.
 	InstanceID string `json:"instance_id" yaml:"instance_id"`
+	// APIBaseURL overrides the default Cloudflare API endpoint. Intended for
+	// integration tests against a local CF API mock server.
+	APIBaseURL string `json:"api_base_url" yaml:"api_base_url"`
 }
 
 // ++++++++++++++++++++++++++ Defaults ++++++++++++++++++++++++++++++++++++++++

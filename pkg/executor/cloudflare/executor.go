@@ -64,7 +64,12 @@ func NewCloudflareExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 		return nil, fmt.Errorf("cloudflare: new executor: TTL must be positive, got %v", parsed.TTL)
 	}
 
-	client := NewHTTPCFClient(parsed.AccountID, parsed.APIToken)
+	var client CFClient
+	if parsed.APIBaseURL != "" {
+		client = NewHTTPCFClientWithBaseURL(parsed.AccountID, parsed.APIToken, parsed.APIBaseURL)
+	} else {
+		client = NewHTTPCFClient(parsed.AccountID, parsed.APIToken)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
