@@ -81,7 +81,7 @@ func NewCloudflareExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 		client:     client,
 		listID:     listID,
 		banned:     make(map[string]banRecord),
-		instanceID: loadInstanceID(&parsed),
+		instanceID: LoadInstanceID(&parsed),
 	}
 
 	syncCtx, syncCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -254,7 +254,7 @@ func (e *CloudflareExecutor) buildComment() string {
 	return fmt.Sprintf("sentinel-%s", e.instanceID)
 }
 
-func loadInstanceID(cfg *Config) string {
+func LoadInstanceID(cfg *Config) string {
 	if cfg.InstanceID != "" {
 		return cfg.InstanceID
 	}

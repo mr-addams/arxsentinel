@@ -1035,16 +1035,7 @@ func validateConfig(cfg *Config) error {
 			if len(p.Inputs) == 0 {
 				return fmt.Errorf("streams[%d].pipelines[%d]: must have at least one input", i, j)
 			}
-			// Forwarder mode: a pipeline with sentinel-threat input does not need outputs
-			// (threats are dispatched directly to executors, not written to sinks).
-			isForwarder := false
-			for _, inp := range p.Inputs {
-				if inp.Type == "sentinel-threat" {
-					isForwarder = true
-					break
-				}
-			}
-			if !isForwarder && len(p.Outputs) == 0 {
+			if len(p.Outputs) == 0 {
 				// A pipeline without outputs silently drops all threat events — almost certainly a
 				// misconfiguration. Require at least one sink for normal pipelines.
 				return fmt.Errorf("streams[%d].pipelines[%d]: must have at least one output", i, j)
@@ -1078,8 +1069,8 @@ func validateConfig(cfg *Config) error {
 func validateInputs(inputs []InputConfig) error {
 	seen := make(map[string]bool)
 	for i, in := range inputs {
-	if in.Type != "file" && in.Type != "stdin" && in.Type != "sentinel-threat" {
-		return fmt.Errorf("inputs[%d]: unknown type %q (want file, stdin, or sentinel-threat)", i, in.Type)
+	if in.Type != "file" && in.Type != "stdin" {
+		return fmt.Errorf("inputs[%d]: unknown type %q (want file or stdin)", i, in.Type)
 	}
 		key := in.Type + ":" + in.Path
 		if seen[key] {

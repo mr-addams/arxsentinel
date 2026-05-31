@@ -139,6 +139,12 @@ type SharedResources struct {
 const configPath = "/etc/arxsentinel/config.yaml"
 
 func main() {
+	// ── Subcommand dispatch ───────────────────────────────────────────────────────────
+	if len(os.Args) > 1 && os.Args[1] == "cleanup" {
+		handleCleanup(os.Args[2:])
+		return
+	}
+
 	// ── CLI flags ─────────────────────────────────────────────────────────────────────
 
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -675,16 +681,7 @@ func runPipeline(
 
 // ── TrackerGroup helpers ───────────────────────────────────────────────────────────────
 
-// hasSentinelThreatInput checks if any input in the slice is of type "sentinel-threat".
-// Used to identify forwarder mode pipelines.
-func hasSentinelThreatInput(inputs []config.InputConfig) bool {
-	for _, inp := range inputs {
-		if inp.Type == "sentinel-threat" {
-			return true
-		}
-	}
-	return false
-}
+
 
 // buildTrackerGroups creates one *state.Tracker per unique tracker group in the stream.
 // Pipelines that share the same group see the same IP state (shared tracker).

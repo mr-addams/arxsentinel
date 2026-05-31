@@ -187,7 +187,7 @@ func TestBuildComment_WithInstanceID(t *testing.T) {
 
 func TestLoadInstanceID_FromConfig(t *testing.T) {
 	cfg := &Config{InstanceID: "cfg-id"}
-	if got := loadInstanceID(cfg); got != "cfg-id" {
+	if got := LoadInstanceID(cfg); got != "cfg-id" {
 		t.Errorf("expected cfg-id, got %s", got)
 	}
 }
