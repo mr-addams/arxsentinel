@@ -10,8 +10,9 @@
 #   Quick deploy:
 #     1. Copy this file to /etc/arxsentinel/config.yaml
 #     2. Set your Cloudflare credentials (api_token, account_id)
-#     3. Adjust log path if needed (general.log_file is unused — see streams below)
-#     4. sudo systemctl reload arxsentinel
+#     3. Adjust log path if needed (see streams.inputs[].path below)
+#     4. sudo systemctl restart arxsentinel
+#        (reload/SIGHUP applies only to detectors/scoring — executors require restart)
 #
 # ======================================================================================
 
