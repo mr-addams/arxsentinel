@@ -81,8 +81,10 @@ EOF
                 echo "  them. See the example config for reference:"
                 echo "    ${CFG_EXAMPLE}"
                 echo ""
-                echo "  After updating, reload the daemon:"
+                echo "  After updating detectors/scoring/blocklists — reload is enough:"
                 echo "    kill -HUP \$(cat /run/arxsentinel/arxsentinel.pid)"
+                echo "  After updating executors (CF credentials, list name, sources) — restart required:"
+                echo "    systemctl restart arxsentinel"
                 echo ""
             fi
         fi
