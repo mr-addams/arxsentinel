@@ -426,38 +426,32 @@ output:
   # threat_log: ./logs/threats.log
   # operational_log: ./logs/sentinel.log
 
-# ── executors: automated threat response / автоматический ответ на угрозы ───────────────
+# ── executors: automated threat response ─────────────────────────────────────────────────
 #
-# Executors run after every threat event and perform automated response actions.
-# Each executor is instantiated once at startup and receives every THREAT event.
-# Исполнители запускаются после каждого события угрозы и выполняют автоматические действия.
-#
-# Two kinds:
-#   typed  — built-in implementation selected by type: (e.g. cloudflare)
-#   exec   — external script via exec plugin protocol (any language)
+# Executors run autonomously: each reads from a Named Channel Hub source (sentinel-threat
+# sink) and performs automated response actions (e.g. Cloudflare IP list bans).
+# Configure sources[] to wire an executor to a stream output.
 #
 executors:
-  # ── Typed executor: Cloudflare IP Lists ────────────────────────────────────────
+  # ── Cloudflare IP Lists executor ─────────────────────────────────────────────────────
   - name: cloudflare-blocklist
     type: cloudflare
+    sources:
+      - name: sentinel-cf              # matches sentinel-threat sink name in streams outputs
+        # queue:                       # optional persistent queue backend (default: memory)
+        #   type: bbolt                # "memory" | "bbolt" (bare-metal) | "redis" (k8s/cloud)
+        #   path: /var/lib/arxsentinel/queue-cf.db   # bbolt only
     config:
-      api_token: "YOUR_CF_API_TOKEN"       # Cloudflare API token with Lists:Edit permission
-      account_id: "YOUR_CF_ACCOUNT_ID"     # Cloudflare account ID
-      list_name: "arxsentinel-blocklist"   # IP list name (created automatically if absent)
-      min_level: "THREAT"                  # minimum threat level to ban: ALERT | THREAT
-      ttl: "24h"                           # auto-unban after this duration (0 = no auto-unban)
-      max_items: 10000                     # Cloudflare Free: 10000, Pro/Business: 100000
-
-  # ── Exec-fallback executor: custom script via exec plugin protocol ──────────────
-  # Use when no built-in type matches your response action.
-  # The script receives threat events as JSON on stdin; see docs/exec-protocol.md.
-  # Используй когда нет подходящего встроенного типа.
-  # - name: iptables-ban
-  #   # type: not specified → exec plugin fallback
-  #   exec: /usr/local/lib/arxsentinel/plugins/iptables-ban.sh
-  #   config:
-  #     chain: INPUT
-  #     comment: arxsentinel-autoban
+      api_token: "YOUR_CF_API_TOKEN"   # Cloudflare API token with Lists:Edit permission
+      account_id: "YOUR_CF_ACCOUNT_ID" # Cloudflare account ID
+      list_name: "arxsentinel-blocklist" # IP list name (created automatically if absent)
+      min_level: "THREAT"              # minimum threat level to act on: INFO | WARN | THREAT
+      ttl: "24h"                       # auto-unban after this duration (0 = no auto-unban)
+      max_items: 10000                 # Cloudflare Free: 10000, Pro/Business: 100000
+      batch_size: 100                  # IPs per bulk API call
+      flush_interval: "10s"            # max delay before flushing partial batch
+      instance_id: ""                  # auto-detected from hostname if empty
+      comment_extra: ""                # appended to ban comment: "sentinel-<id> <extra>"
 
 # ── inputs: universal log source syntax / универсальный синтаксис источников ────────────
 #
@@ -487,6 +481,8 @@ executors:
 #     format: fail2ban        # fail2ban | json
 #   - type: stdout            # print to stdout (useful for piping or debugging)
 #     format: json
+#   - type: sentinel-threat   # feed THREAT events to an executor via Named Channel Hub
+#     name: sentinel-cf       # must match executor sources[].name above
 #   - type: exec              # exec plugin: events written as JSON to plugin stdin
 #     exec: /usr/local/lib/arxsentinel/plugins/my-sink.sh
 

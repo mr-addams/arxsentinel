@@ -1,17 +1,20 @@
 package output
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 
 	"github.com/mr-addams/arxsentinel/pkg/executor"
+	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 )
 
 type SentinelThreatSink struct {
 	name    string
-	ch      chan<- plugin.ThreatEvent
+	q       queue.Queue
 	dropped atomic.Int64
 }
 
@@ -19,11 +22,11 @@ func NewSentinelThreatSink(name string, bufferSize int) (*SentinelThreatSink, er
 	if name == "" {
 		return nil, fmt.Errorf("sentinel-threat sink: name is required")
 	}
-	ch, err := executor.RegisterSink(name, bufferSize)
+	q, err := executor.RegisterSink(name, bufferSize)
 	if err != nil {
 		return nil, fmt.Errorf("sentinel-threat sink %q: %w", name, err)
 	}
-	return &SentinelThreatSink{name: name, ch: ch}, nil
+	return &SentinelThreatSink{name: name, q: q}, nil
 }
 
 func (s *SentinelThreatSink) Name() string {
@@ -31,13 +34,14 @@ func (s *SentinelThreatSink) Name() string {
 }
 
 func (s *SentinelThreatSink) Write(event plugin.ThreatEvent) error {
-	select {
-	case s.ch <- event:
-		return nil
-	default:
-		s.dropped.Add(1)
-		return fmt.Errorf("sentinel-threat sink %s: channel full, dropping event", s.name)
+	if err := s.q.Push(context.Background(), event); err != nil {
+		if errors.Is(err, queue.ErrQueueFull) {
+			s.dropped.Add(1)
+			return nil
+		}
+		return err
 	}
+	return nil
 }
 
 func (s *SentinelThreatSink) Close() error {

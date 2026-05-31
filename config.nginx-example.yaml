@@ -1,7 +1,12 @@
-# ========================== arxsentinel config.yaml ====================================
+# ========================== config.nginx-example.yaml ==================================
 #
-#   Single source of all behavioral parameters.
-#   Единый источник всех поведенческих параметров.
+#   Quick-start config for nginx + fail2ban (or file-based threat log).
+#   Monitors one nginx access.log, detects threats, writes to threat log.
+#   Installed as /etc/arxsentinel/config.yaml.example — copy to config.yaml to use.
+#
+#   Use case: single nginx host, no automated bans, log-based alerting only.
+#   For automated Cloudflare bans: see config.cloudflare-example.yaml
+#   For all configuration options: see config.example.yaml
 #
 #   Changes are applied on SIGHUP without restarting the daemon.
 #   Изменения применяются по SIGHUP без перезапуска демона.
@@ -516,56 +521,54 @@ pipeline:
 # ГРУППА: Advanced / YAML-only / расширенные возможности (только YAML)
 # ══════════════════════════════════════════════════════════════════════════════════════════
 
-# ── executors: automated threat response / автоматический ответ на угрозы ─────────────────
+# ── executors: automated threat response ──────────────────────────────────────────────
 #
 # Executors perform automated actions when an IP reaches the ban threshold.
-# Исполнители выполняют автоматические действия при достижении IP порога бана.
 #
 # Only YAML configuration — no ENV overrides (multi-executor setup would require
 # dynamic ENV key generation). Configure directly in this file.
-# Только YAML — без ENV-переменных (мультиисполнитель требует динамических ENV-ключей).
-# Настраивайте напрямую в этом файле.
 #
 # executors:
-#   - name: cloudflare-blocklist         # unique executor instance name / уникальное имя экземпляра
-#     type: cloudflare                   # executor type registered in the system / тип исполнителя
+#   - name: cloudflare-blocklist           # unique executor name
+#     type: cloudflare
+#     sources:
+#       - name: sentinel-cf                # Named Channel Hub source — must match
+#                                            # sentinel-threat sink name in streams outputs
+#         # queue:                         # optional persistent queue backend
+#         #   type: bbolt                  # "memory" (default) | "bbolt" | "redis"
+#         #   path: /var/lib/arxsentinel/queue-cloudflare.db   # bbolt only
+#         #   # type: redis
+#         #   # url: redis://localhost:6379
 #     config:
-#       api_token: "YOUR_CF_API_TOKEN_HERE"   # Cloudflare API Token (list edit permissions) / токен API Cloudflare
-#       account_id: "YOUR_CF_ACCOUNT_ID_HERE" # Cloudflare Account ID / идентификатор аккаунта
-#       list_name: "arxsentinel-blocklist"    # IP-list name in Cloudflare / имя IP-списка в Cloudflare
-#       min_level: "THREAT"                   # minimum threat level: INFO / WARN / THREAT
-#       ttl: "24h"                            # cache lifetime for the list / время жизни кэша списка
-#       max_items: 10000                      # max entries (0 = unlimited, CF hard limit = 10000)
-#   - name: iptables-ban                   # exec-fallback for bare-metal / fallback на exec для bare-metal
-#     exec: /usr/local/lib/arxsentinel/plugins/iptables-ban.sh
+#       api_token: "YOUR_CF_API_TOKEN"
+#       account_id: "YOUR_CF_ACCOUNT_ID"
+#       list_name: "arxsentinel-blocklist"
+#       min_level: "THREAT"
+#       ttl: "24h"
+#       batch_size: 100
+#       flush_interval: "10s"
+#       instance_id: ""                    # auto-detected from hostname if empty
+#       comment_extra: ""                  # appended to ban comment: "sentinel-<id> <extra>"
 #
-# streams: (see examples below)
-# ── streams: multi-source monitoring / мониторинг нескольких источников ───────────────────
+# ── streams: multi-source monitoring ──────────────────────────────────────────────────
 #
 # Remove general.log_file above and uncomment streams: to monitor multiple log sources.
-# Удалите general.log_file выше и раскомментируйте streams: для мониторинга нескольких источников.
 #
-# Per-stream executor — only this executor fires for this stream:
-# Поточный executor — только этот исполнитель срабатывает для данного потока:
-#  streams:
-#    - name: domain-a
-#      inputs:
-#        - type: file
-#          path: /var/log/nginx/domain-a.access.log
-#      outputs:
-#        - type: file
-#          path: /var/log/arxsentinel/domain-a.threats.log
-#      executors:
-#        - name: cf-account-a
-#          type: cloudflare
-#          config:
-#            api_token: "TOKEN_A"
-#            account_id: "ACCOUNT_A"
+# streams:
+#   - name: main
+#     inputs:
+#       - type: file
+#         path: /var/log/nginx/access.log
+#     outputs:
+#       - type: sentinel-threat
+#         name: sentinel-cf              # matches executor sources[].name above
+#       - type: file
+#         path: /var/log/arxsentinel/threats.log
+#         format: fail2ban
 #
-# ── inputs / outputs: universal I/O syntax / универсальный I/O синтаксис ─────────────────
+# ── inputs / outputs: universal I/O syntax ───────────────────────────────────────────
 #
 # Use instead of general.log_file / output.threat_log for multi-source or exec plugin I/O.
-# Используйте вместо general.log_file / output.threat_log для нескольких источников или exec plugin I/O.
 #
 # inputs:
 #   - type: file

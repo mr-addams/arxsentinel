@@ -2,8 +2,9 @@
 //   Executor enforces actions triggered by threat events (e.g., block IPs via external API).
 //
 //   WHAT IS HERE:
+//     EventSource  — minimal consumer interface (Pop) to avoid circular imports.
 //     ExecutorStats — generic counters shared by all Executor implementations.
-//     Executor      — public interface: Name, Execute, Close, Stats.
+//     Executor      — public interface: Name, EventQueue, Close, Stats.
 //
 //   WHAT IS NOT HERE:
 //     Executor implementations (cloudflare/, exec fallback) — each lives in its own package.
@@ -15,13 +16,22 @@
 //     call external APIs with retry logic, and auto-reverse actions (auto-unban).
 //     Mixing the two would leak executor-specific state into the Sink interface.
 //
-//   Execute is called after all Sinks have written the event.
-//   A slow Executor blocks the pipeline goroutine — implementations that call
-//   external APIs must budget their latency or queue internally.
+//   Run is called in its own goroutine. The source is an EventSource — typically a
+//   queue.Queue from pkg/executor/queue but defined here as an interface to avoid
+//   circular imports (pkg/executor/queue imports pkg/plugin for ThreatEvent).
 
 package plugin
 
 import "context"
+
+// EventSource is the consumer side of an event queue. Executors call Pop in their
+// Run loop. Defined in plugin to avoid circular import: pkg/executor/queue imports
+// pkg/plugin for ThreatEvent, so plugin cannot import queue back.
+//
+// Implementations: queue.MemoryQueue, queue.BboltQueue, queue.RedisQueue.
+type EventSource interface {
+	Pop(ctx context.Context) (ThreatEvent, error)
+}
 
 // ExecutorStats — generic operational counters emitted by an Executor.
 //
@@ -39,10 +49,9 @@ type ExecutorStats struct {
 
 // Executor — public interface for autonomous enforcement actions.
 //
-// Flow #042 changes: Executor is now an autonomous entity with its own
-// lifecycle. Run() is called as a goroutine, reads ThreatEvents from a
-// channel (sourced via Named Channel Hub), and returns when ctx is cancelled
-// or the channel is closed. Close() is removed — shutdown is via ctx.Done().
+// Flow #043 changes: Executor receives events via EventSource (Pop) instead of a
+// raw <-chan. Named Channel Hub provides a queue.Queue which satisfies EventSource.
+// Run() is called as a goroutine and returns when ctx is cancelled.
 //
 // Implementations are responsible for:
 //   - Startup sync (e.g., loading current ban list from remote API).
@@ -51,12 +60,11 @@ type ExecutorStats struct {
 //   - Retry / circuit-breaker logic on external API failures.
 //   - Batch accumulation and flush (when applicable).
 //
-// Run receives ThreatEvents from a <-chan and must be safe for concurrent
-// access only via the channel — no external goroutines call methods on the
-// Executor after Run() starts.
+// Run receives ThreatEvents via Pop and must be safe for concurrent access only
+// via the EventSource — no external goroutines call methods on the Executor after Run() starts.
 type Executor interface {
 	Name() string
 	Type() string
-	Run(ctx context.Context, in <-chan ThreatEvent) error
+	Run(ctx context.Context, source EventSource) error
 	Stats() ExecutorStats
 }

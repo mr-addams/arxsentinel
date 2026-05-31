@@ -2,174 +2,216 @@
 
 ## Purpose
 
-The Cloudflare Executor manages Cloudflare IP blocklists. It receives threat events from the
-pipeline, filters them by severity level, and adds the offending IP addresses to a Cloudflare
-IP List. A background sweep goroutine periodically removes expired bans based on a configurable
-TTL, keeping the list clean without manual intervention.
+The Cloudflare Executor bans threat IPs by adding them to a Cloudflare IP List.
+It runs autonomously: a dedicated goroutine reads `ThreatEvent`s from a Named Channel Hub
+source, batches them, and issues bulk API calls to Cloudflare.
+A periodic sweep removes expired bans based on a configurable TTL.
+
+**Quick start:** see `config.cloudflare-example.yaml` for a minimal working configuration.
+
+---
 
 ## Configuration
 
+### Config fields (`executors[].config`)
+
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `api_token` | `string` | *required* | Cloudflare API token with Account > Lists > Edit permission |
+| `api_token` | `string` | *required* | Cloudflare API token — Account > Lists > Edit permission |
 | `account_id` | `string` | *required* | Cloudflare account ID |
-| `list_name` | `string` | `"arxsentinel-blocklist"` | Name of the IP list in Cloudflare (created if it does not exist) |
-| `min_level` | `string` | `"THREAT"` | Minimum threat level to act on: `INFO`, `WARN`, or `THREAT` |
-| `ttl` | `duration` | `24h` | Time-to-live for a banned IP before it is automatically removed |
-| `max_items` | `int` | `0` (unlimited) | Maximum number of items in the list (Cloudflare free tier limit: 10 000) |
+| `list_name` | `string` | `"arxsentinel-blocklist"` | IP list name (created automatically if absent) |
+| `min_level` | `string` | `"THREAT"` | Minimum event level to act on: `INFO` \| `WARN` \| `THREAT` |
+| `ttl` | `duration` | `24h` | Auto-unban duration. Go format: `24h`, `1h30m`, `3600s` |
+| `max_items` | `int` | `0` (unlimited) | Max list size. Cloudflare Free tier hard limit: 10 000 |
+| `batch_size` | `int` | `100` | IPs per bulk API call |
+| `flush_interval` | `duration` | `10s` | Max time before a partial batch is sent |
+| `instance_id` | `string` | `""` (hostname) | Ban comment prefix. Auto-detected from hostname if empty |
+| `comment_extra` | `string` | `""` | Optional suffix appended to ban comment: `"sentinel-<id> <extra>"`. Max 50 chars |
 
-### Field details
+### Source wiring (`executors[].sources`)
 
-- **`ttl`** — parsed via `time.ParseDuration`, accepts Go duration strings (`24h`, `1h30m`, `3600s`).
-  An integer value is treated as seconds. Must be positive.
-- **`max_items`** — when set to `0` the limit is disabled. When the limit is reached, new events are
-  silently skipped (counted in `Skipped` stats).
-
-## Example Configuration
+Each executor must declare at least one `sources` entry matching a `sentinel-threat` sink name
+in the streams configuration:
 
 ```yaml
 executors:
-  - name: cloudflare-blocklist
+  - name: cf-ban
     type: cloudflare
+    sources:
+      - name: sentinel-cf          # must match sentinel-threat sink name in streams
+    config: ...
+
+streams:
+  - name: main
+    outputs:
+      - type: sentinel-threat
+        name: sentinel-cf          # feeds this executor
+```
+
+### Queue backends (`executors[].sources[].queue`)
+
+By default, events are held in memory (lost on restart). For persistent queuing:
+
+| Backend | `type` | Use case | Extra fields |
+|---|---|---|---|
+| `memory` | `memory` | Dev/testing, single process | — |
+| `bbolt` | `bbolt` | Bare-metal, Docker on host | `path` (required) |
+| `redis` | `redis` | k8s, cloud, multi-replica | `url` (required) |
+
+```yaml
+sources:
+  - name: sentinel-cf
+    queue:
+      type: bbolt
+      path: /var/lib/arxsentinel/queue-cf.db
+```
+
+---
+
+## Example Configuration
+
+Minimal working config — see also `config.cloudflare-example.yaml`:
+
+```yaml
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log
+    outputs:
+      - type: sentinel-threat
+        name: sentinel-cf
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
+
+executors:
+  - name: cf-ban
+    type: cloudflare
+    sources:
+      - name: sentinel-cf
     config:
       api_token: "YOUR_CF_API_TOKEN"
       account_id: "YOUR_CF_ACCOUNT_ID"
       list_name: "arxsentinel-blocklist"
       min_level: "THREAT"
       ttl: "24h"
-      max_items: 10000
+      batch_size: 100
+      flush_interval: "10s"
 ```
+
+---
 
 ## Lifecycle
 
-The executor follows four phases:
-
 ### 1. Construction — `NewCloudflareExecutor`
 
-1. Parses the configuration block via `parseConfig()` — validates required fields, threat level,
-   and TTL.
-2. Creates an HTTP client for Cloudflare API communication.
-3. Calls `FindOrCreateList()` — either locates an existing IP list by name or creates a new one
-   (context timeout: 30 seconds).
-4. Calls `syncExisting()` — loads all current items from the remote list into the local in-memory
-   `banned` map. These items are marked as `addedByExecutor: false` (pre-existing, not managed by
-   this instance).
-5. Starts the background sweep goroutine (`sweepExpired`) that runs on a configurable interval
-   (see Sweep below).
+1. Parses and validates config (`parseConfig`): required fields, level, TTL.
+2. Creates HTTP client; calls `FindOrCreateList` (30s timeout).
+3. Calls `syncExisting` — loads current list items into local `banned` map
+   (`addedByExecutor: false`; these will be swept when TTL expires).
 
-### 2. Execution — `Execute(ctx, event)`
+### 2. Run loop — `Run(ctx, source)`
 
-Called for each incoming `ThreatEvent`. The decision logic:
+Called in its own goroutine by `startExecutors`. The loop:
 
-1. **Level validation** — if the event level is not one of `INFO`, `WARN`, `THREAT` → skip.
-2. **Level filtering** — if the event level is below `min_level` → skip.
-3. **Duplicate check** — if the IP is already in the local `banned` map → skip.
-4. **Capacity check** — if `max_items > 0` and the map is full → skip.
-5. **Add to Cloudflare** — calls `AddItem()` on the API. On failure the IP is removed from the
-   local map and the error counter is incremented.
-6. **Record** — stores the Cloudflare item ID returned by the API alongside the timestamp.
+1. Reads `ThreatEvent`s from `source.Pop(ctx)` via an internal fan-out goroutine.
+2. Filters by `min_level` and deduplication (`banned` map).
+3. Accumulates events in a buffer. Flushes when:
+   - buffer reaches `batch_size`, or
+   - `flush_interval` ticker fires (with events in buffer).
+4. Runs `sweep` on a separate ticker (`TTL/4`, floor 15 min).
+5. On context cancellation or source close: flushes remaining buffer, runs final sweep, exits.
 
-Each outcome is counted in `Executed`, `Skipped`, or `Errors` stats respectively.
+### 3. Flush — async bulk ops
 
-### 3. Sweep — `sweepExpired` (background goroutine)
+`flush` sends buffered IPs to Cloudflare via `AddItems` (bulk API call):
 
-A background goroutine that periodically removes expired bans:
+1. Calls `waitForPendingOp` — if a previous bulk operation is still pending, polls it with
+   exponential backoff (500ms → 16s, 6 attempts ≈ 31.5s total). Clears on `completed` or `failed`.
+2. Calls `AddItems` via `doWithRetry` — retries up to 3× on HTTP 429 with 5s backoff.
+3. Saves the returned `operationID` as `pendingOpID`.
+4. Records banned IPs in local map.
 
-- **Interval**: `TTL / 4`, with a floor of 15 minutes.
-- **What it does**:
-  1. If any local records lack a Cloudflare item ID, it refreshes the mapping by re-fetching the
-     remote list (`ListItems`).
-  2. Iterates over the local `banned` map and collects all records whose `addedAt + TTL` is in the
-     past and have a non-empty `cfItemID`.
-  3. Calls `RemoveItems()` on the Cloudflare API to delete the expired entries.
-  4. Removes the entries from the local map (double-checks TTL to avoid race conditions).
+CF allows **one pending bulk operation per account**. `waitForPendingOp` enforces this.
 
-### 4. Shutdown — `Close()`
+### 4. Sweep
 
-Cancels the sweep context, then waits for the sweep goroutine to finish (`wg.Wait()`).
-No cleanup of the Cloudflare list — entries remain in the remote list until their TTL expires
-or they are removed externally.
+Periodic removal of expired bans (runs every `TTL/4`, floor 15 min):
+
+1. Collects IPs from `banned` where `addedAt + TTL < now` and `cfItemID != ""`.
+2. Calls `RemoveItems` (bulk API, async — same pending-op gate as flush).
+3. Removes collected IPs from local `banned` map.
+
+### 5. Shutdown
+
+`Run` exits when `ctx` is cancelled or source is closed. No remote cleanup — entries remain
+in the Cloudflare list until their TTL expires or `arxsentinel cleanup --cf` is run.
+
+---
+
+## Multi-sentinel setup
+
+When multiple arxsentinel instances protect the same Cloudflare account, use `instance_id`
+to distinguish their bans:
+
+```yaml
+config:
+  instance_id: "prod-eu-1"   # ban comment: "sentinel-prod-eu-1"
+  comment_extra: "eu-dc"     # ban comment: "sentinel-prod-eu-1 eu-dc"
+```
+
+To clean up bans from a specific instance:
+```bash
+arxsentinel cleanup --cf --account-id YOUR_ID --api-token YOUR_TOKEN --instance prod-eu-1
+```
+
+---
 
 ## Cloudflare Requirements
 
-- **API token permissions**: Account → Lists → Edit
-- **API token format**: 40-character hex string issued from the Cloudflare dashboard
-- **Account ID**: Found in the Cloudflare dashboard URL or the Account Details page
-- **Free tier limits**:
-  - Maximum 10 IP lists per account
-  - Maximum 10 000 items per list
-- **Rate limits**: The Cloudflare API rate-limits List operations; the executor does not implement
-  retry logic (depends on the HTTP client timeout).
+- **API token**: Account → Lists → Edit permission
+- **Free tier**: max 10 lists × 10 000 items/list; max 1M modifications per 12h
+- **Rate limits**: 429 responses are retried automatically (up to 3×, 5s backoff)
+- **Pending ops**: CF allows only 1 pending bulk operation per account; the executor queues
+  flushes until the previous op completes
 
-## WAF Setup (required for blocking)
+### WAF rule (required to block traffic)
 
-The executor only manages the **IP List**. To actually block traffic, you must create a WAF Custom Rule in the Cloudflare Dashboard that references the list.
+The executor only manages the IP List. To block traffic, create a WAF Custom Rule:
 
-### Step-by-step
-
-1. Go to **Cloudflare Dashboard** → your domain → **Security** → **WAF** → **Custom Rules**
-2. Click **Create rule**
-3. Configure:
-   - **Rule name**: `Block arxsentinel threats`
-   - **Field**: IP Source Address
-   - **Operator**: is in list
-   - **Value**: `arxsentinel-blocklist` (or your configured `list_name`)
-   - **Action**: Block
-4. Click **Deploy**
+1. Cloudflare Dashboard → your domain → **Security** → **WAF** → **Custom Rules** → **Create rule**
+2. Configure:
+   - Field: **IP Source Address** / is in list / `arxsentinel-blocklist`
+   - Action: **Block**
+3. Deploy.
 
 > Without this rule, IPs are added to the list but traffic is **not blocked**.
 
-### Verify it works
-
-After the rule is deployed and the executor has processed a THREAT event:
-
-1. Go to **Cloudflare Dashboard** → your domain → **Security** → **WAF** → **IP Lists**
-2. Open the `arxsentinel-blocklist` list and confirm new IPs are being added
-3. Check the WAF Custom Rule under **Security** → **WAF** → **Custom Rules** — the rule should show a non-zero match count
-4. (Optional) Test from a blocked IP — requests should receive a Cloudflare block page
+---
 
 ## Troubleshooting
 
-### 1. `APIToken must not be empty`
+### `APIToken must not be empty` / `AccountID must not be empty`
+Missing required fields in `config`. Set `api_token` and `account_id`.
 
-The `api_token` field is missing or empty in the configuration. Ensure the token is provided:
+### IP not banned (events skipped)
+- `min_level` too high: lower to `"WARN"` or `"INFO"`.
+- IP already in `banned` map (dedup): check with `arxsentinel cleanup --cf --dry-run`.
+- Queue full: increase `batch_size` or check queue backend.
 
-```yaml
-api_token: "your_40_character_cloudflare_api_token"
-```
+### Bans disappear too fast
+- TTL too short. Integer values are parsed as **seconds** (`3600` = 1h, not 3600h).
+- Verify: `ttl: "24h"` (with quotes and unit suffix).
 
-### 2. `create list` failure
+### `max_items` reached
+Set `max_items: 0` (unlimited) or reduce `ttl` to sweep faster.
+Cloudflare Free hard limit is 10 000 — above that, `AddItems` will fail.
 
-The list could not be found or created. Common causes:
+### 429 Too Many Requests
+The executor retries automatically (3×, 5s). If retries are exhausted, events are dropped
+and counted in `Errors`. Consider increasing `flush_interval` to reduce API call frequency.
 
-- The list name (`list_name`) already exists but is in a different scope or account.
-- The free tier limit of 10 lists has been reached — delete unused lists or use an existing one.
-- The API token lacks the `Account > Lists > Edit` permission.
-
-### 3. IP not blocked (events are skipped)
-
-Events arrive but nothing is added to the Cloudflare list. Check:
-
-- **`min_level` is too high** — if `min_level` is set to `"THREAT"`, events with level `"INFO"`
-  or `"WARN"` are silently skipped. Lower to `"WARN"` or `"INFO"` if needed.
-- **Duplicate IPs** — an IP already in the list is skipped (logged as `Skipped`).
-
-### 4. Items disappear from the list (TTL too short)
-
-Bans are removed from the Cloudflare list after `ttl` elapses. If bans disappear sooner than
-expected:
-
-- The TTL duration is parsed from configuration — verify the unit (e.g., `24h`, `1h30m`).
-- An integer value is treated as **seconds**, not minutes.
-- The sweep interval is `TTL / 4` — bans may be removed up to `TTL / 4` after the actual TTL
-  expiry.
-
-### 5. `max_items` reached (skipped in logs)
-
-When the number of banned IPs reaches `max_items`, new events are silently skipped and counted
-in the `Skipped` stat. To diagnose:
-
-- Check executor stats: `Stats().Skipped` grows while `Stats().Executed` stays flat.
-- Increase `max_items` (up to 10 000 for Cloudflare free tier) or set to `0` to disable the
-  limit.
-- If the list is full, consider reducing `ttl` so expired items are swept faster.
+### Pending operation timeout
+If a bulk operation takes >31.5s, the executor logs a warning and proceeds. The operation
+may still complete asynchronously in Cloudflare — check the CF dashboard if IPs appear late.

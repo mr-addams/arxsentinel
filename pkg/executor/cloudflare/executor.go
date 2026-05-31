@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -30,6 +31,17 @@ var levelOrder = map[string]threatLevel{
 }
 
 const defaultSweepInterval = 15 * time.Minute
+
+// pollDelays defines the exponential backoff intervals for polling a bulk
+// operation status from Cloudflare. Total: ~31.5s before giving up.
+var pollDelays = []time.Duration{
+	500 * time.Millisecond,
+	1 * time.Second,
+	2 * time.Second,
+	4 * time.Second,
+	8 * time.Second,
+	16 * time.Second,
+}
 
 type banRecord struct {
 	cfItemID        string
@@ -52,6 +64,10 @@ type CloudflareExecutor struct {
 		skipped  atomic.Int64
 		errors   atomic.Int64
 	}
+
+	pendingMu   sync.Mutex
+	pendingOpID string
+	pendingOpAt time.Time
 }
 
 func NewCloudflareExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
@@ -126,10 +142,10 @@ func (e *CloudflareExecutor) Type() string {
 	return e.execType
 }
 
-// Run reads ThreatEvents from in, accumulates them in a buffer, and flushes
+// Run reads ThreatEvents from source, accumulates them in a buffer, and flushes
 // to the Cloudflare API when batch_size is reached or flush_interval fires.
 // Also runs a periodic sweep to remove expired bans.
-func (e *CloudflareExecutor) Run(ctx context.Context, in <-chan plugin.ThreatEvent) error {
+func (e *CloudflareExecutor) Run(ctx context.Context, source plugin.EventSource) error {
 	buffer := make([]plugin.ThreatEvent, 0, e.cfg.BatchSize)
 	ticker := time.NewTicker(e.cfg.FlushInterval)
 	defer ticker.Stop()
@@ -141,13 +157,30 @@ func (e *CloudflareExecutor) Run(ctx context.Context, in <-chan plugin.ThreatEve
 	sweepTicker := time.NewTicker(sweepInterval)
 	defer sweepTicker.Stop()
 
+	// Pop is not a channel — feed events into an internal channel for select.
+	events := make(chan plugin.ThreatEvent, 1)
+	go func() {
+		defer close(events)
+		for {
+			event, err := source.Pop(ctx)
+			if err != nil {
+				return
+			}
+			select {
+			case events <- event:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
 			e.flush(ctx, buffer)
 			e.sweep(ctx)
 			return ctx.Err()
-		case event, ok := <-in:
+		case event, ok := <-events:
 			if !ok {
 				e.flush(ctx, buffer)
 				e.sweep(ctx)
@@ -181,6 +214,86 @@ func (e *CloudflareExecutor) Run(ctx context.Context, in <-chan plugin.ThreatEve
 	}
 }
 
+// waitForPendingOp polls the pending operation until it completes, fails, or
+// all retry intervals are exhausted. On success or known failure, clears pendingOpID.
+// On timeout (all retries exhausted), logs a warning and clears pendingOpID so the
+// next flush can proceed. Returns true if the caller may proceed with a new operation.
+func (e *CloudflareExecutor) waitForPendingOp(ctx context.Context) bool {
+	e.pendingMu.Lock()
+	opID := e.pendingOpID
+	e.pendingMu.Unlock()
+
+	if opID == "" {
+		return true
+	}
+
+	for _, delay := range pollDelays {
+		select {
+		case <-ctx.Done():
+			// Clear pending state so the next Run() starts clean on restart.
+			e.pendingMu.Lock()
+			e.pendingOpID = ""
+			e.pendingMu.Unlock()
+			return false
+		case <-time.After(delay):
+		}
+
+		status, err := e.client.PollBulkOperation(ctx, opID)
+		if err != nil {
+			continue
+		}
+		switch status {
+		case "completed":
+			e.pendingMu.Lock()
+			e.pendingOpID = ""
+			e.pendingMu.Unlock()
+			return true
+		case "failed":
+			e.stats.errors.Add(1)
+			e.pendingMu.Lock()
+			e.pendingOpID = ""
+			e.pendingMu.Unlock()
+			return true
+		}
+	}
+
+	utils.Log("EXECUTOR", fmt.Sprintf("executor %s: bulk op %s timed out after polling (6 attempts, ~31.5s) - clearing to proceed", e.name, opID), "warning")
+	e.pendingMu.Lock()
+	e.pendingOpID = ""
+	e.pendingMu.Unlock()
+	return true
+}
+
+const (
+	max429Retries     = 3
+	default429Backoff = 5 * time.Second
+)
+
+// doWithRetry wraps a CF API call with 429 retry logic.
+// If err contains "429", retries up to max429Retries times with default429Backoff sleep.
+func (e *CloudflareExecutor) doWithRetry(ctx context.Context, fn func() (string, error)) (string, error) {
+	var lastErr error
+	for attempt := 0; attempt <= max429Retries; attempt++ {
+		opID, err := fn()
+		if err == nil {
+			return opID, nil
+		}
+		lastErr = err
+		if !strings.Contains(err.Error(), "429") {
+			return "", err
+		}
+		if attempt == max429Retries {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(default429Backoff):
+		}
+	}
+	return "", lastErr
+}
+
 type cfBatchItem struct {
 	IP      string `json:"ip"`
 	Comment string `json:"comment"`
@@ -190,6 +303,11 @@ func (e *CloudflareExecutor) flush(ctx context.Context, events []plugin.ThreatEv
 	if len(events) == 0 {
 		return
 	}
+
+	if !e.waitForPendingOp(ctx) {
+		return
+	}
+
 	items := make([]CFBatchItem, len(events))
 	for i, ev := range events {
 		items[i] = CFBatchItem{
@@ -197,10 +315,22 @@ func (e *CloudflareExecutor) flush(ctx context.Context, events []plugin.ThreatEv
 			Comment: e.buildComment(),
 		}
 	}
-	if err := e.client.AddItems(ctx, e.listID, items); err != nil {
+
+	opID, err := e.doWithRetry(ctx, func() (string, error) {
+		return e.client.AddItems(ctx, e.listID, items)
+	})
+	if err != nil {
 		e.stats.errors.Add(int64(len(events)))
 		return
 	}
+
+	if opID != "" {
+		e.pendingMu.Lock()
+		e.pendingOpID = opID
+		e.pendingOpAt = time.Now()
+		e.pendingMu.Unlock()
+	}
+
 	e.stats.executed.Add(int64(len(events)))
 
 	e.mu.Lock()
@@ -226,10 +356,25 @@ func (e *CloudflareExecutor) sweep(ctx context.Context) {
 		return
 	}
 
-	if err := e.client.RemoveItems(ctx, e.listID, expired); err != nil {
+	if !e.waitForPendingOp(ctx) {
+		return
+	}
+
+	opID, err := e.doWithRetry(ctx, func() (string, error) {
+		return e.client.RemoveItems(ctx, e.listID, expired)
+	})
+	if err != nil {
 		e.stats.errors.Add(int64(len(expired)))
 		return
 	}
+
+	if opID != "" {
+		e.pendingMu.Lock()
+		e.pendingOpID = opID
+		e.pendingOpAt = time.Now()
+		e.pendingMu.Unlock()
+	}
+
 	e.stats.executed.Add(-int64(len(expired)))
 }
 
@@ -256,7 +401,11 @@ func (e *CloudflareExecutor) isDuplicate(ip string) bool {
 }
 
 func (e *CloudflareExecutor) buildComment() string {
-	return fmt.Sprintf("sentinel-%s", e.instanceID)
+	base := fmt.Sprintf("sentinel-%s", e.instanceID)
+	if e.cfg.CommentExtra == "" {
+		return base
+	}
+	return base + " " + e.cfg.CommentExtra
 }
 
 func LoadInstanceID(cfg *Config) string {
