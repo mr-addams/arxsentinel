@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -64,12 +65,13 @@ func TestRun_SingleItem(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.MinLevel = "INFO"
 	ex := newTestExecutor(mock, cfg)
-	ch := make(chan plugin.ThreatEvent, 3)
-	ch <- plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}
-	ch <- plugin.ThreatEvent{IP: "5.6.7.8", Level: "THREAT"}
-	ch <- plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}
-	close(ch)
-	_ = ex.Run(context.Background(), ch)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	q := queue.NewMemoryQueue(3)
+	_ = q.Push(ctx, plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"})
+	_ = q.Push(ctx, plugin.ThreatEvent{IP: "5.6.7.8", Level: "THREAT"})
+	_ = q.Push(ctx, plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"})
+	_ = ex.Run(ctx, q)
 
 	if len(mock.added) != 2 {
 		t.Errorf("expected 2 AddItems calls, got %d", len(mock.added))
@@ -82,12 +84,13 @@ func TestRun_Batch250(t *testing.T) {
 	cfg.BatchSize = 100
 	cfg.MinLevel = "INFO"
 	ex := newTestExecutor(mock, cfg)
-	ch := make(chan plugin.ThreatEvent, 250)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	q := queue.NewMemoryQueue(250)
 	for i := 0; i < 250; i++ {
-		ch <- plugin.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"}
+		_ = q.Push(ctx, plugin.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"})
 	}
-	close(ch)
-	_ = ex.Run(context.Background(), ch)
+	_ = ex.Run(ctx, q)
 	if len(mock.added) != 250 {
 		t.Errorf("expected 250 items added, got %d", len(mock.added))
 	}
@@ -98,12 +101,12 @@ func TestRun_LevelGate(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.MinLevel = "THREAT"
 	ex := newTestExecutor(mock, cfg)
-
-	ch := make(chan plugin.ThreatEvent, 2)
-	ch <- plugin.ThreatEvent{IP: "10.0.0.1", Level: "INFO"}
-	ch <- plugin.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"}
-	close(ch)
-	_ = ex.Run(context.Background(), ch)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	q := queue.NewMemoryQueue(2)
+	_ = q.Push(ctx, plugin.ThreatEvent{IP: "10.0.0.1", Level: "INFO"})
+	_ = q.Push(ctx, plugin.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"})
+	_ = ex.Run(ctx, q)
 
 	if len(mock.added) != 1 {
 		t.Errorf("expected 1 AddItems call, got %d", len(mock.added))
@@ -124,11 +127,12 @@ func TestRun_Dedup(t *testing.T) {
 	ex.banned["10.0.0.1"] = banRecord{addedAt: time.Now()}
 	ex.mu.Unlock()
 
-	ch := make(chan plugin.ThreatEvent, 2)
-	ch <- plugin.ThreatEvent{IP: "10.0.0.1", Level: "THREAT"}
-	ch <- plugin.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"}
-	close(ch)
-	_ = ex.Run(context.Background(), ch)
+	ctx := context.Background()
+	q := queue.NewMemoryQueue(2)
+	_ = q.Push(ctx, plugin.ThreatEvent{IP: "10.0.0.1", Level: "THREAT"})
+	_ = q.Push(ctx, plugin.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"})
+	q.Close()
+	_ = ex.Run(context.Background(), q)
 
 	if len(mock.added) != 1 {
 		t.Errorf("expected 1 AddItems call (dedup), got %d", len(mock.added))
@@ -217,18 +221,19 @@ func TestRun_ConcurrentSafe(t *testing.T) {
 	cfg.MinLevel = "INFO"
 	ex := newTestExecutor(mock, cfg)
 
-	ch := make(chan plugin.ThreatEvent, 100)
+	ctx := context.Background()
+	q := queue.NewMemoryQueue(100)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = ex.Run(context.Background(), ch)
+		_ = ex.Run(ctx, q)
 	}()
 
 	for i := 0; i < 100; i++ {
-		ch <- plugin.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"}
+		_ = q.Push(ctx, plugin.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"})
 	}
-	close(ch)
+	q.Close()
 	wg.Wait()
 
 	if len(mock.added) != 100 {

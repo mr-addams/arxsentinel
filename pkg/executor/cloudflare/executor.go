@@ -126,10 +126,10 @@ func (e *CloudflareExecutor) Type() string {
 	return e.execType
 }
 
-// Run reads ThreatEvents from in, accumulates them in a buffer, and flushes
+// Run reads ThreatEvents from source, accumulates them in a buffer, and flushes
 // to the Cloudflare API when batch_size is reached or flush_interval fires.
 // Also runs a periodic sweep to remove expired bans.
-func (e *CloudflareExecutor) Run(ctx context.Context, in <-chan plugin.ThreatEvent) error {
+func (e *CloudflareExecutor) Run(ctx context.Context, source plugin.EventSource) error {
 	buffer := make([]plugin.ThreatEvent, 0, e.cfg.BatchSize)
 	ticker := time.NewTicker(e.cfg.FlushInterval)
 	defer ticker.Stop()
@@ -141,13 +141,30 @@ func (e *CloudflareExecutor) Run(ctx context.Context, in <-chan plugin.ThreatEve
 	sweepTicker := time.NewTicker(sweepInterval)
 	defer sweepTicker.Stop()
 
+	// Pop is not a channel — feed events into an internal channel for select.
+	events := make(chan plugin.ThreatEvent, 1)
+	go func() {
+		defer close(events)
+		for {
+			event, err := source.Pop(ctx)
+			if err != nil {
+				return
+			}
+			select {
+			case events <- event:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
 			e.flush(ctx, buffer)
 			e.sweep(ctx)
 			return ctx.Err()
-		case event, ok := <-in:
+		case event, ok := <-events:
 			if !ok {
 				e.flush(ctx, buffer)
 				e.sweep(ctx)

@@ -68,21 +68,16 @@ func (e *ExecExecutor) Name() string {
 	return e.name
 }
 
-// Run reads ThreatEvents from the channel and delegates to executePlugin.
-// Blocks until ctx is cancelled or the channel is closed.
-func (e *ExecExecutor) Run(ctx context.Context, in <-chan plugin.ThreatEvent) error {
+// Run reads ThreatEvents from the source via Pop and delegates to executePlugin.
+// Blocks until ctx is cancelled or the source returns a terminal error.
+func (e *ExecExecutor) Run(ctx context.Context, source plugin.EventSource) error {
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case event, ok := <-in:
-			if !ok {
-				return nil
-			}
-			if err := e.executePlugin(ctx, event); err != nil {
-				// Log the error; continue processing remaining events.
-				continue
-			}
+		event, err := source.Pop(ctx)
+		if err != nil {
+			return nil
+		}
+		if err := e.executePlugin(ctx, event); err != nil {
+			continue
 		}
 	}
 }

@@ -57,7 +57,14 @@ func (q *MemoryQueue) Push(ctx context.Context, event plugin.ThreatEvent) error 
 func (q *MemoryQueue) Pop(ctx context.Context) (plugin.ThreatEvent, error) {
 	select {
 	case <-q.closed:
-		return plugin.ThreatEvent{}, ErrQueueClosed
+		// Drain any events buffered before Close() was called. Push is no longer
+		// possible after q.closed fires, so q.ch is stable — no race here.
+		select {
+		case event := <-q.ch:
+			return event, nil
+		default:
+			return plugin.ThreatEvent{}, ErrQueueClosed
+		}
 	case event := <-q.ch:
 		return event, nil
 	case <-ctx.Done():

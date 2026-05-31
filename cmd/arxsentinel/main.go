@@ -930,18 +930,18 @@ func startExecutors(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup)
 		}
 
 		for _, src := range ec.Sources {
-			ch, err := pkgexecutor.GetSource(src.Name)
+			q, err := pkgexecutor.GetSource(src.Name)
 			if err != nil {
 				return fmt.Errorf("executor %q: source %q: %w", ec.Name, src.Name, err)
 			}
 
 			wg.Add(1)
-			go func(ex plugin.Executor, ch <-chan plugin.ThreatEvent) {
+			go func(ex plugin.Executor, q plugin.EventSource) {
 				defer wg.Done()
-				if err := ex.Run(ctx, ch); err != nil && err != context.Canceled {
+				if err := ex.Run(ctx, q); err != nil && err != context.Canceled {
 					utils.Log("EXECUTOR", fmt.Sprintf("executor %s: %v", ex.Name(), err), "error")
 				}
-			}(ex, ch)
+			}(ex, q)
 		}
 	}
 	return nil
