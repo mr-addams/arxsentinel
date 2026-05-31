@@ -956,9 +956,10 @@ func buildSinks(outputs []config.SinkConfig) ([]plugin.Sink, error) {
 	for _, out := range outputs {
 		sink, err := pkgsink.Build(pkgsink.SinkConfig{
 			Type:   out.Type,
+			Name:   out.Name,
 			Path:   out.Path,
 			Format: out.Format,
-			Exec:   out.Exec,  // NEW
+			Exec:   out.Exec,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("sink %q: %w", out.Type, err)
