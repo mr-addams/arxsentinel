@@ -148,6 +148,10 @@ Periodic removal of expired bans (runs every `TTL/4`, floor 15 min):
 `Run` exits when `ctx` is cancelled or source is closed. No remote cleanup — entries remain
 in the Cloudflare list until their TTL expires or `arxsentinel cleanup --cf` is run.
 
+> **Note:** `SIGHUP` (reload) applies only to detectors, scoring, and blocklists.
+> Executor configuration changes (credentials, list name, sources) require a full
+> `systemctl restart arxsentinel`.
+
 ---
 
 ## Multi-sentinel setup
