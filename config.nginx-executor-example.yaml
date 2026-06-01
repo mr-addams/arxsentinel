@@ -1,0 +1,107 @@
+# ========================== config.nginx-executor-example.yaml ==========================
+#
+#   Quick-start config for nginx-only + geo-block automated IP banning.
+#   1 nginx site → threat detection → automatic geo-block file ban + nginx reload.
+#
+#   Use case: single nginx host (with or without CDN), file-based IP banning.
+#   For Cloudflare IP list banning: see config.cloudflare-example.yaml
+#   For all configuration options: see config.example.yaml
+#
+#   Quick deploy:
+#     1. Copy this file to /etc/arxsentinel/config.yaml
+#     2. Adjust log path if needed (see streams.inputs[].path below)
+#     3. Add the geo block snippet to your nginx.conf (see below)
+#     4. sudo systemctl restart arxsentinel
+#        (reload/SIGHUP applies only to detectors/scoring — executors require restart)
+#
+# ======================================================================================
+
+# ── scoring: when to act ──────────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50   # log ALERT events (not acted on by executor)
+  ban_threshold: 75     # feed to executor → nginx geo-block ban
+  observation_window: 5m
+  decay: 0
+
+# ── streams: nginx log source → threat detection → nginx executor ────────────────────
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: sentinel-cf                  # feeds THREAT events to the executor below
+
+# ── executors: automated nginx geo-block bans ───────────────────────────────────────
+executors:
+  - name: nginx-blocklist
+    type: nginx
+    sources:
+      - name: sentinel-cf                  # matches sentinel-threat sink name above
+    config:
+      list_file: /etc/nginx/conf.d/arxsentinel_autoblock.list   # geo-block file
+      state_file: /var/lib/arxsentinel/nginx-state.json          # optional TTL persistence
+      min_level: "THREAT"                  # minimum threat level to act on: INFO | WARN | THREAT
+      ttl: "24h"                           # auto-unban after 24h
+      batch_size: 10                       # IPs per batch write trigger
+      flush_interval: "30s"                # max delay before flushing partial batch
+      reload_cmd: "nginx -s reload"        # empty = passive mode (file only, no reload)
+
+# ======================================================================================
+#
+#   nginx.conf — required geo block snippet
+#   ========================================
+#
+#   Add the following block to your nginx.conf (inside the http {} context).
+#   It creates a $give_block variable — when set to "1", return 444 in your server block.
+#
+# --------------------------------------------------------------------------------------
+#
+# # ── arxsentinel auto-block (do not edit manually) ──────────────────────────
+#
+# # Cloudflare CDN ranges (required for real_ip to work behind CF)
+# # CF IPv4 CIDR ranges as of 2025:
+# set_real_ip_from 103.21.244.0/22;
+# set_real_ip_from 103.22.200.0/22;
+# set_real_ip_from 103.31.4.0/22;
+# set_real_ip_from 104.16.0.0/12;
+# set_real_ip_from 108.162.192.0/18;
+# set_real_ip_from 131.0.72.0/22;
+# set_real_ip_from 141.101.64.0/18;
+# set_real_ip_from 162.158.0.0/15;
+# set_real_ip_from 172.64.0.0/13;
+# set_real_ip_from 173.245.48.0/20;
+# set_real_ip_from 188.114.96.0/20;
+# set_real_ip_from 190.93.240.0/20;
+# set_real_ip_from 197.234.240.0/22;
+# set_real_ip_from 198.41.128.0/17;
+#
+# # Private ranges (when not behind CDN)
+# set_real_ip_from 10.0.0.0/8;
+# set_real_ip_from 172.16.0.0/12;
+# set_real_ip_from 192.168.0.0/16;
+#
+# real_ip_header X-Forwarded-For;
+# real_ip_recursive on;
+#
+# # geo block — two files: manual bans (permanent) + auto-bans (TTL-managed)
+# geo $give_block {
+#     include /etc/nginx/conf.d/deny_by_hands.list;          # permanent manual bans
+#     include /etc/nginx/conf.d/arxsentinel_autoblock.list;  # managed by arxsentinel
+#
+#     default 0;
+# }
+#
+# # Then, in your server block:
+# server {
+#     # ...
+#     if ($give_block) {
+#         return 444;   # silently close connection — no 403 response
+#     }
+#     # ...
+# }
