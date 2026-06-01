@@ -39,6 +39,7 @@ const defaultLinesBufSize = 1000
 // Each FileSource owns its parser — different files in a stream can use different
 // formats (D1 in DECISIONS.md).
 type FileSource struct {
+	plugin.NopManifest
 	name          string // "file:/path/to/access.log"
 	path          string
 	par           parser.Parser

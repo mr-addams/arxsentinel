@@ -50,6 +50,7 @@ type banRecord struct {
 }
 
 type CloudflareExecutor struct {
+	plugin.NopManifest
 	name       string
 	execType   string
 	cfg        Config

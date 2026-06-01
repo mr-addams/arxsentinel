@@ -13,6 +13,7 @@ import (
 
 // staticSource sends a fixed slice of entries then returns.
 type staticSource struct {
+	plugin.NopManifest
 	name    string
 	entries []*plugin.LogEntry
 }
@@ -31,6 +32,7 @@ func (s *staticSource) Run(_ context.Context, out chan<- *plugin.LogEntry) error
 
 // blockingSource sends one entry, then blocks until ctx is cancelled.
 type blockingSource struct {
+	plugin.NopManifest
 	entry *plugin.LogEntry
 }
 
@@ -45,6 +47,7 @@ func (s *blockingSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) e
 
 // dropSource tries to send entries with a full buffer; drops are counted via non-blocking send.
 type dropSource struct {
+	plugin.NopManifest
 	entries []*plugin.LogEntry
 	dropped int
 }

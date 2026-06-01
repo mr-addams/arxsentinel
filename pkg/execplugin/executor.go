@@ -32,6 +32,7 @@ import (
 // If the plugin crashes or stdout closes unexpectedly, Run() returns an error
 // and increments the Errors counter.
 type ExecExecutor struct {
+	plugin.NopManifest
 	name     string
 	execType string
 	proc     *ManagedProcess

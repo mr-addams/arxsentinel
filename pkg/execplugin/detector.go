@@ -31,6 +31,7 @@ import (
 // If the plugin crashes or stdout closes unexpectedly, Detect() returns a
 // zero DetectResult without panicking. The error is logged to stderr.
 type ExecDetector struct {
+	plugin.NopManifest
 	name string
 	proc *ManagedProcess
 	mu   sync.Mutex // serializes Detect() calls

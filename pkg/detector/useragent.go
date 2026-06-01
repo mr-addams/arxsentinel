@@ -65,6 +65,7 @@ var builtinAutomationPatterns = []string{
 
 // uaDetector detects suspicious User-Agent strings.
 type uaDetector struct {
+	plugin.NopManifest
 	scannerPatterns    []string
 	grabberPatterns    []string
 	automationPatterns []string

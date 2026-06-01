@@ -13,6 +13,7 @@ import (
 )
 
 type SentinelThreatSink struct {
+	plugin.NopManifest
 	name    string
 	q       queue.Queue
 	dropped atomic.Int64

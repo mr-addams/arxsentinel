@@ -61,6 +61,9 @@ type Sink interface {
 	// Close flushes any buffered data and releases resources.
 	Close() error
 
+	// Manifest returns plugin metadata (name, version, dependencies).
+	Manifest() Manifest
+
 	// Stats returns a point-in-time snapshot of operational counters.
 	Stats() SinkStats
 }

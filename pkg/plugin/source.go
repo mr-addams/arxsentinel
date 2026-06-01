@@ -36,6 +36,9 @@ type Source interface {
 	// Close releases resources. Called after Run returns.
 	Close() error
 
+	// Manifest returns plugin metadata (name, version, dependencies).
+	Manifest() Manifest
+
 	// Stats returns a point-in-time snapshot of operational counters.
 	Stats() SourceStats
 }

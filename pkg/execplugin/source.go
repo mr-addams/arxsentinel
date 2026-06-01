@@ -36,6 +36,7 @@ import (
 // lines from stdout in a loop. When ctx is cancelled, it sends {"v":"1","action":"stop"}
 // and exits gracefully.
 type ExecSource struct {
+	plugin.NopManifest
 	execPath  string
 	linesRead atomic.Int64
 	parseErrs atomic.Int64

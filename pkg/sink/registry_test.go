@@ -11,6 +11,7 @@ import (
 // ── Mock Sink for testing ──────────────────────────────────────────────────────────────
 
 type mockSink struct {
+	plugin.NopManifest
 	name  string
 	stats plugin.SinkStats
 }

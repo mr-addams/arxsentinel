@@ -44,6 +44,7 @@ func init() {
 // badBotDetector matches incoming log entries against a blocklist Matcher.
 // Thread-safe: Detect() only calls Matcher.Match() which is itself thread-safe.
 type badBotDetector struct {
+	plugin.NopManifest
 	mgr           Matcher
 	score         int
 	checkUA       bool

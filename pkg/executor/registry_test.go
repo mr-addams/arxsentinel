@@ -56,6 +56,7 @@ func TestRegistry_ExecFallback(t *testing.T) {
 }
 
 type mockExecutor struct {
+	plugin.NopManifest
 	name string
 }
 

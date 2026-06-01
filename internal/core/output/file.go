@@ -33,6 +33,7 @@ import (
 // Supported formats: "fail2ban" (text line) or "json" (JSON envelope + newline).
 // The file is created if it does not exist; directories must already exist.
 type FileSink struct {
+	plugin.NopManifest
 	name   string
 	path   string
 	format string // "fail2ban" | "json"

@@ -39,6 +39,7 @@ var defaultSuspiciousParams = []string{
 
 // overflowDetector detects buffer overflow and WAF bypass attempts via URL.
 type overflowDetector struct {
+	plugin.NopManifest
 	maxURLLength     int
 	suspiciousParams []string // lowercase-normalized for case-insensitive matching
 	score            int

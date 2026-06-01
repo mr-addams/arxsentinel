@@ -13,6 +13,7 @@ import (
 // ── Mock Source for testing ────────────────────────────────────────────────────────────
 
 type mockSource struct {
+	plugin.NopManifest
 	name  string
 	stats plugin.SourceStats
 }

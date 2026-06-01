@@ -87,6 +87,7 @@ import (
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
 	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
 	_ "github.com/mr-addams/arxsentinel/pkg/executor/nginx"
+	_ "github.com/mr-addams/arxsentinel/pkg/processor"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
@@ -145,6 +146,17 @@ func main() {
 		handleCleanup(os.Args[2:])
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "validate" {
+		// Resolve --config flag manually before flag.Parse() to reuse the same logic.
+		path := configPath
+		for _, arg := range os.Args[2:] {
+			if p, ok := strings.CutPrefix(arg, "--config="); ok {
+				path = p
+			}
+		}
+		runValidateSubcommand(path)
+		return
+	}
 
 	// ── CLI flags ─────────────────────────────────────────────────────────────────────
 
@@ -175,6 +187,14 @@ func main() {
 	cfg, err := config.LoadConfig(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "arxsentinel: config error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Fail-fast: validate plugin pipeline compatibility before starting any goroutines.
+	if errs := validateConfig(cfg); len(errs) > 0 {
+		for _, e := range errs {
+			fmt.Fprintf(os.Stderr, "arxsentinel: pipeline validation: %s\n", e)
+		}
 		os.Exit(1)
 	}
 

@@ -29,6 +29,7 @@ import (
 //
 // Concurrent Write() calls are protected by a mutex on the ManagedProcess.
 type ExecSink struct {
+	plugin.NopManifest
 	name          string
 	proc          *ManagedProcess
 	eventsWritten atomic.Int64

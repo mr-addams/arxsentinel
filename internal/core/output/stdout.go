@@ -26,6 +26,7 @@ import (
 // Supported formats: "fail2ban" (text line) or "json" (JSON envelope + newline).
 // mu serialises concurrent Write calls — os.Stdout is shared across goroutines.
 type StdoutSink struct {
+	plugin.NopManifest
 	name   string
 	format string // "fail2ban" | "json"
 	w      *os.File // injectable for tests; os.Stdout in production

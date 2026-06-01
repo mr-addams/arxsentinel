@@ -36,6 +36,7 @@ const stdinScanBufSize = 64 * 1024 // 64 KB
 // Run completes on EOF or ctx cancellation — whichever comes first.
 // In container / pipe mode EOF is the normal termination signal.
 type StdinSource struct {
+	plugin.NopManifest
 	name  string
 	par   parser.Parser
 	logFn func(tag, msg, level string) // nil-safe; defaults to utils.Log

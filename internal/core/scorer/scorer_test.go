@@ -9,6 +9,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/core/detector"
 	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 // ========================== Mock implementations ===========================================
@@ -37,6 +38,7 @@ func (m *mockScoreState) SetScore(score int, at time.Time) { m.score = score; m.
 // fixedDetector returns a fixed DetectResult regardless of input.
 // Allows precise control over score contribution when testing scorer.
 type fixedDetector struct {
+	plugin.NopManifest
 	name   string
 	result detector.DetectResult
 }
