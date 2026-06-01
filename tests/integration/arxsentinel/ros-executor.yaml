@@ -1,0 +1,52 @@
+general:
+  pid_file: /tmp/arxsentinel-ros-executor.pid
+  tail_retry_interval: 2s
+
+parser:
+  log_format: combined
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 51
+  observation_window: 60s
+
+output:
+  operational_log: logs/threats/sentinel-ros-executor.log
+
+logging:
+  console_color: false
+
+streams:
+  - name: ros-test
+    inputs:
+      - type: file
+        path: logs/nginx/access.log
+    outputs:
+      - type: file
+        path: logs/threats/ros-executor.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: ros-ban-queue
+
+executors:
+  - name: ros-ban
+    type: mikrotik
+    sources:
+      - name: ros-ban-queue
+    config:
+      host: localhost
+      port: 8093
+      username: admin
+      password: test
+      list_name: arxsentinel_blocklist
+      ttl: 1h
+      sentinel_id: sentinel-test-ros
+      tls_verify: false
+      use_tls: false
+      min_level: THREAT
+      batch_size: 1
+      flush_interval: 500ms
+
+blocklist:
+  storage: ""
+  lists: []

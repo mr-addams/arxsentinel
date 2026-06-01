@@ -519,9 +519,31 @@ else
     fi
 fi
 
+# ── executor-ros-ban: check that RouterOS API mock received the attacker IP ──────────────────
+echo ""
+echo "--- Executor ROS ban check ---"
 echo ""
 
-TOTAL=$((DIRECT_TOTAL + BADBOT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL + CF_DIRECT_TOTAL + CF_CHAIN_TOTAL + CHAIN_GUARD_TOTAL + EXECUTOR_TOTAL))
+ROS_EXECUTOR_TOTAL=0
+ROS_EXECUTOR_BAN_JSON="$LOGS_DIR/executor-ros-ban.json"
+EXPECTED_ROS_EXECUTOR_IP="9.10.11.12"
+
+if [ ! -f "$ROS_EXECUTOR_BAN_JSON" ] || [ ! -s "$ROS_EXECUTOR_BAN_JSON" ]; then
+    echo "SKIP [executor/ros-ban]  (no recorded-items file — ros-api-mock may not be running)"
+else
+    ROS_EXECUTOR_TOTAL=1
+    if grep -q "$EXPECTED_ROS_EXECUTOR_IP" "$ROS_EXECUTOR_BAN_JSON" && grep -q "sentinel-test-ros" "$ROS_EXECUTOR_BAN_JSON"; then
+        echo "PASS [executor/ros-ban]  IP $EXPECTED_ROS_EXECUTOR_IP found in RouterOS API mock"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL [executor/ros-ban]  IP $EXPECTED_ROS_EXECUTOR_IP not found in RouterOS API mock"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
+echo ""
+
+TOTAL=$((DIRECT_TOTAL + BADBOT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL + CF_DIRECT_TOTAL + CF_CHAIN_TOTAL + CHAIN_GUARD_TOTAL + EXECUTOR_TOTAL + ROS_EXECUTOR_TOTAL))
 
 echo "================================"
 echo "Results: $PASS passed, $FAIL failed"
@@ -533,6 +555,7 @@ echo "(${#CF_BACKENDS[@]} backends = ${CF_DIRECT_TOTAL} CF-direct checks)"
 echo "(${#CF_CHAIN_PROXIES[@]} proxies × ${#CF_CHAIN_BACKENDS[@]} backends = ${CF_CHAIN_TOTAL} CF-chain checks)"
 echo "(${CHAIN_GUARD_TOTAL} chain-guard warning checks)"
 echo "(${EXECUTOR_TOTAL} executor checks)"
+echo "(${ROS_EXECUTOR_TOTAL} ros-executor checks)"
 echo "(total: ${TOTAL} checks)"
 echo ""
 

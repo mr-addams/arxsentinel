@@ -86,6 +86,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
 	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
+	_ "github.com/mr-addams/arxsentinel/pkg/executor/mikrotik"
 	_ "github.com/mr-addams/arxsentinel/pkg/executor/nginx"
 	_ "github.com/mr-addams/arxsentinel/pkg/processor"
 	pkgsinkfile "github.com/mr-addams/arxsentinel/pkg/sink/file"

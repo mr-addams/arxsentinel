@@ -27,7 +27,7 @@ func NewMikroTikExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 		return nil, fmt.Errorf("mikrotik: new executor: %w", err)
 	}
 
-	client := NewHTTPClient(parsed.Host, parsed.Port, parsed.Username, parsed.Password, parsed.TLSVerify)
+	client := NewHTTPClient(parsed.Host, parsed.Port, parsed.Username, parsed.Password, parsed.TLSVerify, parsed.UseTLS)
 
 	exec := &MikroTikExecutor{
 		name:   cfg.Name,
@@ -133,9 +133,9 @@ func (e *MikroTikExecutor) Run(ctx context.Context, source plugin.EventSource) e
 				e.stats.skipped.Add(1)
 				continue
 			}
-			e.mu.Lock()
-			e.banned[event.IP] = banRecord{addedAt: time.Now()}
-			e.mu.Unlock()
+			// Note: do NOT add to e.banned here — flush() populates it only after a
+			// successful Add. Pre-marking would make flush()'s own banned-check skip
+			// every event, so nothing would ever reach the RouterOS API.
 			buffer = append(buffer, event)
 			if len(buffer) >= e.cfg.BatchSize {
 				e.flush(ctx, buffer)

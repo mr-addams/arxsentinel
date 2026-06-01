@@ -41,6 +41,9 @@ type Config struct {
 	TTL           time.Duration `json:"-" yaml:"ttl"`
 	SentinelID    string        `json:"sentinel_id" yaml:"sentinel_id"`
 	TLSVerify     bool          `json:"tls_verify" yaml:"tls_verify"`
+	// UseTLS controls whether to use HTTPS (true, default) or plain HTTP (false).
+	// Set to false only for local mock servers in integration tests.
+	UseTLS        bool          `json:"use_tls" yaml:"use_tls"`
 	BatchSize     int           `json:"batch_size" yaml:"batch_size"`
 	FlushInterval time.Duration `json:"-" yaml:"flush_interval"`
 	MinLevel      string        `json:"min_level" yaml:"min_level"`
@@ -54,6 +57,7 @@ func defaultConfig() Config {
 		ListName:      "arxsentinel_blocklist",
 		TTL:           24 * time.Hour,
 		TLSVerify:     true,
+		UseTLS:        true,
 		BatchSize:     10,
 		FlushInterval: 30 * time.Second,
 		MinLevel:      "THREAT",
