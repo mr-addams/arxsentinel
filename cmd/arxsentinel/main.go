@@ -153,6 +153,10 @@ func main() {
 		handleCleanup(os.Args[2:])
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "license" {
+		runLicenseSubcommand()
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "validate" {
 		// Resolve --config flag manually before flag.Parse() to reuse the same logic.
 		path := configPath
