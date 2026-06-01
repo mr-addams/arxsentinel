@@ -28,7 +28,6 @@ func init() {
 
 // probeDetector detects requests to sensitive paths.
 type probeDetector struct {
-	plugin.NopManifest
 	score    int
 	pathSet  map[string]struct{} // exact-match paths: O(1) lookup
 	prefixes []string            // prefix paths (ending with "/"): catches any sub-path

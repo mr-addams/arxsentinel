@@ -32,7 +32,6 @@ func init() {
 
 // bruteforceDetector detects anomalous 404 ratio.
 type bruteforceDetector struct {
-	plugin.NopManifest
 	minRequests    int
 	ratioThreshold float64
 	score          int

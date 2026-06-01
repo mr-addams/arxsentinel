@@ -43,7 +43,6 @@ const fileHeader = "# managed by arxsentinel — do not edit manually\n"
 // It receives ThreatEvents, deduplicates by IP, writes to a list file,
 // and optionally calls a reload command after each write.
 type NginxExecutor struct {
-	plugin.NopManifest
 	name     string
 	execType string
 	cfg      Config

@@ -31,7 +31,6 @@ import (
 // If the plugin crashes or stdout closes unexpectedly, Detect() returns a
 // zero DetectResult without panicking. The error is logged to stderr.
 type ExecDetector struct {
-	plugin.NopManifest
 	name string
 	proc *ManagedProcess
 	mu   sync.Mutex // serializes Detect() calls
@@ -60,6 +59,16 @@ func NewDetector(name, execPath string, params map[string]interface{}) (*ExecDet
 // Name returns the detector name as registered in the plugin registry.
 func (d *ExecDetector) Name() string {
 	return d.name
+}
+
+// Manifest returns the plugin's identity and data contract.
+func (d *ExecDetector) Manifest() plugin.Manifest {
+	return plugin.Manifest{
+		Role:       plugin.RoleDetector,
+		InputType:  plugin.TypeStructured,
+		OutputType: plugin.TypeStructured,
+		Tags:       []string{"exec", "external-plugin", "ndjson"},
+	}
 }
 
 // Detect sends a DetectRequest to the plugin and reads back a DetectResponse.

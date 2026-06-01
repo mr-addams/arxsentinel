@@ -42,7 +42,6 @@ var defaultAssetExtensions = []string{
 
 // noAssetDetector detects bots that do not load static page resources.
 type noAssetDetector struct {
-	plugin.NopManifest
 	minPageRequests     int
 	assetRatioThreshold float64
 	score               int

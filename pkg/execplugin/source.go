@@ -36,7 +36,6 @@ import (
 // lines from stdout in a loop. When ctx is cancelled, it sends {"v":"1","action":"stop"}
 // and exits gracefully.
 type ExecSource struct {
-	plugin.NopManifest
 	execPath  string
 	linesRead atomic.Int64
 	parseErrs atomic.Int64
@@ -168,5 +167,17 @@ func (s *ExecSource) Stats() plugin.SourceStats {
 		LinesRead:   s.linesRead.Load(),
 		ParseErrors: s.parseErrs.Load(),
 		Dropped:     0, // Phase 1 doesn't track drops
+	}
+}
+
+// Manifest returns the plugin identity and data contract.
+func (s *ExecSource) Manifest() plugin.Manifest {
+	return plugin.Manifest{
+		PluginID:      "exec",
+		PluginVersion: "1.0.0",
+		Role:          plugin.RoleSource,
+		InputType:     plugin.TypeNone,
+		OutputType:    plugin.TypeStructured,
+		Tags:          []string{"exec", "external-plugin", "ndjson"},
 	}
 }

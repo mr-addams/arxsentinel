@@ -88,7 +88,14 @@ import (
 	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
 	_ "github.com/mr-addams/arxsentinel/pkg/executor/nginx"
 	_ "github.com/mr-addams/arxsentinel/pkg/processor"
+	pkgsinkfile "github.com/mr-addams/arxsentinel/pkg/sink/file"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/exec"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/file"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/stdin"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
+	_ "github.com/mr-addams/arxsentinel/pkg/sink/exec"
+	_ "github.com/mr-addams/arxsentinel/pkg/sink/sentinel"
+	_ "github.com/mr-addams/arxsentinel/pkg/sink/stdout"
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -664,7 +671,7 @@ func runPipeline(
 			// Reload FileSinks for log rotation.
 			// Sources are NOT restarted — they run continuously across reloads.
 			for _, sink := range pipe.Sinks {
-				if fs, ok := sink.(*output.FileSink); ok {
+				if fs, ok := sink.(*pkgsinkfile.FileSink); ok {
 					if reloadErr := fs.Reload(); reloadErr != nil {
 						utils.Log("CONFIG", fmt.Sprintf("%s: SIGHUP sink reload error: %v", logTag, reloadErr), "warn")
 					}

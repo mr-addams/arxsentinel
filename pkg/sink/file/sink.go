@@ -1,21 +1,4 @@
-// ========================== Module output/file =========================================
-//   FileSink — writes threat events to a file in fail2ban or json format.
-//   Supports SIGHUP log rotation via Reload().
-//
-//   WHAT IS HERE:
-//     - FileSink — implements plugin.Sink, writes to a local file
-//     - Reload() — reopens the file after logrotate (mv + copytruncate)
-//
-//   WHAT IS NOT HERE:
-//     - StdoutSink (stdout.go)
-//     - Format functions (format.go)
-//     - ThreatLogger backward-compat wrapper (logger.go)
-//
-//   SIGHUP RELOAD:
-//     main.go calls Reload() from the fan-out goroutine on SIGHUP.
-//     mu protects the file descriptor swap — Write() and Reload() are serialised.
-
-package output
+package file
 
 import (
 	"fmt"
@@ -24,19 +7,14 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/mr-addams/arxsentinel/internal/core/output"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
-	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 )
 
-// FileSink writes threat events to a file.
-//
-// Supported formats: "fail2ban" (text line) or "json" (JSON envelope + newline).
-// The file is created if it does not exist; directories must already exist.
 type FileSink struct {
-	plugin.NopManifest
 	name   string
 	path   string
-	format string // "fail2ban" | "json"
+	format string
 
 	mu sync.Mutex
 	f  *os.File
@@ -46,8 +24,6 @@ type FileSink struct {
 	errors        atomic.Int64
 }
 
-// NewFileSink creates a FileSink and opens the output file.
-// format must be "fail2ban" or "json"; an error is returned for unknown formats.
 func NewFileSink(path, format string) (*FileSink, error) {
 	if path == "" {
 		return nil, fmt.Errorf("file sink: path must not be empty")
@@ -69,7 +45,6 @@ func NewFileSink(path, format string) (*FileSink, error) {
 
 func (s *FileSink) Name() string { return s.name }
 
-// Close flushes and closes the underlying file.
 func (s *FileSink) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -82,7 +57,6 @@ func (s *FileSink) Close() error {
 	return err
 }
 
-// Stats returns a point-in-time snapshot of operational counters.
 func (s *FileSink) Stats() plugin.SinkStats {
 	return plugin.SinkStats{
 		EventsWritten: s.eventsWritten.Load(),
@@ -91,27 +65,25 @@ func (s *FileSink) Stats() plugin.SinkStats {
 	}
 }
 
-// Write formats and writes a ThreatEvent to the file.
-// Safe for concurrent calls — protected by mu.
 func (s *FileSink) Write(event plugin.ThreatEvent) error {
 	var line []byte
 	switch s.format {
 	case "json":
-		b, err := FormatJSON(event)
+		b, err := output.FormatJSON(event)
 		if err != nil {
 			s.errors.Add(1)
 			return fmt.Errorf("file sink %s: json marshal: %w", s.path, err)
 		}
 		line = append(b, '\n')
 	case "sentinel-threat":
-		b, err := FormatSentinelThreat(event, "")
+		b, err := output.FormatSentinelThreat(event, "")
 		if err != nil {
 			s.errors.Add(1)
 			return fmt.Errorf("file sink %s: sentinel-threat marshal: %w", s.path, err)
 		}
 		line = append(b, '\n')
-	default: // "fail2ban"
-		line = []byte(FormatFailban(event) + "\n")
+	default:
+		line = []byte(output.FormatFailban(event) + "\n")
 	}
 
 	s.mu.Lock()
@@ -129,9 +101,6 @@ func (s *FileSink) Write(event plugin.ThreatEvent) error {
 	return nil
 }
 
-// Reload reopens the underlying file after logrotate.
-// Called from the SIGHUP fan-out goroutine in main.go.
-// Flushes and closes the old file descriptor before opening the new one.
 func (s *FileSink) Reload() error {
 	newF, err := openSinkFile(s.path)
 	if err != nil {
@@ -147,7 +116,6 @@ func (s *FileSink) Reload() error {
 	return nil
 }
 
-// openSinkFile opens path for appending, creating it and its parent directory if needed.
 func openSinkFile(path string) (*os.File, error) {
 	if err := ensureSinkDir(path); err != nil {
 		return nil, err
@@ -155,19 +123,10 @@ func openSinkFile(path string) (*os.File, error) {
 	return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 }
 
-// ensureSinkDir creates the parent directory of path if it does not exist.
 func ensureSinkDir(path string) error {
 	dir := filepath.Dir(path)
 	if dir == "" || dir == "." {
 		return nil
 	}
 	return os.MkdirAll(dir, 0755)
-}
-
-// init registers FileSink with the global registry.
-// Called at module init time, making "file" available as a sink type in YAML config.
-func init() {
-	pkgsink.Register("file", func(cfg pkgsink.SinkConfig) (plugin.Sink, error) {
-		return NewFileSink(cfg.Path, cfg.Format)
-	})
 }

@@ -29,7 +29,6 @@ import (
 //
 // Concurrent Write() calls are protected by a mutex on the ManagedProcess.
 type ExecSink struct {
-	plugin.NopManifest
 	name          string
 	proc          *ManagedProcess
 	eventsWritten atomic.Int64
@@ -106,5 +105,16 @@ func (s *ExecSink) Stats() plugin.SinkStats {
 		EventsWritten: s.eventsWritten.Load(),
 		Dropped:       0, // Phase 1 doesn't have async buffering
 		Errors:        s.errors.Load(),
+	}
+}
+
+func (s *ExecSink) Manifest() plugin.Manifest {
+	return plugin.Manifest{
+		PluginID:      "exec",
+		PluginVersion: "1.0.0",
+		Role:          plugin.RoleSink,
+		InputType:     plugin.TypeScoredEvent,
+		OutputType:    plugin.TypeNone,
+		Tags:          []string{"exec", "external", "plugin"},
 	}
 }

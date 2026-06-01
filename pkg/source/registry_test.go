@@ -13,7 +13,6 @@ import (
 // ── Mock Source for testing ────────────────────────────────────────────────────────────
 
 type mockSource struct {
-	plugin.NopManifest
 	name  string
 	stats plugin.SourceStats
 }
@@ -21,6 +20,8 @@ type mockSource struct {
 func (m *mockSource) Name() string {
 	return m.name
 }
+
+func (m *mockSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
 
 func (m *mockSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
 	<-ctx.Done()

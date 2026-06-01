@@ -32,7 +32,6 @@ import (
 // If the plugin crashes or stdout closes unexpectedly, Run() returns an error
 // and increments the Errors counter.
 type ExecExecutor struct {
-	plugin.NopManifest
 	name     string
 	execType string
 	proc     *ManagedProcess
@@ -67,6 +66,16 @@ func (e *ExecExecutor) Type() string { return e.execType }
 // Name returns the executor name as registered in the plugin registry.
 func (e *ExecExecutor) Name() string {
 	return e.name
+}
+
+// Manifest returns the plugin's identity and data contract.
+func (e *ExecExecutor) Manifest() plugin.Manifest {
+	return plugin.Manifest{
+		Role:       plugin.RoleExecutor,
+		InputType:  plugin.TypeScoredEvent,
+		OutputType: plugin.TypeNone,
+		Tags:       []string{"exec", "external-plugin", "ndjson"},
+	}
 }
 
 // Run reads ThreatEvents from the source via Pop and delegates to executePlugin.

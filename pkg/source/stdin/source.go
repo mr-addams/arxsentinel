@@ -1,4 +1,4 @@
-// ========================== Module input/stdin =========================================
+// ========================== Module pkg/source/stdin =======================================
 //   StdinSource — reads log lines from os.Stdin and delivers parsed *plugin.LogEntry
 //   values to the pipeline. Designed for container / pipe mode:
 //     docker logs nginx | arxsentinel --input=stdin
@@ -7,10 +7,10 @@
 //     - StdinSource — bufio.Scanner over os.Stdin; implements plugin.Source
 //
 //   WHAT IS NOT HERE:
-//     - File input (file.go)
+//     - File input (pkg/source/file/)
 //     - Parsing logic (internal/core/parser/)
 
-package input
+package stdin
 
 import (
 	"bufio"
@@ -30,13 +30,15 @@ import (
 // Matches maxLineSize in TailReader — both must handle the same maximum line length.
 const stdinScanBufSize = 64 * 1024 // 64 KB
 
+// defaultLinesBufSize — buffer size for scanned lines channel.
+const defaultLinesBufSize = 1000
+
 // StdinSource reads log lines from os.Stdin (or any io.Reader) and delivers
 // parsed *LogEntry values to the pipeline.
 //
 // Run completes on EOF or ctx cancellation — whichever comes first.
 // In container / pipe mode EOF is the normal termination signal.
 type StdinSource struct {
-	plugin.NopManifest
 	name  string
 	par   parser.Parser
 	logFn func(tag, msg, level string) // nil-safe; defaults to utils.Log

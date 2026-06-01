@@ -1,4 +1,4 @@
-package output
+package sentinel
 
 import (
 	"context"
@@ -9,11 +9,9 @@ import (
 	"github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
-	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 )
 
 type SentinelThreatSink struct {
-	plugin.NopManifest
 	name    string
 	q       queue.Queue
 	dropped atomic.Int64
@@ -54,10 +52,4 @@ func (s *SentinelThreatSink) Stats() plugin.SinkStats {
 	return plugin.SinkStats{
 		Dropped: s.dropped.Load(),
 	}
-}
-
-func init() {
-	pkgsink.Register("sentinel-threat", func(cfg pkgsink.SinkConfig) (plugin.Sink, error) {
-		return NewSentinelThreatSink(cfg.Name, 0)
-	})
 }

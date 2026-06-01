@@ -38,12 +38,13 @@ func (m *mockScoreState) SetScore(score int, at time.Time) { m.score = score; m.
 // fixedDetector returns a fixed DetectResult regardless of input.
 // Allows precise control over score contribution when testing scorer.
 type fixedDetector struct {
-	plugin.NopManifest
 	name   string
 	result detector.DetectResult
 }
 
 func (d *fixedDetector) Name() string { return d.name }
+
+func (d *fixedDetector) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (d *fixedDetector) Detect(_ detector.IPView, _ *parser.LogEntry) detector.DetectResult {
 	return d.result
 }

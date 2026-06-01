@@ -1,4 +1,4 @@
-package output_test
+package stdout_test
 
 import (
 	"encoding/json"
@@ -6,20 +6,33 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/output"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arxsentinel/pkg/sink/stdout"
 )
 
-// captureStdout creates a pipe, injects it into StdoutSink for testing.
-// Returns the sink with a custom writer — tests must not use NewStdoutSink directly
-// to avoid polluting the test output.
-func newTestStdoutSink(format string) (*output.StdoutSink, *os.File, *os.File, error) {
+var (
+	ts        = time.Date(2026, 4, 5, 14, 33, 12, 0, time.UTC)
+	testEvent = plugin.ThreatEvent{
+		Timestamp:  ts,
+		Level:      "THREAT",
+		Stream:     "frontend",
+		Source:     "file:/var/log/nginx/access.log",
+		SourceType: "file",
+		IP:         "1.2.3.4",
+		Score:      85,
+		Modules:    []string{"probe", "rate"},
+		Reason:     `probe:env:3,rate:142rps`,
+	}
+)
+
+func newTestStdoutSink(format string) (*stdout.StdoutSink, *os.File, *os.File, error) {
 	pr, pw, err := os.Pipe()
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	sink, err := output.NewStdoutSinkWithWriter(pw, format)
+	sink, err := stdout.NewStdoutSinkWithWriter(pw, format)
 	if err != nil {
 		pr.Close()
 		pw.Close()
@@ -115,8 +128,22 @@ func TestStdoutSink_ConcurrentWrites(t *testing.T) {
 }
 
 func TestStdoutSink_InvalidFormat(t *testing.T) {
-	_, err := output.NewStdoutSink("nope")
+	_, err := stdout.NewStdoutSink("nope")
 	if err == nil {
 		t.Fatal("want error for unknown format, got nil")
+	}
+}
+
+func TestStdoutSink_Manifest(t *testing.T) {
+	sink, err := stdout.NewStdoutSink("json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := sink.Manifest()
+	if m.PluginID != "stdout" {
+		t.Errorf("want PluginID=stdout, got %q", m.PluginID)
+	}
+	if m.Role != "sink" {
+		t.Errorf("want Role=sink, got %q", m.Role)
 	}
 }

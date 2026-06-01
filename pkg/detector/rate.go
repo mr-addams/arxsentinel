@@ -28,7 +28,6 @@ func init() {
 
 // rateDetector detects anomalous request rate over a sliding window.
 type rateDetector struct {
-	plugin.NopManifest
 	thresholdRPS float64       // threshold in req/s: Threshold / window.Seconds()
 	window       time.Duration // ApproxRate window
 	score        int
@@ -74,7 +73,6 @@ func (d *rateDetector) Detect(sv plugin.IPView, _ *plugin.LogEntry) plugin.Detec
 // disabledRateDetector is returned when window <= 0 (misconfiguration).
 // Never fires; Name() still returns "rate" so it appears in detector lists.
 type disabledRateDetector struct {
-	plugin.NopManifest
 }
 
 func (d *disabledRateDetector) Name() string { return "rate" }

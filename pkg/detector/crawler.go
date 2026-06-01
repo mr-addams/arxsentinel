@@ -52,7 +52,6 @@ var numericSuffixRE = regexp.MustCompile(`^(.*/|/)(\d+)/?$`)
 
 // crawlerDetector detects sequential numeric URL traversal.
 type crawlerDetector struct {
-	plugin.NopManifest
 	minSequential int
 	score         int
 }

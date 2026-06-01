@@ -11,7 +11,6 @@ import (
 // ── Mock Sink for testing ──────────────────────────────────────────────────────────────
 
 type mockSink struct {
-	plugin.NopManifest
 	name  string
 	stats plugin.SinkStats
 }
@@ -19,6 +18,8 @@ type mockSink struct {
 func (m *mockSink) Name() string {
 	return m.name
 }
+
+func (m *mockSink) Manifest() plugin.Manifest { return plugin.Manifest{} }
 
 func (m *mockSink) Write(event plugin.ThreatEvent) error {
 	return nil
