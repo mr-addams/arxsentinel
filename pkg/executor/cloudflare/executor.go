@@ -87,28 +87,13 @@ func NewCloudflareExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 		client = NewHTTPCFClient(parsed.AccountID, parsed.APIToken)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	listID, err := client.FindOrCreateList(ctx, parsed.ListName)
-	if err != nil {
-		return nil, fmt.Errorf("cloudflare: new executor: %w", err)
-	}
-
 	exec := &CloudflareExecutor{
 		name:       cfg.Name,
 		execType:   "cloudflare",
 		cfg:        parsed,
 		client:     client,
-		listID:     listID,
 		banned:     make(map[string]banRecord),
 		instanceID: LoadInstanceID(&parsed),
-	}
-
-	syncCtx, syncCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer syncCancel()
-	if err := exec.syncExisting(syncCtx); err != nil {
-		return nil, fmt.Errorf("cloudflare: new executor: %w", err)
 	}
 
 	return exec, nil
@@ -146,6 +131,28 @@ func (e *CloudflareExecutor) Type() string {
 // to the Cloudflare API when batch_size is reached or flush_interval fires.
 // Also runs a periodic sweep to remove expired bans.
 func (e *CloudflareExecutor) Run(ctx context.Context, source plugin.EventSource) error {
+	// FindOrCreateList + initial sync moved here from the constructor so that
+	// constructing the executor (e.g. to read its Manifest) performs no network I/O.
+	// FindOrCreateList is fatal: without a list ID the executor cannot operate.
+	// syncExisting is non-fatal: a transient outage at startup must not crash
+	// the daemon — the ban list is rebuilt as events arrive and on the next sweep.
+	//
+	// Bounded startup context: the original constructor wrapped these calls in a
+	// 30s timeout. Preserve that so a network hang cannot block daemon startup
+	// indefinitely; cancellation still propagates from the Run ctx.
+	startupCtx, startupCancel := context.WithTimeout(ctx, 30*time.Second)
+	listID, err := e.client.FindOrCreateList(startupCtx, e.cfg.ListName)
+	if err != nil {
+		startupCancel()
+		utils.Log("EXECUTOR", fmt.Sprintf("cloudflare: find/create list failed: %v", err), "error")
+		return fmt.Errorf("cloudflare: run: find/create list: %w", err)
+	}
+	e.listID = listID // must be set before syncExisting/flush/sweep use it
+	if err := e.syncExisting(startupCtx); err != nil {
+		utils.Log("EXECUTOR", fmt.Sprintf("cloudflare: initial sync failed: %v", err), "warning")
+	}
+	startupCancel()
+
 	buffer := make([]plugin.ThreatEvent, 0, e.cfg.BatchSize)
 	ticker := time.NewTicker(e.cfg.FlushInterval)
 	defer ticker.Stop()

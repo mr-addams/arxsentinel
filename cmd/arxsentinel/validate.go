@@ -12,7 +12,6 @@ import (
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
-	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/pipeline"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
@@ -92,16 +91,16 @@ func collectManifests(cfg config.Config) []plugin.Manifest {
 		}
 	}
 
-	// Executors
-	for _, ex := range cfg.Executors {
-		p, err := pkgexecutor.Build(pkgexecutor.ExecutorConfig{Name: ex.Name, Type: ex.Type})
-		if err != nil || p == nil {
-			continue
-		}
-		if m := p.Manifest(); m.Role != "" {
-			manifests = append(manifests, m)
-		}
-	}
+	// Executors are intentionally NOT added to this linear chain.
+	//
+	// They are terminal consumers fed via the NamedChannelHub, not a linear
+	// continuation of the detector stage: the core Scorer (not a plugin)
+	// transforms detector output (Structured) into ScoredEvent, which sinks and
+	// executors then consume in a fan-out. Modelling that correctly requires a
+	// topology-aware validator (synthetic Scorer transform + independent
+	// validation of each terminal consumer) — tracked as TECH_DEBT [046-2].
+	// Including executors in the naive linear chain produced false-positive
+	// rejections (detector 'structured' vs executor 'scored_event').
 
 	return manifests
 }

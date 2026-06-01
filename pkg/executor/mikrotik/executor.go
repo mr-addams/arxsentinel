@@ -36,10 +36,6 @@ func NewMikroTikExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 		banned: make(map[string]banRecord),
 	}
 
-	if err := exec.syncExisting(context.Background()); err != nil {
-		return nil, fmt.Errorf("mikrotik: new executor: sync existing: %w", err)
-	}
-
 	return exec, nil
 }
 
@@ -82,6 +78,13 @@ func (e *MikroTikExecutor) Stats() plugin.ExecutorStats {
 // accumulates them in a buffer, and flushes to the RouterOS address-list.
 // Also runs a periodic sweep to remove expired bans.
 func (e *MikroTikExecutor) Run(ctx context.Context, source plugin.EventSource) error {
+	// Initial sync moved here from the constructor so that constructing the executor
+	// (e.g. to read its Manifest in pipeline validation) performs no network I/O.
+	// Non-fatal: a transient RouterOS outage at startup must not crash the daemon —
+	// the ban list is rebuilt as events arrive and on the next sweep.
+	if err := e.syncExisting(ctx); err != nil {
+		utils.Log("EXECUTOR", fmt.Sprintf("mikrotik: initial sync failed: %v", err), "warning")
+	}
 	buffer := make([]plugin.ThreatEvent, 0, e.cfg.BatchSize)
 	flushInterval := e.cfg.FlushInterval
 	if flushInterval <= 0 {

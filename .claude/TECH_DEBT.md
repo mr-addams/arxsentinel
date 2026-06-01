@@ -171,4 +171,42 @@ severity, description, and proposed resolution.
   instance — e.g. register a `Manifest` alongside each factory, or split a side-effect-free
   `Manifest()` from the network-touching constructor. Reading a static contract must never
   require I/O.
+- **Resolution (partial):** Constructors are now side-effect-free. `NewMikroTikExecutor` and
+  `NewCloudflareExecutor` no longer do network I/O — `syncExisting` (and cloudflare's
+  `FindOrCreateList`) moved into `Run()` start. Building an executor purely to read its
+  Manifest is now safe and offline. Consequence (1) is resolved.
+- **Status:** partially resolved (Flow #046). Consequence (2) — actually including executors
+  in validation — is blocked by [046-2] (the validator's linear model can't represent the
+  executor stage). Constructing executors with real config now works offline, but feeding
+  them into the naive chain produces false positives; deferred until the validator is
+  topology-aware.
+
+---
+
+### [046-2] Pipeline validator uses a naive linear chain; can't model real topology
+
+- **Flow:** #046 — Plugin Framework: Manifest, Validator, MikroTik
+- **Severity:** medium
+- **Area:** `cmd/arxsentinel/validate.go` (`collectManifests`), `pkg/pipeline/validator.go`
+- **Problem:** `collectManifests()` builds one flat linear chain
+  `Source → Detector → Sink → Executor` and `Validate()` checks adjacent
+  `OutputType[i] == InputType[i+1]`. This does not match the real data flow:
+  1. The core **Scorer** (not a plugin) transforms detector output `Structured` into
+     `ScoredEvent`. It is invisible to the validator, so a `Detector(→Structured)` placed
+     directly before a `Sink`/`Executor(ScoredEvent→)` is a false mismatch.
+  2. Sinks and executors are **terminal fan-out** consumers of `ScoredEvent` (executors via
+     the NamedChannelHub), not a linear sequence. Chaining `Sink(→None) → Sink(ScoredEvent→)`
+     or `Sink → Executor` is also a false mismatch.
+  The flaw was latent because executors were excluded (see [046-1]) and most configs put
+  sinks under `streams[].pipelines[].outputs` (empty top-level `cfg.Outputs`), so the chain
+  was effectively just `Source → Detector` and passed trivially. Including executors
+  ([046-1] attempt) surfaced it: every executor config was rejected at fail-fast startup.
+- **Proposed resolution:** Make the validator topology-aware:
+  1. Build the linear **producing spine**: `Source → Processor → Detector → synthetic Scorer
+     (Structured→ScoredEvent)`.
+  2. Validate each **terminal consumer** (every sink, every executor) independently against
+     the spine's final output type (`ScoredEvent`, or `TypeAny`), instead of chaining them
+     to each other.
+  Then re-enable executor inclusion in `collectManifests` (the `Config: ex.Config` line that
+  was reverted) to close [046-1] consequence (2).
 - **Status:** open
