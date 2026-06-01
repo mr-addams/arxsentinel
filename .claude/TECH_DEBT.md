@@ -151,3 +151,24 @@ severity, description, and proposed resolution.
   name is not registered but `cfg.Exec` is set. Plugin binary path configured via `exec:` field.
   Full gRPC/WASM tracked as [036-gRPC] (long-term).
 - **Status:** resolved (Flow #036)
+
+---
+
+### [046-1] Manifest reading requires constructing a live plugin instance
+
+- **Flow:** #046 — Plugin Framework: Manifest, Validator, MikroTik
+- **Severity:** medium
+- **Area:** `cmd/arxsentinel/validate.go` (`collectManifests`), all plugin constructors
+- **Problem:** `collectManifests()` builds a live plugin instance just to read its static
+  `Manifest()`. For executors this means calling the constructor — e.g. `NewMikroTikExecutor`
+  runs `syncExisting()` which makes a network call to RouterOS. Two consequences:
+  1. `arxsentinel validate` against a config with an unreachable executor target would hang
+     or fail, even though validation should be a static, offline check.
+  2. Executors are silently skipped in pipeline validation because `collectManifests` passes
+     no `Config` → `parseConfig` errors on empty host → Build fails → `continue`. So executor
+     InputType compatibility is never actually validated.
+- **Proposed resolution:** Expose manifests from the registry without constructing a live
+  instance — e.g. register a `Manifest` alongside each factory, or split a side-effect-free
+  `Manifest()` from the network-touching constructor. Reading a static contract must never
+  require I/O.
+- **Status:** open
