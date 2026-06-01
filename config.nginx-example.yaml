@@ -447,14 +447,24 @@ whitelist:
       verify_method: ip_ranges
 
     - name: gptbot
-      ua_patterns: ["GPTBot"]
-      rdns_domains: [".openai.com"]
-      verify_method: rdns
+      ua_patterns: ["GPTBot", "OAI-SearchBot", "ChatGPT-User"]
+      verify_method: ua_only
+      exempt_detectors: ["noasset"]
 
     - name: claudebot
       ua_patterns: ["ClaudeBot", "Claude-Web", "anthropic-ai"]
       rdns_domains: [".anthropic.com"]
       verify_method: rdns
+
+    - name: amazonbot
+      ua_patterns: ["Amazonbot"]
+      verify_method: ua_only
+      exempt_detectors: ["noasset"]
+
+    - name: meta-crawler
+      ua_patterns: ["meta-externalagent"]
+      verify_method: ua_only
+      exempt_detectors: ["noasset"]
 
   # Custom whitelist: add your own IPs, subnets, UA patterns.
   # Кастомный whitelist: добавьте свои IP, подсети, UA-паттерны.

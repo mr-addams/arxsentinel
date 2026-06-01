@@ -752,8 +752,13 @@ type detectorShared struct {
 func (s detectorShared) Blocklist() pkgdetector.Matcher { return s.blocklist }
 
 // bridgeShared wraps SharedResources into the pkgdetector.SharedResources interface.
-// Returns nil Blocklist when shared.BlocklistManager is nil.
+// Returns nil when shared.BlocklistManager is nil so detector factories (badbot) get
+// a nil SharedResources and fall back to noopMatcher instead of a non-nil interface
+// wrapping a nil *blocklist.Manager (which would panic on MatchResult).
 func bridgeShared(shared SharedResources) pkgdetector.SharedResources {
+	if shared.BlocklistManager == nil {
+		return nil
+	}
 	return detectorShared{blocklist: shared.BlocklistManager}
 }
 
@@ -1114,6 +1119,7 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	// DNS request is only made on the first occurrence of a new IP with a bot UA.
 	// verifyCtx with timeout: limits pipeline blocking (see KNOWN LIMITATION above).
 	isFakeBot := false
+	var exemptSet map[string]struct{}
 	if _, botCfg, matched := pipe.Matcher.MatchBot(entry.UserAgent); matched {
 		verifyCtx, cancelVerify := context.WithTimeout(ctx, pipe.DNSVerifyTimeout)
 		verified, fake := pipe.Verifier.Verify(verifyCtx, entry.RealIP, botCfg)
@@ -1124,6 +1130,16 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 			return
 		}
 		isFakeBot = fake
+
+		// UA-only bot (no rDNS, no IP ranges): verified=false, isFakeBot=false.
+		// Build exemptSet from botCfg.ExemptDetectors so certain detectors are skipped.
+		if !verified && !isFakeBot && matched && len(botCfg.ExemptDetectors) > 0 {
+			exemptSet = make(map[string]struct{}, len(botCfg.ExemptDetectors))
+			for _, name := range botCfg.ExemptDetectors {
+				exemptSet[name] = struct{}{}
+			}
+			utils.Log("WHITELIST", fmt.Sprintf("ua_only bot %s: exempt detectors %v", entry.RealIP, botCfg.ExemptDetectors), "debug")
+		}
 	}
 
 	// ── Step 4: IP state tracking ─────────────────────────────────────────────────────
@@ -1148,7 +1164,7 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	// ── Scoring → sinks ──────────────────────────────────────────────────────────────
 	// Evaluate: decay accumulated score + run detectors + issue verdict.
 	// Returned *IPState implements detector.ScoreAccess.
-	level, score, modules, reason := pipe.Scorer.Evaluate(ipState, entry)
+	level, score, modules, reason := pipe.Scorer.Evaluate(ipState, entry, exemptSet)
 
 	// Write to sinks and record metrics only on WARN or THREAT.
 	if level == "" {
