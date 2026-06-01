@@ -80,7 +80,7 @@ func TestE2E(t *testing.T) {
 			continue
 		}
 		ipState := tracker.Update(entry)
-		level, score, modules, reason := sc.Evaluate(ipState, entry)
+		level, score, modules, reason := sc.Evaluate(ipState, entry, nil)
 		threatLogger.Log(entry.RealIP, score, level, modules, reason)
 	}
 	if err := scan.Err(); err != nil {
@@ -164,7 +164,7 @@ func TestE2ESynthetic(t *testing.T) {
 			continue
 		}
 		ipState := tracker.Update(entry)
-		level, score, modules, reason := sc.Evaluate(ipState, entry)
+		level, score, modules, reason := sc.Evaluate(ipState, entry, nil)
 		threatLogger.Log(entry.RealIP, score, level, modules, reason)
 	}
 	if err := scan.Err(); err != nil {
@@ -389,7 +389,7 @@ func runPipelineFromFile(t *testing.T, logPath string, cfg config.Config, matche
 			continue
 		}
 		ipState := tracker.Update(entry)
-		level, score, modules, reason := sc.Evaluate(ipState, entry)
+		level, score, modules, reason := sc.Evaluate(ipState, entry, nil)
 		threatLogger.Log(entry.RealIP, score, level, modules, reason)
 	}
 	if err := scan.Err(); err != nil {

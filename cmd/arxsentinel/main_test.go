@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -461,4 +462,156 @@ func TestFindPipelineCfg_FallbackOnMissing(t *testing.T) {
 	if got2.Name != "fallback" {
 		t.Errorf("findPipelineCfg out-of-range index: got %q, want \"fallback\"", got2.Name)
 	}
+}
+
+// ========================== UA-only bot pipeline tests (Flow 044) =======================
+
+// TestPipeline_BotExemptDetector verifies that a UA-only bot with ExemptDetectors=["noasset"]
+// does not get scored by the noasset detector, but still gets scored by other detectors (e.g. rate).
+func TestPipeline_BotExemptDetector(t *testing.T) {
+	cfg := loadMinimalConfig(t)
+	// Ensure rate detector fires within a few requests for the test.
+	cfg.Detectors.Rate.Threshold = 5
+	cfg.Detectors.Rate.Enabled = true
+	cfg.Detectors.NoAsset.Enabled = true
+
+	nopLog := func(_, _, _ string) {}
+	tracker := state.NewTracker(cfg, nopLog)
+	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
+	if err != nil {
+		t.Fatalf("whitelist.NewMatcher: %v", err)
+	}
+
+	detectors := buildPipelineDetectors(cfg, config.PipelineConfig{}, SharedResources{})
+	sc := scorer.NewScorer(cfg.Scoring, detectors, nopLog)
+
+	verifier := whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, nopLog)
+
+	p := &parser.CombinedParser{}
+
+	// Send 5 requests from the same IP with ClaudeBot UA.
+	// claudebot matches → ua_only → verified=false, isFakeBot=false → exemptSet={"noasset"}
+	for i := range 5 {
+		rawLine := fmt.Sprintf(`1.2.3.4 - - [01/Jun/2026:10:00:%02d +0000] "GET /page%d HTTP/1.1" 200 512 "-" "ClaudeBot/1.0" "1.2.3.4"`, i, i)
+		entry, ok := p.Parse(rawLine)
+		if !ok {
+			t.Fatalf("iteration %d: failed to parse log line", i)
+		}
+
+		_, botCfg, matched := matcher.MatchBot(entry.UserAgent)
+		if !matched {
+			t.Fatalf("iteration %d: ClaudeBot UA did not match any bot", i)
+		}
+		if botCfg.Name != "claudebot" {
+			t.Fatalf("iteration %d: expected claudebot match, got %q", i, botCfg.Name)
+		}
+
+		ctx := context.Background()
+		verified, isFakeBot := verifier.Verify(ctx, entry.RealIP, botCfg)
+		if verified || isFakeBot {
+			t.Fatalf("iteration %d: ua_only expected (false, false), got (%v, %v)", i, verified, isFakeBot)
+		}
+
+		var exemptSet map[string]struct{}
+		if !verified && !isFakeBot && len(botCfg.ExemptDetectors) > 0 {
+			exemptSet = make(map[string]struct{}, len(botCfg.ExemptDetectors))
+			for _, name := range botCfg.ExemptDetectors {
+				exemptSet[name] = struct{}{}
+			}
+		}
+		if exemptSet == nil {
+			t.Fatal("ClaudeBot should have exempt_detectors configured, got nil exemptSet")
+		}
+
+		ipState := tracker.Update(entry)
+		_, _, modules, _ := sc.Evaluate(ipState, entry, exemptSet)
+
+		for _, mod := range modules {
+			if mod == "noasset" {
+				t.Errorf("iteration %d: noasset detector fired despite being in exemptSet", i)
+			}
+		}
+	}
+
+	t.Log("Bot exempt detector test passed: noasset not fired for ClaudeBot")
+}
+
+// TestPipeline_FakeBotStillCaught verifies that a fake ClaudeBot (high request rate)
+// is still caught by the rate detector even though noasset is exempted.
+func TestPipeline_FakeBotStillCaught(t *testing.T) {
+	cfg := loadMinimalConfig(t)
+	// Low rate threshold so burst triggers quickly.
+	cfg.Detectors.Rate.Threshold = 3
+	cfg.Detectors.Rate.Enabled = true
+	cfg.Detectors.NoAsset.Enabled = true
+	cfg.Scoring.AlertThreshold = 10
+
+	nopLog := func(_, _, _ string) {}
+	tracker := state.NewTracker(cfg, nopLog)
+	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
+	if err != nil {
+		t.Fatalf("whitelist.NewMatcher: %v", err)
+	}
+
+	detectors := buildPipelineDetectors(cfg, config.PipelineConfig{}, SharedResources{})
+	sc := scorer.NewScorer(cfg.Scoring, detectors, nopLog)
+
+	verifier := whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, nopLog)
+
+	p := &parser.CombinedParser{}
+
+// Send 5 rapid requests from the same IP with ClaudeBot UA.
+	// Rate threshold = 3, so after ~3 requests the rate detector fires.
+	var lastScore int
+	var caughtByRate bool
+	now := time.Now()
+	for i := range 5 {
+		rawLine := fmt.Sprintf(`1.2.3.4 - - [%s] "GET /page%d HTTP/1.1" 200 512 "-" "ClaudeBot/1.0" "1.2.3.4"`,
+			now.Add(time.Duration(i)*time.Second).Format("02/Jan/2006:15:04:05 -0700"), i)
+		entry, ok := p.Parse(rawLine)
+		if !ok {
+			t.Fatalf("iteration %d: failed to parse log line", i)
+		}
+
+		_, botCfg, matched := matcher.MatchBot(entry.UserAgent)
+		if !matched {
+			t.Fatalf("iteration %d: ClaudeBot UA did not match", i)
+		}
+
+		ctx := context.Background()
+		verified, isFakeBot := verifier.Verify(ctx, entry.RealIP, botCfg)
+		if verified || isFakeBot {
+			t.Fatalf("iteration %d: ua_only expected (false, false)", i)
+		}
+
+		var exemptSet map[string]struct{}
+		if !verified && !isFakeBot && len(botCfg.ExemptDetectors) > 0 {
+			exemptSet = make(map[string]struct{}, len(botCfg.ExemptDetectors))
+			for _, name := range botCfg.ExemptDetectors {
+				exemptSet[name] = struct{}{}
+			}
+		}
+
+		ipState := tracker.Update(entry)
+		_, score, modules, _ := sc.Evaluate(ipState, entry, exemptSet)
+		lastScore = score
+
+		for _, mod := range modules {
+			if mod == "rate" {
+				caughtByRate = true
+			}
+			if mod == "noasset" {
+				t.Errorf("iteration %d: noasset fired despite exemptSet", i)
+			}
+		}
+	}
+
+	if !caughtByRate {
+		t.Errorf("rate detector did not fire after 5 rapid ClaudeBot requests (final score=%d)", lastScore)
+	}
+	if lastScore <= 0 {
+		t.Errorf("final score is 0 — fake bot was not caught by any detector")
+	}
+
+	t.Logf("Fake bot caught: score=%d, rate module triggered", lastScore)
 }
