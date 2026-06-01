@@ -453,6 +453,20 @@ executors:
       instance_id: ""                  # auto-detected from hostname if empty
       comment_extra: ""                # appended to ban comment: "sentinel-<id> <extra>"
 
+  # ── nginx geo-block executor ──────────────────────────────────────────────────────────
+  # - name: nginx-blocklist
+  #   type: nginx
+  #   sources:
+  #     - name: sentinel-cf
+  #   config:
+  #     list_file: /etc/nginx/conf.d/arxsentinel_autoblock.list
+  #     state_file: /var/lib/arxsentinel/nginx-state.json
+  #     min_level: THREAT
+  #     ttl: 24h
+  #     batch_size: 10
+  #     flush_interval: 30s
+  #     reload_cmd: "nginx -s reload"
+
 # ── inputs: universal log source syntax / универсальный синтаксис источников ────────────
 #
 # Alternative to general.log_file — supports multiple sources, stdin, and exec plugins.
