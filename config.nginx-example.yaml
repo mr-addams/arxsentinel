@@ -1,7 +1,7 @@
 # ========================== config.nginx-example.yaml ==================================
 #
 #   Quick-start config for nginx + fail2ban (or file-based threat log).
-#   Monitors one nginx access.log, detects threats, writes to threat log.
+#   Streams format: single nginx access.log → threat detection → file output.
 #   Installed as /etc/arxsentinel/config.yaml.example — copy to config.yaml to use.
 #
 #   Use case: single nginx host, no automated bans, log-based alerting only.
@@ -27,7 +27,6 @@
 
 # ── general: paths and infrastructure / пути и инфраструктура ───────────────────────────
 general:
-  log_file: /var/log/nginx/access.log    # path to nginx access.log (data source) / путь к nginx access.log (источник данных)
   pid_file: /run/arxsentinel/arxsentinel.pid  # daemon PID file; dir created by systemd RuntimeDirectory / PID-файл демона; директорию создаёт systemd RuntimeDirectory
 
   # Channel buffer between TailReader and line processor.
@@ -100,6 +99,27 @@ scoring:
   ban_threshold: 80         # score >= 80 → THREAT (Fail2Ban bans the IP / Fail2Ban банит IP)
   observation_window: "300s" # score accumulation window (5 min) / окно накопления очков (5 мин)
   decay: "linear"           # score decay algorithm toward end of window / алгоритм затухания очков к концу окна
+
+# ── streams: log source → threat detection → file output ──────────────────────────────────
+#
+# Single log source (nginx) → detection pipeline → threat log (fail2ban format).
+# Одиночный источник логов → детекция угроз → threat-лог (fail2ban формат).
+#
+# In streams format (recommended), log path is defined per stream input,
+# not in general.log_file. Multiple streams can read different log files independently.
+# В streams формате путь лога задаётся в stream input, не в general.log_file.
+# Можно задать несколько streams для разных источников логов.
+#
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined                  # nginx combined format; customize in parser: section below
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban                  # fail2ban-compatible: YYYY-MM-DDTHH:MM:SS ip=X ...
 
 # ── state: in-memory IP storage / in-memory хранилище IP ────────────────────────────────
 state:
@@ -484,6 +504,15 @@ whitelist:
 # ══════════════════════════════════════════════════════════════════════════════════════════
 
 # ── output: log file paths / пути к лог-файлам ──────────────────────────────────────────
+#
+# Legacy output: section (kept for backward compatibility with existing setups).
+# In streams format, outputs are defined per stream (see streams: above).
+# Streams outputs take precedence over this section.
+#
+# Спадщина: output section (сохранена для совместимости с существующими конфигами).
+# В streams формате выходы определяются для каждого stream (см. streams выше).
+# Outputs из streams имеют приоритет.
+#
 output:
   threat_log: /var/log/arxsentinel/threats.log    # threat log for Fail2Ban (production) / threat-лог для Fail2Ban (продакшн)
   operational_log: /var/log/arxsentinel/sentinel.log  # daemon operational log (production) / operational-лог демона (продакшн)
@@ -560,25 +589,29 @@ pipeline:
 #       instance_id: ""                    # auto-detected from hostname if empty
 #       comment_extra: ""                  # appended to ban comment: "sentinel-<id> <extra>"
 #
-# ── streams: multi-source monitoring ──────────────────────────────────────────────────
+# ── streams: reference syntax for advanced setups ───────────────────────────────────────
 #
-# Remove general.log_file above and uncomment streams: to monitor multiple log sources.
+# For automated threat response (Cloudflare), add a sentinel-threat output:
 #
 # streams:
 #   - name: main
 #     inputs:
 #       - type: file
 #         path: /var/log/nginx/access.log
+#         parser: combined
 #     outputs:
-#       - type: sentinel-threat
-#         name: sentinel-cf              # matches executor sources[].name above
 #       - type: file
 #         path: /var/log/arxsentinel/threats.log
 #         format: fail2ban
+#       - type: sentinel-threat
+#         name: sentinel-cf              # feeds THREAT events to executor
 #
-# ── inputs / outputs: universal I/O syntax ───────────────────────────────────────────
+# See config.cloudflare-example.yaml for a complete Cloudflare setup with executors.
 #
-# Use instead of general.log_file / output.threat_log for multi-source or exec plugin I/O.
+# ── inputs / outputs: universal I/O syntax (top-level, legacy) ─────────────────────────
+#
+# Alternative (not recommended): define inputs/outputs at the top level instead of in streams.
+# Use this only if you need to override all streams (rare).
 #
 # inputs:
 #   - type: file
