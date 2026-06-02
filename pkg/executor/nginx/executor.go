@@ -1,5 +1,5 @@
 // ========================== Package nginx ==========================
-//   NginxExecutor — manages a geo-block file for nginx: writes banned
+//   NginxExecutor — manages an IP blocklist file for nginx: writes banned
 //   IPs as "<ip> 1;" entries, supports TTL-based auto-sweep, dedup,
 //   and optional nginx reload via external command.
 //
@@ -39,7 +39,7 @@ const fileHeader = "# managed by arxsentinel — do not edit manually\n"
 
 // ++++++++++++++++++++++++++ Executor struct +++++++++++++++++++++++++++++++++
 
-// NginxExecutor manages a geo-block file for nginx.
+// NginxExecutor manages an IP blocklist file for nginx.
 // It receives ThreatEvents, deduplicates by IP, writes to a list file,
 // and optionally calls a reload command after each write.
 type NginxExecutor struct {

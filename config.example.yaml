@@ -458,7 +458,7 @@ output:
   #     instance_id: ""                  # auto-detected from hostname if empty
   #     comment_extra: ""                # appended to ban comment: "sentinel-<id> <extra>"
 
-  # ── nginx geo-block executor ──────────────────────────────────────────────────────────
+  # ── nginx blocklist executor ──────────────────────────────────────────────────────────
   # - name: nginx-blocklist
   #   type: nginx
   #   sources:

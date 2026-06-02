@@ -2,10 +2,11 @@
 
 ## Purpose
 
-The nginx Executor bans threat IPs by writing them into a geo-block file that nginx
-reads via the `geo` directive. It runs autonomously: a dedicated goroutine reads
-`ThreatEvent`s from a Named Channel Hub source, accumulates them, and writes a
-formatted list file. A periodic sweep removes expired bans based on a configurable TTL.
+The nginx Executor bans threat IPs by writing them into a plain IP blocklist file. arxsentinel
+only writes the file; you include it into your nginx configuration however suits your setup.
+It runs autonomously: a dedicated goroutine reads `ThreatEvent`s from a Named Channel Hub source,
+accumulates them, and writes a formatted list file. A periodic sweep removes expired bans
+based on a configurable TTL.
 
 **Quick start:** see `config.nginx-executor-example.yaml` for a minimal working configuration.
 
@@ -17,7 +18,7 @@ formatted list file. A periodic sweep removes expired bans based on a configurab
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `list_file` | `string` | *required* | Path to the geo-block file that nginx includes (e.g. `/etc/nginx/conf.d/arxsentinel_autoblock.list`) |
+| `list_file` | `string` | *required* | Path to the IP blocklist file that nginx includes (e.g. `/etc/nginx/conf.d/arxsentinel_autoblock.list`) |
 | `state_file` | `string` | `""` (disabled) | Optional path for JSON TTL persistence — saves `{"ip": "timestamp"}` after every flush/sweep |
 | `min_level` | `string` | `"THREAT"` | Minimum event level to act on: `INFO` \| `WARN` \| `THREAT` |
 | `ttl` | `duration` | `24h` | Auto-unban duration. Go format: `24h`, `1h30m`, `3600s` |
@@ -86,74 +87,11 @@ executors:
 
 ---
 
-## nginx setup
+## Using the blocklist file in nginx
 
-### geo block
-
-Add the following `geo` block to your nginx configuration. It maps banned IPs to a named
-variable (`$give_block`) which can be used in `server` blocks to return 444:
-
-```nginx
-# ── arxsentinel auto-block (do not edit manually) ──────────────────────────
-
-# Cloudflare CDN ranges (required for real_ip to work behind CF)
-set_real_ip_from 103.21.244.0/22;
-set_real_ip_from 103.22.200.0/22;
-set_real_ip_from 103.31.4.0/22;
-set_real_ip_from 104.16.0.0/12;
-set_real_ip_from 108.162.192.0/18;
-set_real_ip_from 131.0.72.0/22;
-set_real_ip_from 141.101.64.0/18;
-set_real_ip_from 162.158.0.0/15;
-set_real_ip_from 172.64.0.0/13;
-set_real_ip_from 173.245.48.0/20;
-set_real_ip_from 188.114.96.0/20;
-set_real_ip_from 190.93.240.0/20;
-set_real_ip_from 197.234.240.0/22;
-set_real_ip_from 198.41.128.0/17;
-
-# Private ranges (when not behind CDN)
-set_real_ip_from 10.0.0.0/8;
-set_real_ip_from 172.16.0.0/12;
-set_real_ip_from 192.168.0.0/16;
-
-real_ip_header X-Forwarded-For;
-real_ip_recursive on;
-
-# geo block — two files: manual bans (permanent) + auto-bans (TTL-managed)
-geo $give_block {
-    include /etc/nginx/conf.d/deny_by_hands.list;          # permanent manual bans
-    include /etc/nginx/conf.d/arxsentinel_autoblock.list;  # managed by arxsentinel
-
-    default 0;
-}
-```
-
-### server block usage
-
-In your `server` block, add:
-
-```nginx
-server {
-    # ...
-    if ($give_block) {
-        return 444;
-    }
-    # ...
-}
-```
-
-`return 444` is preferred over `deny` because:
-- **444** is a nginx-specific non-standard code that immediately closes the connection
-  without sending any response — the attacker sees a connection reset, not a "403 Forbidden".
-- `deny` (via `allow/deny` directives) produces a 403 response page, which wastes bandwidth,
-  reveals nginx is present, and can be used for DDoS amplification.
-- 444 is silent — no log noise from the blocked request itself (though nginx may still log it
-  depending on your `log_format`).
-
-The two-file approach (manual + auto) follows the separation of concerns from the
-architecture decision: manual bans in `deny_by_hands.list` live forever, auto-bans
-are TTL-managed and atomically overwritten by the executor.
+The executor writes banned IPs to `list_file` in the format `<ip> 1;` (one entry per line).
+How you include and apply this file in your nginx configuration is entirely up to you —
+arxsentinel does not prescribe a method.
 
 ---
 
@@ -261,5 +199,5 @@ but may live longer than configured until the next restart with a valid state fi
 
 - nginx not reloaded: set `reload_cmd: "nginx -s reload"` or reload manually.
 - Wrong `list_file` path: verify the path matches the `include` directive in nginx config.
-- `geo` block not configured: the file is useless without the corresponding `geo $give_block`
-  directive and `if ($give_block) { return 444; }` in the server block.
+- Blocklist file not included: the file is useless unless your nginx configuration
+  reads and applies it (however your nginx configuration consumes it).

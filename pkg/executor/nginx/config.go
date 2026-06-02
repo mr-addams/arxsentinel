@@ -1,5 +1,5 @@
 // ========================== Package nginx ==========================
-//   Configuration for nginx geo-block executor — parses from YAML/JSON
+//   Configuration for nginx blocklist executor — parses from YAML/JSON
 //   with validation of required fields and time.Duration handling.
 //
 //   WHAT IS HERE:
@@ -23,11 +23,11 @@ import (
 
 // ++++++++++++++++++++++++++ Configuration struct ++++++++++++++++++++++++++
 
-// Config contains settings for the nginx geo-block executor.
+// Config contains settings for the nginx blocklist executor.
 // All duration fields are tagged json:"-" because encoding/json cannot
 // convert strings to time.Duration — they are parsed separately in parseConfig.
 type Config struct {
-	// ListFile is the path to the geo-block file that nginx includes.
+	// ListFile is the path to the IP blocklist file that nginx includes.
 	// Required. Format: one "<ip> 1;" per line, managed by this executor.
 	ListFile string `json:"list_file" yaml:"list_file"`
 	// StateFile is the optional path for JSON TTL persistence.
