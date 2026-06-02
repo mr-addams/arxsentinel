@@ -12,6 +12,9 @@ builds:
     goarch:
       - amd64
       - arm64
+      - arm
+    goarm:
+      - "7"
     env:
       - CGO_ENABLED=0
     ldflags:
@@ -174,6 +177,7 @@ dockers_v2:
     platforms:
       - linux/amd64
       - linux/arm64
+      - linux/arm/v7
     # Disable provenance attestation: buildx adds it by default, and GHCR renders
     # it as a spurious "unknown/unknown" platform entry in the package page.
     flags:
