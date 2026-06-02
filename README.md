@@ -11,6 +11,8 @@
 **Security event pipeline for any HTTP server** — from a single nginx VPS to a full K8s cluster.  
 ~12 MB RAM · single binary · zero runtime deps · extends via exec+JSON plugins in any language.
 
+> **License:** ArxSentinel is distributed under the [Elastic License 2.0](LICENSE). Free use for your own infrastructure. Commercial use as a managed security or telemetry service, or as part of a managed service, requires a separate agreement. See [LICENSE](LICENSE) for details.
+
 ```
   [nginx / Apache / Caddy / ...]       [exec+JSON Source — any language]
            │                                        │
