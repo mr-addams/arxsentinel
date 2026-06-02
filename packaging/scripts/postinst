@@ -26,12 +26,9 @@ case "$1" in
                     "${SENTINEL_USER}"
         fi
 
-        # Fix nginx log directory access on RHEL-like systems.
-        # AlmaLinux/CentOS ship /var/log/nginx as drwxrwx--- nginx:root, which blocks
-        # inotify (tail.Watch) for any user outside the nginx group.
-        # Adding o+rx lets the daemon traverse and read the directory without changing
-        # ownership. Joining the nginx group provides an alternative path that respects
-        # the original ACL model — both fixes are applied so either approach works.
+        # Fix nginx log directory access: /var/log/nginx may be restricted to the nginx group.
+        # Adding o+rx lets the daemon traverse and read the directory without changing ownership.
+        # Joining the nginx group provides an alternative path respecting the original ACL model.
         if [ -d /var/log/nginx ]; then
             chmod o+rx /var/log/nginx
             usermod -aG nginx "${SENTINEL_USER}" 2>/dev/null || true
