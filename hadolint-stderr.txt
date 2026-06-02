@@ -1,3 +1,0 @@
-bfs: error: ./tests/integration/cf-api-mock/Dockerfile: -exec hadolint: No such file or directory.
-bfs: error: ./deploy/container/docker/Dockerfile.goreleaser: -exec hadolint: No such file or directory.
-bfs: error: ./deploy/container/docker/Dockerfile: -exec hadolint: No such file or directory.
