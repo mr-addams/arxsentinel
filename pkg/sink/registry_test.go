@@ -19,6 +19,8 @@ func (m *mockSink) Name() string {
 	return m.name
 }
 
+func (m *mockSink) Manifest() plugin.Manifest { return plugin.Manifest{} }
+
 func (m *mockSink) Write(event plugin.ThreatEvent) error {
 	return nil
 }

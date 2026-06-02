@@ -1,0 +1,1 @@
+cannot attach stdin to a TTY-enabled container because stdin is not a terminal

@@ -13,6 +13,7 @@ import (
 
 func init() {
 	executor.Register("nginx", newNginxFactory)
+	executor.RegisterManifest("nginx", (&NginxExecutor{}).Manifest())
 }
 
 // newNginxFactory creates an NginxExecutor from an ExecutorConfig.

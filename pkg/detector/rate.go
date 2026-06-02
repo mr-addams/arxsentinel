@@ -72,7 +72,8 @@ func (d *rateDetector) Detect(sv plugin.IPView, _ *plugin.LogEntry) plugin.Detec
 
 // disabledRateDetector is returned when window <= 0 (misconfiguration).
 // Never fires; Name() still returns "rate" so it appears in detector lists.
-type disabledRateDetector struct{}
+type disabledRateDetector struct {
+}
 
 func (d *disabledRateDetector) Name() string { return "rate" }
 func (d *disabledRateDetector) Detect(plugin.IPView, *plugin.LogEntry) plugin.DetectResult {

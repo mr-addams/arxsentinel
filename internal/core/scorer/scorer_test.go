@@ -9,6 +9,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/core/detector"
 	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 // ========================== Mock implementations ===========================================
@@ -42,6 +43,8 @@ type fixedDetector struct {
 }
 
 func (d *fixedDetector) Name() string { return d.name }
+
+func (d *fixedDetector) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (d *fixedDetector) Detect(_ detector.IPView, _ *parser.LogEntry) detector.DetectResult {
 	return d.result
 }

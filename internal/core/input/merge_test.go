@@ -18,6 +18,8 @@ type staticSource struct {
 }
 
 func (s *staticSource) Name() string { return s.name }
+
+func (s *staticSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *staticSource) Close() error { return nil }
 func (s *staticSource) Stats() plugin.SourceStats {
 	return plugin.SourceStats{LinesRead: int64(len(s.entries))}
@@ -35,6 +37,8 @@ type blockingSource struct {
 }
 
 func (s *blockingSource) Name() string              { return "blocking" }
+
+func (s *blockingSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *blockingSource) Close() error              { return nil }
 func (s *blockingSource) Stats() plugin.SourceStats { return plugin.SourceStats{} }
 func (s *blockingSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
@@ -50,6 +54,8 @@ type dropSource struct {
 }
 
 func (s *dropSource) Name() string              { return "drop" }
+
+func (s *dropSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *dropSource) Close() error              { return nil }
 func (s *dropSource) Stats() plugin.SourceStats { return plugin.SourceStats{Dropped: int64(s.dropped)} }
 func (s *dropSource) Run(_ context.Context, out chan<- *plugin.LogEntry) error {

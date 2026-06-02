@@ -1,4 +1,4 @@
-package output
+package exec
 
 import (
 	"fmt"
@@ -15,4 +15,5 @@ func init() {
 		}
 		return execplugin.NewSink(cfg.Exec)
 	})
+	pkgsink.RegisterManifest("exec", (&execplugin.ExecSink{}).Manifest())
 }

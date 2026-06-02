@@ -61,6 +61,16 @@ func (d *ExecDetector) Name() string {
 	return d.name
 }
 
+// Manifest returns the plugin's identity and data contract.
+func (d *ExecDetector) Manifest() plugin.Manifest {
+	return plugin.Manifest{
+		Role:       plugin.RoleDetector,
+		InputType:  plugin.TypeStructured,
+		OutputType: plugin.TypeStructured,
+		Tags:       []string{"exec", "external-plugin", "ndjson"},
+	}
+}
+
 // Detect sends a DetectRequest to the plugin and reads back a DetectResponse.
 // The request/response cycle is mutex-serialized for thread safety.
 //

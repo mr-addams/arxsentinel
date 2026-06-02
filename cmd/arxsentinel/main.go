@@ -86,8 +86,17 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
 	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
+	_ "github.com/mr-addams/arxsentinel/pkg/executor/mikrotik"
 	_ "github.com/mr-addams/arxsentinel/pkg/executor/nginx"
+	_ "github.com/mr-addams/arxsentinel/pkg/processor"
+	pkgsinkfile "github.com/mr-addams/arxsentinel/pkg/sink/file"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/exec"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/file"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/stdin"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
+	_ "github.com/mr-addams/arxsentinel/pkg/sink/exec"
+	_ "github.com/mr-addams/arxsentinel/pkg/sink/sentinel"
+	_ "github.com/mr-addams/arxsentinel/pkg/sink/stdout"
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -145,6 +154,27 @@ func main() {
 		handleCleanup(os.Args[2:])
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "license" {
+		runLicenseSubcommand()
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "validate" {
+		// Resolve --config flag manually before flag.Parse() to reuse the same logic.
+		// Accept both the "--config=path" and "--config path" (space-separated) forms;
+		// the latter previously fell through to the default path silently.
+		path := configPath
+		args := os.Args[2:]
+		for i := 0; i < len(args); i++ {
+			if p, ok := strings.CutPrefix(args[i], "--config="); ok {
+				path = p
+			} else if args[i] == "--config" && i+1 < len(args) {
+				path = args[i+1]
+				i++
+			}
+		}
+		runValidateSubcommand(path)
+		return
+	}
 
 	// ── CLI flags ─────────────────────────────────────────────────────────────────────
 
@@ -175,6 +205,14 @@ func main() {
 	cfg, err := config.LoadConfig(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "arxsentinel: config error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Fail-fast: validate plugin pipeline compatibility before starting any goroutines.
+	if errs := validateConfig(cfg); len(errs) > 0 {
+		for _, e := range errs {
+			fmt.Fprintf(os.Stderr, "arxsentinel: pipeline validation: %s\n", e)
+		}
 		os.Exit(1)
 	}
 
@@ -644,7 +682,7 @@ func runPipeline(
 			// Reload FileSinks for log rotation.
 			// Sources are NOT restarted — they run continuously across reloads.
 			for _, sink := range pipe.Sinks {
-				if fs, ok := sink.(*output.FileSink); ok {
+				if fs, ok := sink.(*pkgsinkfile.FileSink); ok {
 					if reloadErr := fs.Reload(); reloadErr != nil {
 						utils.Log("CONFIG", fmt.Sprintf("%s: SIGHUP sink reload error: %v", logTag, reloadErr), "warn")
 					}
