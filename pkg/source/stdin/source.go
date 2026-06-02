@@ -145,4 +145,5 @@ func init() {
 	pkgsource.Register("stdin", func(cfg pkgsource.InputConfig, opts pkgsource.BuildOptions) (plugin.Source, error) {
 		return NewStdinSource(opts.Parser, opts.LogFn), nil
 	})
+	pkgsource.RegisterManifest("stdin", (&StdinSource{}).Manifest())
 }

@@ -160,10 +160,16 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "validate" {
 		// Resolve --config flag manually before flag.Parse() to reuse the same logic.
+		// Accept both the "--config=path" and "--config path" (space-separated) forms;
+		// the latter previously fell through to the default path silently.
 		path := configPath
-		for _, arg := range os.Args[2:] {
-			if p, ok := strings.CutPrefix(arg, "--config="); ok {
+		args := os.Args[2:]
+		for i := 0; i < len(args); i++ {
+			if p, ok := strings.CutPrefix(args[i], "--config="); ok {
 				path = p
+			} else if args[i] == "--config" && i+1 < len(args) {
+				path = args[i+1]
+				i++
 			}
 		}
 		runValidateSubcommand(path)

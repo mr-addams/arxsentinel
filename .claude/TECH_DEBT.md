@@ -175,11 +175,8 @@ severity, description, and proposed resolution.
   `NewCloudflareExecutor` no longer do network I/O — `syncExisting` (and cloudflare's
   `FindOrCreateList`) moved into `Run()` start. Building an executor purely to read its
   Manifest is now safe and offline. Consequence (1) is resolved.
-- **Status:** partially resolved (Flow #046). Consequence (2) — actually including executors
-  in validation — is blocked by [046-2] (the validator's linear model can't represent the
-  executor stage). Constructing executors with real config now works offline, but feeding
-  them into the naive chain produces false positives; deferred until the validator is
-  topology-aware.
+- **Status:** resolved (Flow #046). Consequence (1) fixed by the I/O-free constructors above;
+  consequence (2) — executors actually validated — fixed by the topology-aware validator [046-2].
 
 ---
 
@@ -209,4 +206,22 @@ severity, description, and proposed resolution.
      to each other.
   Then re-enable executor inclusion in `collectManifests` (the `Config: ex.Config` line that
   was reverted) to close [046-1] consequence (2).
-- **Status:** open
+- **Resolution:** Implemented the topology-aware validator in Flow #046:
+  - Registries expose static manifests without construction: `ManifestByName` added to the
+    executor, sink, and source registries (the latter avoids building file/exec sources that
+    need a path+parser at validation time).
+  - `pkg/pipeline`: `ValidateSpine` builds the producing spine and appends a synthetic Scorer
+    manifest only when the pipeline has detectors (ETL stays Structured); `ValidateTerminals`
+    checks each sink independently (fan-out, no chaining); `ValidatePipelines` runs both per
+    pipeline and returns the produced type; `ValidateExecutorWiring` matches each executor to
+    its sentinel-threat sink by NCH channel name. `SemanticError` carries stream/pipeline/
+    consumer context.
+  - `cmd/arxsentinel/validate.go`: assembles `PipelineContext`s from `streams[].pipelines[]`,
+    computes the produced type once per pipeline (reused for channel-type mapping), and flags
+    unknown executor types. `arxsentinel validate` runs fully offline; daemon startup fail-fast
+    uses the same path.
+  - Verified: all example configs (incl. config.example.yaml after fixing its commented-sink
+    executor inconsistency that the validator surfaced) pass; deliberate mismatches (unknown
+    channel, type mismatch, unknown executor type, ETL→ScoredEvent sink) are rejected with
+    contextual messages. 112/112 integration tests pass.
+- **Status:** resolved (Flow #046). Closes [046-1] consequence (2): executors are now validated.

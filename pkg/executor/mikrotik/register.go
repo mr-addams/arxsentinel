@@ -13,6 +13,7 @@ import (
 
 func init() {
 	executor.Register("mikrotik", newMikroTikFactory)
+	executor.RegisterManifest("mikrotik", (&MikroTikExecutor{}).Manifest())
 }
 
 // newMikroTikFactory creates a MikroTikExecutor from an ExecutorConfig.

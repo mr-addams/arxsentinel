@@ -51,6 +51,7 @@ type Factory func(cfg SinkConfig) (plugin.Sink, error)
 var (
 	mu        sync.RWMutex
 	factories = map[string]Factory{}
+	manifests = map[string]plugin.Manifest{}
 )
 
 // Register registers a Factory under name.
@@ -76,6 +77,27 @@ func Build(cfg SinkConfig) (plugin.Sink, error) {
 		return nil, fmt.Errorf("pkg/sink: unknown sink %q; registered: %v", cfg.Type, Names())
 	}
 	return f(cfg)
+}
+
+// RegisterManifest stores a static Manifest under name, parallel to Register.
+// Panics on duplicate registration — duplication is a programmer error caught at startup.
+// Called from init() alongside Register in each sink implementation.
+func RegisterManifest(name string, m plugin.Manifest) {
+	mu.Lock()
+	defer mu.Unlock()
+	if _, exists := manifests[name]; exists {
+		panic(fmt.Sprintf("pkg/sink: duplicate manifest registration for %q", name))
+	}
+	manifests[name] = m
+}
+
+// ManifestByName returns the static Manifest registered for name.
+// Safe to call concurrently. No side-effects — does not construct any sink.
+func ManifestByName(name string) (plugin.Manifest, bool) {
+	mu.RLock()
+	defer mu.RUnlock()
+	m, ok := manifests[name]
+	return m, ok
 }
 
 // Names returns a sorted list of all registered sink names.

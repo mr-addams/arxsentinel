@@ -87,4 +87,5 @@ func init() {
 	pkgsource.Register("file", func(cfg pkgsource.InputConfig, opts pkgsource.BuildOptions) (plugin.Source, error) {
 		return NewFileSource(cfg.Path, opts.Parser, opts.RetryInterval, opts.LogFn)
 	})
+	pkgsource.RegisterManifest("file", (&FileSource{}).Manifest())
 }

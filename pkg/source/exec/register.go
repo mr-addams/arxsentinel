@@ -15,4 +15,5 @@ func init() {
 		}
 		return execplugin.NewSource(cfg.Exec)
 	})
+	pkgsource.RegisterManifest("exec", (&execplugin.ExecSource{}).Manifest())
 }

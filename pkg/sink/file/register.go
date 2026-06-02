@@ -9,4 +9,5 @@ func init() {
 	pkgsink.Register("file", func(cfg pkgsink.SinkConfig) (plugin.Sink, error) {
 		return NewFileSink(cfg.Path, cfg.Format)
 	})
+	pkgsink.RegisterManifest("file", (&FileSink{}).Manifest())
 }

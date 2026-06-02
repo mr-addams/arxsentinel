@@ -9,4 +9,5 @@ func init() {
 	pkgsink.Register("sentinel-threat", func(cfg pkgsink.SinkConfig) (plugin.Sink, error) {
 		return NewSentinelThreatSink(cfg.Name, 0)
 	})
+	pkgsink.RegisterManifest("sentinel-threat", (&SentinelThreatSink{}).Manifest())
 }

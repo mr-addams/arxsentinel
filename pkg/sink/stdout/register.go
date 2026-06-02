@@ -9,4 +9,5 @@ func init() {
 	pkgsink.Register("stdout", func(cfg pkgsink.SinkConfig) (plugin.Sink, error) {
 		return NewStdoutSink(cfg.Format)
 	})
+	pkgsink.RegisterManifest("stdout", (&StdoutSink{}).Manifest())
 }
