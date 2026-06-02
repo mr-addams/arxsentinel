@@ -475,10 +475,21 @@ Helm-чарт с описанием values: [README.helm.md](deploy/container/k8
 
 | Исполнитель | Пакет | Описание |
 |---|---|---|
-| **cloudflare** | `internal/core/executor/cloudflare` | Добавляет угрожающие IP в Cloudflare IP List; автоматически удаляет устаревшие записи через TTL sweep | в Cloudflare IP List; автоматически удаляет устаревшие записи через TTL sweep |
+| **cloudflare** | `pkg/executor/cloudflare` | Добавляет угрожающие IP в Cloudflare IP List; автоматически удаляет устаревшие записи через TTL sweep |
+| **nginx** | `pkg/executor/nginx` | Записывает заблокированные IP в обычный файл блокировки (TTL автовыпадения, атомарные записи, опциональная команда перезагрузки); вы подключаете файл в nginx как вам удобнее |
+| **mikrotik** | `pkg/executor/mikrotik` | Управляет list адресов файервола RouterOS v7 через REST API; TTL-автоответ, удаляет только записи, созданные arxsentinel, совместим с CHR/ARM |
 
 Подробнее: [docs/executors.md](docs/executors.md) — обзор фреймворка и добавление собственных исполнителей.
 Подробнее: [docs/executor-cloudflare.md](docs/executor-cloudflare.md) — конфигурация и устранение неполадок Cloudflare.
+Подробнее: [docs/executor-nginx.md](docs/executor-nginx.md) — исполнитель nginx blocklist.
+
+## Недавно доставленные функции
+
+- **`arxsentinel validate`** — автономная валидация конфига с учётом топологии, используя статические манифесты плагинов; ловит сломанную разводку pipeline до деплоя
+- **Pluggable queue backends** — буферизация событий исполнителей через in-memory, bbolt (файл) или Redis; выбираемо на исполнителя для bare-metal / single-host / multi-replica K8s
+- **Named Channel Hub** — маршрутизация событий угроз между независимыми pipeline по имени (один детектит, другой исполняет)
+- **Bot fast path** — `verify_method: ua_only` (совпадение User-Agent, без DNS) и `exempt_detectors` на бота для пропуска конкретных детекторов у доверенных краулеров
+- **CLI** — `arxsentinel cleanup --cf --dry-run` для предпросмотра/очистки устаревших записей исполнителей
 
 ## Разработка плагинов
 
@@ -738,8 +749,7 @@ ArxSentinel поддерживает три режима форматов: **com
 
 В активной разработке для v2.x:
 
-- **Executor interface** — stateful, двусторонние интеграции (vs fire-and-forget Sink); persistent subprocess с request/response протоколом
-- **Cloudflare WAF executor** — блокировка IP на edge через Cloudflare API; без iptables, работает для CDN-fronted развёртываний
+- **Alert sinks** — отправка угроз в Telegram, Slack и PagerDuty с дедупликацией и rate-limiting
 - **AWS WAF executor** — обновления IP-сетов для AWS WAF rule groups
 
 ---

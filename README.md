@@ -476,10 +476,21 @@ Executors are stateful action plugins that run after threat scoring. Unlike Sink
 
 | Executor | Package | Description |
 |---|---|---|
-| **cloudflare** |  | Adds threat IPs to a Cloudflare IP List; auto-removes expired entries via TTL sweep |
+| **cloudflare** | `pkg/executor/cloudflare` | Adds threat IPs to a Cloudflare IP List; auto-removes expired entries via TTL sweep |
+| **nginx** | `pkg/executor/nginx` | Writes banned IPs to a plain blocklist file (TTL auto-expiry, atomic writes, optional reload command); you include the file into nginx however suits your setup |
+| **mikrotik** | `pkg/executor/mikrotik` | Manages a RouterOS v7 firewall address-list over the REST API; TTL-based auto-unban, removes only arxsentinel-owned entries, CHR/ARM compatible |
 
 See [docs/executors.md](docs/executors.md) for the framework overview and how to add custom executors.
 See [docs/executor-cloudflare.md](docs/executor-cloudflare.md) for Cloudflare-specific configuration and troubleshooting.
+See [docs/executor-nginx.md](docs/executor-nginx.md) for the nginx blocklist executor.
+
+## Recently Shipped
+
+- **`arxsentinel validate`** — offline, topology-aware config validation using static plugin manifests; catches broken pipeline wiring before deploy
+- **Pluggable queue backends** — buffer executor events via in-memory, bbolt (file) or Redis queue; selectable per executor for bare-metal / single-host / multi-replica K8s
+- **Named Channel Hub** — route threat events between independent pipelines by name (one pipeline detects, another enforces)
+- **Bot fast path** — `verify_method: ua_only` (User-Agent match, no DNS) and per-bot `exempt_detectors` to skip specific detectors for trusted crawlers
+- **CLI** — `arxsentinel cleanup --cf --dry-run` to preview/clean stale executor entries
 
 ## Plugin Development
 
@@ -738,8 +749,7 @@ Full guide: [`deploy/grafana/README.md`](deploy/grafana/README.md)
 
 In active development for v2.x:
 
-- **Executor interface** — stateful, bidirectional integrations (vs fire-and-forget Sink); persistent subprocess with request/response protocol
-- **Cloudflare WAF executor** — block IPs at the edge via Cloudflare API; no iptables needed, works for CDN-fronted deployments
+- **Alert sinks** — push threats to Telegram, Slack and PagerDuty with deduplication and rate-limiting
 - **AWS WAF executor** — IP set updates for AWS WAF rule groups
 
 ---
