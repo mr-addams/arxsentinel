@@ -176,7 +176,7 @@ dockers_v2:
       - linux/arm64
     # Disable provenance attestation: buildx adds it by default, and GHCR renders
     # it as a spurious "unknown/unknown" platform entry in the package page.
-    build_flag_templates:
+    flags:
       - "--provenance=false"
     # extra_files are copied into the build context preserving their relative path from the project root.
     # Required because dockers_v2 uses a temp dir (not project root) as the build context.
