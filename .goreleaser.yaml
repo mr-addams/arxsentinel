@@ -14,6 +14,7 @@ builds:
       - arm64
       - arm
       - riscv64
+      - 386
     goarm:
       - "7"
     env:
