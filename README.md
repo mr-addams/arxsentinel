@@ -4,7 +4,7 @@
 [![Build](https://github.com/mr-addams/arxsentinel/actions/workflows/release.yml/badge.svg)](https://github.com/mr-addams/arxsentinel/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-Elastic--2.0-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
-[![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
+[![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64%20%7C%20arm%2Fv7%20%7C%20riscv64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 > 🌐 [Русская документация](README.ru.md) | [Українська документація](README.uk.md)
 
@@ -171,6 +171,12 @@ sudo apt install ./arxsentinel_<version>_linux_amd64.deb
 
 # arm64
 sudo apt install ./arxsentinel_<version>_linux_arm64.deb
+
+# arm/v7
+sudo apt install ./arxsentinel_<version>_linux_armv7.deb
+
+# riscv64
+sudo apt install ./arxsentinel_<version>_linux_riscv64.deb
 ```
 
 `apt install` automatically resolves dependencies, installs the systemd unit, Fail2Ban filter/jail (optional — for bare-metal setups), logrotate config, and creates the `arxsentinel` system user.
@@ -192,6 +198,12 @@ sudo dnf install ./arxsentinel_<version>_linux_amd64.rpm
 
 # arm64
 sudo dnf install ./arxsentinel_<version>_linux_arm64.rpm
+
+# arm/v7
+sudo dnf install ./arxsentinel_<version>_linux_armv7.rpm
+
+# riscv64
+sudo dnf install ./arxsentinel_<version>_linux_riscv64.rpm
 ```
 
 `dnf install` resolves dependencies, installs the systemd unit to `/usr/lib/systemd/system/`, Fail2Ban filter/jail, logrotate config, and creates the `arxsentinel` system user.
@@ -216,6 +228,12 @@ sudo pacman -U arxsentinel_<version>_linux_amd64.pkg.tar.zst
 
 # arm64
 sudo pacman -U arxsentinel_<version>_linux_arm64.pkg.tar.zst
+
+# arm/v7
+sudo pacman -U arxsentinel_<version>_linux_armv7.pkg.tar.zst
+
+# riscv64
+sudo pacman -U arxsentinel_<version>_linux_riscv64.pkg.tar.zst
 ```
 
 The package installs the systemd unit to `/usr/lib/systemd/system/`, Fail2Ban config files, logrotate config, and creates the `arxsentinel` system user.
@@ -337,7 +355,7 @@ deploy/examples/
 
 ## Requirements
 
-- Linux x86_64 or arm64 with systemd
+- Linux amd64 / arm64 / arm/v7 / riscv64 with systemd
 - Fail2Ban (optional — recommended for bare-metal; not needed with Cloudflare executor or other API-based integrations)
 - An HTTP server writing access logs in a supported format (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — or custom regex)
 
