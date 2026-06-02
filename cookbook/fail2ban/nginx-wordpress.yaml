@@ -1,0 +1,43 @@
+# =================== cookbook/fail2ban/nginx-wordpress.yaml ==============================
+#
+#   nginx combined log + WordPress probe paths -> threats.log for Fail2Ban.
+#   Extends the basic nginx config with WordPress-specific probe detection.
+#
+# ========================================================================================
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: 300s
+  decay: linear
+
+detectors:
+  probe:
+    paths:
+      - /wp-login.php
+      - /wp-admin/
+      - /wp-admin/admin-ajax.php
+      - /wp-config.php
+      - /wp-config.php.bak
+      - /wp-config.php.old
+      - /wp-config.php~
+      - /xmlrpc.php
+      - /wp-json/wp/v2/users
+      - /?rest_route=/wp/v2/users
+      - /wp-content/plugins/
+      - /wp-content/themes/
+      - /wp-content/uploads/
+      - /wp-admin/install.php
+      - /wp-admin/upgrade.php
+      - /wp-includes/
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban

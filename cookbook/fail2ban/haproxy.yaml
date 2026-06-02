@@ -1,0 +1,18 @@
+# ===================== cookbook/fail2ban/haproxy.yaml ===================================
+#
+#   HAProxy httplog -> threats.log for Fail2Ban.
+#   Uses the built-in "haproxy-http" parser profile.
+#   Requires HAProxy configured with "option httplog" and rsyslog writing to a file.
+#
+# =======================================================================================
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/haproxy/access.log   # adjust to your HAProxy log path
+        parser: haproxy-http                 # built-in profile for HAProxy httplog
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban

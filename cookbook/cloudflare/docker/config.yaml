@@ -1,0 +1,39 @@
+# ================== cookbook/cloudflare/docker/config.yaml ==============================
+#
+#   ArxSentinel config for Docker Compose with Cloudflare executor.
+#   Reads nginx access log from shared Docker volume.
+#
+# =======================================================================================
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 75
+  observation_window: 5m
+  decay: 0
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: sentinel-cf
+
+executors:
+  - name: cf-ban
+    type: cloudflare
+    sources:
+      - name: sentinel-cf
+    config:
+      api_token: "YOUR_CF_API_TOKEN"
+      account_id: "YOUR_CF_ACCOUNT_ID"
+      list_name: "arxsentinel_blocklist"
+      min_level: "THREAT"
+      ttl: "24h"
+      batch_size: 100
+      flush_interval: "10s"

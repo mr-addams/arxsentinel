@@ -1,0 +1,39 @@
+# =================== cookbook/fail2ban/nginx-drupal.yaml ================================
+#
+#   nginx combined log + Drupal probe paths -> threats.log for Fail2Ban.
+#   Extends the basic nginx config with Drupal-specific probe detection.
+#
+# ========================================================================================
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: 300s
+  decay: linear
+
+detectors:
+  probe:
+    paths:
+      - /user/login
+      - /user/register
+      - /admin/
+      - /sites/default/settings.php
+      - /sites/default/settings.local.php
+      - /update.php
+      - /install.php
+      - /xmlrpc.php
+      - /cron.php
+      - /.git/config
+      - /.git/HEAD
+      - /.env
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban

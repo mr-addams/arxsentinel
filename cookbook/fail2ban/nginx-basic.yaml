@@ -1,0 +1,23 @@
+# ====================== cookbook/fail2ban/nginx-basic.yaml ==============================
+#
+#   Minimal fail2ban config: single nginx combined log -> threats.log.
+#   Works with Fail2Ban (see jail.conf:  logpath = /var/log/arxsentinel/threats.log)
+#
+# =======================================================================================
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: 300s
+  decay: linear
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban

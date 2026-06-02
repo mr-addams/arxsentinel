@@ -1,0 +1,32 @@
+# =============== cookbook/fail2ban/nginx-multi-stream.yaml ==============================
+#
+#   Two independent nginx vhosts, each in its own stream, sharing the same threat log.
+#   Both use the combined parser (default nginx format).
+#
+# ========================================================================================
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: 300s
+  decay: linear
+
+streams:
+  - name: frontend
+    inputs:
+      - type: file
+        path: /var/log/nginx/frontend.access.log   # adjust to your frontend vhost log
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
+  - name: api
+    inputs:
+      - type: file
+        path: /var/log/nginx/api.access.log        # adjust to your API vhost log
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban

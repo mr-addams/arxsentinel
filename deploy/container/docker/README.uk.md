@@ -256,7 +256,7 @@ docker run -d \
 > користувацького `config.yaml`:
 > `streams:`, `inputs:`, `outputs:`, `executors:`, `pipelines:`, масиви `paths:` для окремих детекторів.
 > Повні готові приклади: `/etc/arxsentinel/config.yaml.example` (всередину контейнера)
-> або [`config.example.yaml`](../../../../config.example.yaml) у репозиторії.
+> або [`config.reference.yaml`](../../../../config.reference.yaml) у репозиторії.
 
 ## Локальна збірка
 

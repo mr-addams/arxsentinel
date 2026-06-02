@@ -256,7 +256,7 @@ docker run -d \
 > пользовательского `config.yaml`:
 > `streams:`, `inputs:`, `outputs:`, `executors:`, `pipelines:`, массивы `paths:` для отдельных детекторов.
 > Полные готовые примеры: `/etc/arxsentinel/config.yaml.example` (внутри контейнера)
-> или [`config.example.yaml`](../../../../config.example.yaml) в репозитории.
+> или [`config.reference.yaml`](../../../../config.reference.yaml) в репозитории.
 
 ## Локальная сборка
 

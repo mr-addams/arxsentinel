@@ -1,0 +1,49 @@
+# ================ cookbook/cloudflare/nginx-multi-stream.yaml ============================
+#
+#   Two nginx vhosts, both feeding THREAT events to a shared Cloudflare executor.
+#
+# ========================================================================================
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 75
+  observation_window: 5m
+  decay: 0
+
+streams:
+  - name: frontend
+    inputs:
+      - type: file
+        path: /var/log/nginx/frontend.access.log
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: sentinel-cf
+  - name: api
+    inputs:
+      - type: file
+        path: /var/log/nginx/api.access.log
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: sentinel-cf
+
+executors:
+  - name: cf-ban
+    type: cloudflare
+    sources:
+      - name: sentinel-cf
+    config:
+      api_token: "YOUR_CF_API_TOKEN"
+      account_id: "YOUR_CF_ACCOUNT_ID"
+      list_name: "arxsentinel_blocklist"
+      min_level: "THREAT"
+      ttl: "24h"
+      batch_size: 100
+      flush_interval: "10s"

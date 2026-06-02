@@ -1,0 +1,18 @@
+# =================== cookbook/fail2ban/litespeed.yaml ===================================
+#
+#   LiteSpeed/OpenLiteSpeed access log -> threats.log for Fail2Ban.
+#   Uses the built-in "litespeed" parser profile.
+#   Both LSWS and OLS emit Apache Combined Log Format by default.
+#
+# =======================================================================================
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /usr/local/lsws/logs/access.log   # adjust to your LSWS log path
+        parser: litespeed                        # built-in profile for LiteSpeed
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban

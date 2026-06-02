@@ -4,8 +4,8 @@
 #   1 nginx site → threat detection → automatic Cloudflare IP list ban.
 #
 #   Use case: single nginx host behind Cloudflare, automated IP banning.
-#   For fail2ban / file-based logging only: see config.nginx-example.yaml
-#   For all configuration options: see config.example.yaml
+#   For fail2ban / file-based logging only: see config.fail2ban-example.yaml
+#   For all configuration options: see config.reference.yaml
 #
 #   Quick deploy:
 #     1. Copy this file to /etc/arxsentinel/config.yaml

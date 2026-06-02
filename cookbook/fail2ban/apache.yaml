@@ -1,0 +1,17 @@
+# ====================== cookbook/fail2ban/apache.yaml ===================================
+#
+#   Apache httpd combined log -> threats.log for Fail2Ban.
+#   Uses the built-in "apache" parser profile (Apache Combined Log Format).
+#
+# =======================================================================================
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/apache2/access.log   # adjust to your Apache access log path
+        parser: apache                       # built-in profile for Apache
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban

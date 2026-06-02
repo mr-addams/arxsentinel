@@ -1,0 +1,18 @@
+# ====================== cookbook/fail2ban/caddy.yaml ====================================
+#
+#   Caddy access log -> threats.log for Fail2Ban.
+#   Uses the built-in "caddy" parser profile (requires transform-encoder in Caddyfile).
+#   See cookbook/server-configs/Caddyfile for the required log format.
+#
+# =======================================================================================
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/caddy/access.log   # adjust to your Caddy access log path
+        parser: caddy                      # built-in profile for Caddy v2
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban

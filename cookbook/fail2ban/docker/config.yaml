@@ -1,0 +1,23 @@
+# =============== cookbook/fail2ban/docker/config.yaml ==================================
+#
+#   ArxSentinel config for Docker Compose fail2ban deployment.
+#   Reads nginx access log from shared Docker volume.
+#
+# =======================================================================================
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: 300s
+  decay: linear
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban

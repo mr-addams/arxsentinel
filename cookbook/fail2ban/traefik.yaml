@@ -1,0 +1,17 @@
+# ===================== cookbook/fail2ban/traefik.yaml ===================================
+#
+#   Traefik access log -> threats.log for Fail2Ban.
+#   Uses the built-in "traefik" parser profile (Traefik CLF format).
+#
+# =======================================================================================
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/traefik/access.log   # adjust to your Traefik access log path
+        parser: traefik                      # built-in profile for Traefik v2/v3
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban

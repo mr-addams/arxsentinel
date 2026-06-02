@@ -1,0 +1,56 @@
+# ========================== config.mikrotik-example.yaml ==============================
+#
+#   Quick-start config for nginx + MikroTik automated IP banning.
+#   1 nginx site -> threat detection -> automatic MikroTik address list ban.
+#
+#   Use case: single nginx host behind MikroTik RouterOS, automated IP banning.
+#   For fail2ban / file-based logging only: see config.fail2ban-example.yaml
+#   For all configuration options: see config.reference.yaml
+#
+#   Quick deploy:
+#     1. Copy this file to /etc/arxsentinel/config.yaml
+#     2. Set your MikroTik credentials (host, username, password)
+#     3. Adjust log path if needed (see streams.inputs[].path below)
+#     4. sudo systemctl restart arxsentinel
+#        (reload/SIGHUP applies only to detectors/scoring -- executors require restart)
+#
+# ======================================================================================
+
+# ── scoring: when to act ──────────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50
+  ban_threshold: 75
+  observation_window: 5m
+  decay: 0
+
+# ── streams: nginx log source -> threat detection -> MikroTik executor ────────────────
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: sentinel-mt                  # feeds THREAT events to the executor below
+
+# ── executors: automated MikroTik address list bans ──────────────────────────────────
+executors:
+  - name: mikrotik-ban
+    type: mikrotik
+    sources:
+      - name: sentinel-mt                  # matches sentinel-threat sink name above
+    config:
+      host: "YOUR_MIKROTIK_HOST"           # RouterOS hostname/IP
+      port: 443                            # default: 443 (REST API)
+      username: "YOUR_USERNAME"            # RouterOS username
+      password: "YOUR_PASSWORD"            # RouterOS password
+      sentinel_id: "sentinel-1"            # unique instance ID
+      list_name: "arxsentinel_blocklist"   # created automatically if absent
+      min_level: "THREAT"
+      ttl: "24h"                           # auto-unban after 24h
+      batch_size: 10
+      flush_interval: "30s"

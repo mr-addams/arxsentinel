@@ -1,0 +1,39 @@
+# ====================== cookbook/cloudflare/nginx-basic.yaml =============================
+#
+#   nginx combined log + Cloudflare automated IP banning.
+#   Dual output: threats.log (Fail2Ban fallback) + sentinel-threat (Cloudflare executor).
+#
+# ========================================================================================
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 75
+  observation_window: 5m
+  decay: 0
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: sentinel-cf                  # feeds THREAT events to the executor below
+
+executors:
+  - name: cf-ban
+    type: cloudflare
+    sources:
+      - name: sentinel-cf                  # matches sentinel-threat sink name above
+    config:
+      api_token: "YOUR_CF_API_TOKEN"       # Cloudflare API token (Lists:Edit permission)
+      account_id: "YOUR_CF_ACCOUNT_ID"     # Cloudflare account ID
+      list_name: "arxsentinel_blocklist"   # created automatically if absent
+      min_level: "THREAT"
+      ttl: "24h"                           # auto-unban after 24h
+      batch_size: 100
+      flush_interval: "10s"

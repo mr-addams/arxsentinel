@@ -126,7 +126,7 @@ helm upgrade arxsentinel ./deploy/container/k8s/arxsentinel -f values-production
 
 ### Полный справочник переменных окружения
 
-> Полные примеры со всеми YAML-only секциями: [`config.example.yaml`](../../../config.example.yaml) в корне репозитория.
+> Полные примеры со всеми YAML-only секциями: [`config.reference.yaml`](../../../config.reference.yaml) в корне репозитория.
 
 Массивы отмечены **YAML-only** — настраивайте через ConfigMap `config.yaml` или примонтированный конфиг-файл.
 

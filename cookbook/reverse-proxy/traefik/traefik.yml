@@ -1,0 +1,47 @@
+# Traefik static configuration for use with arxsentinel.
+#
+# Traefik passes the real client IP to upstream via X-Forwarded-For.
+# forwardedHeaders.trustedIPs tells Traefik which incoming proxy addresses
+# are trusted to have already set a valid X-Forwarded-For — prevents spoofing.
+#
+# Tested with: Traefik v3.x
+
+entryPoints:
+  web:
+    address: ":80"
+    # forwardedHeaders: list of upstream proxy CIDRs whose X-Forwarded-For
+    # Traefik should trust. Traefik always appends the real client IP to
+    # X-Forwarded-For before forwarding; trustedIPs only affects whether
+    # Traefik trusts a pre-existing XFF from those addresses.
+    forwardedHeaders:
+      # Adjust to your actual upstream proxy IP or CIDR.
+      trustedIPs:
+        - "127.0.0.1/32"
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
+  websecure:
+    address: ":443"
+    forwardedHeaders:
+      trustedIPs:
+        - "127.0.0.1/32"
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
+
+providers:
+  docker:
+    exposedByDefault: false
+  file:
+    directory: /etc/traefik/dynamic
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: admin@example.com
+      storage: /data/acme.json
+      httpChallenge:
+        entryPoint: web
+
+api:
+  insecure: false

@@ -405,6 +405,16 @@ whitelist:
       rdns_domains: [".anthropic.com"]
       verify_method: rdns
 
+    - name: amazonbot
+      ua_patterns: ["Amazonbot"]
+      verify_method: ua_only
+      exempt_detectors: ["noasset"]
+
+    - name: meta-crawler
+      ua_patterns: ["meta-externalagent", "meta-externalfetcher"]
+      verify_method: ua_only
+      exempt_detectors: ["noasset"]
+
   # Custom whitelist: add your own IPs, subnets, UA patterns.
   # Кастомный whitelist: добавьте свои IP, подсети, UA-паттерны.
   custom:

@@ -391,7 +391,7 @@ func TestBlocklistSourceURLs(t *testing.T) {
 	}
 
 	// Resolve the nginx quick-start example relative to this file's package root.
-	cfgPath := "../../../config.nginx-example.yaml"
+	cfgPath := "../../../config.fail2ban-example.yaml"
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		t.Fatalf("cannot read config.yaml: %v", err)

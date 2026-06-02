@@ -1,0 +1,47 @@
+# =================== cookbook/fail2ban/nginx-laravel.yaml ===============================
+#
+#   nginx combined log + Laravel probe paths -> threats.log for Fail2Ban.
+#   Extends the basic nginx config with Laravel-specific probe detection.
+#
+# ========================================================================================
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: 300s
+  decay: linear
+
+detectors:
+  probe:
+    paths:
+      - /.env
+      - /.env.backup
+      - /.env.example
+      - /.env.local
+      - /.env.production
+      - /.env.staging
+      - /storage/
+      - /storage/logs/
+      - /storage/framework/
+      - /bootstrap/cache/
+      - /artisan
+      - /composer.json
+      - /composer.lock
+      - /vendor/
+      - /.git/
+      - /.git/config
+      - /.git/HEAD
+      - /telescope
+      - /horizon
+      - /_debugbar/
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban

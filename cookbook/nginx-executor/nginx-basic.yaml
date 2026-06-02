@@ -1,0 +1,42 @@
+# ================== cookbook/nginx-executor/nginx-basic.yaml ============================
+#
+#   nginx combined log + nginx blocklist executor.
+#   Threat IPs are written to a blocklist file and nginx is reloaded.
+#
+#   Add to your nginx.conf:
+#     include /etc/nginx/conf.d/arxsentinel_autoblock.list;
+#
+# ========================================================================================
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 75
+  observation_window: 5m
+  decay: 0
+
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: sentinel-cf
+
+executors:
+  - name: nginx-blocklist
+    type: nginx
+    sources:
+      - name: sentinel-cf
+    config:
+      list_file: /etc/nginx/conf.d/arxsentinel_autoblock.list
+      state_file: /var/lib/arxsentinel/nginx-state.json
+      min_level: "THREAT"
+      ttl: "24h"
+      batch_size: 10
+      flush_interval: "30s"
+      reload_cmd: "nginx -s reload"
