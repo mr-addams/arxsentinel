@@ -60,6 +60,9 @@ to ArxSentinel instead of disabling verification:
 ```bash
 mkdir -p /etc/arxsentinel/ca
 cp mikrotik-ca.crt /etc/arxsentinel/ca/mikrotik-ca.crt
+# root owns the file; arxsentinel group can read it.
+# The daemon runs as user arxsentinel (group arxsentinel) — 640 grants read access
+# to the daemon without exposing the file to other system users.
 chown root:arxsentinel /etc/arxsentinel/ca/mikrotik-ca.crt
 chmod 640 /etc/arxsentinel/ca/mikrotik-ca.crt
 ```
@@ -71,10 +74,13 @@ config:
   ca_file: "/etc/arxsentinel/ca/mikrotik-ca.crt"
 ```
 
-After updating the config, restart the daemon (executor changes require restart):
+After updating the config, **restart** the daemon — not reload:
 ```bash
 systemctl restart arxsentinel
 ```
+> Executors are initialized once at startup and do not respond to SIGHUP.
+> `kill -HUP` reloads only detectors, scoring, and blocklists — executor config
+> changes (including `ca_file`) require a full restart.
 
 ### Verification
 
