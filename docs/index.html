@@ -288,7 +288,28 @@
             font-family: var(--font-cyber); font-size: 1.25rem; color: #fff;
             margin-bottom: 1rem; display: flex; align-items: center; gap: 0.75rem;
         }
-        .detector-icon { font-size: 1.5rem; filter: drop-shadow(0 0 5px rgba(255,255,255,0.5)); }
+        .icon {
+            display: inline-block;
+            width: 1.2em;
+            height: 1.2em;
+            stroke: currentColor;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+            vertical-align: -0.2em;
+            flex-shrink: 0;
+        }
+        .detector-icon svg {
+            width: 1.5rem;
+            height: 1.5rem;
+            stroke: currentColor;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+            filter: drop-shadow(0 0 5px rgba(255,255,255,0.3));
+        }
         .detector-desc { color: var(--text-main); font-size: 0.95rem; margin-bottom: 1.5rem; }
         .detector-desc code {
             background: rgba(0,0,0,0.3); padding: 0.1rem 0.3rem; border-radius: 3px;
@@ -838,56 +859,56 @@
         <div class="detectors-grid">
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">🔍</span> Probe</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 7v-1a2 2 0 0 1 2 -2h2" /><path d="M4 17v1a2 2 0 0 0 2 2h2" /><path d="M16 4h2a2 2 0 0 1 2 2v1" /><path d="M16 20h2a2 2 0 0 0 2 -2v-1" /><path d="M5 12l14 0" /></svg></span> Probe</h3>
                     <p class="detector-desc">Requests to sensitive paths: <code>/.env</code>, <code>/.git/config</code>, <code>/.aws/credentials</code>, <code>/wp-config.php</code>, <code>/phpinfo.php</code>, admin panels, backup archives and 30+ others. Active reconnaissance attempts trigger immediately on the first request.</p>
                 </div>
                 <span class="detector-score">+25 per request</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">⚡</span> Rate anomaly</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11" /></svg></span> Rate anomaly</h3>
                     <p class="detector-desc">More than 100 requests per 60 seconds from a single IP. Catches DDoS probes, aggressive vulnerability scanners, credential stuffing bursts and scraping tools trying to stay under static limits.</p>
                 </div>
                 <span class="detector-score">+25</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">🤖</span> Suspicious User-Agent</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 4m0 2a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v4a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2z" /><path d="M12 2v2" /><path d="M9 12v9" /><path d="M15 12v9" /><path d="M5 16l4 -2" /><path d="M15 14l4 2" /><path d="M9 18h6" /><path d="M10 8v.01" /><path d="M14 8v.01" /></svg></span> Suspicious User-Agent</h3>
                     <p class="detector-desc">Case-insensitive substring match against built-in lists: <strong>scanners</strong> (Nuclei, sqlmap...), <strong>grabbers</strong> (Scrapy, HTTrack...) and <strong>automation clients</strong> (python-requests, curl...). Extend via config easily.</p>
                 </div>
                 <span class="detector-score">+15 to +40</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">🔐</span> Bruteforce</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 11m0 2a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z" /><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0" /><path d="M8 11v-4a4 4 0 1 1 8 0v4" /></svg></span> Bruteforce</h3>
                     <p class="detector-desc">More than 60% of responses are 404 with at least 10 requests. Typical signature of path-enumeration tools (dirbuster, gobuster, ffuf) blindly traversing wordlists. <code>min_requests</code> prevents false positives.</p>
                 </div>
                 <span class="detector-score">+30</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">📄</span> Sequential crawler</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11 6h9" /><path d="M11 12h9" /><path d="M12 18h8" /><path d="M4 16a2 2 0 1 1 4 0c0 .591 -.5 1 -1 1.5l-3 2.5h4" /><path d="M6 10v-6l-2 2" /></svg></span> Sequential crawler</h3>
                     <p class="detector-desc">Five or more sequentially numbered URLs in a row — <code>/page/1</code>, <code>/page/2</code>, <code>/article/100</code>... Characteristic of automated content scrapers dumping entire site sections at machine speed.</p>
                 </div>
                 <span class="detector-score">+20</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">🖼️</span> No-asset bot</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 3l18 18" /><path d="M15 9a3 3 0 0 1 -2.983 3" /><path d="M9.73 9.733a3 3 0 0 0 3.536 3.536" /><path d="M9 3h9a2 2 0 0 1 2 2v9m-1.165 3.849a2 2 0 0 1 -.835 .151h-12a2 2 0 0 1 -2 -2v-12c0 -.337 .082 -.656 .226 -.935" /><path d="M4.219 7.729a2 2 0 0 0 -.219 .895" /><path d="M5 17l3.5 -4.5" /></svg></span> No-asset bot</h3>
                     <p class="detector-desc">Loads pages but requests CSS, JS or images on fewer than 10% of hits — with at least 3 page views. Real browsers fetch resources; markup-only scrapers skip static assets entirely.</p>
                 </div>
                 <span class="detector-score">+20</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">💣</span> URL overflow / WAF bypass</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M15 7m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /> <path d="M10.495 10.495l-7.779 7.779a1 1 0 0 0 0 1.414l1.596 1.596a1 1 0 0 0 1.414 0l7.779 -7.779" /><path d="M18.5 5.5l1.5 -1.5" /><path d="M20 6l-1 -1" /></svg></span> URL overflow / WAF bypass</h3>
                     <p class="detector-desc">URLs longer than 2048 characters, or containing known WAF evasion keywords: <code>bypass</code>, <code>shell</code>, <code>cmd</code>, <code>eval</code>, <code>exec</code>... Targets buffer overflows and code injections.</p>
                 </div>
                 <span class="detector-score">+30</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">🚫</span> Bad Bot Blocklist</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /><path d="M5.7 5.7l12.6 12.6" /></svg></span> Bad Bot Blocklist</h3>
                     <p class="detector-desc">Matches User-Agent (and optionally Referer) against a community-maintained blocklist of ~685 known bad bots — scrapers, SEO crawlers, spam bots, vulnerability probes. Updated daily. Powered by <a href="https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue)">nginx-ultimate-bad-bot-blocker</a> by <strong>Mitchell Krog</strong>.</p>
                 </div>
                 <span class="detector-score">+60</span>
@@ -1010,15 +1031,15 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </div>
         <div class="whitelist-grid">
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">☁️</span> Cloudflare WAF</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6.657 18c-2.572 0 -4.657 -2.007 -4.657 -4.483c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99c1.913 0 3.464 1.56 3.464 3.486c0 1.927 -1.551 3.487 -3.465 3.487h-11.878" /></svg></span> Cloudflare WAF</h3>
                 <p>Add threat IPs to a Cloudflare IP List and ban them at the network edge — no iptables, no host firewall. Batch operations, async polling, automatic TTL expiry and cross-instance dedup.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🔧</span> nginx</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> nginx</h3>
                 <p>Write banned IPs to a plain blocklist file with TTL auto-expiry and atomic writes. arxsentinel only writes the file; you include it into nginx however suits you. Optional reload command.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">📡</span> MikroTik RouterOS v7</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12l-8 -8l8 -2l2 8z" /><path d="M12 12l4 8l4 -8z" /><path d="M12 12l8 -4l-2 -8z" /><path d="M12 12l-4 -8l-4 8z" /></svg></span> MikroTik RouterOS v7</h3>
                 <p>Manage a RouterOS firewall address-list over the REST API. TTL-based auto-unban, safe removal of only arxsentinel-owned entries, works on CHR and ARM-based routers.</p>
             </div>
         </div>
@@ -1031,35 +1052,35 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </div>
         <div class="whitelist-grid">
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">📐</span> Custom log format</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M17 3l4 4l-14 14l-4 -4z" /><path d="M16 7l-1.5 -1.5" /><path d="M13 10l-1.5 -1.5" /><path d="M10 13l-1.5 -1.5" /><path d="M7 16l-1.5 -1.5" /></svg></span> Custom log format</h3>
                 <p>Not using a built-in profile? Define your own regex with named capture groups, or switch to JSON log parsing — both work without recompilation. Any format that captures IP, timestamp, method, path, status and bytes maps to the full detection pipeline.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">📂</span> Multi-stream & pipeline routing</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" /><path d="M4 7c-1.1 0 -2 .9 -2 2v9c0 1.1 .9 2 2 2h14" /></svg></span> Multi-stream & pipeline routing</h3>
                 <p>Watch multiple log files in one process. Within each stream, define independent pipelines — each with its own detectors, sources, sinks and IP state. Share IP state between pipelines via <code>tracker_group</code> for correlated multi-log analysis.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🔧</span> Server profiles</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> Server profiles</h3>
                 <p>Ship-ready profiles for popular servers. Override field positions, date formats and delimiter rules per log source without touching core logic.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🐳</span> Docker Compose sidecar</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M22 12.54c-1.804 -.345 -2.701 -1.08 -3.523 -2.94c-.487 .696 -1.54 1.4 -2.477 1.4h-5c-2.21 0 -4 1.79 -4 4v1.06c0 1.062 .107 1.84 .806 2.5c1.828 1.735 4.494 1.44 6.194 1.44h8c1.1 0 2 -.9 2 -2v-2c0 -1.1 -.9 -2 -2 -2h-.5" /><path d="M6 12h1" /><path d="M10 12h1" /><path d="M6 8h1" /><path d="M10 8h1" /><path d="M14 8h1" /><path d="M10 4h1" /><path d="M14 4h1" /><path d="M18.5 15.5m-0.5 0a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0" /></svg></span> Docker Compose sidecar</h3>
                 <p>Deploy alongside any containerised HTTP server via a shared log volume — no changes to your app container. Ready-to-use <code>docker-compose.yml</code> and config in <code>deploy/examples/docker/</code>. Prometheus metrics exposed on <code>:9117</code> for scraping.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">☸️</span> Kubernetes DaemonSet</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg></span> Kubernetes DaemonSet</h3>
                 <p>One pod per node reads host access logs via <code>hostPath</code>. Helm chart included with values reference and Prometheus Operator integration. Sidecar topology also supported for managed clusters without host log access.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🔎</span> Offline config validation</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l5 5l10 -10" /></svg></span> Offline config validation</h3>
                 <p>Run `arxsentinel validate` to check your whole config before deploy. A topology-aware validator models the real data flow and catches broken wiring using static plugin manifests — no live traffic needed.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🗃️</span> Pluggable queue backends</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Pluggable queue backends</h3>
                 <p>Buffer executor events through an in-memory, file-based (bbolt) or Redis queue — pick per executor to fit bare-metal, single-host or multi-replica Kubernetes setups.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🔀</span> Named Channel Hub</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Named Channel Hub</h3>
                 <p>Route threat events between independent pipelines by name — one pipeline can detect while another enforces, fully decoupled.</p>
             </div>
         </div>
@@ -1072,19 +1093,19 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </div>
         <div class="whitelist-grid">
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🔬</span> Automatic verification</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 21l6 0" /><path d="M9 21l0 -9" /><path d="M8 5l2 0" /><path d="M7 7l4 0" /><path d="M14 5a2 2 0 0 1 2 2v3l-3.6 5.4a1 1 0 0 0 .6 1.6h3a1 1 0 0 0 .894 -1.447l-3.528 -7.053" /><path d="M9 5a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v5h-4z" /></svg></span> Automatic verification</h3>
                 <p>Googlebot, Bingbot, Yandex, DuckDuckBot, GPTBot and 6 others are verified via reverse + forward DNS. Legitimate crawlers are never scored. Fakes get a penalty instead. Trusted crawlers can be matched by User-Agent only (`ua_only`, no DNS) and given per-bot detector exemptions (`exempt_detectors`) so legitimate automation is never penalised.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">✅</span> Custom exclusions</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" /><path d="M15 19l2 2l4 -4" /></svg></span> Custom exclusions</h3>
                 <p>Add your office IPs, VPN subnets (CIDR), monitoring services or SEO tools by User-Agent substring. Changes apply instantly on SIGHUP.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🔄</span> Live reload</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg></span> Live reload</h3>
                 <p>All config changes — whitelist, detector scores, thresholds — apply instantly on SIGHUP. No restart. IP state and DNS cache are preserved.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🌐</span> Cloudflare support</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg></span> Cloudflare support</h3>
                 <p>Detectors always score the real attacker — never Cloudflare or your load balancer. Supports CF-Connecting-IP, X-Forwarded-For chains, and trusted proxy CIDR ranges out of the box.</p>
             </div>
         </div>
@@ -1146,12 +1167,12 @@ sudo systemctl enable --now arxsentinel</span></pre>
         <div class="roadmap-grid">
         <div class="roadmap-card">
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-green);border:1px solid rgba(0,255,136,0.35);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">NEXT</span>
-                <h3><span style="color: var(--accent-blue)">📨</span> Alert sinks</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 18h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v7.5" /><path d="M3 6l9 6l9 -6" /><path d="M15 18h6" /><path d="M18 15l3 3l-3 3" /></svg></span> Alert sinks</h3>
                 <p>Push threats to Telegram, Slack and PagerDuty — with built-in deduplication and rate-limiting so a burst never floods your channel.</p>
             </div>
             <div class="roadmap-card">
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
-                <h3><span style="color: var(--accent-purple)">🛡️</span> AWS WAF executor</h3>
+                <h3><span style="color: var(--accent-purple)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> AWS WAF executor</h3>
                 <p>Push threat IPs directly into AWS WAF IP set rules. Integrates with existing WAF rule groups — no Lambda or custom infrastructure required.</p>
             </div>
         </div>
