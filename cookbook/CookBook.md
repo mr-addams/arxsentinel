@@ -81,12 +81,17 @@ access_log syslog:server=127.0.0.1:5514,facility=local7,tag=nginx,severity=info 
 - Multiple nginx workers on different hosts sending to one ArxSentinel instance
 - Environments where log files are not persisted (ephemeral containers, read-only fs)
 - Integration with rsyslog / syslog-ng for log aggregation pipelines
+- HAProxy natively sends logs to syslog (no file or rsyslog needed at all)
 
 | Recipe | Description | File |
 |--------|-------------|------|
 | nginx + Fail2Ban | UDP syslog → ArxSentinel → threats.log | [syslog/nginx-fail2ban.yaml](syslog/nginx-fail2ban.yaml) |
 | nginx + Cloudflare | UDP syslog → ArxSentinel → Cloudflare automated banning | [syslog/nginx-cloudflare.yaml](syslog/nginx-cloudflare.yaml) |
 | nginx multi-stream | Two vhosts on separate syslog ports | [syslog/nginx-multi-stream.yaml](syslog/nginx-multi-stream.yaml) |
+| HAProxy | UDP syslog → ArxSentinel → threats.log (native HAProxy syslog client) | [syslog/haproxy.yaml](syslog/haproxy.yaml) |
+| Traefik | rsyslog relay → ArxSentinel → threats.log | [syslog/traefik.yaml](syslog/traefik.yaml) |
+| Caddy | UDP syslog (net logger) → ArxSentinel → threats.log | [syslog/caddy.yaml](syslog/caddy.yaml) |
+| LiteSpeed | rsyslog relay → ArxSentinel → threats.log | [syslog/litespeed.yaml](syslog/litespeed.yaml) |
 
 ### Docker
 
