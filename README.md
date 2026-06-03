@@ -6,7 +6,7 @@
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64%20%7C%20arm%2Fv7%20%7C%20riscv64%20%7C%20i386-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
-> 🌐 [Русская документация](README.ru.md) | [Українська документація](README.uk.md)
+> 🌐 [Українська документація](README.uk.md) | [Русская документация](README.ru.md) | 📖 [Configuration Cookbook](cookbook/CookBook.md)
 
 **Security event pipeline for any HTTP server** — from a single nginx VPS to a full K8s cluster.  
 ~12 MB RAM · single binary · zero runtime deps · extends via exec+JSON plugins in any language.

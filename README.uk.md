@@ -7,6 +7,8 @@
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64%20%7C%20arm%2Fv7%20%7C%20riscv64%20%7C%20i386-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
+> 🌐 [English](README.md) | [Русская документация](README.ru.md) | 📖 [Книга рецептів конфігурацій](cookbook/CookBook.uk.md)
+
 **Конвеєр обробки подій безпеки для будь-якого HTTP-сервера** — від одного nginx VPS до повноцінного K8s-кластера.  
 ~12 МБ RAM · єдиний бінарник · без залежностей у runtime · розширюється через exec+JSON-плагіни на будь-якій мові.
 

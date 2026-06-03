@@ -7,6 +7,8 @@
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64%20%7C%20arm%2Fv7%20%7C%20riscv64%20%7C%20i386-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
+> 🌐 [English](README.md) | [Українська документація](README.uk.md) | 📖 [Кулинарная книга конфигураций](cookbook/CookBook.ru.md)
+
 **Пайплайн обработки событий безопасности для любого HTTP-сервера** — от одного nginx VPS до полноценного K8s-кластера.  
 ~12 МБ RAM · единый бинарник · без зависимостей в runtime · расширяется через exec+JSON-плагины на любом языке.
 
