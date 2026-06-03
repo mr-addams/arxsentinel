@@ -20,6 +20,7 @@ Sources → Processors → Sinks → Executors
 | `chain_guard` | Proxy chain integrity | optional |
 | `streams.outputs` | Threat sinks | ✅ |
 | `executors` | Automated response | executor recipes only |
+| [config.reference.yaml](config.reference.yaml) | Complete reference for all parameters | — |
 
 ## Table of Contents
 

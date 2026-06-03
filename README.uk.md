@@ -15,23 +15,40 @@
 > **Ліцензія:** ArxSentinel поширюється за [Elastic License 2.0](LICENSE). Безкоштовне використання для власної інфраструктури. Комерційне використання як керованого сервісу безпеки або телеметрії, або як частини керованого сервісу, вимагає окремої угоди. Деталі — у файлі [LICENSE](LICENSE).
 
 ```
-  [nginx / Apache / Caddy / ...]       [exec+JSON Source — any language]
-           │                                        │
-           └─────────────────┬──────────────────────┘
-                      Source (file │ stdin │ http)
-                             │
-                       Merge & Parse
-                             │
-             ┌───────────────┼───────────────┐
-        Whitelist       ChainGuard       BotVerifier
-             └───────────────┼───────────────┘
-                      Tracker (IP state)
-                             │
-                   Scorer + 8 Detectors
-                             │
-          ┌──────────────────┼──────────────────┐
-    Fail2Ban sink       stdout JSON        exec+JSON Sink
-    (threats.log)    (Loki / Splunk / ...)  (any script)
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║  SOURCES                                                         ║
+  ║  nginx · Apache · Caddy · Traefik · HAProxy · LiteSpeed          ║
+  ║  file │ stdin │ exec+JSON plugin (будь-яка мова)                 ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ розібрані записи логу
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  PROCESSORS                                                      ║
+  ║                                                                  ║
+  ║  Whitelist ── власні IP/CIDR/UA · DNS-верифікація ботів          ║
+  ║  ChainGuard ─ перевірка цілісності ланцюжка IP за проксі         ║
+  ║                                                                  ║
+  ║  Детектори (вбудовані)    Детектори (плагіни)                    ║
+  ║  ├─ probe      score 25  └─ exec+JSON detector (будь-яка мова)   ║
+  ║  ├─ bruteforce score 30                                          ║
+  ║  ├─ crawler    score 20                                          ║
+  ║  ├─ noasset    score 20                                          ║
+  ║  ├─ rate       score 25                                          ║
+  ║  ├─ useragent  score 40/20/15                                    ║
+  ║  ├─ overflow   score 30                                          ║
+  ║  └─ badbot     score 60                                          ║
+  ║                                                                  ║
+  ║  Scorer ── накопичує score → WARN (≥50) │ THREAT (≥80)           ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ події загроз
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  SINKS                                                           ║
+  ║  file (формат fail2ban) · stdout JSON · exec+JSON plugin         ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ через Named Channel Hub
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  EXECUTORS  (автоматична відповідь — опціонально)                ║
+  ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
+  ╚══════════════════════════════════════════════════════════════════╝
 ```
 
 ## Сценарії використання

@@ -36,7 +36,7 @@
   ║  ├─ overflow   score 30                                          ║
   ║  └─ badbot     score 60                                          ║
   ║                                                                  ║
-  ║  Scorer ── accumulates score → WARN (≥50) │ THREAT (≥80)        ║
+  ║  Scorer ── accumulates score → WARN (≥50) │ THREAT (≥80)         ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ threat events
   ╔═══════════════════════════╧══════════════════════════════════════╗

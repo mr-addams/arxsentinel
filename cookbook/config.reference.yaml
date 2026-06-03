@@ -1,4 +1,7 @@
-# ========================== arxsentinel config.yaml ====================================
+# ========================== cookbook/config.reference.yaml =============================
+#
+#   Complete reference for all ArxSentinel configuration parameters.
+#   For ready-to-use recipes: cookbook/ (repo) or /usr/share/arxsentinel/cookbook/ (installed)
 #
 #   Single source of all behavioral parameters.
 #   Единый источник всех поведенческих параметров.
@@ -435,6 +438,16 @@ output:
   # Dev / Local:
   # threat_log: ./logs/threats.log
   # operational_log: ./logs/sentinel.log
+
+# ── metrics: Prometheus metrics endpoint / endpoint метрик Prometheus ─────────────────────
+metrics:
+  enabled: false           # enable/disable Prometheus metrics endpoint; bool, default: false
+  listen_addr: ":9117"     # metrics listen address; string, default: ":9117"
+
+# ── pipeline: runtime pipeline configuration / конфигурация пайплайна выполнения ──────────
+pipeline:
+  buffer_size: 8192        # channel buffer depth for burst traffic; int, ≥1, default: 8192
+  shutdown_timeout: "15s"  # graceful shutdown drain window; duration: "5s"|"15s"|"30s", default: "15s"
 
 # ── executors: automated threat response ─────────────────────────────────────────────────
 #

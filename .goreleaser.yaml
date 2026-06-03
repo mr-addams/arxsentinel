@@ -55,7 +55,7 @@ nfpms:
         type: tree
         dst: /usr/share/arxsentinel/
       # Full reference with all configuration options
-      - src: config.reference.yaml
+      - src: cookbook/config.reference.yaml
         dst: /etc/arxsentinel/config.reference.yaml
 
       # Systemd unit uses /usr/bin/ (differs from deploy/ scripts which use /usr/local/bin/).
@@ -105,7 +105,7 @@ nfpms:
         type: tree
         dst: /usr/share/arxsentinel/
       # Full reference with all configuration options
-      - src: config.reference.yaml
+      - src: cookbook/config.reference.yaml
         dst: /etc/arxsentinel/config.reference.yaml
 
       # RPM/systemd convention: /usr/lib/systemd/system/ (not /lib/)
@@ -154,7 +154,7 @@ nfpms:
         type: tree
         dst: /usr/share/arxsentinel/
       # Full reference with all configuration options
-      - src: config.reference.yaml
+      - src: cookbook/config.reference.yaml
         dst: /etc/arxsentinel/config.reference.yaml
 
       # Arch Linux systemd convention: /usr/lib/systemd/system/

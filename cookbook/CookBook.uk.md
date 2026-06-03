@@ -22,6 +22,7 @@ Sources → Processors → Sinks → Executors
 | `chain_guard` | Цілісність проксі-ланцюжка | опційно |
 | `streams.outputs` | Приймачі подій | ✅ |
 | `executors` | Автоматизована відповідь | лише рецепти з executor |
+| [config.reference.yaml](config.reference.yaml) | Повний довідник всіх параметрів | — |
 
 ## Зміст
 

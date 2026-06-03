@@ -22,6 +22,7 @@ Sources → Processors → Sinks → Executors
 | `chain_guard` | Целостность прокси-цепочки | опционально |
 | `streams.outputs` | Приёмники событий | ✅ |
 | `executors` | Автоматизированный ответ | только рецепты с executor |
+| [config.reference.yaml](config.reference.yaml) | Полный справочник всех параметров | — |
 
 ## Содержание
 

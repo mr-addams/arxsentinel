@@ -256,7 +256,7 @@ docker run -d \
 > a custom `config.yaml`:
 > `streams:`, `inputs:`, `outputs:`, `executors:`, `pipelines:`, per-detector `paths:` arrays.
 > Full copy-paste-ready examples: `/etc/arxsentinel/config.yaml.example` (inside the container)
-> or [`config.reference.yaml`](../../../../config.reference.yaml) in the repository.
+> or [`config.reference.yaml`](../../../../cookbook/config.reference.yaml) in the repository.
 
 ## Building locally
 
