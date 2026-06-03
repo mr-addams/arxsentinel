@@ -25,6 +25,7 @@ Sources → Processors → Sinks → Executors
 ## Table of Contents
 
 - [Fail2Ban (file-based logging)](#fail2ban)
+- [Syslog (network log transport)](#syslog)
 - [Cloudflare Executor (automated IP banning)](#cloudflare)
 - [MikroTik Executor (RouterOS address-list)](#mikrotik)
 - [Nginx Executor (blocklist file + reload)](#nginx-executor)
@@ -60,6 +61,42 @@ Docker Compose stack for running ArxSentinel + Fail2Ban in containers.
 |------|---------|
 | [fail2ban/docker/config.yaml](fail2ban/docker/config.yaml) | ArxSentinel config for Docker deployment |
 | [fail2ban/docker/docker-compose.yml](fail2ban/docker/docker-compose.yml) | Compose stack: arxsentinel + fail2ban |
+
+---
+
+## Syslog
+
+Receive nginx (or any web server) access logs directly over the network using the
+built-in syslog source. No shared log files, no log rotation, no volume mounts.
+nginx streams access log lines to ArxSentinel via UDP or TCP — ArxSentinel listens,
+strips the syslog envelope, and processes the embedded access log line normally.
+
+**Nginx configuration** (add to `nginx.conf` or a site block):
+```nginx
+access_log syslog:server=127.0.0.1:5514,facility=local7,tag=nginx,severity=info combined;
+```
+
+**When to use syslog instead of file:**
+- Containerised deployments where shared volumes are inconvenient
+- Multiple nginx workers on different hosts sending to one ArxSentinel instance
+- Environments where log files are not persisted (ephemeral containers, read-only fs)
+- Integration with rsyslog / syslog-ng for log aggregation pipelines
+
+| Recipe | Description | File |
+|--------|-------------|------|
+| nginx + Fail2Ban | UDP syslog → ArxSentinel → threats.log | [syslog/nginx-fail2ban.yaml](syslog/nginx-fail2ban.yaml) |
+| nginx + Cloudflare | UDP syslog → ArxSentinel → Cloudflare automated banning | [syslog/nginx-cloudflare.yaml](syslog/nginx-cloudflare.yaml) |
+| nginx multi-stream | Two vhosts on separate syslog ports | [syslog/nginx-multi-stream.yaml](syslog/nginx-multi-stream.yaml) |
+
+### Docker
+
+Zero-volume Docker Compose: nginx sends logs to ArxSentinel container over the
+internal Docker network — no shared volume mount needed.
+
+| File | Purpose |
+|------|---------|
+| [syslog/docker/config.yaml](syslog/docker/config.yaml) | ArxSentinel config for syslog Docker deployment |
+| [syslog/docker/docker-compose.yml](syslog/docker/docker-compose.yml) | Compose stack: nginx → syslog → arxsentinel |
 
 ---
 

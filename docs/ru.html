@@ -372,6 +372,15 @@
 
         .whitelist-section { max-width: 1200px; margin: 6rem auto; }
         .whitelist-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; padding: 0 2rem; }
+        .integrations-section { max-width: 900px; margin: 6rem auto; padding: 0 2rem; }
+        .integrations-grid { display: flex; gap: 3rem; justify-content: center; flex-wrap: wrap; margin-top: 2.5rem; }
+        .integrations-col { flex: 1 1 280px; }
+        .integrations-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .integration-tag {
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 20px; padding: 0.3rem 0.85rem; font-size: 0.82rem; color: #e0e0e0;
+        }
+        .integration-tag.muted { color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.08); }
         .whitelist-card {
             flex: 0 1 260px;
             background: rgba(13, 13, 31, 0.4); border: 1px solid rgba(255, 255, 255, 0.03);
@@ -944,6 +953,55 @@ sudo systemctl enable --now arxsentinel</span></pre>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg></span> Поддержка Cloudflare</h3>
                 <p>Детекторы всегда оценивают реального злоумышленника — никогда Cloudflare или балансировщик нагрузки. Поддерживает CF-Connecting-IP, цепочки X-Forwarded-For и CIDR доверенных прокси из коробки.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="integrations-section">
+        <div class="section-header">
+            <span class="section-tag">Универсальный I/O</span>
+            <h2 class="section-title">Работает с вашим стеком</h2>
+            <p style="color: var(--text-muted); max-width: 600px; margin: 0 auto;">
+                Читает из любого источника логов. Пишет угрозы в любой приёмник.
+                Fail2Ban остаётся вариантом по умолчанию — теперь одним из многих.
+            </p>
+        </div>
+        <div class="integrations-grid">
+            <div class="integrations-col">
+                <h3 style="color: var(--accent-blue); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Источники</h3>
+                <div class="integrations-list">
+                    <span class="integration-tag">nginx</span>
+                    <span class="integration-tag">Apache</span>
+                    <span class="integration-tag">Traefik</span>
+                    <span class="integration-tag">Caddy</span>
+                    <span class="integration-tag">HAProxy</span>
+                    <span class="integration-tag">LiteSpeed</span>
+                    <span class="integration-tag">любой лог-файл</span>
+                    <span class="integration-tag">stdin pipe</span>
+                    <span class="integration-tag">syslog-приёмник</span>
+                    <span class="integration-tag muted">HTTP (скоро)</span>
+                </div>
+            </div>
+            <div class="integrations-col">
+                <h3 style="color: var(--accent-green); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Приёмники</h3>
+                <div class="integrations-list">
+                    <span class="integration-tag">Fail2Ban</span>
+                    <span class="integration-tag">Cloudflare WAF</span>
+                    <span class="integration-tag">MikroTik RouterOS</span>
+                    <span class="integration-tag">nginx blocklist</span>
+                    <span class="integration-tag">exec+JSON</span>
+                    <span class="integration-tag">stdout&nbsp;JSON</span>
+                    <span class="integration-tag muted">Grafana Loki (скоро)</span>
+                    <span class="integration-tag muted">Splunk HEC (скоро)</span>
+                    <span class="integration-tag muted">Datadog (скоро)</span>
+                    <span class="integration-tag muted">Telegram (скоро)</span>
+                </div>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 2rem;">
+            <div style="display:flex;flex-direction:column;gap:0.5rem;align-items:center;">
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: file &nbsp;·&nbsp; path: /var/log/nginx/access.log</code>
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: syslog &nbsp;·&nbsp; addr: udp://0.0.0.0:5514 &nbsp;·&nbsp; без общего тома</code>
             </div>
         </div>
     </section>

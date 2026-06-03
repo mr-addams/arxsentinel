@@ -1132,7 +1132,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
                     <span class="integration-tag">LiteSpeed</span>
                     <span class="integration-tag">any log file</span>
                     <span class="integration-tag">stdin pipe</span>
-                    <span class="integration-tag muted">syslog (soon)</span>
+                    <span class="integration-tag">syslog receiver</span>
                     <span class="integration-tag muted">HTTP (soon)</span>
                 </div>
             </div>
@@ -1153,9 +1153,10 @@ sudo systemctl enable --now arxsentinel</span></pre>
             </div>
         </div>
         <div style="text-align: center; margin-top: 2rem;">
-            <code style="background: var(--bg-card); padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 0.9rem; color: var(--text-muted);">
-                docker logs nginx | arxsentinel --input=stdin --output=stdout,json
-            </code>
+            <div style="display:flex;flex-direction:column;gap:0.5rem;align-items:center;">
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: file &nbsp;·&nbsp; path: /var/log/nginx/access.log</code>
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: syslog &nbsp;·&nbsp; addr: udp://0.0.0.0:5514 &nbsp;·&nbsp; no shared volume</code>
+            </div>
         </div>
     </section>
 
