@@ -51,7 +51,8 @@ nfpms:
       - src: cookbook/fail2ban/nginx-basic.yaml
         dst: /etc/arxsentinel/config.yaml.example
       # Full cookbook: all ready-to-use recipes
-      - src: cookbook/**
+      - src: cookbook/
+        type: tree
         dst: /usr/share/arxsentinel/
       # Full reference with all configuration options
       - src: config.reference.yaml
@@ -100,7 +101,8 @@ nfpms:
       - src: cookbook/fail2ban/nginx-basic.yaml
         dst: /etc/arxsentinel/config.yaml.example
       # Full cookbook: all ready-to-use recipes
-      - src: cookbook/**
+      - src: cookbook/
+        type: tree
         dst: /usr/share/arxsentinel/
       # Full reference with all configuration options
       - src: config.reference.yaml
@@ -148,7 +150,8 @@ nfpms:
       - src: cookbook/fail2ban/nginx-basic.yaml
         dst: /etc/arxsentinel/config.yaml.example
       # Full cookbook: all ready-to-use recipes
-      - src: cookbook/**
+      - src: cookbook/
+        type: tree
         dst: /usr/share/arxsentinel/
       # Full reference with all configuration options
       - src: config.reference.yaml
