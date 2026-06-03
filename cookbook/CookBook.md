@@ -66,7 +66,7 @@ Docker Compose stack for running ArxSentinel + Fail2Ban in containers.
 ## Cloudflare
 
 ArxSentinel sends THREAT events to the Cloudflare API to ban IPs via firewall rules.
-Requires a Cloudflare API token with Zone Firewall edit permission.
+Requires a Cloudflare API token with Account → IP Lists → Edit permission.
 
 | Recipe | Description | File |
 |--------|-------------|------|
