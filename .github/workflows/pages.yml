@@ -34,6 +34,20 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v6
 
+      # Patch version strings in landing pages to always show the latest stable
+      # release — not a dev tag. Runs in-place in the CI runner, never committed.
+      # Safe to skip if no stable release exists yet (first-time bootstrap).
+      - name: Sync version strings to latest stable release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          stable=$(gh release list --limit 1 --exclude-pre-releases --json tagName -q '.[0].tagName' | sed 's/^v//')
+          if [ -n "$stable" ]; then
+            sed -i -E "s|(softwareVersion\": \")[0-9]+\.[0-9]+\.[0-9]+(\")|\\1${stable}\\2|g" docs/*.html
+            sed -i -E "s|(badge-version\">v)[0-9]+\.[0-9]+\.[0-9]+(<)|\\1v${stable}\\2|g" docs/*.html
+            sed -i -E "s|(section-tag\">[^v<]*v)[0-9]+\.[0-9]+\.[0-9]+|\1${stable}|g" docs/*.html
+          fi
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
