@@ -23,14 +23,24 @@ executors:
       min_level: THREAT
 ```
 
-### RouterOS User Setup
+### RouterOS Prerequisites
 
-Enable the REST API service and create a minimal-privilege user:
+The REST API runs on the `www-ssl` (HTTPS) or `www` (HTTP) service — the same port
+as the RouterOS web interface. Enable it and restrict access to ArxSentinel's address:
 
 ```
-/ip/service/enable rest
-/ip/service/set rest port=443 certificate=none
+/ip/service/set www-ssl address=<arxsentinel-ip>/32
+/ip/service/enable www-ssl
+```
 
+> ⚠️ Always set `address=` to limit access to the specific host or subnet where
+> ArxSentinel runs. Never leave it open to all addresses in production.
+
+### RouterOS User Setup
+
+Create a minimal-privilege user for ArxSentinel:
+
+```
 /user/group/add name=arxsentinel policy=read,write,api,rest-api
 /user/add name=arxsentinel group=arxsentinel password="<secure-password>"
 ```
@@ -120,7 +130,8 @@ executors:
       min_level: THREAT
 ```
 
-> `tls_verify: false` is acceptable for loopback REST API on CHR.
+> `tls_verify: false` is acceptable when `www` (HTTP) is used on loopback for CHR.
+> For `www-ssl`, either install a certificate or set `tls_verify: false` for local CHR.
 
 ---
 
@@ -217,7 +228,7 @@ To clear the entire blocklist:
 | Error | Likely Cause | Fix |
 |-------|-------------|-----|
 | `401 Unauthorized` | Wrong credentials or missing `rest-api` policy | Verify user password and group policies (`read,write,api,rest-api`) |
-| `404 Not Found` | Incorrect API path or RouterOS version < 7.18.2 | Check `/ip/service/print` for REST service; update RouterOS to 7.18.2+ |
+| `404 Not Found` | Incorrect API path or RouterOS version < 7.18.2 | Verify `www-ssl` or `www` is enabled: `/ip/service/print`; update RouterOS to 7.18.2+ |
 | `TLS handshake error` | Certificate mismatch or `tls_verify: true` with self-signed cert | Set `tls_verify: false` for testing or install a valid cert on RouterOS |
-| `connection refused` | REST service not enabled or wrong port | `/ip/service/enable rest` and verify port with `/ip/service/print` |
+| `connection refused` | REST service not enabled or wrong port | Enable `www-ssl` or `www`: `/ip/service/enable www-ssl` and verify with `/ip/service/print` |
 | Container exits immediately | Out of memory or missing envlist | Check RAM with `/system/resource/print`, verify envlist with `/container/envs/print` |

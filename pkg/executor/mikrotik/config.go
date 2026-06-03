@@ -41,6 +41,10 @@ type Config struct {
 	TTL           time.Duration `json:"-" yaml:"ttl"`
 	SentinelID    string        `json:"sentinel_id" yaml:"sentinel_id"`
 	TLSVerify     bool          `json:"tls_verify" yaml:"tls_verify"`
+	// CAFile is the path to a PEM-encoded CA certificate file used to verify the
+	// RouterOS TLS certificate. If empty, the system trust store is used.
+	// Required when tls_verify: true and the RouterOS cert is signed by an internal CA.
+	CAFile        string        `json:"ca_file" yaml:"ca_file"`
 	// UseTLS controls whether to use HTTPS (true, default) or plain HTTP (false).
 	// Set to false only for local mock servers in integration tests.
 	UseTLS        bool          `json:"use_tls" yaml:"use_tls"`
