@@ -3,6 +3,8 @@ name: Dev Release
 on:
   push:
     branches: [dev]
+    paths-ignore:
+      - 'docs/**'
 
 permissions:
   contents: write

@@ -16,6 +16,12 @@
 
 set -euo pipefail
 
+# Docs-only commit — nothing to build or test, skip all Go checks.
+if ! git diff --cached --name-only | grep -qvE '^docs/'; then
+  echo "[pre-commit] docs-only commit — skipping Go checks"
+  exit 0
+fi
+
 # LICENSE sync check — cmd/arxsentinel/LICENSE must be identical to LICENSE.
 # The copy exists because go:embed cannot traverse ../ paths.
 if git diff --cached --name-only | grep -qE '^LICENSE$|^cmd/arxsentinel/LICENSE$'; then
