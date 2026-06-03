@@ -267,6 +267,7 @@ func main() {
 	// ── Startup messages ──────────────────────────────────────────────────────────────
 
 	utils.Log("STARTUP", "arxsentinel "+version+" starting", "info")
+	utils.Log("STARTUP", "cookbook: /usr/share/arxsentinel/cookbook/", "info")
 	utils.Log("CONFIG", fmt.Sprintf("alert=%d ban=%d window=%v debug=%v",
 		cfg.Scoring.AlertThreshold,
 		cfg.Scoring.BanThreshold,
