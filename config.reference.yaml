@@ -445,7 +445,7 @@ output:
 #
 # NOTE: executors are commented out in this reference because they require an active
 # sentinel-threat sink whose name matches sources[].name. For a complete working
-# example with the sink wired up, see config.cloudflare-example.yaml.
+# example with the sink wired up, see cookbook/cloudflare/nginx-basic.yaml.
 #
 # executors:
   # ── Cloudflare IP Lists executor ─────────────────────────────────────────────────────

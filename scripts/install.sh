@@ -39,9 +39,9 @@ done
 # Resolve source config: prefer real config.yaml, fall back to examples.
 if [ -f config.yaml ]; then
     SRC_CONFIG=config.yaml
-elif [ -f config.fail2ban-example.yaml ]; then
-    SRC_CONFIG=config.fail2ban-example.yaml
-    echo "[INFO] using config.fail2ban-example.yaml as source config"
+elif [ -f cookbook/fail2ban/nginx-basic.yaml ]; then
+    SRC_CONFIG=cookbook/fail2ban/nginx-basic.yaml
+    echo "[INFO] using cookbook/fail2ban/nginx-basic.yaml as source config"
 elif [ -f config.reference.yaml ]; then
     SRC_CONFIG=config.reference.yaml
     echo "[INFO] using config.reference.yaml as source config"

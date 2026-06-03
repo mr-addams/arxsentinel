@@ -180,7 +180,7 @@ jobs:
 
       - name: Validate cookbook and root templates
         run: |
-          find cookbook/ config.*-example.yaml -name "*.yaml" | sort | while read -r f; do
+          find cookbook/ -name "*.yaml" | sort | while read -r f; do
             /tmp/arxsentinel validate --config "$f" || { echo "INVALID: $f"; exit 1; }
           done
           echo "all configs valid"
