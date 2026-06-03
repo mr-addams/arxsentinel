@@ -47,16 +47,15 @@ nfpms:
       postremove:  packaging/scripts/postrm
 
     contents:
-      # Example configs — always overwritten on upgrade (unlike the real config).
-      # config.yaml.example is the default quick-start (nginx + fail2ban).
-      - src: config.nginx-example.yaml
+      # Default quick-start config (nginx → fail2ban, simplest setup)
+      - src: cookbook/fail2ban/nginx-basic.yaml
         dst: /etc/arxsentinel/config.yaml.example
-      - src: config.nginx-example.yaml
-        dst: /etc/arxsentinel/config.nginx-example.yaml
-      - src: config.cloudflare-example.yaml
-        dst: /etc/arxsentinel/config.cloudflare-example.yaml
-      - src: config.example.yaml
-        dst: /etc/arxsentinel/config.example.yaml
+      # Full cookbook: all ready-to-use recipes
+      - src: cookbook/**
+        dst: /usr/share/arxsentinel/cookbook/
+      # Full reference with all configuration options
+      - src: config.reference.yaml
+        dst: /etc/arxsentinel/config.reference.yaml
 
       # Systemd unit uses /usr/bin/ (differs from deploy/ scripts which use /usr/local/bin/).
       - src: packaging/arxsentinel.service
@@ -97,14 +96,15 @@ nfpms:
       postremove:  packaging/scripts/rpm/postrm
 
     contents:
-      - src: config.nginx-example.yaml
+      # Default quick-start config (nginx → fail2ban, simplest setup)
+      - src: cookbook/fail2ban/nginx-basic.yaml
         dst: /etc/arxsentinel/config.yaml.example
-      - src: config.nginx-example.yaml
-        dst: /etc/arxsentinel/config.nginx-example.yaml
-      - src: config.cloudflare-example.yaml
-        dst: /etc/arxsentinel/config.cloudflare-example.yaml
-      - src: config.example.yaml
-        dst: /etc/arxsentinel/config.example.yaml
+      # Full cookbook: all ready-to-use recipes
+      - src: cookbook/**
+        dst: /usr/share/arxsentinel/cookbook/
+      # Full reference with all configuration options
+      - src: config.reference.yaml
+        dst: /etc/arxsentinel/config.reference.yaml
 
       # RPM/systemd convention: /usr/lib/systemd/system/ (not /lib/)
       - src: packaging/arxsentinel.service
@@ -144,14 +144,15 @@ nfpms:
       postremove:  packaging/scripts/arch/postrm
 
     contents:
-      - src: config.nginx-example.yaml
+      # Default quick-start config (nginx → fail2ban, simplest setup)
+      - src: cookbook/fail2ban/nginx-basic.yaml
         dst: /etc/arxsentinel/config.yaml.example
-      - src: config.nginx-example.yaml
-        dst: /etc/arxsentinel/config.nginx-example.yaml
-      - src: config.cloudflare-example.yaml
-        dst: /etc/arxsentinel/config.cloudflare-example.yaml
-      - src: config.example.yaml
-        dst: /etc/arxsentinel/config.example.yaml
+      # Full cookbook: all ready-to-use recipes
+      - src: cookbook/**
+        dst: /usr/share/arxsentinel/cookbook/
+      # Full reference with all configuration options
+      - src: config.reference.yaml
+        dst: /etc/arxsentinel/config.reference.yaml
 
       # Arch Linux systemd convention: /usr/lib/systemd/system/
       - src: packaging/arxsentinel.service

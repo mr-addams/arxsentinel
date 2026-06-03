@@ -162,3 +162,25 @@ jobs:
           # OLS containers write stderr.log owned by root — skip to avoid EACCES.
           exclude: |
             tests/integration/logs/**/stderr.log
+
+  validate-cookbook:
+    name: Validate cookbook configs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        run: go build -o /tmp/arxsentinel ./cmd/arxsentinel
+
+      - name: Validate cookbook and root templates
+        run: |
+          find cookbook/ -name "*.yaml" | sort | while read -r f; do
+            /tmp/arxsentinel validate --config "$f" || { echo "INVALID: $f"; exit 1; }
+          done
+          echo "all configs valid"

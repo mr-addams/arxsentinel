@@ -1,0 +1,21 @@
+# Caddy configuration for use with arxsentinel.
+#
+# trusted_proxies tells Caddy which upstream addresses are trusted to set
+# X-Forwarded-For. Without this, Caddy ignores X-Forwarded-For from clients
+# (correct security default) and rewrites it with the direct peer address.
+#
+# Caddy then passes the real client IP to nginx in X-Forwarded-For.
+#
+# Tested with: Caddy 2.x
+
+example.com {
+    # Trust only known proxy addresses — prevents IP spoofing.
+    # Replace with your actual proxy CIDR if Caddy sits behind another proxy.
+    trusted_proxies static 127.0.0.1/32 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+
+    reverse_proxy 127.0.0.1:8080 {
+        # Caddy automatically sets X-Forwarded-For and X-Forwarded-Proto.
+        # X-Real-IP is NOT set automatically — use header_up if your backend needs it.
+        # header_up X-Real-IP {remote_host}
+    }
+}

@@ -8,7 +8,7 @@ It runs autonomously: a dedicated goroutine reads `ThreatEvent`s from a Named Ch
 accumulates them, and writes a formatted list file. A periodic sweep removes expired bans
 based on a configurable TTL.
 
-**Quick start:** see `config.nginx-executor-example.yaml` for a minimal working configuration.
+**Quick start:** see `cookbook/nginx-executor/nginx-basic.yaml` for a minimal working configuration.
 
 ---
 
@@ -55,7 +55,7 @@ Same as Cloudflare executor — see `docs/executor-cloudflare.md`.
 
 ## Example Configuration
 
-Minimal working config — see also `config.nginx-executor-example.yaml`:
+Minimal working config — see also `cookbook/nginx-executor/nginx-basic.yaml`:
 
 ```yaml
 streams:

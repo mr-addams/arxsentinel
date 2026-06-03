@@ -1,0 +1,88 @@
+# ====================== cookbook/fail2ban/nginx-basic.yaml ==============================
+#
+#   Minimal fail2ban config: single nginx combined log -> threats.log.
+#   Works with Fail2Ban (see jail.conf:  logpath = /var/log/arxsentinel/threats.log)
+#
+# =======================================================================================
+
+# ── SOURCES ──────────────────────────────────────────────────────────────────────────────
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
+
+# ── PROCESSORS: Scoring ─────────────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: "300s"
+  decay: "linear"
+
+# ── PROCESSORS: Detectors ───────────────────────────────────────────────────────────────
+detectors:
+
+  probe:
+    enabled: true           # requests to sensitive paths (.env, .git, wp-config...)
+    score: 25
+
+  bruteforce:
+    enabled: true           # abnormal share of 404 responses
+    min_requests: 10
+    ratio_threshold: 0.6
+    score: 30
+
+  crawler:
+    enabled: true           # sequential URL traversal by numeric pattern
+    min_sequential: 5
+    score: 20
+
+  noasset:
+    enabled: true           # page views with no static asset loading (headless bot)
+    min_page_requests: 3
+    asset_ratio_threshold: 0.1
+    score: 20
+
+  rate:
+    enabled: true           # request spike within a time window
+    window: "60s"
+    threshold: 100
+    score: 25
+
+  useragent:
+    enabled: true           # suspicious User-Agent strings
+    scanner_score: 40
+    grabber_score: 20
+    automation_score: 15
+    empty_ua_score: 30
+    extra_scanner_patterns: []
+    extra_grabber_patterns: []
+    extra_automation_patterns: []
+
+  overflow:
+    enabled: true           # abnormal URL length / WAF bypass attempts
+    max_url_length: 2048
+    score: 30
+
+  badbot:
+    enabled: true           # community bad-bot blocklist (mitchellkrogza)
+    score: 60
+    check_ua: true
+    check_referrer: false
+
+# ── PROCESSORS: Whitelist ───────────────────────────────────────────────────────────────
+whitelist:
+  custom:
+    ips: []
+    cidrs: []
+    ua_substrings: []
+
+# ── chain_guard: proxy chain integrity check (disabled by default) ──────────────────────
+# chain_guard:
+#   enabled: true
+#   warnings_log: /var/log/arxsentinel/warnings.log
