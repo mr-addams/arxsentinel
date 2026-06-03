@@ -510,6 +510,10 @@ pipeline:
 #   - type: exec              # exec plugin: binary writes log lines to stdout
 #     exec: /usr/local/lib/arxsentinel/plugins/my-source.sh
 #     parser: json
+#   - type: syslog            # network syslog receiver (RFC 3164 / RFC 5424)
+#     addr: udp://0.0.0.0:5514  # scheme encodes transport: udp | tcp | unixgram | unix
+#     parser: combined        # optional; inherits parser.log_format if omitted
+#     # Nginx: access_log syslog:server=127.0.0.1:5514,facility=local7,tag=nginx combined;
 
 # ── outputs: universal threat sink syntax / универсальный синтаксис приёмников ──────────
 #
