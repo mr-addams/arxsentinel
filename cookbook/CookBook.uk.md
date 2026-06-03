@@ -90,6 +90,10 @@ access_log syslog:server=127.0.0.1:5514,facility=local7,tag=nginx,severity=info 
 | nginx + Fail2Ban | UDP syslog → ArxSentinel → threats.log | [syslog/nginx-fail2ban.yaml](syslog/nginx-fail2ban.yaml) |
 | nginx + Cloudflare | UDP syslog → ArxSentinel → автоматичне блокування Cloudflare | [syslog/nginx-cloudflare.yaml](syslog/nginx-cloudflare.yaml) |
 | nginx multi-stream | Два vhost на різних syslog-портах | [syslog/nginx-multi-stream.yaml](syslog/nginx-multi-stream.yaml) |
+| HAProxy | UDP syslog → ArxSentinel → threats.log (вбудований syslog-клієнт HAProxy) | [syslog/haproxy.yaml](syslog/haproxy.yaml) |
+| Traefik | rsyslog-ретрансляція → ArxSentinel → threats.log | [syslog/traefik.yaml](syslog/traefik.yaml) |
+| Caddy | UDP syslog (net logger) → ArxSentinel → threats.log | [syslog/caddy.yaml](syslog/caddy.yaml) |
+| LiteSpeed | rsyslog-ретрансляція → ArxSentinel → threats.log | [syslog/litespeed.yaml](syslog/litespeed.yaml) |
 
 ### Docker
 
