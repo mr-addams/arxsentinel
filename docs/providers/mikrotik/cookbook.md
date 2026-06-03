@@ -45,6 +45,37 @@ Create a minimal-privilege user for ArxSentinel:
 /user/add name=arxsentinel group=arxsentinel password="<secure-password>"
 ```
 
+### CA Certificate Setup (internal CA or self-signed cert)
+
+When RouterOS uses a self-signed or internally-issued certificate, provide the CA
+to ArxSentinel instead of disabling verification:
+
+**Export the CA from RouterOS:**
+```
+/certificate/export-certificate <ca-cert-name> export-passphrase=""
+# File appears in RouterOS Files — download via Winbox or SCP
+```
+
+**Copy to ArxSentinel host and set permissions:**
+```bash
+mkdir -p /etc/arxsentinel/ca
+cp mikrotik-ca.crt /etc/arxsentinel/ca/mikrotik-ca.crt
+chown root:arxsentinel /etc/arxsentinel/ca/mikrotik-ca.crt
+chmod 640 /etc/arxsentinel/ca/mikrotik-ca.crt
+```
+
+**Add to executor config:**
+```yaml
+config:
+  tls_verify: true
+  ca_file: "/etc/arxsentinel/ca/mikrotik-ca.crt"
+```
+
+After updating the config, restart the daemon (executor changes require restart):
+```bash
+systemctl restart arxsentinel
+```
+
 ### Verification
 
 ```bash
