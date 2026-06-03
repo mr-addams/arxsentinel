@@ -3,14 +3,9 @@
 #   ArxSentinel config for Docker Compose with nginx blocklist executor.
 #   Reads nginx access log from shared Docker volume.
 #
-# ========================================================================================
+# =======================================================================================
 
-scoring:
-  alert_threshold: 50
-  ban_threshold: 75
-  observation_window: 5m
-  decay: 0
-
+# ── SOURCES ──────────────────────────────────────────────────────────────────────────────
 streams:
   - name: main
     inputs:
@@ -24,6 +19,77 @@ streams:
       - type: sentinel-threat
         name: sentinel-cf
 
+# ── PROCESSORS: Scoring ─────────────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50
+  ban_threshold: 75
+  observation_window: "300s"
+  decay: "0"
+
+# ── PROCESSORS: Detectors ───────────────────────────────────────────────────────────────
+detectors:
+
+  probe:
+    enabled: true
+    score: 25
+
+  bruteforce:
+    enabled: true
+    min_requests: 10
+    ratio_threshold: 0.6
+    score: 30
+
+  crawler:
+    enabled: true
+    min_sequential: 5
+    score: 20
+
+  noasset:
+    enabled: true
+    min_page_requests: 3
+    asset_ratio_threshold: 0.1
+    score: 20
+
+  rate:
+    enabled: true
+    window: "60s"
+    threshold: 100
+    score: 25
+
+  useragent:
+    enabled: true
+    scanner_score: 40
+    grabber_score: 20
+    automation_score: 15
+    empty_ua_score: 30
+    extra_scanner_patterns: []
+    extra_grabber_patterns: []
+    extra_automation_patterns: []
+
+  overflow:
+    enabled: true
+    max_url_length: 2048
+    score: 30
+
+  badbot:
+    enabled: true
+    score: 60
+    check_ua: true
+    check_referrer: false
+
+# ── PROCESSORS: Whitelist ───────────────────────────────────────────────────────────────
+whitelist:
+  custom:
+    ips: []
+    cidrs: []
+    ua_substrings: []
+
+# ── chain_guard: proxy chain integrity check (disabled by default) ──────────────────────
+# chain_guard:
+#   enabled: true
+#   warnings_log: /var/log/arxsentinel/warnings.log
+
+# ── EXECUTORS ───────────────────────────────────────────────────────────────────────────
 executors:
   - name: nginx-blocklist
     type: nginx

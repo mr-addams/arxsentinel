@@ -14,23 +14,40 @@
 > **License:** ArxSentinel is distributed under the [Elastic License 2.0](LICENSE). Free use for your own infrastructure. Commercial use as a managed security or telemetry service, or as part of a managed service, requires a separate agreement. See [LICENSE](LICENSE) for details.
 
 ```
-  [nginx / Apache / Caddy / ...]       [exec+JSON Source — any language]
-           │                                        │
-           └─────────────────┬──────────────────────┘
-                      Source (file │ stdin │ http)
-                             │
-                       Merge & Parse
-                             │
-             ┌───────────────┼───────────────┐
-        Whitelist       ChainGuard       BotVerifier
-             └───────────────┼───────────────┘
-                      Tracker (IP state)
-                             │
-                   Scorer + 8 Detectors
-                             │
-          ┌──────────────────┼──────────────────┐
-    Fail2Ban sink       stdout JSON        exec+JSON Sink
-    (threats.log)    (Loki / Splunk / ...)  (any script)
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║  SOURCES                                                         ║
+  ║  nginx · Apache · Caddy · Traefik · HAProxy · LiteSpeed          ║
+  ║  file │ stdin │ exec+JSON plugin (any language)                  ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ parsed log entries
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  PROCESSORS                                                      ║
+  ║                                                                  ║
+  ║  Whitelist ── custom IPs/CIDRs/UA · bot DNS verification         ║
+  ║  ChainGuard ─ proxy-chain IP integrity check                     ║
+  ║                                                                  ║
+  ║  Detectors (core)        Detectors (plugins)                     ║
+  ║  ├─ probe      score 25  └─ exec+JSON detector (any language)    ║
+  ║  ├─ bruteforce score 30                                          ║
+  ║  ├─ crawler    score 20                                          ║
+  ║  ├─ noasset    score 20                                          ║
+  ║  ├─ rate       score 25                                          ║
+  ║  ├─ useragent  score 40/20/15                                    ║
+  ║  ├─ overflow   score 30                                          ║
+  ║  └─ badbot     score 60                                          ║
+  ║                                                                  ║
+  ║  Scorer ── accumulates score → WARN (≥50) │ THREAT (≥80)        ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ threat events
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  SINKS                                                           ║
+  ║  file (fail2ban format) · stdout JSON · exec+JSON plugin         ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ via Named Channel Hub
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  EXECUTORS  (automated response — optional)                      ║
+  ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
+  ╚══════════════════════════════════════════════════════════════════╝
 ```
 
 ## Use Cases
@@ -42,10 +59,16 @@ ArxSentinel scales from a classic bare-metal VPS to a distributed Kubernetes clu
 One config file, no profile needed. Works out of the box:
 
 ```yaml
-general:
-  log_file: /var/log/nginx/access.log
-output:
-  threat_log: /var/log/arxsentinel/threats.log
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
 ```
 
 ### 2. Docker Compose sidecar

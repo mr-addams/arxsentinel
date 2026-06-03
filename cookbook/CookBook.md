@@ -3,6 +3,24 @@
 Ready-to-use configurations for common deployment scenarios.
 Copy the file that matches your setup, fill in the placeholders, and run.
 
+## Config Structure
+
+Every recipe follows the ArxSentinel pipeline order:
+
+```
+Sources → Processors → Sinks → Executors
+```
+
+| Section | Role | Required |
+|---------|------|----------|
+| `streams.inputs` | Log sources | ✅ |
+| `scoring` | Threat thresholds | ✅ |
+| `detectors` | 8 built-in processors | ✅ |
+| `whitelist.custom` | Trusted IPs/CIDRs/UAs | ✅ |
+| `chain_guard` | Proxy chain integrity | optional |
+| `streams.outputs` | Threat sinks | ✅ |
+| `executors` | Automated response | executor recipes only |
+
 ## Table of Contents
 
 - [Fail2Ban (file-based logging)](#fail2ban)
