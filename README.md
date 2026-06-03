@@ -2,33 +2,52 @@
 
 [![Release](https://img.shields.io/github/v/release/mr-addams/arxsentinel?include_prereleases&label=release)](https://github.com/mr-addams/arxsentinel/releases)
 [![Build](https://github.com/mr-addams/arxsentinel/actions/workflows/release.yml/badge.svg)](https://github.com/mr-addams/arxsentinel/actions/workflows/release.yml)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-Elastic--2.0-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
-[![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
+[![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64%20%7C%20arm%2Fv7%20%7C%20riscv64%20%7C%20i386-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
-> 🌐 [Русская документация](README.ru.md) | [Українська документація](README.uk.md)
+> 🌐 [Українська документація](README.uk.md) | [Русская документация](README.ru.md) | 📖 [Configuration Cookbook](cookbook/CookBook.md)
 
 **Security event pipeline for any HTTP server** — from a single nginx VPS to a full K8s cluster.  
 ~12 MB RAM · single binary · zero runtime deps · extends via exec+JSON plugins in any language.
 
+> **License:** ArxSentinel is distributed under the [Elastic License 2.0](LICENSE). Free use for your own infrastructure. Commercial use as a managed security or telemetry service, or as part of a managed service, requires a separate agreement. See [LICENSE](LICENSE) for details.
+
 ```
-  [nginx / Apache / Caddy / ...]       [exec+JSON Source — any language]
-           │                                        │
-           └─────────────────┬──────────────────────┘
-                      Source (file │ stdin │ http)
-                             │
-                       Merge & Parse
-                             │
-             ┌───────────────┼───────────────┐
-        Whitelist       ChainGuard       BotVerifier
-             └───────────────┼───────────────┘
-                      Tracker (IP state)
-                             │
-                   Scorer + 8 Detectors
-                             │
-          ┌──────────────────┼──────────────────┐
-    Fail2Ban sink       stdout JSON        exec+JSON Sink
-    (threats.log)    (Loki / Splunk / ...)  (any script)
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║  SOURCES                                                         ║
+  ║  nginx · Apache · Caddy · Traefik · HAProxy · LiteSpeed          ║
+  ║  file │ stdin │ exec+JSON plugin (any language)                  ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ parsed log entries
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  PROCESSORS                                                      ║
+  ║                                                                  ║
+  ║  Whitelist ── custom IPs/CIDRs/UA · bot DNS verification         ║
+  ║  ChainGuard ─ proxy-chain IP integrity check                     ║
+  ║                                                                  ║
+  ║  Detectors (core)        Detectors (plugins)                     ║
+  ║  ├─ probe      score 25  └─ exec+JSON detector (any language)    ║
+  ║  ├─ bruteforce score 30                                          ║
+  ║  ├─ crawler    score 20                                          ║
+  ║  ├─ noasset    score 20                                          ║
+  ║  ├─ rate       score 25                                          ║
+  ║  ├─ useragent  score 40/20/15                                    ║
+  ║  ├─ overflow   score 30                                          ║
+  ║  └─ badbot     score 60                                          ║
+  ║                                                                  ║
+  ║  Scorer ── accumulates score → WARN (≥50) │ THREAT (≥80)         ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ threat events
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  SINKS                                                           ║
+  ║  file (fail2ban format) · stdout JSON · exec+JSON plugin         ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ via Named Channel Hub
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  EXECUTORS  (automated response — optional)                      ║
+  ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
+  ╚══════════════════════════════════════════════════════════════════╝
 ```
 
 ## Use Cases
@@ -40,10 +59,16 @@ ArxSentinel scales from a classic bare-metal VPS to a distributed Kubernetes clu
 One config file, no profile needed. Works out of the box:
 
 ```yaml
-general:
-  log_file: /var/log/nginx/access.log
-output:
-  threat_log: /var/log/arxsentinel/threats.log
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
 ```
 
 ### 2. Docker Compose sidecar
@@ -169,6 +194,15 @@ sudo apt install ./arxsentinel_<version>_linux_amd64.deb
 
 # arm64
 sudo apt install ./arxsentinel_<version>_linux_arm64.deb
+
+# arm/v7
+sudo apt install ./arxsentinel_<version>_linux_armv7.deb
+
+# riscv64
+sudo apt install ./arxsentinel_<version>_linux_riscv64.deb
+
+# i386
+sudo apt install ./arxsentinel_<version>_linux_386.deb
 ```
 
 `apt install` automatically resolves dependencies, installs the systemd unit, Fail2Ban filter/jail (optional — for bare-metal setups), logrotate config, and creates the `arxsentinel` system user.
@@ -190,6 +224,15 @@ sudo dnf install ./arxsentinel_<version>_linux_amd64.rpm
 
 # arm64
 sudo dnf install ./arxsentinel_<version>_linux_arm64.rpm
+
+# arm/v7
+sudo dnf install ./arxsentinel_<version>_linux_armv7.rpm
+
+# riscv64
+sudo dnf install ./arxsentinel_<version>_linux_riscv64.rpm
+
+# i386
+sudo dnf install ./arxsentinel_<version>_linux_386.rpm
 ```
 
 `dnf install` resolves dependencies, installs the systemd unit to `/usr/lib/systemd/system/`, Fail2Ban filter/jail, logrotate config, and creates the `arxsentinel` system user.
@@ -214,6 +257,15 @@ sudo pacman -U arxsentinel_<version>_linux_amd64.pkg.tar.zst
 
 # arm64
 sudo pacman -U arxsentinel_<version>_linux_arm64.pkg.tar.zst
+
+# arm/v7
+sudo pacman -U arxsentinel_<version>_linux_armv7.pkg.tar.zst
+
+# riscv64
+sudo pacman -U arxsentinel_<version>_linux_riscv64.pkg.tar.zst
+
+# i386
+sudo pacman -U arxsentinel_<version>_linux_386.pkg.tar.zst
 ```
 
 The package installs the systemd unit to `/usr/lib/systemd/system/`, Fail2Ban config files, logrotate config, and creates the `arxsentinel` system user.
@@ -335,7 +387,7 @@ deploy/examples/
 
 ## Requirements
 
-- Linux x86_64 or arm64 with systemd
+- Linux amd64 / arm64 / arm/v7 / riscv64 / i386 with systemd
 - Fail2Ban (optional — recommended for bare-metal; not needed with Cloudflare executor or other API-based integrations)
 - An HTTP server writing access logs in a supported format (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — or custom regex)
 
@@ -476,10 +528,21 @@ Executors are stateful action plugins that run after threat scoring. Unlike Sink
 
 | Executor | Package | Description |
 |---|---|---|
-| **cloudflare** |  | Adds threat IPs to a Cloudflare IP List; auto-removes expired entries via TTL sweep |
+| **cloudflare** | `pkg/executor/cloudflare` | Adds threat IPs to a Cloudflare IP List; auto-removes expired entries via TTL sweep |
+| **nginx** | `pkg/executor/nginx` | Writes banned IPs to a plain blocklist file (TTL auto-expiry, atomic writes, optional reload command); you include the file into nginx however suits your setup |
+| **mikrotik** | `pkg/executor/mikrotik` | Manages a RouterOS v7 firewall address-list over the REST API; TTL-based auto-unban, removes only arxsentinel-owned entries, CHR/ARM compatible |
 
 See [docs/executors.md](docs/executors.md) for the framework overview and how to add custom executors.
 See [docs/executor-cloudflare.md](docs/executor-cloudflare.md) for Cloudflare-specific configuration and troubleshooting.
+See [docs/executor-nginx.md](docs/executor-nginx.md) for the nginx blocklist executor.
+
+## Recently Shipped
+
+- **`arxsentinel validate`** — offline, topology-aware config validation using static plugin manifests; catches broken pipeline wiring before deploy
+- **Pluggable queue backends** — buffer executor events via in-memory, bbolt (file) or Redis queue; selectable per executor for bare-metal / single-host / multi-replica K8s
+- **Named Channel Hub** — route threat events between independent pipelines by name (one pipeline detects, another enforces)
+- **Bot fast path** — `verify_method: ua_only` (User-Agent match, no DNS) and per-bot `exempt_detectors` to skip specific detectors for trusted crawlers
+- **CLI** — `arxsentinel cleanup --cf --dry-run` to preview/clean stale executor entries
 
 ## Plugin Development
 
@@ -738,8 +801,7 @@ Full guide: [`deploy/grafana/README.md`](deploy/grafana/README.md)
 
 In active development for v2.x:
 
-- **Executor interface** — stateful, bidirectional integrations (vs fire-and-forget Sink); persistent subprocess with request/response protocol
-- **Cloudflare WAF executor** — block IPs at the edge via Cloudflare API; no iptables needed, works for CDN-fronted deployments
+- **Alert sinks** — push threats to Telegram, Slack and PagerDuty with deduplication and rate-limiting
 - **AWS WAF executor** — IP set updates for AWS WAF rule groups
 
 ---

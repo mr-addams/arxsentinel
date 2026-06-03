@@ -34,7 +34,7 @@ cleanup() {
     done
     rm -f /tmp/arxsentinel-{nginx,apache,traefik,caddy,haproxy,litespeed}.pid
     rm -f /tmp/arxsentinel-{nginx-proxy,apache-proxy,traefik-proxy,caddy-proxy,haproxy-proxy,litespeed-proxy}.pid
-    rm -f /tmp/arxsentinel-{cf-broken,bogon-victim,cf-executor}.pid
+    rm -f /tmp/arxsentinel-{cf-broken,bogon-victim,cf-executor,ros-executor}.pid
 
     # Stop HAProxy log capture (proxy and backend).
     kill "$HAPROXY_LOG_PID" 2>/dev/null || true
@@ -227,6 +227,13 @@ done
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'cf-api-mock'; then
     (cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/cf-executor.yaml" \
         "$BIN" >> "$LOGS_DIR/threats/sentinel-cf-executor.log" 2>&1) &
+    SENTINEL_PIDS+=($!)
+fi
+
+# Start ROS executor sentinel (reads nginx access log, forwards threats to ros-api-mock).
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'ros-api-mock'; then
+    (cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/ros-executor.yaml" \
+        "$BIN" >> "$LOGS_DIR/threats/sentinel-ros-executor.log" 2>&1) &
     SENTINEL_PIDS+=($!)
 fi
 

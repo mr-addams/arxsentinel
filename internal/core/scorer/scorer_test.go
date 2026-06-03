@@ -9,6 +9,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/core/detector"
 	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 // ========================== Mock implementations ===========================================
@@ -42,6 +43,8 @@ type fixedDetector struct {
 }
 
 func (d *fixedDetector) Name() string { return d.name }
+
+func (d *fixedDetector) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (d *fixedDetector) Detect(_ detector.IPView, _ *parser.LogEntry) detector.DetectResult {
 	return d.result
 }
@@ -87,7 +90,7 @@ func TestEvaluateNoDetectors(t *testing.T) {
 	sc := makeScorer() // no detectors
 	sv := freshState()
 
-	level, score, modules, _ := sc.Evaluate(sv, makeEntry())
+	level, score, modules, _ := sc.Evaluate(sv, makeEntry(), nil)
 
 	if level != "" {
 		t.Errorf("level: expected %q, got %q", "", level)
@@ -105,7 +108,7 @@ func TestEvaluateBelowAlert(t *testing.T) {
 	sc := makeScorer(makeDetector("probe", 30, "env_probe"))
 	sv := freshState()
 
-	level, score, _, _ := sc.Evaluate(sv, makeEntry())
+	level, score, _, _ := sc.Evaluate(sv, makeEntry(), nil)
 
 	if level != "" {
 		t.Errorf("level: expected %q, got %q", "", level)
@@ -124,7 +127,7 @@ func TestEvaluateWarnLevel(t *testing.T) {
 	)
 	sv := freshState()
 
-	level, score, modules, reason := sc.Evaluate(sv, makeEntry())
+	level, score, modules, reason := sc.Evaluate(sv, makeEntry(), nil)
 
 	if level != "WARN" {
 		t.Errorf("level: expected WARN, got %q", level)
@@ -150,7 +153,7 @@ func TestEvaluateThreatLevel(t *testing.T) {
 	)
 	sv := freshState()
 
-	level, score, modules, _ := sc.Evaluate(sv, makeEntry())
+	level, score, modules, _ := sc.Evaluate(sv, makeEntry(), nil)
 
 	if level != "THREAT" {
 		t.Errorf("level: expected THREAT, got %q", level)
@@ -171,7 +174,7 @@ func TestEvaluateZeroScoreDetectorIgnored(t *testing.T) {
 	)
 	sv := freshState()
 
-	level, score, modules, _ := sc.Evaluate(sv, makeEntry())
+	level, score, modules, _ := sc.Evaluate(sv, makeEntry(), nil)
 
 	if level != "WARN" {
 		t.Errorf("level: expected WARN, got %q", level)
@@ -190,13 +193,13 @@ func TestEvaluateScoreAccumulation(t *testing.T) {
 	sv := freshState()
 
 	// First request → score = 0 + 30 = 30
-	_, score1, _, _ := sc.Evaluate(sv, makeEntry())
+	_, score1, _, _ := sc.Evaluate(sv, makeEntry(), nil)
 	if score1 != 30 {
 		t.Fatalf("after 1st request score: expected 30, got %d", score1)
 	}
 
 	// Second request immediately — decay nearly zero → score ≈ 30 + 30 = ~60
-	_, score2, _, _ := sc.Evaluate(sv, makeEntry())
+	_, score2, _, _ := sc.Evaluate(sv, makeEntry(), nil)
 	if score2 < 55 || score2 > 60 {
 		// Small tolerance for test execution time
 		t.Errorf("after 2nd request score: expected ~60, got %d", score2)
@@ -252,4 +255,39 @@ func TestApplyDecayZeroScore(t *testing.T) {
 	if result != 0 {
 		t.Errorf("decay of zero score: expected 0, got %d", result)
 	}
+}
+
+// ========================== ExemptSet filter tests ======================================
+
+func TestScorer_ExemptDetectorFilter(t *testing.T) {
+	// Two detectors: noasset (score=20) and rate (score=25).
+	// exemptSet excludes "noasset" → only rate contributes.
+	sc := makeScorer(
+		makeDetector("noasset", 20, "no_assets"),
+		makeDetector("rate", 25, "rate:150rps"),
+	)
+	sv := freshState()
+
+	// Without exemptSet — both detectors fire
+	level1, score1, modules1, _ := sc.Evaluate(sv, makeEntry(), nil)
+	if score1 != 45 {
+		t.Errorf("without exemptSet: expected score=45, got %d", score1)
+	}
+	if len(modules1) != 2 {
+		t.Errorf("without exemptSet: expected 2 modules, got %d", len(modules1))
+	}
+	_ = level1
+
+	// With exemptSet excluding "noasset" — only rate fires
+	sv2 := freshState()
+	exempt := map[string]struct{}{"noasset": {}}
+	level2, score2, modules2, _ := sc.Evaluate(sv2, makeEntry(), exempt)
+
+	if score2 != 25 {
+		t.Errorf("with exemptSet: expected score=25, got %d", score2)
+	}
+	if len(modules2) != 1 || modules2[0] != "rate" {
+		t.Errorf("with exemptSet: expected [rate], got %v", modules2)
+	}
+	_ = level2
 }

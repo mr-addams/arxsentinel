@@ -74,6 +74,7 @@ type Factory func(cfg InputConfig, opts BuildOptions) (plugin.Source, error)
 var (
 	mu        sync.RWMutex
 	factories = map[string]Factory{}
+	manifests = map[string]plugin.Manifest{}
 )
 
 // Register registers a Factory under name.
@@ -86,6 +87,28 @@ func Register(name string, f Factory) {
 		panic(fmt.Sprintf("pkg/source: duplicate registration for %q", name))
 	}
 	factories[name] = f
+}
+
+// RegisterManifest stores a static Manifest under name, parallel to Register.
+// Lets the validator read a source's data contract without constructing it
+// (file/exec sources require a path and parser that are unavailable at validation time).
+// Called from init() alongside Register in each source implementation.
+func RegisterManifest(name string, m plugin.Manifest) {
+	mu.Lock()
+	defer mu.Unlock()
+	if _, exists := manifests[name]; exists {
+		panic(fmt.Sprintf("pkg/source: duplicate manifest registration for %q", name))
+	}
+	manifests[name] = m
+}
+
+// ManifestByName returns the static Manifest registered for name.
+// Safe to call concurrently. No side-effects — does not construct any source.
+func ManifestByName(name string) (plugin.Manifest, bool) {
+	mu.RLock()
+	defer mu.RUnlock()
+	m, ok := manifests[name]
+	return m, ok
 }
 
 // Build creates a source by name using the registered factory.

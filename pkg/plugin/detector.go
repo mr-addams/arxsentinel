@@ -56,4 +56,5 @@ type DetectResult struct {
 type Detector interface {
 	Name() string
 	Detect(sv IPView, entry *LogEntry) DetectResult
+	Manifest() Manifest
 }

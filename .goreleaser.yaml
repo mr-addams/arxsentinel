@@ -12,6 +12,11 @@ builds:
     goarch:
       - amd64
       - arm64
+      - arm
+      - riscv64
+      - 386
+    goarm:
+      - "7"
     env:
       - CGO_ENABLED=0
     ldflags:
@@ -42,16 +47,16 @@ nfpms:
       postremove:  packaging/scripts/postrm
 
     contents:
-      # Example configs — always overwritten on upgrade (unlike the real config).
-      # config.yaml.example is the default quick-start (nginx + fail2ban).
-      - src: config.nginx-example.yaml
+      # Default quick-start config (nginx → fail2ban, simplest setup)
+      - src: cookbook/fail2ban/nginx-basic.yaml
         dst: /etc/arxsentinel/config.yaml.example
-      - src: config.nginx-example.yaml
-        dst: /etc/arxsentinel/config.nginx-example.yaml
-      - src: config.cloudflare-example.yaml
-        dst: /etc/arxsentinel/config.cloudflare-example.yaml
-      - src: config.example.yaml
-        dst: /etc/arxsentinel/config.example.yaml
+      # Full cookbook: all ready-to-use recipes
+      - src: cookbook/
+        type: tree
+        dst: /usr/share/arxsentinel/
+      # Full reference with all configuration options
+      - src: cookbook/config.reference.yaml
+        dst: /etc/arxsentinel/config.reference.yaml
 
       # Systemd unit uses /usr/bin/ (differs from deploy/ scripts which use /usr/local/bin/).
       - src: packaging/arxsentinel.service
@@ -92,14 +97,16 @@ nfpms:
       postremove:  packaging/scripts/rpm/postrm
 
     contents:
-      - src: config.nginx-example.yaml
+      # Default quick-start config (nginx → fail2ban, simplest setup)
+      - src: cookbook/fail2ban/nginx-basic.yaml
         dst: /etc/arxsentinel/config.yaml.example
-      - src: config.nginx-example.yaml
-        dst: /etc/arxsentinel/config.nginx-example.yaml
-      - src: config.cloudflare-example.yaml
-        dst: /etc/arxsentinel/config.cloudflare-example.yaml
-      - src: config.example.yaml
-        dst: /etc/arxsentinel/config.example.yaml
+      # Full cookbook: all ready-to-use recipes
+      - src: cookbook/
+        type: tree
+        dst: /usr/share/arxsentinel/
+      # Full reference with all configuration options
+      - src: cookbook/config.reference.yaml
+        dst: /etc/arxsentinel/config.reference.yaml
 
       # RPM/systemd convention: /usr/lib/systemd/system/ (not /lib/)
       - src: packaging/arxsentinel.service
@@ -139,14 +146,16 @@ nfpms:
       postremove:  packaging/scripts/arch/postrm
 
     contents:
-      - src: config.nginx-example.yaml
+      # Default quick-start config (nginx → fail2ban, simplest setup)
+      - src: cookbook/fail2ban/nginx-basic.yaml
         dst: /etc/arxsentinel/config.yaml.example
-      - src: config.nginx-example.yaml
-        dst: /etc/arxsentinel/config.nginx-example.yaml
-      - src: config.cloudflare-example.yaml
-        dst: /etc/arxsentinel/config.cloudflare-example.yaml
-      - src: config.example.yaml
-        dst: /etc/arxsentinel/config.example.yaml
+      # Full cookbook: all ready-to-use recipes
+      - src: cookbook/
+        type: tree
+        dst: /usr/share/arxsentinel/
+      # Full reference with all configuration options
+      - src: cookbook/config.reference.yaml
+        dst: /etc/arxsentinel/config.reference.yaml
 
       # Arch Linux systemd convention: /usr/lib/systemd/system/
       - src: packaging/arxsentinel.service
@@ -174,6 +183,11 @@ dockers_v2:
     platforms:
       - linux/amd64
       - linux/arm64
+      - linux/arm/v7
+    # Disable provenance attestation: buildx adds it by default, and GHCR renders
+    # it as a spurious "unknown/unknown" platform entry in the package page.
+    flags:
+      - "--provenance=false"
     # extra_files are copied into the build context preserving their relative path from the project root.
     # Required because dockers_v2 uses a temp dir (not project root) as the build context.
     extra_files:

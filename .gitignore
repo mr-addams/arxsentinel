@@ -58,10 +58,11 @@ tests/integration/blocklist/
 .claude/
 .opencode/
 
-# Opsera pre-commit scan artifacts (generated in repo root by the hook)
-gitleaks-report.json
-gitleaks-stderr.txt
-package-leakage-report.json
+# Opsera pre-commit scan artifacts (generated in repo root by the hook).
+# Covers all scanners: gitleaks, semgrep, checkov, grype, hadolint, npm-audit, package-leakage.
+*-report.json
+*-stderr.txt
+npm-audit.json
 precommit-scan-*.md
 
 # Downloaded packages and test binaries (produced during local install testing)

@@ -151,3 +151,77 @@ severity, description, and proposed resolution.
   name is not registered but `cfg.Exec` is set. Plugin binary path configured via `exec:` field.
   Full gRPC/WASM tracked as [036-gRPC] (long-term).
 - **Status:** resolved (Flow #036)
+
+---
+
+### [046-1] Manifest reading requires constructing a live plugin instance
+
+- **Flow:** #046 — Plugin Framework: Manifest, Validator, MikroTik
+- **Severity:** medium
+- **Area:** `cmd/arxsentinel/validate.go` (`collectManifests`), all plugin constructors
+- **Problem:** `collectManifests()` builds a live plugin instance just to read its static
+  `Manifest()`. For executors this means calling the constructor — e.g. `NewMikroTikExecutor`
+  runs `syncExisting()` which makes a network call to RouterOS. Two consequences:
+  1. `arxsentinel validate` against a config with an unreachable executor target would hang
+     or fail, even though validation should be a static, offline check.
+  2. Executors are silently skipped in pipeline validation because `collectManifests` passes
+     no `Config` → `parseConfig` errors on empty host → Build fails → `continue`. So executor
+     InputType compatibility is never actually validated.
+- **Proposed resolution:** Expose manifests from the registry without constructing a live
+  instance — e.g. register a `Manifest` alongside each factory, or split a side-effect-free
+  `Manifest()` from the network-touching constructor. Reading a static contract must never
+  require I/O.
+- **Resolution (partial):** Constructors are now side-effect-free. `NewMikroTikExecutor` and
+  `NewCloudflareExecutor` no longer do network I/O — `syncExisting` (and cloudflare's
+  `FindOrCreateList`) moved into `Run()` start. Building an executor purely to read its
+  Manifest is now safe and offline. Consequence (1) is resolved.
+- **Status:** resolved (Flow #046). Consequence (1) fixed by the I/O-free constructors above;
+  consequence (2) — executors actually validated — fixed by the topology-aware validator [046-2].
+
+---
+
+### [046-2] Pipeline validator uses a naive linear chain; can't model real topology
+
+- **Flow:** #046 — Plugin Framework: Manifest, Validator, MikroTik
+- **Severity:** medium
+- **Area:** `cmd/arxsentinel/validate.go` (`collectManifests`), `pkg/pipeline/validator.go`
+- **Problem:** `collectManifests()` builds one flat linear chain
+  `Source → Detector → Sink → Executor` and `Validate()` checks adjacent
+  `OutputType[i] == InputType[i+1]`. This does not match the real data flow:
+  1. The core **Scorer** (not a plugin) transforms detector output `Structured` into
+     `ScoredEvent`. It is invisible to the validator, so a `Detector(→Structured)` placed
+     directly before a `Sink`/`Executor(ScoredEvent→)` is a false mismatch.
+  2. Sinks and executors are **terminal fan-out** consumers of `ScoredEvent` (executors via
+     the NamedChannelHub), not a linear sequence. Chaining `Sink(→None) → Sink(ScoredEvent→)`
+     or `Sink → Executor` is also a false mismatch.
+  The flaw was latent because executors were excluded (see [046-1]) and most configs put
+  sinks under `streams[].pipelines[].outputs` (empty top-level `cfg.Outputs`), so the chain
+  was effectively just `Source → Detector` and passed trivially. Including executors
+  ([046-1] attempt) surfaced it: every executor config was rejected at fail-fast startup.
+- **Proposed resolution:** Make the validator topology-aware:
+  1. Build the linear **producing spine**: `Source → Processor → Detector → synthetic Scorer
+     (Structured→ScoredEvent)`.
+  2. Validate each **terminal consumer** (every sink, every executor) independently against
+     the spine's final output type (`ScoredEvent`, or `TypeAny`), instead of chaining them
+     to each other.
+  Then re-enable executor inclusion in `collectManifests` (the `Config: ex.Config` line that
+  was reverted) to close [046-1] consequence (2).
+- **Resolution:** Implemented the topology-aware validator in Flow #046:
+  - Registries expose static manifests without construction: `ManifestByName` added to the
+    executor, sink, and source registries (the latter avoids building file/exec sources that
+    need a path+parser at validation time).
+  - `pkg/pipeline`: `ValidateSpine` builds the producing spine and appends a synthetic Scorer
+    manifest only when the pipeline has detectors (ETL stays Structured); `ValidateTerminals`
+    checks each sink independently (fan-out, no chaining); `ValidatePipelines` runs both per
+    pipeline and returns the produced type; `ValidateExecutorWiring` matches each executor to
+    its sentinel-threat sink by NCH channel name. `SemanticError` carries stream/pipeline/
+    consumer context.
+  - `cmd/arxsentinel/validate.go`: assembles `PipelineContext`s from `streams[].pipelines[]`,
+    computes the produced type once per pipeline (reused for channel-type mapping), and flags
+    unknown executor types. `arxsentinel validate` runs fully offline; daemon startup fail-fast
+    uses the same path.
+  - Verified: all example configs (incl. config.example.yaml after fixing its commented-sink
+    executor inconsistency that the validator surfaced) pass; deliberate mismatches (unknown
+    channel, type mismatch, unknown executor type, ETL→ScoredEvent sink) are rejected with
+    contextual messages. 112/112 integration tests pass.
+- **Status:** resolved (Flow #046). Closes [046-1] consequence (2): executors are now validated.

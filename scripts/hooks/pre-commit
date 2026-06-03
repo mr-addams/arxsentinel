@@ -16,6 +16,21 @@
 
 set -euo pipefail
 
+# Docs-only commit — nothing to build or test, skip all Go checks.
+if ! git diff --cached --name-only | grep -qvE '^docs/'; then
+  echo "[pre-commit] docs-only commit — skipping Go checks"
+  exit 0
+fi
+
+# LICENSE sync check — cmd/arxsentinel/LICENSE must be identical to LICENSE.
+# The copy exists because go:embed cannot traverse ../ paths.
+if git diff --cached --name-only | grep -qE '^LICENSE$|^cmd/arxsentinel/LICENSE$'; then
+  if ! diff -q LICENSE cmd/arxsentinel/LICENSE > /dev/null 2>&1; then
+    echo "[pre-commit] ERROR: LICENSE and cmd/arxsentinel/LICENSE are out of sync — copy cmd/arxsentinel/LICENSE from LICENSE before committing"
+    exit 1
+  fi
+fi
+
 # Config chain check — only when config chain files are staged.
 # Chain: config.go → config.yaml → config.docker.yaml → .env.example → README tables.
 CONFIG_CHAIN_PATTERN='internal/sys/config/config\.go|^config\.yaml$|^config\.example\.yaml$|deploy/container/docker/config\.docker\.yaml|deploy/container/docker/\.env\.example|deploy/container/docker/README\.md|deploy/container/k8s/arxsentinel/README\.md'

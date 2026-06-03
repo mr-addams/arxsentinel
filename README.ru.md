@@ -2,32 +2,53 @@
 
 [![Release](https://img.shields.io/github/v/release/mr-addams/arxsentinel?include_prereleases&label=release)](https://github.com/mr-addams/arxsentinel/releases)
 [![Build](https://github.com/mr-addams/arxsentinel/actions/workflows/release.yml/badge.svg)](https://github.com/mr-addams/arxsentinel/actions/workflows/release.yml)
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-Elastic--2.0-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
-[![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
+[![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64%20%7C%20arm%2Fv7%20%7C%20riscv64%20%7C%20i386-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
+
+> 🌐 [English](README.md) | [Українська документація](README.uk.md) | 📖 [Кулинарная книга конфигураций](cookbook/CookBook.ru.md)
 
 **Пайплайн обработки событий безопасности для любого HTTP-сервера** — от одного nginx VPS до полноценного K8s-кластера.  
 ~12 МБ RAM · единый бинарник · без зависимостей в runtime · расширяется через exec+JSON-плагины на любом языке.
 
+> **Лицензия:** ArxSentinel распространяется по [Elastic License 2.0](LICENSE). Бесплатное использование для собственной инфраструктуры. Коммерческое использование в качестве управляемого сервиса безопасности или телеметрии, а также в составе управляемого сервиса, требует отдельного соглашения. Подробности — в файле [LICENSE](LICENSE).
+
 ```
-  [nginx / Apache / Caddy / ...]       [exec+JSON Source — любой язык]
-           │                                        │
-           └─────────────────┬──────────────────────┘
-                      Source (file │ stdin │ http)
-                             │
-                       Merge & Parse
-                             │
-             ┌───────────────┼───────────────┐
-        Whitelist       ChainGuard       BotVerifier
-             └───────────────┼───────────────┘
-                      Tracker (IP state)
-                             │
-                   Scorer + 8 Detectors
-                             │
-          ┌──────────────────┼──────────────────┐
-    Fail2Ban sink       stdout JSON        exec+JSON Sink
-    (threats.log)    (Loki / Splunk / ...)  (любой скрипт)
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║  SOURCES                                                         ║
+  ║  nginx · Apache · Caddy · Traefik · HAProxy · LiteSpeed          ║
+  ║  file │ stdin │ exec+JSON plugin (любой язык)                    ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ разобранные записи лога
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  PROCESSORS                                                      ║
+  ║                                                                  ║
+  ║  Whitelist ── свои IP/CIDR/UA · DNS-верификация ботов            ║
+  ║  ChainGuard ─ проверка целостности цепочки IP за прокси          ║
+  ║                                                                  ║
+  ║  Детекторы (встроенные)   Детекторы (плагины)                    ║
+  ║  ├─ probe      score 25  └─ exec+JSON detector (любой язык)      ║
+  ║  ├─ bruteforce score 30                                          ║
+  ║  ├─ crawler    score 20                                          ║
+  ║  ├─ noasset    score 20                                          ║
+  ║  ├─ rate       score 25                                          ║
+  ║  ├─ useragent  score 40/20/15                                    ║
+  ║  ├─ overflow   score 30                                          ║
+  ║  └─ badbot     score 60                                          ║
+  ║                                                                  ║
+  ║  Scorer ── накапливает score → WARN (≥50) │ THREAT (≥80)         ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ события угроз
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  SINKS                                                           ║
+  ║  file (формат fail2ban) · stdout JSON · exec+JSON plugin         ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ через Named Channel Hub
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  EXECUTORS  (автоматический ответ — опционально)                 ║
+  ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
+  ╚══════════════════════════════════════════════════════════════════╝
 ```
 
 ## Сценарии использования
@@ -168,6 +189,15 @@ sudo apt install ./arxsentinel_<version>_linux_amd64.deb
 
 # arm64
 sudo apt install ./arxsentinel_<version>_linux_arm64.deb
+
+# arm/v7
+sudo apt install ./arxsentinel_<version>_linux_armv7.deb
+
+# riscv64
+sudo apt install ./arxsentinel_<version>_linux_riscv64.deb
+
+# i386
+sudo apt install ./arxsentinel_<version>_linux_386.deb
 ```
 
 `apt install` автоматически подтянет зависимости (`fail2ban`), установит systemd unit, Fail2Ban filter/jail, logrotate и создаст системного пользователя `arxsentinel`.
@@ -189,6 +219,15 @@ sudo dnf install ./arxsentinel_<version>_linux_amd64.rpm
 
 # arm64
 sudo dnf install ./arxsentinel_<version>_linux_arm64.rpm
+
+# arm/v7
+sudo dnf install ./arxsentinel_<version>_linux_armv7.rpm
+
+# riscv64
+sudo dnf install ./arxsentinel_<version>_linux_riscv64.rpm
+
+# i386
+sudo dnf install ./arxsentinel_<version>_linux_386.rpm
 ```
 
 `dnf install` автоматически подтянет зависимости, установит systemd unit в `/usr/lib/systemd/system/`, Fail2Ban filter/jail, logrotate и создаст системного пользователя `arxsentinel`.
@@ -213,6 +252,15 @@ sudo pacman -U arxsentinel_<version>_linux_amd64.pkg.tar.zst
 
 # arm64
 sudo pacman -U arxsentinel_<version>_linux_arm64.pkg.tar.zst
+
+# arm/v7
+sudo pacman -U arxsentinel_<version>_linux_armv7.pkg.tar.zst
+
+# riscv64
+sudo pacman -U arxsentinel_<version>_linux_riscv64.pkg.tar.zst
+
+# i386
+sudo pacman -U arxsentinel_<version>_linux_386.pkg.tar.zst
 ```
 
 Пакет установит systemd unit в `/usr/lib/systemd/system/`, конфиги Fail2Ban, logrotate и создаст системного пользователя `arxsentinel`.
@@ -334,7 +382,7 @@ deploy/examples/
 
 ## Требования
 
-- Linux x86_64 или arm64 с systemd
+- Linux amd64 / arm64 / arm/v7 / riscv64 / i386 с systemd
 - Fail2Ban
 - HTTP-сервер, пишущий access.log в поддерживаемом формате (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — или произвольный regex)
 
@@ -475,10 +523,21 @@ Helm-чарт с описанием values: [README.helm.md](deploy/container/k8
 
 | Исполнитель | Пакет | Описание |
 |---|---|---|
-| **cloudflare** | `internal/core/executor/cloudflare` | Добавляет угрожающие IP в Cloudflare IP List; автоматически удаляет устаревшие записи через TTL sweep | в Cloudflare IP List; автоматически удаляет устаревшие записи через TTL sweep |
+| **cloudflare** | `pkg/executor/cloudflare` | Добавляет угрожающие IP в Cloudflare IP List; автоматически удаляет устаревшие записи через TTL sweep |
+| **nginx** | `pkg/executor/nginx` | Записывает заблокированные IP в обычный файл блокировки (TTL автовыпадения, атомарные записи, опциональная команда перезагрузки); вы подключаете файл в nginx как вам удобнее |
+| **mikrotik** | `pkg/executor/mikrotik` | Управляет list адресов файервола RouterOS v7 через REST API; TTL-автоответ, удаляет только записи, созданные arxsentinel, совместим с CHR/ARM |
 
 Подробнее: [docs/executors.md](docs/executors.md) — обзор фреймворка и добавление собственных исполнителей.
 Подробнее: [docs/executor-cloudflare.md](docs/executor-cloudflare.md) — конфигурация и устранение неполадок Cloudflare.
+Подробнее: [docs/executor-nginx.md](docs/executor-nginx.md) — исполнитель nginx blocklist.
+
+## Недавно доставленные функции
+
+- **`arxsentinel validate`** — автономная валидация конфига с учётом топологии, используя статические манифесты плагинов; ловит сломанную разводку pipeline до деплоя
+- **Pluggable queue backends** — буферизация событий исполнителей через in-memory, bbolt (файл) или Redis; выбираемо на исполнителя для bare-metal / single-host / multi-replica K8s
+- **Named Channel Hub** — маршрутизация событий угроз между независимыми pipeline по имени (один детектит, другой исполняет)
+- **Bot fast path** — `verify_method: ua_only` (совпадение User-Agent, без DNS) и `exempt_detectors` на бота для пропуска конкретных детекторов у доверенных краулеров
+- **CLI** — `arxsentinel cleanup --cf --dry-run` для предпросмотра/очистки устаревших записей исполнителей
 
 ## Разработка плагинов
 
@@ -738,8 +797,7 @@ ArxSentinel поддерживает три режима форматов: **com
 
 В активной разработке для v2.x:
 
-- **Executor interface** — stateful, двусторонние интеграции (vs fire-and-forget Sink); persistent subprocess с request/response протоколом
-- **Cloudflare WAF executor** — блокировка IP на edge через Cloudflare API; без iptables, работает для CDN-fronted развёртываний
+- **Alert sinks** — отправка угроз в Telegram, Slack и PagerDuty с дедупликацией и rate-limiting
 - **AWS WAF executor** — обновления IP-сетов для AWS WAF rule groups
 
 ---

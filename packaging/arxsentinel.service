@@ -15,6 +15,7 @@ EnvironmentFile=-/etc/arxsentinel/env
 # RuntimeDirectory: systemd creates /run/arxsentinel/ owned by the service user before
 # ExecStart — the process can write its PID file there without root privileges.
 RuntimeDirectory=arxsentinel
+# Ready-to-use recipe configs: /usr/share/arxsentinel/cookbook/
 ExecStart=/usr/bin/arxsentinel
 # Restart=on-failure: restart on crash, but not on systemctl stop (ExitCode=0).
 Restart=on-failure

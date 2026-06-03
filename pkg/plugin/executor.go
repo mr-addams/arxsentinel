@@ -66,5 +66,6 @@ type Executor interface {
 	Name() string
 	Type() string
 	Run(ctx context.Context, source EventSource) error
+	Manifest() Manifest
 	Stats() ExecutorStats
 }

@@ -24,6 +24,11 @@
 //     Stub: returns verified=true without DNS.
 //     Facebook/Twitter/Telegram publish IP ranges — implementation in v0.2+.
 //
+//   METHOD "ua_only":
+//     No DNS verification possible — UA accepted at face value.
+//     verified=false keeps the IP in the scoring pipeline.
+//     isFakeBot=false — no penalty: bot legitimately cannot provide rDNS.
+//
 //   FAKE BOT (Task 3.5):
 //     Verify is called only when MatchBot returned matched=true.
 //     If verified=false — this is a fake bot: UA matched, DNS failed.
@@ -115,6 +120,12 @@ func (v *Verifier) Verify(ctx context.Context, ip string, botCfg config.BotConfi
 		isFakeBot = !verified
 		// Cache the real DNS result — repeated lookups are not needed.
 		v.cache.Set(ip, verified, isFakeBot)
+	case "ua_only":
+		// No DNS verification possible — UA accepted at face value.
+		// verified=false keeps the IP in the scoring pipeline.
+		// isFakeBot=false — no penalty: bot legitimately cannot provide rDNS.
+		verified = false
+		isFakeBot = false
 	case "ip_ranges":
 		// KNOWN LIMITATION (v0.2+): IP ranges for Facebook/Twitter/Telegram require
 		// an HTTP client to download up-to-date ranges.

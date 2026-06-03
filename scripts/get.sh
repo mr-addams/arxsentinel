@@ -356,14 +356,18 @@ start_service() {
 
   systemctl daemon-reload
   systemctl enable arxsentinel
-  systemctl restart arxsentinel
 
-  sleep 1
-
-  if systemctl is-active --quiet arxsentinel; then
-    ok "${G}ArxSentinel is running${RESET}"
+  if $SVC_WAS_RUNNING; then
+    systemctl restart arxsentinel
+    sleep 1
+    if systemctl is-active --quiet arxsentinel; then
+      ok "${G}ArxSentinel is running${RESET}"
+    else
+      warn "Service did not start. Check: ${W}journalctl -u arxsentinel -n 30${RESET}"
+    fi
   else
-    warn "Service did not start. Check: ${W}journalctl -u arxsentinel -n 30${RESET}"
+    ok "Service enabled. Start when ready:"
+    ok "  ${W}systemctl start arxsentinel${RESET}"
   fi
 }
 
@@ -429,6 +433,8 @@ main() {
   # Detect fresh install before package installation (which may create config via postinst)
   CFG_WAS_PRESENT=false
   [ -f /etc/arxsentinel/config.yaml ] && CFG_WAS_PRESENT=true
+  SVC_WAS_RUNNING=false
+  systemctl is-active --quiet arxsentinel 2>/dev/null && SVC_WAS_RUNNING=true
   install_package
   configure
   start_service

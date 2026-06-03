@@ -1,0 +1,32 @@
+# ============== cookbook/nginx-executor/docker/docker-compose.yml ========================
+#
+#   ArxSentinel sidecar + nginx, shared volume, nginx blocklist executor.
+#   Blocklist is written inside the container -- nginx reload requires shared volume.
+#
+# ========================================================================================
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - nginx_logs:/var/log/nginx
+      - nginx_conf:/etc/nginx/conf.d
+    restart: unless-stopped
+
+  arxsentinel:
+    image: ghcr.io/mr-addams/arxsentinel:latest
+    volumes:
+      - nginx_logs:/var/log/nginx:ro
+      - nginx_conf:/etc/nginx/conf.d
+      - /var/log/arxsentinel:/var/log/arxsentinel
+      - ./config.yaml:/etc/arxsentinel/config.yaml:ro
+    ports:
+      - "127.0.0.1:9117:9117"
+    restart: unless-stopped
+
+volumes:
+  nginx_logs:
+  nginx_conf:

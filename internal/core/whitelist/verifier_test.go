@@ -295,6 +295,29 @@ func TestVerify_FakeGooglebot_CachedResult(t *testing.T) {
 	}
 }
 
+// ========================== Task — ua_only method =======================================
+
+func TestVerify_UAOnly(t *testing.T) {
+	// ua_only: no DNS, no penalty. verified=false keeps IP in pipeline,
+	// isFakeBot=false so FakeBotScore is not added.
+	cfg := config.BotConfig{
+		Name:            "claudebot",
+		VerifyMethod:    "ua_only",
+		ExemptDetectors: []string{"noasset"},
+	}
+	resolver := &mockResolver{} // DNS must not be called
+	v := NewVerifier(testIPCacheForVerifier(), resolver, nil)
+
+	verified, isFakeBot := v.Verify(context.Background(), "1.2.3.4", cfg)
+
+	if verified {
+		t.Error("Verify: ua_only must return verified=false")
+	}
+	if isFakeBot {
+		t.Error("Verify: ua_only must return isFakeBot=false")
+	}
+}
+
 // ========================== Test: matchesRDNSDomain normalization ========================
 
 func TestMatchesRDNSDomain_NormalizesLeadingDot(t *testing.T) {

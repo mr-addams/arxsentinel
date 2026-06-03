@@ -4,7 +4,7 @@ When your origin server sits behind Cloudflare, all incoming connections come fr
 Cloudflare edge IPs, not from actual visitors. Without proper configuration:
 
 - **Access logs** show Cloudflare IPs instead of real visitor IPs
-- **Rate limiting** and **geo-blocking** break — they see one IP (Cloudflare's)
+- **Rate limiting** and **IP-based blocking** break — they see one IP (Cloudflare's)
 - **Security tools** cannot attribute attacks to the real source
 
 Cloudflare sends the real client IP in the `CF-Connecting-IP` request header.

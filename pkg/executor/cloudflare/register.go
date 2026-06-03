@@ -13,6 +13,7 @@ import (
 
 func init() {
 	executor.Register("cloudflare", newCloudflareFactory)
+	executor.RegisterManifest("cloudflare", (&CloudflareExecutor{}).Manifest())
 }
 
 // newCloudflareFactory creates a CloudflareExecutor from an ExecutorConfig.

@@ -1,0 +1,598 @@
+# ========================== cookbook/config.reference.yaml =============================
+#
+#   Complete reference for all ArxSentinel configuration parameters.
+#   For ready-to-use recipes: cookbook/ (repo) or /usr/share/arxsentinel/cookbook/ (installed)
+#
+#   Single source of all behavioral parameters.
+#   Единый источник всех поведенческих параметров.
+#
+#   Changes are applied on SIGHUP without restarting the daemon.
+#   Изменения применяются по SIGHUP без перезапуска демона.
+#
+#   IMPORTANT: every present section must include ALL fields —
+#   yaml.v3 does not support partial merge (unset fields are zeroed out).
+#   Absent sections are filled entirely from Go defaults.
+#
+#   ВАЖНО: каждая присутствующая секция должна содержать ВСЕ поля —
+#   yaml.v3 не поддерживает partial merge (незаданные поля обнуляются).
+#   Отсутствующие секции целиком берутся из Go-дефолтов.
+#
+# ========================================================================================
+
+# ── general: paths and infrastructure / пути и инфраструктура ───────────────────────────
+general:
+  log_file: /var/log/nginx/access.log    # path to nginx access.log (data source) / путь к nginx access.log (источник данных)
+  pid_file: /run/arxsentinel/arxsentinel.pid  # daemon PID file; dir created by systemd RuntimeDirectory / PID-файл демона; директорию создаёт systemd RuntimeDirectory
+
+  # Channel buffer between TailReader and line processor.
+  # Increase for burst loads exceeding 1000 lines/sec.
+  # Буфер канала между TailReader и обработчиком строк.
+  # Увеличить при пиковых нагрузках более 1000 строк/сек.
+  lines_buf_size: 1000
+
+  # Retry interval when log_file is unavailable (e.g. log rotation gap).
+  # Интервал повтора при недоступности log_file (например, ротация лога).
+  tail_retry_interval: "5s"
+
+  # Period for STATS output to operational.log.
+  # Note: takes effect only on restart — the stats goroutine starts once at launch.
+  # Период вывода STATS в operational.log.
+  # Примечание: применяется только при перезапуске — горутина статистики стартует один раз.
+  stats_interval: "300s"
+
+# ── logging: logging behavior / поведение логгирования ──────────────────────────────────
+logging:
+  debug: false          # true = show PARSER/TAIL/DEBUG tags in console / показывать PARSER/TAIL/DEBUG теги
+  console_color: true   # false = plain text without ANSI (for pipe/journalctl) / plain text без ANSI (для pipe/journalctl)
+
+# ── parser: nginx log format / формат nginx лога ────────────────────────────────────────
+parser:
+  log_format: combined  # combined + real_ip (see nginx.conf $real_ip / см. nginx.conf $real_ip)
+  timezone: UTC         # timezone of dates in the log / часовой пояс дат в логе
+
+# ── scoring: thresholds and accumulation window / пороги и окно накопления ──────────────
+scoring:
+  alert_threshold: 50       # score >= 50 → WARN (written to threat log / запись в threat-лог)
+  ban_threshold: 80         # score >= 80 → THREAT (Fail2Ban bans the IP / Fail2Ban банит IP)
+  observation_window: "300s" # score accumulation window (5 min) / окно накопления очков (5 мин)
+  decay: "linear"           # score decay algorithm toward end of window / алгоритм затухания очков к концу окна
+
+# ── state: in-memory IP storage / in-memory хранилище IP ────────────────────────────────
+state:
+  gc_interval: "60s"      # garbage collection interval (removes inactive IPs) / интервал сборки мусора (удаление неактивных IP)
+  max_tracked_ips: 100000  # in-memory IP limit (LRU eviction on overflow) / лимит IP в памяти (LRU eviction при превышении)
+
+# ── detectors: detection modules / модули детекции ──────────────────────────────────────
+
+detectors:
+
+  # Probe detector: requests to sensitive paths (.env, .git, wp-config...).
+  # Детектор probe: запросы к чувствительным путям (.env, .git, wp-config...).
+  #
+  # NOTE: the list below is abbreviated (core paths for most installations).
+  # ПРИМЕЧАНИЕ: список ниже — сокращённый (основные пути для большинства инсталляций).
+  # Full default list — see config.go:defaultProbePaths().
+  # Полный список дефолтов — в config.go:defaultProbePaths().
+  # If the probe: section is absent in YAML, the full Go-default list is used.
+  # При отсутствии секции probe: в YAML используется полный список из Go-дефолтов.
+  probe:
+    enabled: true
+    score: 25   # points per probe request / очки за каждый probe-запрос
+    paths:
+      # Application configs / Конфиги приложений
+      - "/.env"
+      - "/.env.backup"
+      - "/.env.local"
+      - "/.env.production"
+      - "/.env.staging"
+      - "/config.yml"
+      - "/config.yaml"
+      - "/config.json"
+      - "/application.properties"
+      - "/settings.py"
+      - "/local_settings.py"
+      - "/database.yml"
+      - "/web.config"
+      # Git / VCS
+      - "/.git/config"
+      - "/.git/HEAD"
+      - "/.gitignore"
+      - "/.svn/entries"
+      - "/.hg/"
+      # Cloud credentials / Облачные credentials
+      - "/.aws/credentials"
+      - "/.docker/config.json"
+      - "/aws-exports.json"
+      # CMS: WordPress
+      - "/wp-config.php"
+      - "/wp-config.php.bak"
+      - "/wp-login.php"
+      - "/xmlrpc.php"
+      - "/wp-admin/"
+      # CMS: generic / общие
+      - "/administrator/"
+      - "/admin/"
+      - "/phpmyadmin/"
+      - "/pma/"
+      # Backup files / Backup файлы
+      - "/backup.zip"
+      - "/backup.tar.gz"
+      - "/backup.sql"
+      - "/db.dump"
+      - "/database.sql"
+      - "/dump.sql"
+      # Infrastructure / Инфраструктура
+      - "/server-status"
+      - "/server-info"
+      - "/phpinfo.php"
+      - "/info.php"
+      - "/actuator/"
+      - "/actuator/env"
+      - "/actuator/health"
+      - "/metrics"
+      # Debug
+      - "/.debug"
+      - "/trace"
+      - "/console"
+      - "/graphql"
+      - "/graphiql"
+      - "/api/graphql"
+
+  # Bruteforce detector: abnormal share of 404 responses.
+  # Детектор bruteforce: аномальная доля 404 ответов.
+  bruteforce:
+    enabled: true
+    min_requests: 10      # minimum requests to activate the detector / минимум запросов для активации детектора
+    ratio_threshold: 0.6  # >= 60% of responses are 404 → trigger / >= 60% ответов = 404 → срабатывание
+    score: 30
+
+  # Crawler detector: sequential URL traversal by pattern.
+  # Детектор crawler: последовательный обход URL по паттерну.
+  crawler:
+    enabled: true
+    min_sequential: 5  # minimum sequential URLs (/page/1, /page/2...) / минимум последовательных URL
+    score: 20
+
+  # Noasset detector: page views with no static asset loading.
+  # Детектор noasset: страницы без загрузки статики.
+  noasset:
+    enabled: true
+    min_page_requests: 3       # minimum HTML requests to activate / минимум HTML-запросов для активации
+    asset_ratio_threshold: 0.1 # < 10% requests to assets → bot without rendering / < 10% запросов к ассетам → бот без рендеринга
+    asset_extensions:
+      - ".css"
+      - ".js"
+      - ".png"
+      - ".jpg"
+      - ".jpeg"
+      - ".gif"
+      - ".svg"
+      - ".woff"
+      - ".woff2"
+      - ".ttf"
+      - ".ico"
+      - ".webp"
+    score: 20
+
+  # Rate detector: request spike within a window.
+  # Детектор rate: всплеск запросов за окно.
+  rate:
+    enabled: true
+    window: "60s"    # request counting window / окно подсчёта запросов
+    threshold: 100   # > 100 requests per window → trigger / > 100 запросов за окно → срабатывание
+    score: 25
+
+  # ── User-Agent detector ─────────────────────────────────────────────────────────────
+  #
+  # Detects suspicious User-Agent strings: scanners, grabbers, automation tools, empty UA.
+  # Детектирует подозрительные User-Agent строки: сканеры, граберы, инструменты автоматизации, пустой UA.
+  #
+  # HOW PATTERN MATCHING WORKS / КАК РАБОТАЕТ СОПОСТАВЛЕНИЕ ПАТТЕРНОВ:
+  #
+  #   - Case-insensitive substring match: "nuclei" matches "Nuclei/2.9.4" and "NUCLEI-scanner".
+  #     Нечувствительно к регистру: "nuclei" совпадает с "Nuclei/2.9.4" и "NUCLEI-scanner".
+  #
+  #   - First match wins, checked in order: scanner → grabber → automation.
+  #     Первое совпадение побеждает, проверка в порядке: scanner → grabber → automation.
+  #     A UA cannot receive two scores simultaneously.
+  #     UA не может получить два балла одновременно.
+  #
+  #   - Empty UA is checked before patterns (short-circuit).
+  #     Пустой UA проверяется до паттернов (ранний выход).
+  #
+  # BUILT-IN PATTERNS (hardcoded, cannot be removed via config):
+  # ВСТРОЕННЫЕ ПАТТЕРНЫ (захардкожены, нельзя удалить через конфиг):
+  #
+  #   scanner:    Nuclei, sqlmap, nikto, nmap, masscan, zgrab, dirbuster, gobuster,
+  #               feroxbuster, wfuzz, ffuf, hydra, medusa, nessus, openvas,
+  #               acunetix, w3af, havij, burpsuite
+  #
+  #   grabber:    Wget/, curl/, python-requests, libwww-perl, scrapy, HTTrack,
+  #               WebCopier, SiteSnagger, WebReaper, Teleport Pro
+  #
+  #   automation: python-urllib, aiohttp, Go-http-client, Java/, okhttp,
+  #               axios/, node-fetch, got (, superagent, RestSharp, HttpClient
+  #
+  # HOW TO ADD CUSTOM PATTERNS / КАК ДОБАВИТЬ СВОИ ПАТТЕРНЫ:
+  #
+  #   Use extra_*_patterns to extend built-in lists without touching source code.
+  #   Используйте extra_*_patterns для расширения встроенных списков без изменения кода.
+  #   Extra patterns are merged with built-ins at startup and on SIGHUP.
+  #   Дополнительные паттерны объединяются со встроенными при старте и по SIGHUP.
+  #
+  #   CHOOSE THE RIGHT CATEGORY / ВЫБЕРИТЕ ПРАВИЛЬНУЮ КАТЕГОРИЮ:
+  #
+  #     extra_scanner_patterns    → active attack/recon tools → scanner_score (default 40)
+  #                                  инструменты атаки/разведки → scanner_score
+  #       Examples / Примеры: "my-pentest-tool", "custom-vuln-scanner", "ZAP/"
+  #
+  #     extra_grabber_patterns    → content downloaders / site mirrors → grabber_score (default 20)
+  #                                  загрузчики контента / зеркальщики → grabber_score
+  #       Examples / Примеры: "MyCrawler/", "SiteMirror", "DataCollector"
+  #
+  #     extra_automation_patterns → generic HTTP clients / monitoring → automation_score (default 15)
+  #                                  HTTP-клиенты / мониторинг → automation_score
+  #       Examples / Примеры: "internal-healthcheck", "MyBot/1.0", "company-monitor"
+  #
+  #   TIPS / СОВЕТЫ:
+  #     - Use specific enough strings to avoid false positives.
+  #       Используйте достаточно специфичные строки, чтобы избежать ложных срабатываний.
+  #     - A trailing "/" helps target versioned UAs: "MyTool/" matches "MyTool/2.1"
+  #       but not "MyToolbox/1.0".
+  #       Слеш в конце помогает таргетировать версионированные UA: "MyTool/" совпадает
+  #       с "MyTool/2.1", но не с "MyToolbox/1.0".
+  #     - Test with: echo "UA-STRING" | grep -i "your-pattern"
+  #       Протестировать: echo "UA-STRING" | grep -i "your-pattern"
+  #
+  useragent:
+    enabled: true
+    scanner_score: 40     # Nuclei, sqlmap, Nikto, Nessus...
+    grabber_score: 20     # Scrapy, HTTrack, wget, curl, Go-http-client...
+    automation_score: 15  # python-requests, aiohttp, httpx...
+    empty_ua_score: 30    # empty User-Agent / пустой User-Agent
+
+    # Custom patterns merged with built-ins (additive, built-ins cannot be removed).
+    # Свои паттерны объединяются со встроенными (аддитивно, встроенные нельзя удалить).
+    extra_scanner_patterns: []    # example: ["my-pentest-tool", "ZAP/"] / пример: ["my-pentest-tool", "ZAP/"]
+    extra_grabber_patterns: []    # example: ["MyCrawler/", "SiteMirror"] / пример: ["MyCrawler/", "SiteMirror"]
+    extra_automation_patterns: [] # example: ["internal-monitor", "MyBot/"] / пример: ["internal-monitor", "MyBot/"]
+
+  # Overflow detector: abnormal URL length / WAF bypass attempts.
+  # Детектор overflow: аномальная длина URL / WAF bypass.
+  overflow:
+    enabled: true
+    max_url_length: 2048  # URLs longer than this → buffer overflow attempt / URL длиннее → попытка buffer overflow
+    suspicious_params:
+      - "bypass"
+      - "shell"
+      - "cmd"
+      - "exec"
+      - "eval"
+      - "system"
+      - "passthru"
+    score: 30
+
+  # BadBot detector: scores requests matching the community-curated blocklist.
+  # Sources and refresh schedule are configured in the top-level blocklist: section.
+  # Детектор badbot: выставляет score запросам из community-списка плохих ботов.
+  # Источники и расписание обновления — в секции blocklist: выше.
+  badbot:
+    enabled: true
+    score: 60
+    check_ua: true
+    check_referrer: false     # enable to also match the Referer header / включить для проверки Referer
+
+# ── blocklist: pattern list management / управление блеклистами ────────────────────────────
+blocklist:
+
+  # bbolt storage path for persisting patterns between restarts.
+  # Путь к bbolt-файлу для хранения паттернов между перезапусками.
+  # "" = in-memory only (patterns re-fetched on every restart).
+  # "" = только в памяти (паттерны перезагружаются при каждом старте).
+  storage: ""
+
+  # Pattern lists: each list has a name, refresh interval, and one or more sources.
+  # Списки паттернов: имя, интервал обновления и один или несколько источников.
+  lists:
+    # User-Agent blocklist: ~685 known bad bots
+    # Список User-Agent: ~685 известных плохих ботов
+    - name: badbot-ua
+      enabled: true           # set false to skip this list entirely
+      refresh_interval: 24h
+      sources:
+        # MIT License — https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text
+
+    # Referrer blocklist: ~7108 spam referrer domains (used when check_referrer: true)
+    # Список реферреров: ~7108 спам-доменов (используется при check_referrer: true)
+    - name: badbot-ref
+      enabled: true           # set false to skip this list entirely
+      refresh_interval: 24h
+      sources:
+        # MIT License — https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-referrers.list"
+          format: plain_text
+
+# ── chain_guard: IP chain integrity checker ───────────────────────────────────────────────
+# Detects Cloudflare or bogon/RFC1918/CGNAT IPs appearing as client IPs in the access log.
+# This indicates a misconfigured proxy chain — ArxSentinel cannot identify real attackers.
+# Output goes to warnings_log (separate from threat_log) with CHAIN_WARN entries.
+# Action required from operator: configure real_ip / RemoteIPHeader / forwardedHeaders
+# on the origin server to extract the real client IP from CF-Connecting-IP or X-Forwarded-For.
+chain_guard:
+  enabled: false  # set to true and provide warnings_log to activate chain integrity checks
+  warnings_log: ""  # required when enabled: path to warnings file, e.g. /var/log/arxsentinel/warnings.log
+
+  cloudflare:
+    enabled: true
+    refresh_interval: 24h
+    sources:
+      # MIT-compatible public data — Cloudflare publishes these lists for operator use.
+      - https://www.cloudflare.com/ips-v4/
+      - https://www.cloudflare.com/ips-v6/
+
+  bogon:
+    enabled: true
+    # Covers: RFC 1918 (10/8, 172.16/12, 192.168/16), CGNAT (100.64/10),
+    # loopback (127/8, ::1), link-local (169.254/16, fe80::/10),
+    # documentation (192.0.2/24, 198.51.100/24, 203.0.113/24),
+    # unspecified/reserved (0/8, 240/4), IPv6 unique local (fc00::/7).
+
+# ── whitelist: legitimate bots and custom entries / легитимные боты и кастомный список ───
+whitelist:
+
+  # Penalty for a legitimate bot UA without DNS confirmation (fake bot).
+  # Штраф за UA легитимного бота без подтверждения через DNS (фейковый бот).
+  fake_bot_score: 35
+
+  # Timeout for bot DNS verification in the request processing pipeline.
+  # Таймаут верификации бота через DNS в пайплайне обработки запросов.
+  dns_verify_timeout: "2s"
+
+  # Legitimate search bots — verified via rDNS + fDNS.
+  # Легитимные поисковые боты — верифицируются через rDNS + fDNS.
+  bots:
+    - name: google
+      ua_patterns: ["Googlebot", "Google-InspectionTool", "GoogleOther", "AdsBot-Google"]
+      rdns_domains: [".googlebot.com", ".google.com"]
+      verify_method: rdns_ipjson
+
+    - name: bing
+      ua_patterns: ["bingbot", "BingPreview", "msnbot", "adidxbot"]
+      rdns_domains: [".search.msn.com"]
+      verify_method: rdns
+
+    - name: yandex
+      ua_patterns: ["YandexBot", "YandexImages", "YandexMetrika", "YandexDirect"]
+      rdns_domains: [".yandex.ru", ".yandex.net", ".yandex.com"]
+      verify_method: rdns
+
+    - name: duckduckgo
+      ua_patterns: ["DuckDuckBot"]
+      rdns_domains: [".duckduckgo.com"]
+      verify_method: rdns
+
+    - name: baidu
+      ua_patterns: ["Baiduspider", "BaiduMobaider"]
+      rdns_domains: [".baidu.com", ".baidu.jp"]
+      verify_method: rdns
+
+    - name: apple
+      ua_patterns: ["Applebot"]
+      rdns_domains: [".applebot.apple.com"]
+      verify_method: rdns
+
+    - name: facebook
+      ua_patterns: ["facebookexternalhit", "Facebot"]
+      rdns_domains: []
+      verify_method: ip_ranges
+
+    - name: twitter
+      ua_patterns: ["Twitterbot"]
+      rdns_domains: []
+      verify_method: ip_ranges
+
+    - name: telegram
+      ua_patterns: ["TelegramBot"]
+      rdns_domains: []
+      verify_method: ip_ranges
+
+    - name: gptbot
+      ua_patterns: ["GPTBot"]
+      rdns_domains: [".openai.com"]
+      verify_method: rdns
+
+    - name: claudebot
+      ua_patterns: ["ClaudeBot", "Claude-Web", "anthropic-ai"]
+      rdns_domains: [".anthropic.com"]
+      verify_method: rdns
+
+    - name: amazonbot
+      ua_patterns: ["Amazonbot"]
+      verify_method: ua_only
+      exempt_detectors: ["noasset"]
+
+    - name: meta-crawler
+      ua_patterns: ["meta-externalagent", "meta-externalfetcher"]
+      verify_method: ua_only
+      exempt_detectors: ["noasset"]
+
+  # Custom whitelist: add your own IPs, subnets, UA patterns.
+  # Кастомный whitelist: добавьте свои IP, подсети, UA-паттерны.
+  custom:
+    ips: []      # example: ["10.99.99.1", "192.168.1.100"] / пример: ["10.99.99.1", "192.168.1.100"]
+    cidrs: []    # example: ["10.99.99.0/24", "192.168.0.0/16"] / пример: ["10.99.99.0/24", "192.168.0.0/16"]
+    ua_substrings: []  # example: ["MyInternalMonitor", "HealthCheck/1.0"] / пример: ["MyInternalMonitor", "HealthCheck/1.0"]
+
+  # DNS cache for verification results / DNS-кэш результатов верификации.
+  dns_cache:
+    positive_ttl: "24h"    # cache TTL for successful verification / кэш успешной верификации
+    negative_ttl: "1h"     # cache TTL for failed verification / кэш неуспешной верификации
+    ip_list_refresh: "24h" # IP range refresh interval (Facebook, Telegram...) / обновление IP-диапазонов
+
+# ── output: log file paths / пути к лог-файлам ──────────────────────────────────────────
+output:
+  threat_log: /var/log/arxsentinel/threats.log    # threat log for Fail2Ban (production) / threat-лог для Fail2Ban (продакшн)
+  operational_log: /var/log/arxsentinel/sentinel.log  # daemon operational log (production) / operational-лог демона (продакшн)
+  # Dev / Local:
+  # threat_log: ./logs/threats.log
+  # operational_log: ./logs/sentinel.log
+
+# ── metrics: Prometheus metrics endpoint / endpoint метрик Prometheus ─────────────────────
+metrics:
+  enabled: false           # enable/disable Prometheus metrics endpoint; bool, default: false
+  listen_addr: ":9117"     # metrics listen address; string, default: ":9117"
+
+# ── pipeline: runtime pipeline configuration / конфигурация пайплайна выполнения ──────────
+pipeline:
+  buffer_size: 8192        # channel buffer depth for burst traffic; int, ≥1, default: 8192
+  shutdown_timeout: "15s"  # graceful shutdown drain window; duration: "5s"|"15s"|"30s", default: "15s"
+
+# ── executors: automated threat response ─────────────────────────────────────────────────
+#
+# Executors run autonomously: each reads from a Named Channel Hub source (sentinel-threat
+# sink) and performs automated response actions (e.g. Cloudflare IP list bans).
+# Configure sources[] to wire an executor to a stream output.
+#
+#
+# NOTE: executors are commented out in this reference because they require an active
+# sentinel-threat sink whose name matches sources[].name. For a complete working
+# example with the sink wired up, see cookbook/cloudflare/nginx-basic.yaml.
+#
+# executors:
+  # ── Cloudflare IP Lists executor ─────────────────────────────────────────────────────
+  # - name: cloudflare-blocklist
+  #   type: cloudflare
+  #   sources:
+  #     - name: sentinel-cf            # matches sentinel-threat sink name in streams outputs
+  #       # queue:                     # optional persistent queue backend (default: memory)
+  #       #   type: bbolt              # "memory" | "bbolt" (bare-metal) | "redis" (k8s/cloud)
+  #       #   path: /var/lib/arxsentinel/queue-cf.db   # bbolt only
+  #   config:
+  #     api_token: "YOUR_CF_API_TOKEN"   # Cloudflare API token with Lists:Edit permission
+  #     account_id: "YOUR_CF_ACCOUNT_ID" # Cloudflare account ID
+  #     list_name: "arxsentinel_blocklist" # IP list name (created automatically if absent)
+  #     min_level: "THREAT"              # minimum threat level to act on: INFO | WARN | THREAT
+  #     ttl: "24h"                       # auto-unban after this duration (0 = no auto-unban)
+  #     max_items: 10000                 # Cloudflare Free: 10000, Pro/Business: 100000
+  #     batch_size: 100                  # IPs per bulk API call
+  #     flush_interval: "10s"            # max delay before flushing partial batch
+  #     instance_id: ""                  # auto-detected from hostname if empty
+  #     comment_extra: ""                # appended to ban comment: "sentinel-<id> <extra>"
+
+  # ── nginx blocklist executor ──────────────────────────────────────────────────────────
+  # - name: nginx-blocklist
+  #   type: nginx
+  #   sources:
+  #     - name: sentinel-cf
+  #   config:
+  #     list_file: /etc/nginx/conf.d/arxsentinel_autoblock.list
+  #     state_file: /var/lib/arxsentinel/nginx-state.json
+  #     min_level: THREAT
+  #     ttl: 24h
+  #     batch_size: 10
+  #     flush_interval: 30s
+  #     reload_cmd: "nginx -s reload"
+
+# ── inputs: universal log source syntax / универсальный синтаксис источников ────────────
+#
+# Alternative to general.log_file — supports multiple sources, stdin, and exec plugins.
+# Used at top level (applies to implicit single-stream) or inside streams[].
+# Альтернатива general.log_file — поддерживает несколько источников, stdin, exec-плагины.
+#
+# inputs:
+#   - type: file
+#     path: /var/log/nginx/access.log
+#     parser: combined        # combined | json | regex; default: parser.log_format
+#   - type: stdin             # read from stdin (e.g. pipe from journalctl -f)
+#     parser: combined
+#   - type: exec              # exec plugin: binary writes log lines to stdout
+#     exec: /usr/local/lib/arxsentinel/plugins/my-source.sh
+#     parser: json
+
+# ── outputs: universal threat sink syntax / универсальный синтаксис приёмников ──────────
+#
+# Alternative to output.threat_log — supports multiple sinks, stdout, and exec plugins.
+# Used at top level or inside streams[].
+# Альтернатива output.threat_log — поддерживает несколько приёмников, stdout, exec-плагины.
+#
+# outputs:
+#   - type: file
+#     path: /var/log/arxsentinel/threats.log
+#     format: fail2ban        # fail2ban | json
+#   - type: stdout            # print to stdout (useful for piping or debugging)
+#     format: json
+#   - type: sentinel-threat   # feed THREAT events to an executor via Named Channel Hub
+#     name: sentinel-cf       # must match executor sources[].name above
+#   - type: exec              # exec plugin: events written as JSON to plugin stdin
+#     exec: /usr/local/lib/arxsentinel/plugins/my-sink.sh
+
+# ── streams: multi-stream mode / мультистрим-режим ───────────────────────────────────────
+#
+# Use streams: when monitoring multiple independent log sources.
+# Mutually exclusive with general.log_file — remove general.log_file when using streams.
+# Each stream has isolated scoring, state, and output.
+# Используй streams: для мониторинга нескольких независимых источников.
+#
+# streams:
+#
+#   # ── Simple stream: single source → single sink ────────────────────────────────
+#   # Auto-wraps inputs/outputs into one pipeline internally.
+#   - name: nginx
+#     inputs:
+#       - type: file
+#         path: /var/log/nginx/access.log
+#         parser: combined
+#     outputs:
+#       - type: file
+#         path: /var/log/arxsentinel/nginx-threats.log
+#         format: fail2ban
+#
+#   # ── Advanced stream: explicit pipelines with shared IP state ──────────────────
+#   # Use pipelines: when you need per-source detector tuning or shared scoring.
+#   # tracker_group: pipelines with the same group name share one IP score tracker.
+#   - name: frontend
+#     pipelines:
+#       - name: api
+#         tracker_group: frontend       # share IP state with "static" pipeline
+#         inputs:
+#           - type: file
+#             path: /var/log/nginx/api.access.log
+#             parser: combined
+#         outputs:
+#           - type: file
+#             path: /var/log/arxsentinel/frontend-threats.log
+#             format: fail2ban
+#         detectors:
+#           rate:
+#             enabled: true
+#             threshold: 200            # higher limit for API traffic
+#           probe:
+#             enabled: true
+#       - name: static
+#         tracker_group: frontend       # same group → shared IP scoring with "api"
+#         inputs:
+#           - type: file
+#             path: /var/log/nginx/static.access.log
+#             parser: combined
+#         outputs:
+#           - type: file
+#             path: /var/log/arxsentinel/frontend-threats.log
+#             format: fail2ban
+#         detectors:
+#           rate:
+#             enabled: false            # static assets generate high rates — disable
+#           probe:
+#             enabled: true
+#
+#   # ── Exec plugin stream: external source and sink via plugin binary ─────────────
+#   # Use when your log format is not supported by built-in parsers.
+#   - name: custom-app
+#     inputs:
+#       - type: exec
+#         exec: /usr/local/lib/arxsentinel/plugins/app-log-source.sh
+#         parser: json
+#     outputs:
+#       - type: exec
+#         exec: /usr/local/lib/arxsentinel/plugins/custom-sink.sh

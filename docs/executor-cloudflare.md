@@ -7,7 +7,7 @@ It runs autonomously: a dedicated goroutine reads `ThreatEvent`s from a Named Ch
 source, batches them, and issues bulk API calls to Cloudflare.
 A periodic sweep removes expired bans based on a configurable TTL.
 
-**Quick start:** see `config.cloudflare-example.yaml` for a minimal working configuration.
+**Quick start:** see `cookbook/cloudflare/nginx-basic.yaml` for a minimal working configuration.
 
 ---
 
@@ -70,7 +70,7 @@ sources:
 
 ## Example Configuration
 
-Minimal working config — see also `config.cloudflare-example.yaml`:
+Minimal working config — see also `cookbook/cloudflare/nginx-basic.yaml`:
 
 ```yaml
 streams:

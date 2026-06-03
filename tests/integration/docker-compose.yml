@@ -210,6 +210,16 @@ services:
     networks:
       - default
 
+  # ros-api-mock: simulates MikroTik RouterOS REST API for integration test of ROS executor.
+  ros-api-mock:
+    build:
+      context: ./ros-api-mock
+      dockerfile: Dockerfile
+    ports:
+      - "8093:8080"
+    networks:
+      - default
+
   # nginx-bare: nginx without real_ip extraction — logs the proxy IP, not the attacker IP.
   # Used for the "broken chain" test: cloudflare-sim IP appears as client in access log.
   # The chain_guard cloudflare-leak check must fire on these entries.

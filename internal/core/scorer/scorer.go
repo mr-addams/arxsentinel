@@ -73,9 +73,10 @@ func NewScorer(cfg config.ScoringConfig, detectors []detector.Detector, logFn fu
 // Evaluate runs all detectors, updates the accumulated IP score with decay applied,
 // and returns the threat level.
 //
-// Parameters:
-//   sv    — IP state (implements detector.ScoreAccess; typically *state.IPState)
-//   entry — current log line
+//   Parameters:
+//     sv        — IP state (implements detector.ScoreAccess; typically *state.IPState)
+//     entry     — current log line
+//     exemptSet — detector names to skip (nil or empty = all detectors run)
 //
 // Returns:
 //   level   — "" / "WARN" / "THREAT"
@@ -85,7 +86,7 @@ func NewScorer(cfg config.ScoringConfig, detectors []detector.Detector, logFn fu
 //
 // Called from the main pipeline for each log line after Tracker.Update.
 // Non-blocking — all operations are synchronous in a single goroutine.
-func (s *Scorer) Evaluate(sv detector.ScoreAccess, entry *parser.LogEntry) (level string, score int, modules []string, reason string) {
+func (s *Scorer) Evaluate(sv detector.ScoreAccess, entry *parser.LogEntry, exemptSet map[string]struct{}) (level string, score int, modules []string, reason string) {
 	// ── Step 1: decay of accumulated score ───────────────────────────────────────────────
 	// now is fixed once: decay and SetScore use the same point in time.
 	// Two time.Now() calls create a systematic drift: decay computed at t0,
@@ -101,6 +102,12 @@ func (s *Scorer) Evaluate(sv detector.ScoreAccess, entry *parser.LogEntry) (leve
 	var reasons []string
 
 	for _, d := range s.detectors {
+		// exemptSet filter: skip detectors in the exempt list.
+		if exemptSet != nil {
+			if _, ok := exemptSet[d.Name()]; ok {
+				continue
+			}
+		}
 		res := d.Detect(sv, entry)
 		if res.Score <= 0 {
 			continue

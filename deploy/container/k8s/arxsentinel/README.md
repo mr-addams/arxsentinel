@@ -125,7 +125,7 @@ helm upgrade arxsentinel ./deploy/container/k8s/arxsentinel -f values-production
 
 ### Full env var reference
 
-> Full examples with all YAML-only sections: [`config.example.yaml`](../../../config.example.yaml) in the repository root.
+> Full examples with all YAML-only sections: [`config.reference.yaml`](../../../cookbook/config.reference.yaml) in the repository root.
 
 Arrays are marked **YAML-only** — configure via ConfigMap `config.yaml` or a mounted config file.
 

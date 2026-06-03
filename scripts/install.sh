@@ -30,12 +30,25 @@ else
 fi
 
 # ── Check for deploy files and config ────────────────────────────────────────────────
-for f in config.yaml \
-          deploy/arxsentinel.service deploy/logrotate/arxsentinel \
+for f in deploy/arxsentinel.service deploy/logrotate/arxsentinel \
           deploy/fail2ban/filter.d/arxsentinel.conf \
           deploy/fail2ban/jail.d/arxsentinel.conf; do
     [ -f "$f" ] || { echo "[ERROR] missing file: $f"; exit 1; }
 done
+
+# Resolve source config: prefer real config.yaml, fall back to examples.
+if [ -f config.yaml ]; then
+    SRC_CONFIG=config.yaml
+elif [ -f cookbook/fail2ban/nginx-basic.yaml ]; then
+    SRC_CONFIG=cookbook/fail2ban/nginx-basic.yaml
+    echo "[INFO] using cookbook/fail2ban/nginx-basic.yaml as source config"
+elif [ -f cookbook/config.reference.yaml ]; then
+    SRC_CONFIG=cookbook/config.reference.yaml
+    echo "[INFO] using cookbook/config.reference.yaml as source config"
+else
+    echo "[ERROR] no config.yaml or example config found"
+    exit 1
+fi
 
 BINARY=/usr/local/bin/arxsentinel
 CONFIG=/etc/arxsentinel/config.yaml
@@ -64,7 +77,7 @@ echo "[3/6] Directories and config..."
 install -d -o arxsentinel -g arxsentinel "$LOG_DIR"
 install -d /etc/arxsentinel
 # Config is copied only if it does not yet exist — do not overwrite production settings.
-[ -f "$CONFIG" ] || install -m 644 config.yaml "$CONFIG"
+[ -f "$CONFIG" ] || install -m 644 "$SRC_CONFIG" "$CONFIG"
 
 # ── 4. systemd unit ───────────────────────────────────────────────────────────────────
 echo "[4/6] systemd..."

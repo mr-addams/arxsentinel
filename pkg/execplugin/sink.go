@@ -107,3 +107,14 @@ func (s *ExecSink) Stats() plugin.SinkStats {
 		Errors:        s.errors.Load(),
 	}
 }
+
+func (s *ExecSink) Manifest() plugin.Manifest {
+	return plugin.Manifest{
+		PluginID:      "exec",
+		PluginVersion: "1.0.0",
+		Role:          plugin.RoleSink,
+		InputType:     plugin.TypeScoredEvent,
+		OutputType:    plugin.TypeNone,
+		Tags:          []string{"exec", "external", "plugin"},
+	}
+}

@@ -68,6 +68,16 @@ func (e *ExecExecutor) Name() string {
 	return e.name
 }
 
+// Manifest returns the plugin's identity and data contract.
+func (e *ExecExecutor) Manifest() plugin.Manifest {
+	return plugin.Manifest{
+		Role:       plugin.RoleExecutor,
+		InputType:  plugin.TypeScoredEvent,
+		OutputType: plugin.TypeNone,
+		Tags:       []string{"exec", "external-plugin", "ndjson"},
+	}
+}
+
 // Run reads ThreatEvents from the source via Pop and delegates to executePlugin.
 // Blocks until ctx is cancelled or the source returns a terminal error.
 func (e *ExecExecutor) Run(ctx context.Context, source plugin.EventSource) error {

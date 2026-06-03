@@ -169,3 +169,15 @@ func (s *ExecSource) Stats() plugin.SourceStats {
 		Dropped:     0, // Phase 1 doesn't track drops
 	}
 }
+
+// Manifest returns the plugin identity and data contract.
+func (s *ExecSource) Manifest() plugin.Manifest {
+	return plugin.Manifest{
+		PluginID:      "exec",
+		PluginVersion: "1.0.0",
+		Role:          plugin.RoleSource,
+		InputType:     plugin.TypeNone,
+		OutputType:    plugin.TypeStructured,
+		Tags:          []string{"exec", "external-plugin", "ndjson"},
+	}
+}

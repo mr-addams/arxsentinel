@@ -347,12 +347,21 @@ type WhitelistConfig struct {
 	DNSVerifyTimeout Duration             `yaml:"dns_verify_timeout"`  // YAML: whitelist.dns_verify_timeout, default "2s" — bot DNS verification timeout in pipeline. Consumer: main.go processLine
 }
 
+// VerifyMethod constants — must match the yaml values in config.yaml.
+const (
+	VerifyMethodRDNS     = "rdns"
+	VerifyMethodRDNSIP   = "rdns_ipjson"
+	VerifyMethodIPRanges = "ip_ranges"
+	VerifyMethodUAOnly   = "ua_only"
+)
+
 // BotConfig — a single legitimate bot with UA patterns and rDNS domains for verification.
 type BotConfig struct {
-	Name         string   `yaml:"name"`          // YAML: whitelist.bots[].name — identifier (google, bing...). Consumer: whitelist.Matcher
-	UAPatterns   []string `yaml:"ua_patterns"`   // YAML: whitelist.bots[].ua_patterns — User-Agent substrings. Consumer: whitelist.Matcher
-	RDNSDomains  []string `yaml:"rdns_domains"`  // YAML: whitelist.bots[].rdns_domains — allowed rDNS suffixes. Consumer: whitelist.Verifier
-	VerifyMethod string   `yaml:"verify_method"` // YAML: whitelist.bots[].verify_method — "rdns" | "rdns_ipjson" | "ip_ranges". Consumer: whitelist.Verifier
+	Name            string   `yaml:"name"`             // YAML: whitelist.bots[].name — identifier (google, bing...). Consumer: whitelist.Matcher
+	UAPatterns      []string `yaml:"ua_patterns"`      // YAML: whitelist.bots[].ua_patterns — User-Agent substrings. Consumer: whitelist.Matcher
+	RDNSDomains     []string `yaml:"rdns_domains"`     // YAML: whitelist.bots[].rdns_domains — allowed rDNS suffixes. Consumer: whitelist.Verifier
+	VerifyMethod    string   `yaml:"verify_method"`    // YAML: whitelist.bots[].verify_method — "rdns" | "rdns_ipjson" | "ip_ranges" | "ua_only". Consumer: whitelist.Verifier
+	ExemptDetectors []string `yaml:"exempt_detectors"` // YAML: whitelist.bots[].exempt_detectors — detector names to skip (e.g. ["noasset"]). Consumer: scorer.Evaluate, main.go processLine
 }
 
 type CustomWhitelistConfig struct {
@@ -1350,16 +1359,32 @@ func defaultBots() []BotConfig {
 			VerifyMethod: "ip_ranges",
 		},
 		{
-			Name:         "gptbot",
-			UAPatterns:   []string{"GPTBot"},
-			RDNSDomains:  []string{".openai.com"},
-			VerifyMethod: "rdns",
+			Name:            "claudebot",
+			UAPatterns:      []string{"ClaudeBot", "Claude-Web", "anthropic-ai"},
+			RDNSDomains:     []string{},
+			VerifyMethod:    VerifyMethodUAOnly,
+			ExemptDetectors: []string{"noasset"},
 		},
 		{
-			Name:         "claudebot",
-			UAPatterns:   []string{"ClaudeBot", "Claude-Web", "anthropic-ai"},
-			RDNSDomains:  []string{".anthropic.com"},
-			VerifyMethod: "rdns",
+			Name:            "gptbot",
+			UAPatterns:      []string{"GPTBot", "OAI-SearchBot", "ChatGPT-User"},
+			RDNSDomains:     []string{},
+			VerifyMethod:    VerifyMethodUAOnly,
+			ExemptDetectors: []string{"noasset"},
+		},
+		{
+			Name:            "amazonbot",
+			UAPatterns:      []string{"Amazonbot"},
+			RDNSDomains:     []string{},
+			VerifyMethod:    VerifyMethodUAOnly,
+			ExemptDetectors: []string{"noasset"},
+		},
+		{
+			Name:            "meta-crawler",
+			UAPatterns:      []string{"meta-externalagent", "meta-externalfetcher"},
+			RDNSDomains:     []string{},
+			VerifyMethod:    VerifyMethodUAOnly,
+			ExemptDetectors: []string{"noasset"},
 		},
 	}
 }

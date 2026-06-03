@@ -103,7 +103,8 @@ help text.
 
 | Name | Package | Description |
 |---|---|---|
-| `cloudflare` | `internal/core/executor/cloudflare` | Manages Cloudflare IP Lists — adds or removes IPs via the Cloudflare API. Supports dedup (skips already-banned IPs), TTL-based auto-unban, and configurable zone/account targets. |
+| `cloudflare` | `pkg/executor/cloudflare` | Manages Cloudflare IP Lists — adds or removes IPs via the Cloudflare API. Supports dedup (skips already-banned IPs), TTL-based auto-unban, and configurable zone/account targets. |
+| `nginx` | `pkg/executor/nginx` | Writes banned IPs to an nginx blocklist file — optionally reloads nginx, supports TTL and dedup. |
 
 ---
 

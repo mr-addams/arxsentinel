@@ -1,0 +1,45 @@
+# ArxSentinel ConfigMap — config for Kubernetes deployment.
+# stdout JSON sink: threats flow into your log aggregator (Loki, Datadog, etc.).
+# Replace with a file sink if running Fail2Ban on the node.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arxsentinel-config
+  namespace: monitoring
+data:
+  config.yaml: |
+    scoring:
+      alert_threshold: 50
+      ban_threshold: 80
+      observation_window: 300s
+      decay: linear
+
+    streams:
+      - name: main
+        inputs:
+          - type: file
+            path: /var/log/nginx/access.log
+            parser: combined
+        outputs:
+          - type: file
+            path: /var/log/arxsentinel/threats.log
+            format: fail2ban
+
+    metrics:
+      enabled: true
+      listen_addr: ":9117"
+
+    # Uncomment and adjust for MikroTik executor with internal CA:
+    # executors:
+    #   - name: mikrotik-ban
+    #     type: mikrotik
+    #     sources:
+    #       - name: sentinel-mt
+    #     config:
+    #       host: "YOUR_MIKROTIK_HOST"
+    #       port: 443
+    #       username: "YOUR_USERNAME"
+    #       password: "YOUR_PASSWORD"
+    #       sentinel_id: "sentinel-1"
+    #       tls_verify: true
+    #       ca_file: "/etc/arxsentinel/ca/mikrotik-ca.crt"

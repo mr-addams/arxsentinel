@@ -36,7 +36,7 @@
       "downloadUrl": "https://github.com/mr-addams/arxsentinel/releases/latest",
       "codeRepository": "https://github.com/mr-addams/arxsentinel",
       "license": "https://opensource.org/licenses/MIT",
-      "softwareVersion": "2.0.0",
+      "softwareVersion": "2.0.2",
       "author": { "@type": "Person", "name": "mr-addams" }
     }
     </script>
@@ -538,8 +538,8 @@
 
     <section class="hero">
         <div class="badge-container">
-            <span class="badge badge-version">v2.0.0</span>
-            <span class="badge">Open Source</span>
+            <span class="badge badge-version">v2.0.2</span>
+            <span class="badge">Source Available</span>
             <span class="badge">Go</span>
             <span class="badge">Linux</span>
         </div>
@@ -839,9 +839,30 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </div>
     </section>
 
-    <section class="whitelist-section">
+        <section class="whitelist-section">
         <div class="section-header">
-            <span class="section-tag">Можливості v2.0.0</span>
+            <span class="section-tag">Примусові дії</span>
+            <h2 class="section-title">Блокування на потрібному рівні</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">☁️</span> Cloudflare WAF</h3>
+                <p>Додання IP загроз до Cloudflare IP List та блокування на краю мережі — без iptables, без host firewall. Пакетні операції, асинхронний polling, автоматичне TTL-закінчення та cross-instance dedup.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🔧</span> nginx</h3>
+                <p>Запис заблокованих IP у простий blocklist-файл з автоматичним TTL-закінченням та атомарним записом. arxsentinel лише пише файл; ви підключаєте його до nginx як вам зручно. Опціональна reload-команда.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">📡</span> MikroTik RouterOS v7</h3>
+                <p>Керування firewall address-list RouterOS через REST API. TTL-базований auto-unban, безпечне видалення лише власних записів arxsentinel, працює на CHR та ARM-маршрутизаторах.</p>
+            </div>
+        </div>
+    </section>
+
+<section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Можливості v2.0.2</span>
             <h2 class="section-title">Один процес. Будь-яка топологія.</h2>
         </div>
         <div class="whitelist-grid">
@@ -865,6 +886,18 @@ sudo systemctl enable --now arxsentinel</span></pre>
                 <h3><span style="color: var(--accent-blue)">☸️</span> Kubernetes DaemonSet</h3>
                 <p>Один pod на вузол читає host-логи через <code>hostPath</code>. Включено Helm-чарт з довідкою по values та інтеграцією Prometheus Operator. Підтримується також sidecar-топологія для managed-кластерів без доступу до host-логів.</p>
             </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🔎</span> Offline config validation</h3>
+                <p>Запустіть `arxsentinel validate` щоб перевірити весь конфіг перед деплоєм. Topology-aware валідатор моделює реальний потік даних та ловить зламаний дріт, використовуючи статичні plugin manifests — без live трафіку.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🗃️</span> Pluggable queue backends</h3>
+                <p>Буферизація подій executor через in-memory, file-based (bbolt) або Redis queue — виберіть per executor для bare-metal, single-host або multi-replica Kubernetes.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🔀</span> Named Channel Hub</h3>
+                <p>Маршрутизація подій загроз між незалежними pipelines за назвою — один pipeline може детектувати, інший примусити, повністю decoupled.</p>
+            </div>
         </div>
     </section>
 
@@ -876,7 +909,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
         <div class="whitelist-grid">
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🔬</span> Автоматична верифікація</h3>
-                <p>Googlebot, Bingbot, Яндекс, DuckDuckBot, GPTBot та ще 6 родин верифікуються через зворотний + прямий DNS. Легітимні краулери ніколи не отримують очків. Фейкові боти отримують штраф.</p>
+                <p>Googlebot, Bingbot, Яндекс, DuckDuckBot, GPTBot та ще 6 родин верифікуються через зворотний + прямий DNS. Легітимні краулери ніколи не отримують очків. Фейкові боти отримують штраф. Надійні краулери можна матчити за User-Agent лише (`ua_only`, без DNS) та надати per-bot detector exemptions (`exempt_detectors`) щоб легітимна автоматизація ніколи не була покарана.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">✅</span> Кастомні виключення</h3>
@@ -899,20 +932,15 @@ sudo systemctl enable --now arxsentinel</span></pre>
             <h2 class="section-title">Що з'явиться у v2.x</h2>
         </div>
         <div class="roadmap-grid">
-            <div class="roadmap-card">
+        <div class="roadmap-card">
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-green);border:1px solid rgba(0,255,136,0.35);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">NEXT</span>
-                <h3><span style="color: var(--accent-purple)">⚡</span> Executor interface</h3>
-                <p>Stateful двонаправлені інтеграції через персистентні субпроцеси — протокол запит/відповідь, на відміну від fire-and-forget Sink. Розроблено для інтеграцій з cloud API, що потребують обліку сесій або rate-limit.</p>
-            </div>
-            <div class="roadmap-card">
-                <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
-                <h3><span style="color: var(--accent-purple)">☁️</span> Cloudflare WAF executor</h3>
-                <p>Блокування IP на рівні мережі через Cloudflare API — без iptables та правил хостового файрволу. Для розгортань з CDN-фронтендом, де origin-сервер не може банити на рівні IP.</p>
+                <h3><span style="color: var(--accent-blue)">📨</span> Alert sinks</h3>
+                <p>Відправлення загроз у Telegram, Slack та PagerDuty — з вбудованою дедубліцією та rate-limiting, щоб спалах ніколи не затопив канал.</p>
             </div>
             <div class="roadmap-card">
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
                 <h3><span style="color: var(--accent-purple)">🛡️</span> AWS WAF executor</h3>
-                <p>Додає IP загроз до правил IP-набору AWS WAF. Інтегрується з наявними групами WAF-правил — без Lambda та кастомної інфраструктури.</p>
+                <p>Записування IP загроз прямо в набори IP-правил AWS WAF. Інтегрується з існуючими групами WAF — не потребує Lambda або кастомної інфраструктури.</p>
             </div>
         </div>
     </section>

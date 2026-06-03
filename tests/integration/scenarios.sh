@@ -431,3 +431,33 @@ run_executor_cf_ban_scenario() {
     echo "[executor-cf-ban] recorded-items: $result" >&2
 }
 run_executor_cf_ban_scenario
+
+# ── executor-ros-ban: verify that MikroTik executor sends THREAT IP to RouterOS API mock ──
+# Appends probe attack lines to nginx access log; the ros-executor sentinel (started in
+# run.sh) picks them up, detects THREAT, and flushes to ros-api-mock.
+# Records result to logs/executor-ros-ban.json for verify.sh.
+
+run_executor_ros_ban_scenario() {
+    echo "[scenarios] running: executor-ros-ban"
+
+    mkdir -p "$INT_DIR/logs/threats"
+
+    # Use a different attack IP to avoid cross-contamination with CF scenario.
+    local attack_ip="9.10.11.12"
+    local attack_line="${attack_ip} - - [01/Jan/2026:00:00:00 +0000] \"GET /.env HTTP/1.1\" 404 0 \"-\" \"curl/7.88\" \"${attack_ip}\""
+
+    # Write 5 probe attack lines — enough to exceed alert_threshold=50 with score=60/hit.
+    for i in $(seq 1 5); do
+        echo "$attack_line" >> "$INT_DIR/logs/nginx/access.log"
+    done
+
+    # Wait for ros-executor sentinel to detect + flush batch to ros-api-mock.
+    sleep 5
+
+    # Query ros-api-mock for recorded items (from host, port 8093 exposed).
+    local result
+    result=$(curl -sf http://localhost:8093/recorded-items 2>/dev/null || true)
+    echo "$result" > "$INT_DIR/logs/executor-ros-ban.json"
+    echo "[executor-ros-ban] recorded-items: $result" >&2
+}
+run_executor_ros_ban_scenario

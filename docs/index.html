@@ -6,9 +6,9 @@
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ArxSentinel — A vigilant sentinel for your web server</title>
-    <meta name="description" content="Eight behavioural detectors analyse every HTTP access log in real time and route confirmed attackers to any output — Fail2Ban, custom scripts, or your own sink. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.">
+    <meta name="description" content="Eight behavioural detectors analyse every HTTP access log in real time and route confirmed attackers to any output — Fail2Ban, Cloudflare WAF, MikroTik RouterOS, custom scripts, or your own exec+JSON sink. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed.">
     <meta property="og:title" content="ArxSentinel — A vigilant sentinel for your web server">
-    <meta property="og:description" content="Eight behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.">
+    <meta property="og:description" content="Eight behavioural detectors watch every HTTP request in real time and route confirmed attackers to Fail2Ban, Cloudflare WAF, MikroTik RouterOS, or any custom sink. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed.">
     <meta property="og:url" content="https://mr-addams.github.io/arxsentinel/">
     <meta property="og:type" content="website">
     <meta property="og:image" content="https://opengraph.githubassets.com/1/mr-addams/arxsentinel">
@@ -16,7 +16,7 @@
     <meta property="og:site_name" content="ArxSentinel">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="ArxSentinel — A vigilant sentinel for your web server">
-    <meta name="twitter:description" content="Eight behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.">
+    <meta name="twitter:description" content="Eight behavioural detectors watch every HTTP request in real time and route confirmed attackers to Fail2Ban, Cloudflare WAF, MikroTik RouterOS, or any custom sink. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed.">
     <meta name="twitter:image" content="https://opengraph.githubassets.com/1/mr-addams/arxsentinel">
     <link rel="canonical" href="https://mr-addams.github.io/arxsentinel/">
     <link rel="alternate" hreflang="en"        href="https://mr-addams.github.io/arxsentinel/">
@@ -31,12 +31,12 @@
       "name": "ArxSentinel",
       "applicationCategory": "SecurityApplication",
       "operatingSystem": "Linux",
-      "description": "Eight behavioural detectors watch every HTTP request in real time and hand confirmed attackers straight to Fail2Ban. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed. Cloudflare-ready.",
+      "description": "Eight behavioural detectors watch every HTTP request in real time and route confirmed attackers to Fail2Ban, Cloudflare WAF, MikroTik RouterOS, or any custom sink. Works with nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed and OpenLiteSpeed.",
       "url": "https://mr-addams.github.io/arxsentinel/",
       "downloadUrl": "https://github.com/mr-addams/arxsentinel/releases/latest",
       "codeRepository": "https://github.com/mr-addams/arxsentinel",
       "license": "https://opensource.org/licenses/MIT",
-      "softwareVersion": "2.0.0",
+      "softwareVersion": "2.0.2",
       "author": { "@type": "Person", "name": "mr-addams" }
     }
     </script>
@@ -698,8 +698,8 @@
 
     <section class="hero">
         <div class="badge-container">
-            <span class="badge badge-version">v2.0.0</span>
-            <span class="badge">Open Source</span>
+            <span class="badge badge-version">v2.0.2</span>
+            <span class="badge">Source Available</span>
             <span class="badge">Go</span>
             <span class="badge">Linux</span>
         </div>
@@ -709,7 +709,7 @@
             one binary, zero overhead
         </h1>
         <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Stream-based security event multiprocessing engine for any HTTP server — and far beyond</p>
-        <p>Eight behavioural detectors analyse every HTTP access log in real time and route confirmed attackers to any output — Fail2Ban, custom scripts, or your own exec+JSON sink in any language. Bare-metal, Docker Compose, or Kubernetes DaemonSet. Cloudflare-ready.</p>
+        <p>Eight behavioural detectors analyse every HTTP access log in real time and route confirmed attackers to any output — Fail2Ban, Cloudflare WAF, MikroTik RouterOS, or your own exec+JSON sink in any language. Bare-metal, Docker Compose, or Kubernetes DaemonSet.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Install</a>
             <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">View on GitHub</a>
@@ -717,6 +717,10 @@
     </section>
 
     <section class="pipeline-section">
+        <div class="section-header" style="margin-bottom: 1.5rem;">
+            <span class="section-tag">Typical detection flow</span>
+            <h2 class="section-title">Every request. Every threat. Any output.</h2>
+        </div>
         <div class="pipeline-box">
             <div class="box-scanline"></div>
             <div class="pipeline-flow">
@@ -728,8 +732,8 @@
                 <div class="pipeline-node">Whitelist (IP · CIDR · UA · bot DNS verify)</div>
                 <div class="pipeline-node">Tracker (per-IP state · ring buffer · rate counters)</div>
                 <div class="pipeline-node">Scorer (8 detectors · linear decay)</div>
-                <div class="pipeline-node">threats.log</div>
-                <div class="pipeline-node final">Fail2Ban → iptables ban</div>
+                <div class="pipeline-node">threats.log / Named Channel Hub</div>
+                <div class="pipeline-node final">Executor → Fail2Ban · Cloudflare WAF · MikroTik · nginx blocklist · exec+JSON</div>
             </div>
         </div>
     </section>
@@ -738,8 +742,8 @@
         <div class="stat-card"><div class="stat-number">8</div><div class="stat-label">Behavioural detectors</div></div>
         <div class="stat-card"><div class="stat-number">3</div><div class="stat-label">Topologies · bare-metal · Docker · K8s</div></div>
         <div class="stat-card"><div class="stat-number">11</div><div class="stat-label">Verified bot families</div></div>
-        <div class="stat-card"><div class="stat-number">∞</div><div class="stat-label">Plugins · any language · exec+JSON</div></div>
-        <div class="stat-card"><div class="stat-number">2</div><div class="stat-label">Architectures (amd64 · arm64)</div></div>
+        <div class="stat-card"><div class="stat-number">5</div><div class="stat-label">Native outputs · Fail2Ban · CF WAF · MikroTik · nginx · exec+JSON</div></div>
+        <div class="stat-card"><div class="stat-number">5</div><div class="stat-label">Architectures · amd64 · arm64 · arm · riscv64 · 386</div></div>
         <div class="stat-card"><div class="stat-number js-binary-size" data-unit="MB">11 MB</div><div class="stat-label">Single binary · arm64 ready</div></div>
     </section>
 
@@ -999,9 +1003,30 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </div>
     </section>
 
-    <section class="whitelist-section">
+        <section class="whitelist-section">
         <div class="section-header">
-            <span class="section-tag">v2.0.0 Capabilities</span>
+            <span class="section-tag">Enforcement</span>
+            <h2 class="section-title">Ban at the layer that fits your stack</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">☁️</span> Cloudflare WAF</h3>
+                <p>Add threat IPs to a Cloudflare IP List and ban them at the network edge — no iptables, no host firewall. Batch operations, async polling, automatic TTL expiry and cross-instance dedup.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🔧</span> nginx</h3>
+                <p>Write banned IPs to a plain blocklist file with TTL auto-expiry and atomic writes. arxsentinel only writes the file; you include it into nginx however suits you. Optional reload command.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">📡</span> MikroTik RouterOS v7</h3>
+                <p>Manage a RouterOS firewall address-list over the REST API. TTL-based auto-unban, safe removal of only arxsentinel-owned entries, works on CHR and ARM-based routers.</p>
+            </div>
+        </div>
+    </section>
+
+<section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">v2.0.2 Capabilities</span>
             <h2 class="section-title">One process. Any topology.</h2>
         </div>
         <div class="whitelist-grid">
@@ -1025,6 +1050,18 @@ sudo systemctl enable --now arxsentinel</span></pre>
                 <h3><span style="color: var(--accent-blue)">☸️</span> Kubernetes DaemonSet</h3>
                 <p>One pod per node reads host access logs via <code>hostPath</code>. Helm chart included with values reference and Prometheus Operator integration. Sidecar topology also supported for managed clusters without host log access.</p>
             </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🔎</span> Offline config validation</h3>
+                <p>Run `arxsentinel validate` to check your whole config before deploy. A topology-aware validator models the real data flow and catches broken wiring using static plugin manifests — no live traffic needed.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🗃️</span> Pluggable queue backends</h3>
+                <p>Buffer executor events through an in-memory, file-based (bbolt) or Redis queue — pick per executor to fit bare-metal, single-host or multi-replica Kubernetes setups.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">🔀</span> Named Channel Hub</h3>
+                <p>Route threat events between independent pipelines by name — one pipeline can detect while another enforces, fully decoupled.</p>
+            </div>
         </div>
     </section>
 
@@ -1036,7 +1073,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
         <div class="whitelist-grid">
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">🔬</span> Automatic verification</h3>
-                <p>Googlebot, Bingbot, Yandex, DuckDuckBot, GPTBot and 6 others are verified via reverse + forward DNS. Legitimate crawlers are never scored. Fakes get a penalty instead.</p>
+                <p>Googlebot, Bingbot, Yandex, DuckDuckBot, GPTBot and 6 others are verified via reverse + forward DNS. Legitimate crawlers are never scored. Fakes get a penalty instead. Trusted crawlers can be matched by User-Agent only (`ua_only`, no DNS) and given per-bot detector exemptions (`exempt_detectors`) so legitimate automation is never penalised.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)">✅</span> Custom exclusions</h3>
@@ -1082,11 +1119,14 @@ sudo systemctl enable --now arxsentinel</span></pre>
                 <h3 style="color: var(--accent-green); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Outputs</h3>
                 <div class="integrations-list">
                     <span class="integration-tag">Fail2Ban</span>
+                    <span class="integration-tag">Cloudflare WAF</span>
+                    <span class="integration-tag">MikroTik RouterOS</span>
+                    <span class="integration-tag">nginx blocklist</span>
+                    <span class="integration-tag">exec+JSON</span>
                     <span class="integration-tag">stdout&nbsp;JSON</span>
                     <span class="integration-tag muted">Grafana Loki (soon)</span>
                     <span class="integration-tag muted">Splunk HEC (soon)</span>
                     <span class="integration-tag muted">Datadog (soon)</span>
-                    <span class="integration-tag muted">Kafka (soon)</span>
                     <span class="integration-tag muted">Telegram (soon)</span>
                 </div>
             </div>
@@ -1104,15 +1144,10 @@ sudo systemctl enable --now arxsentinel</span></pre>
             <h2 class="section-title">What's coming in v2.x</h2>
         </div>
         <div class="roadmap-grid">
-            <div class="roadmap-card">
+        <div class="roadmap-card">
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-green);border:1px solid rgba(0,255,136,0.35);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">NEXT</span>
-                <h3><span style="color: var(--accent-purple)">⚡</span> Executor interface</h3>
-                <p>Stateful, bidirectional integrations via persistent subprocesses — request/response protocol, unlike the fire-and-forget Sink. Designed for cloud API integrations that require session or rate-limit awareness.</p>
-            </div>
-            <div class="roadmap-card">
-                <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
-                <h3><span style="color: var(--accent-purple)">☁️</span> Cloudflare WAF executor</h3>
-                <p>Block IPs at the network edge via Cloudflare API — no iptables, no host-level firewall rules. Designed for CDN-fronted deployments where the origin server cannot ban at the IP layer.</p>
+                <h3><span style="color: var(--accent-blue)">📨</span> Alert sinks</h3>
+                <p>Push threats to Telegram, Slack and PagerDuty — with built-in deduplication and rate-limiting so a burst never floods your channel.</p>
             </div>
             <div class="roadmap-card">
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>

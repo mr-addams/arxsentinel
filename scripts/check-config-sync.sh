@@ -6,7 +6,7 @@
 #
 #   THE CONFIG CHAIN (all must stay in sync):
 #     1. internal/sys/config/config.go  — Go structs + applyEnvOverrides()  ← source of truth
-#     2. config.nginx-example.yaml      — nginx/fail2ban quick-start reference
+#     2. cookbook/fail2ban/nginx-basic.yaml — nginx/fail2ban quick-start reference
 #     3. deploy/container/docker/config.docker.yaml  — full Docker config
 #     4. deploy/container/docker/.env.example        — env var reference for operators
 #     5. deploy/container/docker/README.md           — env var table (Docker docs)
@@ -15,17 +15,17 @@
 #   WHAT IS CHECKED:
 #     A. Env vars: every "ARXSENTINEL_*" passed to envXxx() in applyEnvOverrides()
 #        must appear in files 4, 5, 6.
-#     B. Sections: every top-level section in config.nginx-example.yaml (except intentionally
+#     B. Sections: every top-level section in cookbook/fail2ban/nginx-basic.yaml (except intentionally
 #        advanced/migration-only ones) must appear in config.docker.yaml (file 3).
 #     C. Default values: TestEnvExampleDefaults verifies that documented defaults in
 #        .env.example match actual Go defaults from defaultConfig() + applyEnvOverrides().
 #     C2. YAML-only sections: every commented advanced section (streams, executors,
-#        inputs, outputs) must be present in both config.nginx-example.yaml and config.docker.yaml.
+#        inputs, outputs) must be present in both cookbook/fail2ban/nginx-basic.yaml and config.docker.yaml.
 #
 #   WHAT IS NOT CHECKED (intentionally YAML-only, env vars make no sense):
 #     Detector arrays (probe.paths, overflow.suspicious_params, extra_*_patterns)
 #     are also YAML-only — no env var equivalents exist.
-#   Reference: full examples with all YAML-only sections are in config.example.yaml.
+#   Reference: full examples with all YAML-only sections are in cookbook/config.reference.yaml.
 #   Run manually:  bash scripts/check-config-sync.sh
 #   Pre-commit:    called automatically by scripts/hooks/pre-commit
 #
@@ -61,7 +61,7 @@ ENV_EXAMPLE="deploy/container/docker/.env.example"
 DOCKER_README="deploy/container/docker/README.md"
 K8S_README="deploy/container/k8s/arxsentinel/README.md"
 DOCKER_CONFIG="deploy/container/docker/config.docker.yaml"
-MAIN_CONFIG="config.nginx-example.yaml"
+MAIN_CONFIG="cookbook/config.reference.yaml"
 
 # Sanity: all reference files must exist.
 for f in "$CONFIG_GO" "$ENV_EXAMPLE" "$DOCKER_README" "$K8S_README" "$DOCKER_CONFIG" "$MAIN_CONFIG"; do
@@ -166,11 +166,10 @@ fi
 #
 # Every YAML-only advanced section (executors, streams, inputs, outputs) must
 # appear as a commented reference in:
-#   - config.nginx-example.yaml  (nginx/fail2ban default)
-#   - config.docker.yaml         (Docker default)
+#   - cookbook/fail2ban/nginx-basic.yaml (nginx/fail2ban default)
+#   - config.docker.yaml                (Docker default)
 # Optional but checked if present:
-#   - config.cloudflare-example.yaml (CF quick-start)
-#   - config.example.yaml            (full reference)
+#   - cookbook/config.reference.yaml   (full reference)
 
 info "C2. YAML-only sections in example config files"
 
@@ -183,7 +182,7 @@ C2_REQUIRED_FILES=("$MAIN_CONFIG" "$DOCKER_CONFIG")
 
 # Optional files: checked only if they exist
 C2_OPTIONAL_FILES=()
-for f in config.cloudflare-example.yaml config.example.yaml; do
+for f in cookbook/config.reference.yaml; do
   [ -f "$f" ] && C2_OPTIONAL_FILES+=("$f")
 done
 
