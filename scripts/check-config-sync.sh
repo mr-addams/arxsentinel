@@ -25,7 +25,7 @@
 #   WHAT IS NOT CHECKED (intentionally YAML-only, env vars make no sense):
 #     Detector arrays (probe.paths, overflow.suspicious_params, extra_*_patterns)
 #     are also YAML-only — no env var equivalents exist.
-#   Reference: full examples with all YAML-only sections are in config.reference.yaml.
+#   Reference: full examples with all YAML-only sections are in cookbook/config.reference.yaml.
 #   Run manually:  bash scripts/check-config-sync.sh
 #   Pre-commit:    called automatically by scripts/hooks/pre-commit
 #
@@ -61,7 +61,7 @@ ENV_EXAMPLE="deploy/container/docker/.env.example"
 DOCKER_README="deploy/container/docker/README.md"
 K8S_README="deploy/container/k8s/arxsentinel/README.md"
 DOCKER_CONFIG="deploy/container/docker/config.docker.yaml"
-MAIN_CONFIG="config.reference.yaml"
+MAIN_CONFIG="cookbook/config.reference.yaml"
 
 # Sanity: all reference files must exist.
 for f in "$CONFIG_GO" "$ENV_EXAMPLE" "$DOCKER_README" "$K8S_README" "$DOCKER_CONFIG" "$MAIN_CONFIG"; do
@@ -169,7 +169,7 @@ fi
 #   - cookbook/fail2ban/nginx-basic.yaml (nginx/fail2ban default)
 #   - config.docker.yaml                (Docker default)
 # Optional but checked if present:
-#   - config.reference.yaml             (full reference)
+#   - cookbook/config.reference.yaml   (full reference)
 
 info "C2. YAML-only sections in example config files"
 
@@ -182,7 +182,7 @@ C2_REQUIRED_FILES=("$MAIN_CONFIG" "$DOCKER_CONFIG")
 
 # Optional files: checked only if they exist
 C2_OPTIONAL_FILES=()
-for f in config.reference.yaml; do
+for f in cookbook/config.reference.yaml; do
   [ -f "$f" ] && C2_OPTIONAL_FILES+=("$f")
 done
 
