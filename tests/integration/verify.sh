@@ -541,9 +541,30 @@ else
     fi
 fi
 
+# ── executor-nginx-ban: check that nginx executor wrote the attacker IP to blocklist ──
+echo ""
+echo "--- Executor nginx ban check ---"
 echo ""
 
-TOTAL=$((DIRECT_TOTAL + BADBOT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL + CF_DIRECT_TOTAL + CF_CHAIN_TOTAL + CHAIN_GUARD_TOTAL + EXECUTOR_TOTAL + ROS_EXECUTOR_TOTAL))
+EXPECTED_NGINX_EXECUTOR_IP="17.18.19.20"
+NGINX_BLOCKLIST_FILE="$LOGS_DIR/threats/nginx-blocklist.conf"
+NGINX_EXECUTOR_TOTAL=0
+
+if [ ! -f "$NGINX_BLOCKLIST_FILE" ]; then
+    echo "SKIP [executor/nginx-ban]  (no blocklist file — nginx-executor sentinel may not be running)"
+else
+    if grep -q "$EXPECTED_NGINX_EXECUTOR_IP" "$NGINX_BLOCKLIST_FILE"; then
+        echo "PASS [executor/nginx-ban]  IP $EXPECTED_NGINX_EXECUTOR_IP found in nginx blocklist"
+        NGINX_EXECUTOR_TOTAL=$((NGINX_EXECUTOR_TOTAL + 1))
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL [executor/nginx-ban]  IP $EXPECTED_NGINX_EXECUTOR_IP not found in nginx blocklist"
+        echo "  File contents: $(cat "$NGINX_BLOCKLIST_FILE" 2>/dev/null || echo 'empty')"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
+TOTAL=$((DIRECT_TOTAL + BADBOT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL + CF_DIRECT_TOTAL + CF_CHAIN_TOTAL + CHAIN_GUARD_TOTAL + EXECUTOR_TOTAL + ROS_EXECUTOR_TOTAL + NGINX_EXECUTOR_TOTAL))
 
 echo "================================"
 echo "Results: $PASS passed, $FAIL failed"
@@ -556,6 +577,7 @@ echo "(${#CF_CHAIN_PROXIES[@]} proxies × ${#CF_CHAIN_BACKENDS[@]} backends = ${
 echo "(${CHAIN_GUARD_TOTAL} chain-guard warning checks)"
 echo "(${EXECUTOR_TOTAL} executor checks)"
 echo "(${ROS_EXECUTOR_TOTAL} ros-executor checks)"
+echo "(${NGINX_EXECUTOR_TOTAL} nginx-executor checks)"
 echo "(total: ${TOTAL} checks)"
 echo ""
 

@@ -255,6 +255,7 @@ docker run -d \
 > **YAML-only features** — the following cannot be configured via env vars and require
 > a custom `config.yaml`:
 > `streams:`, `inputs:`, `outputs:`, `executors:`, `pipelines:`, per-detector `paths:` arrays.
+> Source types `exec` and `syslog` (network syslog receiver; `addr: udp://0.0.0.0:5514`) are also YAML-only.
 > Full copy-paste-ready examples: `/etc/arxsentinel/config.yaml.example` (inside the container)
 > or [`config.reference.yaml`](../../../../cookbook/config.reference.yaml) in the repository.
 

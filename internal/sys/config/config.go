@@ -90,6 +90,7 @@ type InputConfig struct {
 	Path   string `yaml:"path"`   // YAML: path to log file; required when type=file. Consumer: input.NewFileSource
 	Parser string `yaml:"parser"` // YAML: "combined" | "json" | "regex" | profile-name; default inherited from parser.log_format. Consumer: main.go buildParser
 	Exec   string `yaml:"exec"`   // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSource
+	Addr   string `yaml:"addr"`   // YAML: addr — network address for type=syslog: "udp://:5514", "tcp://:514", "unix:///var/run/arx.sock". Consumer: pkg/source/syslog.New
 }
 
 // SinkConfig — configuration for a single threat event output.
@@ -1078,8 +1079,11 @@ func validateConfig(cfg *Config) error {
 func validateInputs(inputs []InputConfig) error {
 	seen := make(map[string]bool)
 	for i, in := range inputs {
-	if in.Type != "file" && in.Type != "stdin" {
-		return fmt.Errorf("inputs[%d]: unknown type %q (want file or stdin)", i, in.Type)
+	if in.Type != "file" && in.Type != "stdin" && in.Type != "exec" && in.Type != "syslog" {
+		return fmt.Errorf("inputs[%d]: unknown type %q (want file, stdin, exec, or syslog)", i, in.Type)
+	}
+	if in.Type == "syslog" && in.Addr == "" {
+		return fmt.Errorf("inputs[%d]: type=syslog requires addr (e.g. \"udp://:5514\")", i)
 	}
 		key := in.Type + ":" + in.Path
 		if seen[key] {

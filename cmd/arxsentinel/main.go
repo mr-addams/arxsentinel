@@ -92,6 +92,7 @@ import (
 	pkgsinkfile "github.com/mr-addams/arxsentinel/pkg/sink/file"
 	_ "github.com/mr-addams/arxsentinel/pkg/source/exec"
 	_ "github.com/mr-addams/arxsentinel/pkg/source/file"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/syslog"
 	_ "github.com/mr-addams/arxsentinel/pkg/source/stdin"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 	_ "github.com/mr-addams/arxsentinel/pkg/sink/exec"
@@ -943,6 +944,7 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 			Type: in.Type,
 			Path: in.Path,
 			Exec: in.Exec,  // NEW
+			Addr: in.Addr,
 		}, pkgsource.BuildOptions{
 			Parser:        p,
 			RetryInterval: time.Duration(cfg.General.TailRetryInterval),

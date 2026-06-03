@@ -458,6 +458,30 @@ run_executor_ros_ban_scenario() {
     local result
     result=$(curl -sf http://localhost:8093/recorded-items 2>/dev/null || true)
     echo "$result" > "$INT_DIR/logs/executor-ros-ban.json"
-    echo "[executor-ros-ban] recorded-items: $result" >&2
-}
+    }
 run_executor_ros_ban_scenario
+
+# ── executor-nginx-ban: verify that nginx executor writes attacker IP to blocklist file ──
+# Appends probe attack lines to nginx access log; the nginx-executor sentinel (started in
+# run.sh) picks them up, detects THREAT, and writes the IP to nginx-blocklist.conf.
+# Records result to logs/executor-nginx-ban.txt for verify.sh.
+
+run_executor_nginx_ban_scenario() {
+    echo "[scenarios] running: executor-nginx-ban"
+
+    mkdir -p "$INT_DIR/logs/threats"
+
+    local attack_ip="17.18.19.20"
+    local attack_line="${attack_ip} - - [01/Jan/2026:00:00:00 +0000] \"GET /.env HTTP/1.1\" 404 0 \"-\" \"curl/7.88\" \"${attack_ip}\""
+    for i in $(seq 1 5); do
+        echo "$attack_line" >> "$INT_DIR/logs/nginx/access.log"
+    done
+
+    sleep 5
+
+    local result=""
+    result=$(cat "$INT_DIR/logs/threats/nginx-blocklist.conf" 2>/dev/null || true)
+    echo "$result" > "$INT_DIR/logs/executor-nginx-ban.txt"
+    echo "[executor-nginx-ban] blocklist content: $result" >&2
+}
+run_executor_nginx_ban_scenario
