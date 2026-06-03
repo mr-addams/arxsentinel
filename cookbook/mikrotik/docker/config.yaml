@@ -100,6 +100,8 @@ executors:
       port: 443                     # RouterOS REST API port; int, default: 443
       username: "YOUR_USERNAME"     # adjust to your router user
       password: "YOUR_PASSWORD"     # replace with your router password
+      tls_verify: true              # verify RouterOS TLS certificate; bool, default: true
+      # ca_file: "/etc/arxsentinel/ca/mikrotik-ca.crt"  # path to PEM CA cert for internal CA / self-signed; string, default: "" (system trust store)
       sentinel_id: "sentinel-1"     # unique sentinel instance identifier; string, default: "sentinel-1"
       list_name: "arxsentinel_blocklist"  # RouterOS address-list name (created automatically if absent); string, default: "arxsentinel_blocklist"
       min_level: "THREAT"           # minimum threat level to act on; "INFO"|"WARN"|"THREAT", default: "THREAT"

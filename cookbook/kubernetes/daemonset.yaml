@@ -56,6 +56,10 @@ spec:
               readOnly: true
             - name: arxsentinel-logs
               mountPath: /var/log/arxsentinel
+            # Uncomment to use internal CA cert for MikroTik executor:
+            # - name: mikrotik-ca
+            #   mountPath: /etc/arxsentinel/ca
+            #   readOnly: true
       volumes:
         - name: config
           configMap:
@@ -69,3 +73,7 @@ spec:
           hostPath:
             path: /var/log/arxsentinel
             type: DirectoryOrCreate
+        # Uncomment to mount internal CA cert for MikroTik executor:
+        # - name: mikrotik-ca
+        #   configMap:
+        #     name: mikrotik-ca

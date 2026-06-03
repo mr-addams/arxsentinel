@@ -27,7 +27,7 @@ func NewMikroTikExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 		return nil, fmt.Errorf("mikrotik: new executor: %w", err)
 	}
 
-	client := NewHTTPClient(parsed.Host, parsed.Port, parsed.Username, parsed.Password, parsed.TLSVerify, parsed.UseTLS)
+	client := NewHTTPClient(parsed.Host, parsed.Port, parsed.Username, parsed.Password, parsed.TLSVerify, parsed.CAFile, parsed.UseTLS)
 
 	exec := &MikroTikExecutor{
 		name:   cfg.Name,

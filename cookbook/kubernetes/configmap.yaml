@@ -28,3 +28,18 @@ data:
     metrics:
       enabled: true
       listen_addr: ":9117"
+
+    # Uncomment and adjust for MikroTik executor with internal CA:
+    # executors:
+    #   - name: mikrotik-ban
+    #     type: mikrotik
+    #     sources:
+    #       - name: sentinel-mt
+    #     config:
+    #       host: "YOUR_MIKROTIK_HOST"
+    #       port: 443
+    #       username: "YOUR_USERNAME"
+    #       password: "YOUR_PASSWORD"
+    #       sentinel_id: "sentinel-1"
+    #       tls_verify: true
+    #       ca_file: "/etc/arxsentinel/ca/mikrotik-ca.crt"

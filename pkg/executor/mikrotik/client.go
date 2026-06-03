@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 )
@@ -40,12 +42,29 @@ type HTTPClient struct {
 // NewHTTPClient creates a new HTTPClient for MikroTik RouterOS REST API.
 // useTLS=false switches to plain HTTP — only for local mock servers in integration tests;
 // production RouterOS devices always require HTTPS.
-func NewHTTPClient(host string, port int, username, password string, tlsVerify, useTLS bool) Client {
+// caFile, if non-empty, loads a PEM-encoded CA cert to verify the RouterOS TLS certificate.
+// Ignored when tlsVerify is false (InsecureSkipVerify takes precedence).
+func NewHTTPClient(host string, port int, username, password string, tlsVerify bool, caFile string, useTLS bool) Client {
 	scheme := "https"
 	if !useTLS {
 		scheme = "http"
 	}
 	baseURL := fmt.Sprintf("%s://%s:%d/rest", scheme, host, port)
+
+	tlsCfg := &tls.Config{
+		InsecureSkipVerify: !tlsVerify,
+	}
+
+	if caFile != "" {
+		pem, err := os.ReadFile(caFile)
+		if err != nil {
+			_ = err
+		} else {
+			pool := x509.NewCertPool()
+			pool.AppendCertsFromPEM(pem)
+			tlsCfg.RootCAs = pool
+		}
+	}
 
 	return &HTTPClient{
 		baseURL:  baseURL,
@@ -54,9 +73,7 @@ func NewHTTPClient(host string, port int, username, password string, tlsVerify, 
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: !tlsVerify,
-				},
+				TLSClientConfig: tlsCfg,
 			},
 		},
 	}
