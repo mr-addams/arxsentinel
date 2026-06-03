@@ -52,7 +52,7 @@ nfpms:
         dst: /etc/arxsentinel/config.yaml.example
       # Full cookbook: all ready-to-use recipes
       - src: cookbook/**
-        dst: /usr/share/arxsentinel/cookbook/
+        dst: /usr/share/arxsentinel/
       # Full reference with all configuration options
       - src: config.reference.yaml
         dst: /etc/arxsentinel/config.reference.yaml
@@ -101,7 +101,7 @@ nfpms:
         dst: /etc/arxsentinel/config.yaml.example
       # Full cookbook: all ready-to-use recipes
       - src: cookbook/**
-        dst: /usr/share/arxsentinel/cookbook/
+        dst: /usr/share/arxsentinel/
       # Full reference with all configuration options
       - src: config.reference.yaml
         dst: /etc/arxsentinel/config.reference.yaml
@@ -149,7 +149,7 @@ nfpms:
         dst: /etc/arxsentinel/config.yaml.example
       # Full cookbook: all ready-to-use recipes
       - src: cookbook/**
-        dst: /usr/share/arxsentinel/cookbook/
+        dst: /usr/share/arxsentinel/
       # Full reference with all configuration options
       - src: config.reference.yaml
         dst: /etc/arxsentinel/config.reference.yaml
