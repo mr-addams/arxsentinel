@@ -17,7 +17,7 @@
   ╔══════════════════════════════════════════════════════════════════╗
   ║  SOURCES                                                         ║
   ║  nginx · Apache · Caddy · Traefik · HAProxy · LiteSpeed          ║
-  ║  file │ stdin │ exec+JSON plugin (any language)                  ║
+  ║  file │ stdin │ syslog receiver │ exec+JSON plugin (any language) ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ parsed log entries
   ╔═══════════════════════════╧══════════════════════════════════════╗

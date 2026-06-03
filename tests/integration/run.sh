@@ -237,6 +237,11 @@ if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'ros-api-mock'; then
     SENTINEL_PIDS+=($!)
 fi
 
+# Start nginx executor sentinel (reads nginx access log, writes IP blocklist file).
+(cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/nginx-executor.yaml" \
+    "$BIN" >> "$LOGS_DIR/threats/sentinel-nginx-executor.log" 2>&1) &
+SENTINEL_PIDS+=($!)
+
 # Give sentinels time to open and begin tailing log files.
 sleep 3
 
