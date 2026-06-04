@@ -502,14 +502,14 @@ CHAIN_GUARD_TOTAL=2
 echo "--- Executor CF ban check ---"
 echo ""
 
-EXECUTOR_TOTAL=0
+CF_EXECUTOR_TOTAL=0
 EXECUTOR_BAN_JSON="$LOGS_DIR/executor-cf-ban.json"
 EXPECTED_EXECUTOR_IP="5.6.7.8"
 
 if [ ! -f "$EXECUTOR_BAN_JSON" ] || [ ! -s "$EXECUTOR_BAN_JSON" ]; then
     echo "SKIP [executor/cf-ban]  (no recorded-items file — cf-api-mock may not be running)"
 else
-    EXECUTOR_TOTAL=1
+    CF_EXECUTOR_TOTAL=1
     if grep -q "$EXPECTED_EXECUTOR_IP" "$EXECUTOR_BAN_JSON"; then
         echo "PASS [executor/cf-ban]  IP $EXPECTED_EXECUTOR_IP found in CF API mock"
         PASS=$((PASS + 1))
@@ -564,7 +564,17 @@ else
     fi
 fi
 
-TOTAL=$((DIRECT_TOTAL + BADBOT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL + CF_DIRECT_TOTAL + CF_CHAIN_TOTAL + CHAIN_GUARD_TOTAL + EXECUTOR_TOTAL + ROS_EXECUTOR_TOTAL + NGINX_EXECUTOR_TOTAL))
+# Source plugin counts passed from run.sh via env; default to 0 when run standalone.
+SOURCE_PASS="${SOURCE_PASS:-0}"
+SOURCE_FAIL="${SOURCE_FAIL:-0}"
+SOURCE_TOTAL=$((SOURCE_PASS + SOURCE_FAIL))
+SOURCE_FAIL_INT=$((SOURCE_FAIL + 0))
+
+EXECUTOR_TOTAL=$((CF_EXECUTOR_TOTAL + ROS_EXECUTOR_TOTAL + NGINX_EXECUTOR_TOTAL))
+TOTAL=$((DIRECT_TOTAL + BADBOT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL + CF_DIRECT_TOTAL + CF_CHAIN_TOTAL + CHAIN_GUARD_TOTAL + EXECUTOR_TOTAL + SOURCE_TOTAL))
+
+PASS=$((PASS + SOURCE_PASS))
+FAIL=$((FAIL + SOURCE_FAIL))
 
 echo "================================"
 echo "Results: $PASS passed, $FAIL failed"
@@ -575,9 +585,13 @@ echo "(${#CHAIN_PROXIES[@]} proxies × ${#CHAIN_BACKENDS[@]} backends = ${CHAIN_
 echo "(${#CF_BACKENDS[@]} backends = ${CF_DIRECT_TOTAL} CF-direct checks)"
 echo "(${#CF_CHAIN_PROXIES[@]} proxies × ${#CF_CHAIN_BACKENDS[@]} backends = ${CF_CHAIN_TOTAL} CF-chain checks)"
 echo "(${CHAIN_GUARD_TOTAL} chain-guard warning checks)"
-echo "(${EXECUTOR_TOTAL} executor checks)"
+echo "(${CF_EXECUTOR_TOTAL} cf-executor checks)"
 echo "(${ROS_EXECUTOR_TOTAL} ros-executor checks)"
 echo "(${NGINX_EXECUTOR_TOTAL} nginx-executor checks)"
+echo "(executor total: ${EXECUTOR_TOTAL} checks)"
+echo "(3 HTTP-source checks: plain push, NDJSON push, gzip push)"
+echo "(6 syslog-source checks: UDP/TCP/Unix × RFC3164/RFC5424)"
+echo "(source total: ${SOURCE_TOTAL} checks)"
 echo "(total: ${TOTAL} checks)"
 echo ""
 

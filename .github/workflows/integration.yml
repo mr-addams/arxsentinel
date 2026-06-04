@@ -15,7 +15,7 @@ jobs:
     uses: ./.github/workflows/container.yml
 
   integration:
-    name: Integration tests (110 checks — 6×7 direct + 6 badbot + 6 blocklist + 4×6 proxy-chain + 6 CF-direct + 4×6 CF-chain + 2 chain-guard)
+    name: Integration tests (122 checks — 6×7 direct + 6 badbot + 6 blocklist + 4×6 proxy-chain + 6 CF-direct + 4×6 CF-chain + 2 chain-guard + 3 HTTP-source + 6 syslog-source)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
