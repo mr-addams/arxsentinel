@@ -3,10 +3,13 @@ package http
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -85,4 +88,84 @@ func readLimited(r io.Reader, maxBytes int64) ([]byte, error) {
 		return nil, fmt.Errorf("request body exceeds %d bytes", maxBytes)
 	}
 	return data, nil
+}
+
+func decodePlain(body []byte) []string {
+	lines := strings.Split(string(body), "\n")
+	var result []string
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+		if line != "" {
+			result = append(result, line)
+		}
+	}
+	return result
+}
+
+// decodeNDJSON splits body into lines, parses each as JSON, and extracts the given field.
+// If field is empty, the raw JSON object is used as the line string.
+// If field is non-empty and missing in a line, decodeNDJSON returns an error immediately —
+// this is intentional fail-fast behavior: a missing configured field indicates misconfiguration.
+// Blank lines are silently skipped. Malformed JSON lines return an error.
+func decodeNDJSON(body []byte, field string) ([]string, error) {
+	lines := strings.Split(string(body), "\n")
+	var result []string
+	for lineIdx, line := range lines {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			continue
+		}
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			return nil, fmt.Errorf("ndjson line %d: %w", lineIdx, err)
+		}
+		if field != "" {
+			val, ok := raw[field]
+			if !ok {
+				excerpt := line
+				if len(excerpt) > 80 {
+					excerpt = excerpt[:80] + "..."
+				}
+				return nil, fmt.Errorf("ndjson line %d: field %q not found in: %s", lineIdx, field, excerpt)
+			}
+			var s string
+			if err := json.Unmarshal(val, &s); err != nil {
+				result = append(result, string(val))
+			} else {
+				result = append(result, s)
+			}
+		} else {
+			result = append(result, line)
+		}
+	}
+	return result, nil
+}
+
+func base64Decode(s string) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(s)
+}
+
+// extractJSONField traverses body (JSON object) using a dot-separated path and returns
+// the raw JSON bytes at that path. Returns an error if any path segment is missing or
+// the intermediate value is not a JSON object. The returned bytes are raw JSON (may be
+// string, number, object, or array — caller must unmarshal as needed).
+func extractJSONField(body []byte, path string) ([]byte, error) {
+	keys := strings.Split(path, ".")
+	current := body
+	for _, key := range keys {
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(current, &obj); err != nil {
+			excerpt := string(current)
+			if len(excerpt) > 40 {
+				excerpt = excerpt[:40] + "..."
+			}
+			return nil, fmt.Errorf("extractJSONField %q: key %q is not an object (got: %s)", path, key, excerpt)
+		}
+		val, ok := obj[key]
+		if !ok {
+			return nil, fmt.Errorf("field %q not found in JSON", path)
+		}
+		current = []byte(val)
+	}
+	return current, nil
 }
