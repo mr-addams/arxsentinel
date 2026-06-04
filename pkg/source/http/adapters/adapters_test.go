@@ -1,9 +1,15 @@
 package adapters
 
 import (
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math/big"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -855,4 +861,236 @@ func TestNormalizeTimestamp(t *testing.T) {
 			t.Fatalf("unexpected error for min valid: %v", err)
 		}
 	})
+}
+
+// ++++++++++++++++++++++++++ Fix 3: PubSubJWTMiddleware tests +++++++++++++++++++++++++++++
+
+func base64URLEncode(data []byte) string {
+	return base64.RawURLEncoding.EncodeToString(data)
+}
+
+func signRS256(privKey *rsa.PrivateKey, signingInput string) string {
+	hash := sha256.Sum256([]byte(signingInput))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, privKey, crypto.SHA256, hash[:])
+	if err != nil {
+		panic(err)
+	}
+	return base64URLEncode(sig)
+}
+
+func buildJWT(privKey *rsa.PrivateKey, header, payload map[string]any) string {
+	hdrJSON, _ := json.Marshal(header)
+	payJSON, _ := json.Marshal(payload)
+	hdrPart := base64URLEncode(hdrJSON)
+	payPart := base64URLEncode(payJSON)
+	sigPart := signRS256(privKey, hdrPart+"."+payPart)
+	return hdrPart + "." + payPart + "." + sigPart
+}
+
+func jwkFromPubKey(kid string, pub *rsa.PublicKey) jwkKey {
+	return jwkKey{
+		Kid: kid,
+		Kty: "RSA",
+		N:   base64URLEncode(pub.N.Bytes()),
+		E:   base64URLEncode(big.NewInt(int64(pub.E)).Bytes()),
+	}
+}
+
+func TestPubSubJWTMiddleware(t *testing.T) {
+	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubKey := &privKey.PublicKey
+
+	// JWKS test server
+	jwksServer := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		resp := jwksResponse{Keys: []jwkKey{jwkFromPubKey("test-kid-1", pubKey)}}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer jwksServer.Close()
+
+	oldFetchURL := jwksFetchURL
+	jwksFetchURL = jwksServer.URL
+	defer func() { jwksFetchURL = oldFetchURL }()
+
+	expectedAud := "https://example.com/pubsub"
+
+	// helper: create a middleware handler with a recorder
+	testMiddleware := func(token string) *httptest.ResponseRecorder {
+		handler := PubSubJWTMiddleware(expectedAud, nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			w.WriteHeader(200)
+			w.Write([]byte("ok"))
+		}))
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/", strings.NewReader(`{}`))
+		if token != "" {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		handler.ServeHTTP(w, r)
+		return w
+	}
+
+	t.Run("valid JWT passes through", func(t *testing.T) {
+		now := time.Now().Unix()
+		token := buildJWT(privKey, map[string]any{"alg": "RS256", "kid": "test-kid-1"}, map[string]any{
+			"aud":            expectedAud,
+			"exp":            now + 3600,
+			"email":          "user@example.com",
+			"email_verified": true,
+		})
+		w := testMiddleware(token)
+		if w.Code != 200 {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+		if w.Body.String() != "ok" {
+			t.Fatalf("expected 'ok', got %q", w.Body.String())
+		}
+	})
+
+	t.Run("wrong alg (HS256) returns 401", func(t *testing.T) {
+		now := time.Now().Unix()
+		token := buildJWT(privKey, map[string]any{"alg": "HS256", "kid": "test-kid-1"}, map[string]any{
+			"aud":            expectedAud,
+			"exp":            now + 3600,
+			"email":          "user@example.com",
+			"email_verified": true,
+		})
+		w := testMiddleware(token)
+		if w.Code != 401 {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("expired token returns 401", func(t *testing.T) {
+		token := buildJWT(privKey, map[string]any{"alg": "RS256", "kid": "test-kid-1"}, map[string]any{
+			"aud":            expectedAud,
+			"exp":            time.Now().Unix() - 3600,
+			"email":          "user@example.com",
+			"email_verified": true,
+		})
+		w := testMiddleware(token)
+		if w.Code != 401 {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("email_verified=false returns 401", func(t *testing.T) {
+		now := time.Now().Unix()
+		token := buildJWT(privKey, map[string]any{"alg": "RS256", "kid": "test-kid-1"}, map[string]any{
+			"aud":            expectedAud,
+			"exp":            now + 3600,
+			"email":          "user@example.com",
+			"email_verified": false,
+		})
+		w := testMiddleware(token)
+		if w.Code != 401 {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("bad signature (wrong key) returns 401", func(t *testing.T) {
+		wrongKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+		now := time.Now().Unix()
+		token := buildJWT(wrongKey, map[string]any{"alg": "RS256", "kid": "test-kid-1"}, map[string]any{
+			"aud":            expectedAud,
+			"exp":            now + 3600,
+			"email":          "user@example.com",
+			"email_verified": true,
+		})
+		w := testMiddleware(token)
+		if w.Code != 401 {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("malformed token (not 3 parts) returns 401", func(t *testing.T) {
+		w := testMiddleware("only.two.parts.extra")
+		if w.Code != 401 {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("empty Authorization header returns 401", func(t *testing.T) {
+		handler := PubSubJWTMiddleware(expectedAud, nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			w.WriteHeader(200)
+		}))
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/", nil)
+		// no Authorization header at all
+		handler.ServeHTTP(w, r)
+		if w.Code != 401 {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("empty Authorization header variant", func(t *testing.T) {
+		handler := PubSubJWTMiddleware(expectedAud, nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			w.WriteHeader(200)
+		}))
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/", nil)
+		r.Header.Set("Authorization", "")
+		handler.ServeHTTP(w, r)
+		if w.Code != 401 {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("unknown kid returns 401", func(t *testing.T) {
+		now := time.Now().Unix()
+		token := buildJWT(privKey, map[string]any{"alg": "RS256", "kid": "unknown-kid"}, map[string]any{
+			"aud":            expectedAud,
+			"exp":            now + 3600,
+			"email":          "user@example.com",
+			"email_verified": true,
+		})
+		w := testMiddleware(token)
+		if w.Code != 401 {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+	})
+}
+
+func TestPubSubJWTMiddleware_closesBody(t *testing.T) {
+	jwksStore.Delete("jwks")
+
+	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubKey := &privKey.PublicKey
+
+	jwksServer := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		resp := jwksResponse{Keys: []jwkKey{jwkFromPubKey("kid-1", pubKey)}}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer jwksServer.Close()
+
+	oldFetchURL := jwksFetchURL
+	jwksFetchURL = jwksServer.URL
+	defer func() { jwksFetchURL = oldFetchURL }()
+
+	now := time.Now().Unix()
+	token := buildJWT(privKey, map[string]any{"alg": "RS256", "kid": "kid-1"}, map[string]any{
+		"aud":            "https://example.com/sub",
+		"exp":            now + 3600,
+		"email":          "user@example.com",
+		"email_verified": true,
+	})
+
+	handler := PubSubJWTMiddleware("https://example.com/sub", nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		n, _ := io.Copy(io.Discard, r.Body)
+		if n != 2 {
+			t.Errorf("expected 2 body bytes, got %d", n)
+		}
+		w.WriteHeader(200)
+	}))
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/", strings.NewReader(`{}`))
+	r.Header.Set("Authorization", "Bearer "+token)
+	handler.ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
 }

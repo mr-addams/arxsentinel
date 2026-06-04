@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -85,6 +86,8 @@ func generateTLSCertFiles(t *testing.T) (certFile, keyFile string) {
 	return
 }
 
+// ++++++++++++++++++++++++++ Fix 1: done-channel synchronisation +++++++++++++++++++++++++++++
+
 func TestHTTPSourcePushPlain(t *testing.T) {
 	port := freePort(t)
 	addr := "http://127.0.0.1:" + port
@@ -101,11 +104,8 @@ func TestHTTPSourcePushPlain(t *testing.T) {
 	defer cancel()
 	out := make(chan *plugin.LogEntry, 100)
 
-	go func() {
-		if err := src.Run(ctx, out); err != nil {
-			t.Logf("Run returned: %v", err)
-		}
-	}()
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
 	time.Sleep(50 * time.Millisecond)
 
 	resp, err := nethttp.Post("http://127.0.0.1:"+port+"/", "text/plain", bytes.NewReader([]byte("hello\nworld\n")))
@@ -117,15 +117,17 @@ func TestHTTPSourcePushPlain(t *testing.T) {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 
-	time.Sleep(50 * time.Millisecond)
-	cancel()
-	time.Sleep(50 * time.Millisecond)
-
 	entries := 0
 	for len(out) > 0 {
 		<-out
 		entries++
 	}
+
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
+	}
+
 	if entries != 2 {
 		t.Errorf("expected 2 entries, got %d", entries)
 	}
@@ -154,11 +156,8 @@ func TestHTTPSourcePushHTTPS(t *testing.T) {
 	defer cancel()
 	out := make(chan *plugin.LogEntry, 100)
 
-	go func() {
-		if err := src.Run(ctx, out); err != nil {
-			t.Logf("Run returned: %v", err)
-		}
-	}()
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
 	time.Sleep(50 * time.Millisecond)
 
 	client := &nethttp.Client{
@@ -176,7 +175,9 @@ func TestHTTPSourcePushHTTPS(t *testing.T) {
 	}
 
 	cancel()
-	time.Sleep(100 * time.Millisecond)
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
+	}
 
 	stats := src.Stats()
 	if stats.LinesRead != 1 {
@@ -200,11 +201,8 @@ func TestHTTPSourceBearerAuth(t *testing.T) {
 	defer cancel()
 	out := make(chan *plugin.LogEntry, 100)
 
-	go func() {
-		if err := src.Run(ctx, out); err != nil {
-			t.Logf("Run returned: %v", err)
-		}
-	}()
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
 	time.Sleep(50 * time.Millisecond)
 
 	// request without token
@@ -231,7 +229,9 @@ func TestHTTPSourceBearerAuth(t *testing.T) {
 	}
 
 	cancel()
-	time.Sleep(100 * time.Millisecond)
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
+	}
 
 	stats := src.Stats()
 	if stats.LinesRead != 1 {
@@ -243,8 +243,8 @@ func TestHTTPSourceBodyLimit(t *testing.T) {
 	port := freePort(t)
 
 	src, err := New(pkgsource.InputConfig{
-		Addr:     "http://127.0.0.1:" + port,
-		Protocol: "plain",
+		Addr:        "http://127.0.0.1:" + port,
+		Protocol:    "plain",
 		MaxBodyBytes: 100,
 	}, &testParser{parseFn: testEntry}, nil)
 	if err != nil {
@@ -255,11 +255,8 @@ func TestHTTPSourceBodyLimit(t *testing.T) {
 	defer cancel()
 	out := make(chan *plugin.LogEntry, 100)
 
-	go func() {
-		if err := src.Run(ctx, out); err != nil {
-			t.Logf("Run returned: %v", err)
-		}
-	}()
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
 	time.Sleep(50 * time.Millisecond)
 
 	// POST 101 bytes -> 413
@@ -283,15 +280,19 @@ func TestHTTPSourceBodyLimit(t *testing.T) {
 	}
 
 	cancel()
-	time.Sleep(100 * time.Millisecond)
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
+	}
 }
+
+// ++++++++++++++++++++++++++ Fix 2: remove vacuous assertion, add real parse-error case +++++++++++++++++++++++++++++
 
 func TestHTTPSourceMalformedInput(t *testing.T) {
 	port := freePort(t)
 
 	src, err := New(pkgsource.InputConfig{
-		Addr:     "http://127.0.0.1:" + port,
-		Protocol: "ndjson",
+		Addr:          "http://127.0.0.1:" + port,
+		Protocol:      "ndjson",
 		EnvelopeField: "msg",
 	}, &testParser{parseFn: testEntry}, nil)
 	if err != nil {
@@ -302,14 +303,11 @@ func TestHTTPSourceMalformedInput(t *testing.T) {
 	defer cancel()
 	out := make(chan *plugin.LogEntry, 100)
 
-	go func() {
-		if err := src.Run(ctx, out); err != nil {
-			t.Logf("Run returned: %v", err)
-		}
-	}()
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
 	time.Sleep(50 * time.Millisecond)
 
-	// invalid JSON -> 400, source keeps running
+	// invalid JSON -> 400, server keeps running
 	resp, err := nethttp.Post("http://127.0.0.1:"+port+"/", "application/json", bytes.NewReader([]byte(`{invalid}`)))
 	if err != nil {
 		t.Fatal(err)
@@ -320,11 +318,54 @@ func TestHTTPSourceMalformedInput(t *testing.T) {
 	}
 
 	cancel()
-	time.Sleep(100 * time.Millisecond)
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
+	}
+}
+
+func TestHTTPSourceMalformedInputParseError(t *testing.T) {
+	port := freePort(t)
+
+	failParser := &testParser{parseFn: func(line string) (*plugin.LogEntry, bool) {
+		return nil, false
+	}}
+
+	src, err := New(pkgsource.InputConfig{
+		Addr:          "http://127.0.0.1:" + port,
+		Protocol:      "ndjson",
+		EnvelopeField: "msg",
+	}, failParser, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan *plugin.LogEntry, 100)
+
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
+	time.Sleep(50 * time.Millisecond)
+
+	// valid NDJSON but parser rejects the extracted line -> 200, ParseErrors incremented
+	resp, err := nethttp.Post("http://127.0.0.1:"+port+"/", "application/json",
+		bytes.NewReader([]byte(`{"msg":"hello"}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
+	}
 
 	stats := src.Stats()
-	if stats.ParseErrors < 0 {
-		t.Errorf("expected ParseErrors >= 0, got %d", stats.ParseErrors)
+	if stats.ParseErrors != 1 {
+		t.Errorf("expected ParseErrors=1, got %d", stats.ParseErrors)
 	}
 }
 
@@ -360,6 +401,8 @@ func TestHTTPSourceContextCancel(t *testing.T) {
 	}
 }
 
+// ++++++++++++++++++++++++++ Fix 4: deterministic DropCounter +++++++++++++++++++++++++++++
+
 func TestHTTPSourceDropCounter(t *testing.T) {
 	port := freePort(t)
 
@@ -373,16 +416,13 @@ func TestHTTPSourceDropCounter(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 0)
+	out := make(chan *plugin.LogEntry, 2)
 
-	go func() {
-		if err := src.Run(ctx, out); err != nil {
-			t.Logf("Run returned: %v", err)
-		}
-	}()
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
 	time.Sleep(50 * time.Millisecond)
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 5; i++ {
 		resp, err := nethttp.Post("http://127.0.0.1:"+port+"/", "text/plain", bytes.NewReader([]byte("line\n")))
 		if err != nil {
 			t.Fatal(err)
@@ -390,13 +430,17 @@ func TestHTTPSourceDropCounter(t *testing.T) {
 		resp.Body.Close()
 	}
 
-	time.Sleep(50 * time.Millisecond)
 	cancel()
-	time.Sleep(50 * time.Millisecond)
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
+	}
 
 	stats := src.Stats()
-	if stats.Dropped == 0 {
-		t.Error("expected Dropped > 0, got 0")
+	if total := stats.LinesRead + stats.Dropped; total != 5 {
+		t.Errorf("expected LinesRead + Dropped = 5, got %d (LinesRead=%d, Dropped=%d)", total, stats.LinesRead, stats.Dropped)
+	}
+	if stats.Dropped != 3 {
+		t.Errorf("expected Dropped=3, got %d", stats.Dropped)
 	}
 }
 
@@ -435,15 +479,14 @@ func TestHTTPSourcePull(t *testing.T) {
 	defer cancel()
 	out := make(chan *plugin.LogEntry, 100)
 
-	go func() {
-		if err := src.Run(ctx, out); err != nil {
-			t.Logf("Run returned: %v", err)
-		}
-	}()
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
 
 	time.Sleep(250 * time.Millisecond)
 	cancel()
-	time.Sleep(50 * time.Millisecond)
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
+	}
 
 	stats := src.Stats()
 	if stats.LinesRead == 0 {
@@ -466,11 +509,8 @@ func TestHTTPSourceConcurrentPush(t *testing.T) {
 	defer cancel()
 	out := make(chan *plugin.LogEntry, 100)
 
-	go func() {
-		if err := src.Run(ctx, out); err != nil {
-			t.Logf("Run returned: %v", err)
-		}
-	}()
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
 	time.Sleep(50 * time.Millisecond)
 
 	var wg sync.WaitGroup
@@ -488,9 +528,10 @@ func TestHTTPSourceConcurrentPush(t *testing.T) {
 	}
 	wg.Wait()
 
-	time.Sleep(50 * time.Millisecond)
 	cancel()
-	time.Sleep(50 * time.Millisecond)
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
+	}
 
 	stats := src.Stats()
 	if stats.LinesRead != 10 {
@@ -514,11 +555,8 @@ func TestHTTPSourceRealParser(t *testing.T) {
 	defer cancel()
 	out := make(chan *plugin.LogEntry, 10)
 
-	go func() {
-		if err := src.Run(ctx, out); err != nil {
-			t.Logf("Run returned: %v", err)
-		}
-	}()
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
 	time.Sleep(50 * time.Millisecond)
 
 	resp, err := nethttp.Post("http://127.0.0.1:"+port+"/", "text/plain", bytes.NewReader([]byte(logLine+"\n")))
@@ -530,9 +568,10 @@ func TestHTTPSourceRealParser(t *testing.T) {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 
-	time.Sleep(50 * time.Millisecond)
 	cancel()
-	time.Sleep(50 * time.Millisecond)
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
+	}
 
 	select {
 	case entry := <-out:
@@ -544,5 +583,162 @@ func TestHTTPSourceRealParser(t *testing.T) {
 		}
 	default:
 		t.Fatal("expected at least one parsed entry")
+	}
+}
+
+// ++++++++++++++++++++++++++ Fix 5: gzip integration test +++++++++++++++++++++++++++++
+
+func TestHTTPSourcePushGzip(t *testing.T) {
+	port := freePort(t)
+
+	src, err := New(pkgsource.InputConfig{
+		Addr:     "http://127.0.0.1:" + port,
+		Protocol: "plain",
+	}, &testParser{parseFn: testEntry}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan *plugin.LogEntry, 100)
+
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
+	time.Sleep(50 * time.Millisecond)
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	gw.Write([]byte("line1\nline2\nline3\n"))
+	gw.Close()
+
+	req, err := nethttp.NewRequest("POST", "http://127.0.0.1:"+port+"/", &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Content-Encoding", "gzip")
+
+	resp, err := nethttp.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	entries := 0
+	for len(out) > 0 {
+		<-out
+		entries++
+	}
+
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
+	}
+
+	if entries != 3 {
+		t.Errorf("expected 3 entries, got %d", entries)
+	}
+
+	stats := src.Stats()
+	if stats.LinesRead != 3 {
+		t.Errorf("expected LinesRead=3, got %d", stats.LinesRead)
+	}
+}
+
+// ++++++++++++++++++++++++++ Fix 6: 415 rejection and PubSub JWT wiring +++++++++++++++++++++++++++++
+
+func TestHTTPSourceProtobufRejected(t *testing.T) {
+	port := freePort(t)
+
+	src, err := New(pkgsource.InputConfig{
+		Addr:     "http://127.0.0.1:" + port,
+		Protocol: "loki",
+	}, &testParser{parseFn: testEntry}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan *plugin.LogEntry, 100)
+
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
+	time.Sleep(50 * time.Millisecond)
+
+	req, err := nethttp.NewRequest("POST", "http://127.0.0.1:"+port+"/", bytes.NewReader([]byte("some protobuf data")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-protobuf")
+
+	resp, err := nethttp.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 415 {
+		t.Fatalf("expected 415, got %d", resp.StatusCode)
+	}
+
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
+	}
+}
+
+func TestHTTPSourcePubSubJWTRequired(t *testing.T) {
+	port := freePort(t)
+
+	src, err := New(pkgsource.InputConfig{
+		Addr:     "http://127.0.0.1:" + port,
+		Protocol: "pubsub",
+	}, &testParser{parseFn: testEntry}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan *plugin.LogEntry, 100)
+
+	done := make(chan error, 1)
+	go func() { done <- src.Run(ctx, out) }()
+	time.Sleep(50 * time.Millisecond)
+
+	// no Authorization header -> 401
+	resp, err := nethttp.Post("http://127.0.0.1:"+port+"/", "application/json",
+		bytes.NewReader([]byte(`{}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 401 {
+		t.Fatalf("expected 401 with no auth, got %d", resp.StatusCode)
+	}
+
+	// valid-format Bearer token but wrong content -> 401
+	req, err := nethttp.NewRequest("POST", "http://127.0.0.1:"+port+"/",
+		bytes.NewReader([]byte(`{}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer some.random.token")
+	resp, err = nethttp.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 401 {
+		t.Fatalf("expected 401 with invalid token, got %d", resp.StatusCode)
+	}
+
+	cancel()
+	if err := <-done; err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+		t.Fatalf("Run() returned unexpected error: %v", err)
 	}
 }
