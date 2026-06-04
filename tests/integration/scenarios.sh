@@ -730,3 +730,507 @@ YAML
 run_http_plain_scenario
 run_http_ndjson_scenario
 run_http_gzip_scenario
+
+# ====================== Syslog source scenarios (direct binary) =====================
+#   Six scenarios: UDP/TCP/Unix × RFC3164/RFC5424.
+#   Each wraps 7 probe lines in the corresponding syslog envelope.
+
+# ──────────────────── 19. Syslog source: UDP + RFC 3164 ───────────────────────
+run_syslog_udp_rfc3164_scenario() {
+    echo "[scenarios/syslog-udp-rfc3164] testing syslog UDP source with RFC 3164 messages"
+
+    local SYSLOG_PORT TMPDIR ARX_PID
+    SYSLOG_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/syslog-udp-rfc3164] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: syslog-udp-rfc3164-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: syslog
+            addr: "udp://127.0.0.1:${SYSLOG_PORT}"
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    # Wait for syslog source to start (poll log for startup message; avoids fixed sleep under load)
+    for _i in $(seq 1 30); do
+        grep -q "pipeline started" "$TMPDIR/arx.log" 2>/dev/null && break
+        sleep 0.2
+    done
+
+    PROBE_LINES=$(cat << 'LINES'
+<134>Jun  4 12:00:01 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:01 +0000] "GET /.env HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:02 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:02 +0000] "GET /.git/config HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:03 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:03 +0000] "GET /wp-login.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:04 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:04 +0000] "GET /admin/config.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:05 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:05 +0000] "GET /etc/passwd HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:06 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:06 +0000] "GET /.aws/credentials HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:07 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:07 +0000] "GET /xmlrpc.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+LINES
+)
+
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        exec 3>/dev/udp/127.0.0.1/${SYSLOG_PORT}
+        printf '%s' "$line" >&3
+        exec 3>&-
+    done <<< "$PROBE_LINES"
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/syslog-udp-rfc3164] PASS -- threat event detected from syslog UDP RFC 3164"
+    else
+        echo "[scenarios/syslog-udp-rfc3164] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ──────────────────── 20. Syslog source: UDP + RFC 5424 ───────────────────────
+run_syslog_udp_rfc5424_scenario() {
+    echo "[scenarios/syslog-udp-rfc5424] testing syslog UDP source with RFC 5424 messages"
+
+    local SYSLOG_PORT TMPDIR ARX_PID
+    SYSLOG_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/syslog-udp-rfc5424] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: syslog-udp-rfc5424-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: syslog
+            addr: "udp://127.0.0.1:${SYSLOG_PORT}"
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    # Wait for syslog source to start (poll log for startup message; avoids fixed sleep under load)
+    for _i in $(seq 1 30); do
+        grep -q "pipeline started" "$TMPDIR/arx.log" 2>/dev/null && break
+        sleep 0.2
+    done
+
+    PROBE_LINES=$(cat << 'LINES'
+<134>1 2026-06-04T12:00:01Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:01 +0000] "GET /.env HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:02Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:02 +0000] "GET /.git/config HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:03Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:03 +0000] "GET /wp-login.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:04Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:04 +0000] "GET /admin/config.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:05Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:05 +0000] "GET /etc/passwd HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:06Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:06 +0000] "GET /.aws/credentials HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:07Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:07 +0000] "GET /xmlrpc.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+LINES
+)
+
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        exec 3>/dev/udp/127.0.0.1/${SYSLOG_PORT}
+        printf '%s' "$line" >&3
+        exec 3>&-
+    done <<< "$PROBE_LINES"
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/syslog-udp-rfc5424] PASS -- threat event detected from syslog UDP RFC 5424"
+    else
+        echo "[scenarios/syslog-udp-rfc5424] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ──────────────────── 21. Syslog source: TCP + RFC 3164 ───────────────────────
+run_syslog_tcp_rfc3164_scenario() {
+    echo "[scenarios/syslog-tcp-rfc3164] testing syslog TCP source with RFC 3164 messages"
+
+    local SYSLOG_PORT TMPDIR ARX_PID
+    SYSLOG_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/syslog-tcp-rfc3164] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: syslog-tcp-rfc3164-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: syslog
+            addr: "tcp://127.0.0.1:${SYSLOG_PORT}"
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        (exec 3>/dev/tcp/127.0.0.1/${SYSLOG_PORT}) 2>/dev/null && break
+        sleep 0.3
+    done
+
+    PROBE_LINES=$(cat << 'LINES'
+<134>Jun  4 12:00:01 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:01 +0000] "GET /.env HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:02 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:02 +0000] "GET /.git/config HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:03 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:03 +0000] "GET /wp-login.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:04 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:04 +0000] "GET /admin/config.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:05 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:05 +0000] "GET /etc/passwd HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:06 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:06 +0000] "GET /.aws/credentials HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:07 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:07 +0000] "GET /xmlrpc.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+LINES
+)
+
+    exec 3>/dev/tcp/127.0.0.1/${SYSLOG_PORT}
+    printf '%s\n' "$PROBE_LINES" >&3
+    exec 3>&-
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/syslog-tcp-rfc3164] PASS -- threat event detected from syslog TCP RFC 3164"
+    else
+        echo "[scenarios/syslog-tcp-rfc3164] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ──────────────────── 22. Syslog source: TCP + RFC 5424 ───────────────────────
+run_syslog_tcp_rfc5424_scenario() {
+    echo "[scenarios/syslog-tcp-rfc5424] testing syslog TCP source with RFC 5424 messages"
+
+    local SYSLOG_PORT TMPDIR ARX_PID
+    SYSLOG_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/syslog-tcp-rfc5424] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: syslog-tcp-rfc5424-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: syslog
+            addr: "tcp://127.0.0.1:${SYSLOG_PORT}"
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        (exec 3>/dev/tcp/127.0.0.1/${SYSLOG_PORT}) 2>/dev/null && break
+        sleep 0.3
+    done
+
+    PROBE_LINES=$(cat << 'LINES'
+<134>1 2026-06-04T12:00:01Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:01 +0000] "GET /.env HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:02Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:02 +0000] "GET /.git/config HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:03Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:03 +0000] "GET /wp-login.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:04Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:04 +0000] "GET /admin/config.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:05Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:05 +0000] "GET /etc/passwd HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:06Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:06 +0000] "GET /.aws/credentials HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:07Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:07 +0000] "GET /xmlrpc.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+LINES
+)
+
+    exec 3>/dev/tcp/127.0.0.1/${SYSLOG_PORT}
+    printf '%s\n' "$PROBE_LINES" >&3
+    exec 3>&-
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/syslog-tcp-rfc5424] PASS -- threat event detected from syslog TCP RFC 5424"
+    else
+        echo "[scenarios/syslog-tcp-rfc5424] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ──────────────────── 23. Syslog source: Unix stream + RFC 3164 ───────────────
+run_syslog_unix_rfc3164_scenario() {
+    echo "[scenarios/syslog-unix-rfc3164] testing syslog Unix stream source with RFC 3164 messages"
+
+    local SOCKPATH TMPDIR ARX_PID
+    SOCKPATH="/tmp/arx-test-$$.sock"
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/syslog-unix-rfc3164] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: syslog-unix-rfc3164-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: syslog
+            addr: "unix://${SOCKPATH}"
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  window: 60s
+parser:
+  log_format: combined
+YAML
+
+    rm -f "$SOCKPATH"
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        [ -S "$SOCKPATH" ] && break
+        sleep 0.3
+    done
+
+    PROBE_LINES=$(cat << 'LINES'
+<134>Jun  4 12:00:01 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:01 +0000] "GET /.env HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:02 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:02 +0000] "GET /.git/config HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:03 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:03 +0000] "GET /wp-login.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:04 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:04 +0000] "GET /admin/config.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:05 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:05 +0000] "GET /etc/passwd HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:06 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:06 +0000] "GET /.aws/credentials HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>Jun  4 12:00:07 myhost nginx: 1.2.3.4 - - [04/Jun/2026:00:00:07 +0000] "GET /xmlrpc.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+LINES
+)
+
+    if command -v socat >/dev/null 2>&1; then
+        printf '%s' "$PROBE_LINES" | socat - "UNIX-CONNECT:$SOCKPATH"
+    elif command -v nc >/dev/null 2>&1; then
+        printf '%s' "$PROBE_LINES" | nc -U "$SOCKPATH" -q1 2>/dev/null || true
+    else
+        echo "[scenarios/syslog-unix-rfc3164] SKIP -- socat and nc not available"
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -f "$SOCKPATH"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/syslog-unix-rfc3164] PASS -- threat event detected from syslog Unix RFC 3164"
+    else
+        echo "[scenarios/syslog-unix-rfc3164] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -f "$SOCKPATH"
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -f "$SOCKPATH"
+    rm -rf "$TMPDIR"
+}
+
+# ──────────────────── 24. Syslog source: Unix stream + RFC 5424 ───────────────
+run_syslog_unix_rfc5424_scenario() {
+    echo "[scenarios/syslog-unix-rfc5424] testing syslog Unix stream source with RFC 5424 messages"
+
+    local SOCKPATH TMPDIR ARX_PID
+    SOCKPATH="/tmp/arx-test-$$.sock"
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/syslog-unix-rfc5424] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: syslog-unix-rfc5424-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: syslog
+            addr: "unix://${SOCKPATH}"
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  window: 60s
+parser:
+  log_format: combined
+YAML
+
+    rm -f "$SOCKPATH"
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        [ -S "$SOCKPATH" ] && break
+        sleep 0.3
+    done
+
+    PROBE_LINES=$(cat << 'LINES'
+<134>1 2026-06-04T12:00:01Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:01 +0000] "GET /.env HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:02Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:02 +0000] "GET /.git/config HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:03Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:03 +0000] "GET /wp-login.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:04Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:04 +0000] "GET /admin/config.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:05Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:05 +0000] "GET /etc/passwd HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:06Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:06 +0000] "GET /.aws/credentials HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+<134>1 2026-06-04T12:00:07Z myhost nginx 1234 - - 1.2.3.4 - - [04/Jun/2026:00:00:07 +0000] "GET /xmlrpc.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+LINES
+)
+
+    if command -v socat >/dev/null 2>&1; then
+        printf '%s' "$PROBE_LINES" | socat - "UNIX-CONNECT:$SOCKPATH"
+    elif command -v nc >/dev/null 2>&1; then
+        printf '%s' "$PROBE_LINES" | nc -U "$SOCKPATH" -q1 2>/dev/null || true
+    else
+        echo "[scenarios/syslog-unix-rfc5424] SKIP -- socat and nc not available"
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -f "$SOCKPATH"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/syslog-unix-rfc5424] PASS -- threat event detected from syslog Unix RFC 5424"
+    else
+        echo "[scenarios/syslog-unix-rfc5424] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -f "$SOCKPATH"
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -f "$SOCKPATH"
+    rm -rf "$TMPDIR"
+}
+
+# ── Syslog source scenario calls (direct binary, no Docker) ───────────────────
+run_syslog_udp_rfc3164_scenario
+run_syslog_udp_rfc5424_scenario
+run_syslog_tcp_rfc3164_scenario
+run_syslog_tcp_rfc5424_scenario
+run_syslog_unix_rfc3164_scenario
+run_syslog_unix_rfc5424_scenario
