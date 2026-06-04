@@ -43,6 +43,42 @@ docker compose logs -f arxsentinel
 
 The Compose file is at [`deploy/container/docker/docker-compose.yml`](deploy/container/docker/docker-compose.yml).
 
+## nginx log file permissions
+
+If nginx runs on the **host** (not in Docker), its logs are owned by the `nginx` group with mode
+`640` (`-rw-r-----`). ArxSentinel runs as `uid 65532`, which is not in the `nginx` group —
+reading the log returns `permission denied`.
+
+**Symptom:**
+```
+[TAIL] file unavailable (open /var/log/nginx/access.log: permission denied)
+```
+
+**Fix — add the nginx group GID as a supplementary group for the container:**
+
+```bash
+# 1. Find the nginx group GID on the host
+getent group nginx   # → nginx:x:993:...
+```
+
+In `docker-compose.yml`:
+```yaml
+services:
+  arxsentinel:
+    group_add:
+      - "993"   # nginx group GID; replace with actual value
+```
+
+In `docker run`:
+```bash
+docker run ... --group-add 993 ghcr.io/mr-addams/arxsentinel:latest
+```
+
+> `group_add` adds a supplementary group to the container process without changing the primary
+> `uid/gid`. Write access to `/var/log/arxsentinel` is preserved — it is owned by `uid 65532`.
+
+---
+
 ## Configuration
 
 ### Volume mounts
