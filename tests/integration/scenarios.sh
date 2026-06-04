@@ -529,8 +529,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -611,8 +611,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -691,8 +691,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -774,8 +774,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -919,8 +919,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -1013,8 +1013,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -1096,8 +1096,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -1170,8 +1170,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -1253,8 +1253,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -1321,8 +1321,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -1404,8 +1404,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -1493,8 +1493,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -1571,8 +1571,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -1653,8 +1653,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -1698,7 +1698,7 @@ streams:
         inputs:
           - type: http
             addr: "http://127.0.0.1:${HTTP_PORT}"
-            protocol: generic
+            protocol: plain
             token: "test-secret-token-xyz"
         outputs:
           - type: file
@@ -1720,8 +1720,8 @@ YAML
     ARX_PID=$!
 
     for _ in $(seq 1 20); do
-        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
-        [ $? -ne 7 ] && break
+        curl_rc=0; curl -s --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" -o /dev/null 2>/dev/null || curl_rc=$?
+        [ "$curl_rc" -ne 7 ] && break
         sleep 0.3
     done
 
@@ -1813,7 +1813,7 @@ streams:
         inputs:
           - type: http
             addr: "http://127.0.0.1:${HTTP_PORT}"
-            protocol: generic
+            protocol: plain
             max_body_bytes: 500
         outputs:
           - type: file
