@@ -6,6 +6,7 @@
 //     - MatchBot(ua) → (botName, botCfg, matched) — Task 3.1
 //     - IsWhitelistedIP(ip) bool   — custom whitelist by IP and CIDR — Task 3.4
 //     - IsWhitelistedUA(ua) bool   — custom whitelist by UA substring — Task 3.4
+//     - IsWhitelistedPath(path) bool — custom whitelist by URL path prefix — Flow 049
 //
 //   WHAT IS NOT HERE:
 //     - DNS verification → verifier.go (Tasks 3.2, 3.5)
@@ -48,6 +49,7 @@ type Matcher struct {
 	customIPs    map[string]struct{} // exact IP addresses
 	customCIDRs  []*net.IPNet        // pre-compiled subnets
 	customUASubs []string            // UA substrings (used in strings.Contains)
+	customPaths  []string            // URL path prefixes (used in strings.HasPrefix)
 }
 
 // NewMatcher creates a Matcher from config.
@@ -80,12 +82,14 @@ func NewMatcher(cfg config.WhitelistConfig) (*Matcher, error) {
 	// copy is not needed; only the top-level slice header is copied.
 	bots := append([]config.BotConfig(nil), cfg.Bots...)
 	uaSubs := append([]string(nil), cfg.Custom.UASubstrings...)
+	paths := append([]string(nil), cfg.Custom.Paths...)
 
 	return &Matcher{
 		bots:         bots,
 		customIPs:    ips,
 		customCIDRs:  cidrs,
 		customUASubs: uaSubs,
+		customPaths:  paths,
 	}, nil
 }
 
@@ -159,6 +163,26 @@ func (m *Matcher) IsWhitelistedUA(ua string) bool {
 	}
 	for _, sub := range m.customUASubs {
 		if strings.Contains(ua, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsWhitelistedPath returns true if path matches any entry in whitelist.custom.paths.
+//
+// Exact prefix match: path must START WITH the configured entry (so "/ws" matches
+// "/ws", "/ws/", "/ws/chat" — covers all WebSocket sub-paths without separate entries).
+// Case-sensitive — URL paths are case-sensitive by convention.
+func (m *Matcher) IsWhitelistedPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	for _, p := range m.customPaths {
+		if p == "" {
+			continue
+		}
+		if path == p || strings.HasPrefix(path, p+"/") || strings.HasPrefix(path, p+"?") {
 			return true
 		}
 	}

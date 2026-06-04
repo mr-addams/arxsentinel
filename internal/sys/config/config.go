@@ -379,6 +379,7 @@ type CustomWhitelistConfig struct {
 	IPs          []string `yaml:"ips"`           // YAML: whitelist.custom.ips — trusted IPs. Consumer: whitelist.Matcher
 	CIDRs        []string `yaml:"cidrs"`         // YAML: whitelist.custom.cidrs — trusted subnets. Consumer: whitelist.Matcher
 	UASubstrings []string `yaml:"ua_substrings"` // YAML: whitelist.custom.ua_substrings — UA substrings to skip. Consumer: whitelist.Matcher
+	Paths        []string `yaml:"paths"`          // YAML: whitelist.custom.paths — URL paths to skip scoring (e.g. ["/ws", "/health"]). Consumer: whitelist.Matcher
 }
 
 type DNSCacheConfig struct {
@@ -741,6 +742,7 @@ func applyEnvOverrides(cfg *Config) error {
 	if err := envCIDRList("ARXSENTINEL_WHITELIST_CUSTOM_CIDRS", &cfg.Whitelist.Custom.CIDRs); err != nil {
 		return err
 	}
+	envCSV("ARXSENTINEL_WHITELIST_CUSTOM_PATHS", &cfg.Whitelist.Custom.Paths)
 
 	// ── output ────────────────────────────────────────────────────────────────────────
 	envStr("ARXSENTINEL_OUTPUT_THREAT_LOG", &cfg.Output.ThreatLog)

@@ -1162,7 +1162,7 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	// ── Step 1: custom whitelist early-exit ──────────────────────────────────────────
 	// Custom whitelist is checked before tracker.Update — whitelisted traffic does not
 	// enter state, reducing GC load and not skewing detector statistics.
-	if pipe.Matcher.IsWhitelistedIP(entry.RealIP) || pipe.Matcher.IsWhitelistedUA(entry.UserAgent) {
+	if pipe.Matcher.IsWhitelistedIP(entry.RealIP) || pipe.Matcher.IsWhitelistedUA(entry.UserAgent) || pipe.Matcher.IsWhitelistedPath(entry.Path) {
 		utils.Log("WHITELIST", "skipping via custom whitelist: "+entry.RealIP, "debug")
 		return
 	}

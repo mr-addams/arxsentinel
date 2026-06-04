@@ -251,6 +251,7 @@ whitelist:
     ips: []
     cidrs: []
     ua_substrings: []
+    paths: []
   dns_cache:
     positive_ttl: "24h"
     negative_ttl: "1h"

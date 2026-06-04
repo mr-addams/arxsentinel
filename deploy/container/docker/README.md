@@ -178,6 +178,7 @@ They take priority over the mounted `config.yaml`.
 | `ARXSENTINEL_WHITELIST_DNS_CACHE_IP_LIST_REFRESH` | duration | `24h` | Bot IP range refresh interval |
 | `ARXSENTINEL_WHITELIST_CUSTOM_IPS` | CSV | `` | Trusted IPs (comma-separated) |
 | `ARXSENTINEL_WHITELIST_CUSTOM_CIDRS` | CSV | `` | Trusted subnets (comma-separated) |
+| `ARXSENTINEL_WHITELIST_CUSTOM_PATHS` | CSV | `` | Trusted URL path prefixes (comma-separated) |
 | `ARXSENTINEL_CHAIN_GUARD_ENABLED` | bool | `false` | Enable proxy chain integrity check |
 | `ARXSENTINEL_CHAIN_GUARD_WARNINGS_LOG` | string | `` | Warning log path (required if enabled) |
 | `ARXSENTINEL_CHAIN_GUARD_CLOUDFLARE_ENABLED` | bool | `true` | Enable Cloudflare IP range check |

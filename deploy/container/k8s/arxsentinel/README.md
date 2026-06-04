@@ -221,6 +221,7 @@ Source types `exec`, `syslog` (network syslog receiver; `addr: udp://0.0.0.0:551
 | `ARXSENTINEL_WHITELIST_DNS_CACHE_IP_LIST_REFRESH` | duration | `24h` | Bot IP range refresh interval |
 | `ARXSENTINEL_WHITELIST_CUSTOM_IPS` | CSV | `` | Trusted IPs (comma-separated) |
 | `ARXSENTINEL_WHITELIST_CUSTOM_CIDRS` | CSV | `` | Trusted subnets (comma-separated) |
+| `ARXSENTINEL_WHITELIST_CUSTOM_PATHS` | CSV | `` | Trusted URL path prefixes (comma-separated) |
 | `ARXSENTINEL_WHITELIST_BOTS` | array | _(11 bots)_ | **YAML-only** |
 | `ARXSENTINEL_CHAIN_GUARD_ENABLED` | bool | `false` | Enable proxy chain check |
 | `ARXSENTINEL_CHAIN_GUARD_WARNINGS_LOG` | string | `` | Warning log path |
