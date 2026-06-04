@@ -18,7 +18,7 @@ Sources → Processors → Sinks → Executors
 | `streams.inputs` | Источники логов | ✅ |
 | `scoring` | Пороги угроз | ✅ |
 | `detectors` | 8 встроенных процессоров | ✅ |
-| `whitelist.custom` | Доверенные IP/CIDR/UA | ✅ |
+| `whitelist.custom` | Доверенные IP/CIDR/UA/Paths | ✅ |
 | `chain_guard` | Целостность прокси-цепочки | опционально |
 | `streams.outputs` | Приёмники событий | ✅ |
 | `executors` | Автоматизированный ответ | только рецепты с executor |

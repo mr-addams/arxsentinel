@@ -93,6 +93,7 @@ whitelist:
     ips: []                  # trusted individual IPs; list of strings: ["1.2.3.4", "5.6.7.8"]
     cidrs: []                # trusted IP ranges; list of strings: ["10.0.0.0/8", "192.168.0.0/16"]
     ua_substrings: []        # trusted UA substrings (case-insensitive); list of strings: ["MyMonitor/", "healthcheck"]
+    paths: []             # skip scoring for these URL prefixes; example: ["/ws", "/health", "/api/internal"]
 
 # ── chain_guard: proxy chain integrity check (disabled by default) ──────────────────────
 # chain_guard:

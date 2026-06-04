@@ -54,9 +54,9 @@ severity, description, and proposed resolution.
   Consider a more general `status-anomaly` detector (configurable suspicious codes) if other
   status-based patterns emerge. Must go through `/architect` as its own flow — it is a new
   detection subsystem, not part of the HTTP source work.
-- **Interim mitigation (Flow #049):** path/status whitelist in `whitelist.custom` so operators
-  can exclude legitimate WS traffic (`/ws`, status `101`) from scoring and avoid false bans.
-- **Status:** open
+- **Interim mitigation (Flow #049):** ✅ DONE — `whitelist.custom.paths` added; operators
+  can exclude legitimate WS traffic (`/ws`) from scoring via YAML or `ARXSENTINEL_WHITELIST_CUSTOM_PATHS`.
+- **Status:** open (detector itself pending; interim mitigation shipped in v2.0.3-dev.4)
 
 ---
 

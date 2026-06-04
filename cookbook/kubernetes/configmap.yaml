@@ -29,6 +29,14 @@ data:
       enabled: true
       listen_addr: ":9117"
 
+    # ── whitelist: trusted sources / белый список доверенных источников ─────────────────────
+    # whitelist:
+    #   custom:
+    #     ips: []           # example: ["10.0.0.1", "192.168.1.100"]
+    #     cidrs: []         # example: ["10.0.0.0/8", "192.168.0.0/16"]
+    #     ua_substrings: [] # example: ["MyMonitor/", "healthcheck"]
+    #     paths: []         # example: ["/ws", "/health", "/api/internal"]
+
     # Uncomment and adjust for MikroTik executor with internal CA:
     # executors:
     #   - name: mikrotik-ban
