@@ -13,12 +13,6 @@ import (
 	"time"
 )
 
-type EnvelopeRecord struct {
-	RawLine   string
-	Timestamp int64
-	Metadata  map[string]string
-}
-
 func normalizeTimestamp(val string, kind string) (int64, error) {
 	switch kind {
 	case "unix_ns", "unix_ns_str":
