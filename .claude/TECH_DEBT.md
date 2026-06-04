@@ -36,6 +36,30 @@ severity, description, and proposed resolution.
 
 ---
 
+### [049-WS] Dedicated WebSocket abuse detector plugin
+
+- **Flow:** #049 — HTTP source plugin (surfaced during integration testing)
+- **Severity:** medium
+- **Area:** `pkg/detector/` (new `websocket.go`), `internal/sys/config/config.go`
+- **Problem:** A single IP can flood WebSocket upgrade endpoints (`GET /ws` → repeated
+  `101 Switching Protocols`, then `444`), exhausting connection slots. Legitimate clients
+  open ONE socket; dozens of `101` from one IP in a short window is the abuse signal.
+  No current detector inspects HTTP status code semantically: `probe` is path-based,
+  `bruteforce` keys on 404 ratio, `rate` counts requests blind to status. A smart attacker
+  sending a real User-Agent evades the empty-UA branch of the `useragent` detector — so
+  the only robust signal (repeated `101`) is currently unused.
+- **Resolution:** New `websocket` detector that counts `status == 101` (optionally `444`/`499`)
+  per IP per window and scores when the count crosses a configurable threshold. Config under
+  `detectors.websocket`: `enabled`, `score`, `max_upgrades`, `window`, optional `status_codes`.
+  Consider a more general `status-anomaly` detector (configurable suspicious codes) if other
+  status-based patterns emerge. Must go through `/architect` as its own flow — it is a new
+  detection subsystem, not part of the HTTP source work.
+- **Interim mitigation (Flow #049):** path/status whitelist in `whitelist.custom` so operators
+  can exclude legitimate WS traffic (`/ws`, status `101`) from scoring and avoid false bans.
+- **Status:** open
+
+---
+
 ### [036-gRPC] gRPC/protobuf external plugin runtime (long-term)
 
 - **Flow:** #036 — External Plugin Runtime (long-term evolution)

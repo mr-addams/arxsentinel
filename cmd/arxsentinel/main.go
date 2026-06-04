@@ -92,6 +92,7 @@ import (
 	pkgsinkfile "github.com/mr-addams/arxsentinel/pkg/sink/file"
 	_ "github.com/mr-addams/arxsentinel/pkg/source/exec"
 	_ "github.com/mr-addams/arxsentinel/pkg/source/file"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/http"
 	_ "github.com/mr-addams/arxsentinel/pkg/source/syslog"
 	_ "github.com/mr-addams/arxsentinel/pkg/source/stdin"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
@@ -945,6 +946,16 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 			Path: in.Path,
 			Exec: in.Exec,  // NEW
 			Addr: in.Addr,
+			Mode:          in.Mode,
+			URL:           in.URL,
+			HTTPPath:      in.HTTPPath,
+			Token:         in.Token,
+			TLSCert:       in.TLSCert,
+			TLSKey:        in.TLSKey,
+			Protocol:      in.Protocol,
+			EnvelopeField: in.EnvelopeField,
+			PullInterval:  in.PullInterval,
+			MaxBodyBytes:  in.MaxBodyBytes,
 		}, pkgsource.BuildOptions{
 			Parser:        p,
 			RetryInterval: time.Duration(cfg.General.TailRetryInterval),
@@ -1151,7 +1162,7 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	// ── Step 1: custom whitelist early-exit ──────────────────────────────────────────
 	// Custom whitelist is checked before tracker.Update — whitelisted traffic does not
 	// enter state, reducing GC load and not skewing detector statistics.
-	if pipe.Matcher.IsWhitelistedIP(entry.RealIP) || pipe.Matcher.IsWhitelistedUA(entry.UserAgent) {
+	if pipe.Matcher.IsWhitelistedIP(entry.RealIP) || pipe.Matcher.IsWhitelistedUA(entry.UserAgent) || pipe.Matcher.IsWhitelistedPath(entry.Path) {
 		utils.Log("WHITELIST", "skipping via custom whitelist: "+entry.RealIP, "debug")
 		return
 	}

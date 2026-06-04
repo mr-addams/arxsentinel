@@ -57,6 +57,18 @@ services:
       ARXSENTINEL_OUTPUT_THREAT_LOG: /var/log/arxsentinel/threats.log
       ARXSENTINEL_OUTPUT_OPERATIONAL_LOG: /var/log/arxsentinel/sentinel.log
 
+    # ── nginx log file permissions ─────────────────────────────────────────────
+    # If nginx runs on the host (not in Docker), its logs are typically owned by
+    # the nginx group (mode 640, -rw-r-----). ArxSentinel runs as uid 65532,
+    # which has no access → "[TAIL] file unavailable: permission denied".
+    #
+    # Fix: find the nginx gid and add it as a supplementary group:
+    #   getent group nginx   # e.g. nginx:x:993:...
+    # Then uncomment and set the value below:
+    #
+    # group_add:
+    #   - "993"   # replace with actual gid from: getent group nginx
+
     security_opt:
       # Prevent privilege escalation via setuid binaries (distroless has none, but belt-and-suspenders).
       - no-new-privileges:true

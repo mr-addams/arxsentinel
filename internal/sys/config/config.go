@@ -90,7 +90,17 @@ type InputConfig struct {
 	Path   string `yaml:"path"`   // YAML: path to log file; required when type=file. Consumer: input.NewFileSource
 	Parser string `yaml:"parser"` // YAML: "combined" | "json" | "regex" | profile-name; default inherited from parser.log_format. Consumer: main.go buildParser
 	Exec   string `yaml:"exec"`   // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSource
-	Addr   string `yaml:"addr"`   // YAML: addr — network address for type=syslog: "udp://:5514", "tcp://:514", "unix:///var/run/arx.sock". Consumer: pkg/source/syslog.New
+	Addr          string `yaml:"addr"`           // YAML: addr — network address for type=syslog: "udp://:5514", "tcp://:514", "unix:///var/run/arx.sock". Consumer: pkg/source/syslog.New
+	Mode          string `yaml:"mode"`           // YAML: mode — "push" (listen) or "pull" (poll), default "push". Consumer: pkg/source/http.New
+	URL           string `yaml:"url"`            // YAML: url — target URL for pull mode. Consumer: pkg/source/http.New
+	HTTPPath      string `yaml:"http_path"`      // YAML: http_path — push handler path, default "/". Consumer: pkg/source/http.New
+	Token         string `yaml:"token"`          // YAML: token — optional Bearer token for auth. Consumer: pkg/source/http.New
+	TLSCert       string `yaml:"tls_cert"`       // YAML: tls_cert — path to TLS cert file; required for https://. Consumer: pkg/source/http.New
+	TLSKey        string `yaml:"tls_key"`        // YAML: tls_key — path to TLS key file; required for https://. Consumer: pkg/source/http.New
+	Protocol      string `yaml:"protocol"`       // YAML: protocol — envelope format: plain|ndjson|cloudflare|firehose|pubsub|loki|otlp|azure|splunk. Consumer: pkg/source/http.New
+	EnvelopeField string `yaml:"envelope_field"` // YAML: envelope_field — field name for ndjson extraction; required when protocol=ndjson. Consumer: pkg/source/http.New
+	PullInterval  string `yaml:"pull_interval"`  // YAML: pull_interval — polling interval for pull mode, e.g. "30s". Consumer: pkg/source/http.New
+	MaxBodyBytes  int    `yaml:"max_body_bytes"` // YAML: max_body_bytes — max request body size, default 10485760. Consumer: pkg/source/http.New
 }
 
 // SinkConfig — configuration for a single threat event output.
@@ -369,6 +379,7 @@ type CustomWhitelistConfig struct {
 	IPs          []string `yaml:"ips"`           // YAML: whitelist.custom.ips — trusted IPs. Consumer: whitelist.Matcher
 	CIDRs        []string `yaml:"cidrs"`         // YAML: whitelist.custom.cidrs — trusted subnets. Consumer: whitelist.Matcher
 	UASubstrings []string `yaml:"ua_substrings"` // YAML: whitelist.custom.ua_substrings — UA substrings to skip. Consumer: whitelist.Matcher
+	Paths        []string `yaml:"paths"`          // YAML: whitelist.custom.paths — URL paths to skip scoring (e.g. ["/ws", "/health"]). Consumer: whitelist.Matcher
 }
 
 type DNSCacheConfig struct {
@@ -731,6 +742,7 @@ func applyEnvOverrides(cfg *Config) error {
 	if err := envCIDRList("ARXSENTINEL_WHITELIST_CUSTOM_CIDRS", &cfg.Whitelist.Custom.CIDRs); err != nil {
 		return err
 	}
+	envCSV("ARXSENTINEL_WHITELIST_CUSTOM_PATHS", &cfg.Whitelist.Custom.Paths)
 
 	// ── output ────────────────────────────────────────────────────────────────────────
 	envStr("ARXSENTINEL_OUTPUT_THREAT_LOG", &cfg.Output.ThreatLog)
@@ -1079,20 +1091,69 @@ func validateConfig(cfg *Config) error {
 func validateInputs(inputs []InputConfig) error {
 	seen := make(map[string]bool)
 	for i, in := range inputs {
-	if in.Type != "file" && in.Type != "stdin" && in.Type != "exec" && in.Type != "syslog" {
-		return fmt.Errorf("inputs[%d]: unknown type %q (want file, stdin, exec, or syslog)", i, in.Type)
+	if in.Type != "file" && in.Type != "stdin" && in.Type != "exec" && in.Type != "syslog" && in.Type != "http" {
+		return fmt.Errorf("inputs[%d]: unknown type %q (want file, stdin, exec, syslog, or http)", i, in.Type)
 	}
 	if in.Type == "syslog" && in.Addr == "" {
 		return fmt.Errorf("inputs[%d]: type=syslog requires addr (e.g. \"udp://:5514\")", i)
 	}
-		key := in.Type + ":" + in.Path
-		if seen[key] {
-			return fmt.Errorf("inputs[%d]: duplicate source %q", i, key)
+	if in.Type == "http" {
+		switch in.Mode {
+		case "", "push":
+			if in.Addr == "" {
+				return fmt.Errorf("inputs[%d]: http push: addr is required", i)
+			}
+			if in.Protocol == "" {
+				return fmt.Errorf("inputs[%d]: http push: protocol is required", i)
+			}
+			if strings.HasPrefix(in.Addr, "https://") {
+				if in.TLSCert == "" {
+					return fmt.Errorf("inputs[%d]: http https: tls_cert is required", i)
+				}
+				if in.TLSKey == "" {
+					return fmt.Errorf("inputs[%d]: http https: tls_key is required", i)
+				}
+			}
+		case "pull":
+			if in.URL == "" {
+				return fmt.Errorf("inputs[%d]: http pull: url is required", i)
+			}
+			if in.Protocol == "" {
+				return fmt.Errorf("inputs[%d]: http pull: protocol is required", i)
+			}
+			if in.PullInterval == "" {
+				return fmt.Errorf("inputs[%d]: http pull: pull_interval is required", i)
+			}
+			if strings.HasPrefix(in.URL, "https://") {
+				if in.TLSCert == "" {
+					return fmt.Errorf("inputs[%d]: http https: tls_cert is required", i)
+				}
+				if in.TLSKey == "" {
+					return fmt.Errorf("inputs[%d]: http https: tls_key is required", i)
+				}
+			}
+		default:
+			return fmt.Errorf("inputs[%d]: http: unknown mode %q (want push or pull)", i, in.Mode)
 		}
-		seen[key] = true
-		if in.Type == "file" && in.Path == "" {
-			return fmt.Errorf("inputs[%d]: type=file requires path", i)
+		if in.Protocol == "ndjson" && in.EnvelopeField == "" {
+			return fmt.Errorf("inputs[%d]: http ndjson: envelope_field is required", i)
 		}
+	}
+	// Duplicate detection key is type-specific: HTTP uses addr/url (no path), file/syslog use path.
+	var key string
+	switch in.Type {
+	case "http":
+		key = in.Type + ":" + in.Addr + ":" + in.URL
+	default:
+		key = in.Type + ":" + in.Path
+	}
+	if seen[key] {
+		return fmt.Errorf("inputs[%d]: duplicate source %q", i, key)
+	}
+	seen[key] = true
+	if in.Type == "file" && in.Path == "" {
+		return fmt.Errorf("inputs[%d]: type=file requires path", i)
+	}
 	}
 	return nil
 }

@@ -266,3 +266,77 @@ func TestIsWhitelistedUA_EmptySubstrings(t *testing.T) {
 		t.Error("IsWhitelistedUA: with empty substring list there must be no matches")
 	}
 }
+
+// ========================== Flow 049 — IsWhitelistedPath ================================
+
+func TestIsWhitelistedPath_ExactMatch(t *testing.T) {
+	cfg := testConfig()
+	cfg.Custom.Paths = []string{"/ws"}
+	m, err := NewMatcher(cfg)
+	if err != nil {
+		t.Fatalf("NewMatcher: unexpected error: %v", err)
+	}
+	if !m.IsWhitelistedPath("/ws") {
+		t.Error("IsWhitelistedPath: exact match '/ws' must return true")
+	}
+}
+
+func TestIsWhitelistedPath_PrefixMatch(t *testing.T) {
+	cfg := testConfig()
+	cfg.Custom.Paths = []string{"/ws"}
+	m, err := NewMatcher(cfg)
+	if err != nil {
+		t.Fatalf("NewMatcher: unexpected error: %v", err)
+	}
+	if !m.IsWhitelistedPath("/ws/chat") {
+		t.Error("IsWhitelistedPath: prefix match '/ws/chat' must return true")
+	}
+}
+
+func TestIsWhitelistedPath_QueryMatch(t *testing.T) {
+	cfg := testConfig()
+	cfg.Custom.Paths = []string{"/ws"}
+	m, err := NewMatcher(cfg)
+	if err != nil {
+		t.Fatalf("NewMatcher: unexpected error: %v", err)
+	}
+	if !m.IsWhitelistedPath("/ws?token=x") {
+		t.Error("IsWhitelistedPath: query match '/ws?token=x' must return true")
+	}
+}
+
+func TestIsWhitelistedPath_NoMatch(t *testing.T) {
+	cfg := testConfig()
+	cfg.Custom.Paths = []string{"/ws"}
+	m, err := NewMatcher(cfg)
+	if err != nil {
+		t.Fatalf("NewMatcher: unexpected error: %v", err)
+	}
+	if m.IsWhitelistedPath("/wstest") {
+		t.Error("IsWhitelistedPath: '/wstest' must NOT match '/ws' prefix")
+	}
+}
+
+func TestIsWhitelistedPath_EmptyPath(t *testing.T) {
+	cfg := testConfig()
+	cfg.Custom.Paths = []string{"/ws"}
+	m, err := NewMatcher(cfg)
+	if err != nil {
+		t.Fatalf("NewMatcher: unexpected error: %v", err)
+	}
+	if m.IsWhitelistedPath("") {
+		t.Error("IsWhitelistedPath: empty path must return false")
+	}
+}
+
+func TestIsWhitelistedPath_EmptyPathsConfig(t *testing.T) {
+	cfg := testConfig()
+	cfg.Custom.Paths = nil
+	m, err := NewMatcher(cfg)
+	if err != nil {
+		t.Fatalf("NewMatcher: unexpected error: %v", err)
+	}
+	if m.IsWhitelistedPath("/ws") {
+		t.Error("IsWhitelistedPath: with empty paths config must return false")
+	}
+}

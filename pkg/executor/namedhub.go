@@ -37,37 +37,44 @@ import (
 const DefaultBufferSize = 1000
 
 var (
-	hubMu      sync.RWMutex
-	hubQueues  = map[string]queue.Queue{}
+	hubMu     sync.RWMutex
+	hubQueues = map[string]queue.Queue{}
+	// hubRefs counts how many sinks share each named queue.
+	// Unregister only closes the queue when the last sink deregisters.
+	hubRefs = map[string]int{}
 )
 
-// RegisterSink creates a new MemoryQueue with the given name and buffer size.
-// Returns the Queue for Push.
-// Returns an error if a queue with the same name is already registered.
+// RegisterSink returns the MemoryQueue for the given name, creating it if needed.
+// Fan-in: multiple streams may register the same name and all push to one queue.
+// The queue is only closed when the last caller calls Unregister.
 func RegisterSink(name string, bufferSize int) (queue.Queue, error) {
 	if bufferSize <= 0 {
 		bufferSize = DefaultBufferSize
 	}
 	hubMu.Lock()
 	defer hubMu.Unlock()
-	if _, exists := hubQueues[name]; exists {
-		return nil, fmt.Errorf("namedhub: sink %q already registered", name)
+	if q, exists := hubQueues[name]; exists {
+		hubRefs[name]++
+		return q, nil
 	}
 	q := queue.NewMemoryQueue(bufferSize)
 	hubQueues[name] = q
+	hubRefs[name] = 1
 	return q, nil
 }
 
 // RegisterSinkWithQueue registers a pre-configured Queue for the given name.
-// Useful when the caller wants a custom backend (bbolt, redis) instead of memory.
-// Returns an error if a queue with the same name is already registered.
+// If the name is already registered, the existing queue is reused (fan-in);
+// the provided q is ignored and the ref count is incremented.
 func RegisterSinkWithQueue(name string, q queue.Queue) error {
 	hubMu.Lock()
 	defer hubMu.Unlock()
 	if _, exists := hubQueues[name]; exists {
-		return fmt.Errorf("namedhub: sink %q already registered", name)
+		hubRefs[name]++
+		return nil
 	}
 	hubQueues[name] = q
+	hubRefs[name] = 1
 	return nil
 }
 
@@ -84,14 +91,19 @@ func GetSource(name string) (queue.Queue, error) {
 	return q, nil
 }
 
-// Unregister closes the Queue with the given name and removes it from the map.
-// After Unregister, Push and Pop return ErrQueueClosed.
+// Unregister decrements the ref count for the named queue.
+// The queue is closed and removed only when the last registered sink unregisters.
 func Unregister(name string) {
 	hubMu.Lock()
 	defer hubMu.Unlock()
+	if hubRefs[name] > 1 {
+		hubRefs[name]--
+		return
+	}
 	if q, exists := hubQueues[name]; exists {
 		q.Close()
 		delete(hubQueues, name)
+		delete(hubRefs, name)
 	}
 }
 

@@ -28,6 +28,7 @@ Sources → Processors → Sinks → Executors
 
 - [Fail2Ban (file-based logging)](#fail2ban)
 - [Syslog (мережевий транспорт логів)](#syslog)
+- [HTTP-джерело (push/pull приймач логів)](#http)
 - [Cloudflare Executor (автоматичне блокування IP)](#cloudflare)
 - [MikroTik Executor (address-list на RouterOS)](#mikrotik)
 - [Nginx Executor (файл блокування + перезавантаження)](#nginx-executor)
@@ -104,6 +105,24 @@ Docker Compose з нульовим об'ємом: nginx надсилає лог�
 |------|-------------|
 | [syslog/docker/config.yaml](syslog/docker/config.yaml) | Конфігурація ArxSentinel для syslog Docker |
 | [syslog/docker/docker-compose.yml](syslog/docker/docker-compose.yml) | Compose stack: nginx → syslog → arxsentinel |
+
+---
+
+## HTTP (HTTP/HTTPS приймач логів)
+
+HTTP/HTTPS джерело логів з підтримкою 9 push-протоколів та pull-режиму.
+Використовуйте, коли вендори надсилають логи безпосередньо до ArxSentinel через HTTP.
+
+**Коли використовувати HTTP-джерело:**
+- Cloudflare Logpush, AWS Firehose, GCP Pub/Sub push
+- Loki push API, OTLP HTTP логи, Azure Monitor export, Splunk HEC
+- NDJSON потоки з вилученням полів
+- Опитування віддалених endpoint'ів (pull-режим)
+- Прийом логів через HTTPS з TLS
+
+| Рецепт | Опис | Файл |
+|--------|------|------|
+| Повний довідник з прикладами | 9 протоколів + pull + TLS | [http/CookBook.uk.md](http/CookBook.uk.md) |
 
 ---
 

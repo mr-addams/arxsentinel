@@ -40,17 +40,42 @@ func TestNamedHub_SendReceive(t *testing.T) {
 }
 
 func TestNamedHub_DuplicateName(t *testing.T) {
-	_, err := executor.RegisterSink("test-dup", 5)
+	ctx := context.Background()
+
+	// Fan-in: two streams register the same name and get the same queue.
+	q1, err := executor.RegisterSink("test-dup", 5)
 	if err != nil {
 		t.Fatalf("first RegisterSink error = %v, want nil", err)
 	}
-
-	_, err = executor.RegisterSink("test-dup", 5)
-	if err == nil {
-		t.Fatal("second RegisterSink expected error, got nil")
+	q2, err := executor.RegisterSink("test-dup", 5)
+	if err != nil {
+		t.Fatalf("second RegisterSink error = %v, want nil", err)
+	}
+	if q1 != q2 {
+		t.Error("both RegisterSink calls must return the same queue")
 	}
 
-	executor.Unregister("test-dup")
+	// Both push through different handles; consumer sees all events.
+	src, _ := executor.GetSource("test-dup")
+	_ = q1.Push(ctx, plugin.ThreatEvent{IP: "1.1.1.1", Level: "THREAT"})
+	_ = q2.Push(ctx, plugin.ThreatEvent{IP: "2.2.2.2", Level: "THREAT"})
+
+	got1, _ := src.Pop(ctx)
+	got2, _ := src.Pop(ctx)
+	ips := map[string]bool{got1.IP: true, got2.IP: true}
+	if !ips["1.1.1.1"] || !ips["2.2.2.2"] {
+		t.Errorf("expected both IPs from fan-in, got %q and %q", got1.IP, got2.IP)
+	}
+
+	// Ref count: first Unregister keeps queue alive.
+	executor.Unregister("test-dup") // ref: 2 → 1, queue must stay open
+	if _, err := executor.GetSource("test-dup"); err != nil {
+		t.Error("queue should still be open after first Unregister")
+	}
+	executor.Unregister("test-dup") // ref: 1 → 0, queue closed
+	if _, err := executor.GetSource("test-dup"); err == nil {
+		t.Error("queue should be gone after last Unregister")
+	}
 }
 
 func TestNamedHub_Unregister(t *testing.T) {

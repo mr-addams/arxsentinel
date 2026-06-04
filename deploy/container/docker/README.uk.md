@@ -43,6 +43,42 @@ docker compose logs -f arxsentinel
 
 Файл Compose знаходиться в [`deploy/container/docker/docker-compose.yml`](deploy/container/docker/docker-compose.yml).
 
+## Права доступу до логів nginx
+
+Якщо nginx працює на **хості** (не в контейнері), його логи належать групі `nginx` з правами
+`640` (`-rw-r-----`). Контейнер ArxSentinel працює від `uid 65532`, який не входить до групи
+`nginx` — спроба читати лог повертає `permission denied`.
+
+**Симптом:**
+```
+[TAIL] file unavailable (open /var/log/nginx/access.log: permission denied)
+```
+
+**Рішення — додати GID групи nginx як supplementary group контейнера:**
+
+```bash
+# 1. Дізнатись GID групи nginx на хості
+getent group nginx   # → nginx:x:993:...
+```
+
+У `docker-compose.yml`:
+```yaml
+services:
+  arxsentinel:
+    group_add:
+      - "993"   # GID групи nginx; замінити на реальне значення
+```
+
+У `docker run`:
+```bash
+docker run ... --group-add 993 ghcr.io/mr-addams/arxsentinel:latest
+```
+
+> `group_add` додає supplementary group до процесу контейнера, не змінюючи основний `uid/gid`.
+> Права на запис у `/var/log/arxsentinel` зберігаються — директорія належить `uid 65532`.
+
+---
+
 ## Конфігурація
 
 ### Змонтовані томи

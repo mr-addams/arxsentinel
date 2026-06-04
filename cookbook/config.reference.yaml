@@ -424,6 +424,7 @@ whitelist:
     ips: []      # example: ["10.99.99.1", "192.168.1.100"] / пример: ["10.99.99.1", "192.168.1.100"]
     cidrs: []    # example: ["10.99.99.0/24", "192.168.0.0/16"] / пример: ["10.99.99.0/24", "192.168.0.0/16"]
     ua_substrings: []  # example: ["MyInternalMonitor", "HealthCheck/1.0"] / пример: ["MyInternalMonitor", "HealthCheck/1.0"]
+    paths: []      # example: ["/ws", "/health", "/api/internal"] — skip scoring for these URL prefixes / пример: ["/ws", "/health", "/api/internal"]
 
   # DNS cache for verification results / DNS-кэш результатов верификации.
   dns_cache:
@@ -514,6 +515,67 @@ pipeline:
 #     addr: udp://0.0.0.0:5514  # scheme encodes transport: udp | tcp | unixgram | unix
 #     parser: combined        # optional; inherits parser.log_format if omitted
 #     # Nginx: access_log syslog:server=127.0.0.1:5514,facility=local7,tag=nginx combined;
+#
+#   # HTTP/HTTPS source — push mode (receive logs from vendors)
+#   - type: http
+#     addr: "http://0.0.0.0:8888"
+#     protocol: plain
+#
+#   # Cloudflare Logpush (gzip NDJSON, ownership challenge handled automatically)
+#   - type: http
+#     addr: "http://0.0.0.0:8889"
+#     protocol: cloudflare
+#
+#   # AWS Firehose HTTP endpoint (base64-encoded records, JSON ACK)
+#   - type: http
+#     addr: "http://0.0.0.0:8890"
+#     protocol: firehose
+#
+#   # GCP Pub/Sub push (base64 message.data, 204 ACK)
+#   - type: http
+#     addr: "http://0.0.0.0:8891"
+#     protocol: pubsub
+#
+#   # Loki push API (streams[].values[][], 204 ACK, protobuf rejected with 415)
+#   - type: http
+#     addr: "http://0.0.0.0:8892"
+#     protocol: loki
+#
+#   # OTLP HTTP logs (resourceLogs[].logRecords[], 200 + partialSuccess)
+#   - type: http
+#     addr: "http://0.0.0.0:8893"
+#     protocol: otlp
+#
+#   # Azure Monitor data export (JSON array, optional gzip)
+#   - type: http
+#     addr: "http://0.0.0.0:8894"
+#     protocol: azure
+#
+#   # Splunk HEC (concatenated JSON objects, Success ACK)
+#   - type: http
+#     addr: "http://0.0.0.0:8895"
+#     protocol: splunk
+#
+#   # NDJSON push with field extraction
+#   - type: http
+#     addr: "http://0.0.0.0:8896"
+#     protocol: ndjson
+#     envelope_field: message
+#     token: "your-secret-token"
+#
+#   # HTTP pull mode — poll a remote endpoint every 30s
+#   - type: http
+#     mode: pull
+#     url: "http://log-aggregator:9000/export"
+#     protocol: plain
+#     pull_interval: 30s
+#
+#   # HTTPS push with TLS
+#   - type: http
+#     addr: "https://0.0.0.0:8443"
+#     protocol: plain
+#     tls_cert: /etc/arxsentinel/tls/server.crt
+#     tls_key: /etc/arxsentinel/tls/server.key
 
 # ── outputs: universal threat sink syntax / универсальный синтаксис приёмников ──────────
 #

@@ -43,6 +43,42 @@ docker compose logs -f arxsentinel
 
 The Compose file is at [`deploy/container/docker/docker-compose.yml`](deploy/container/docker/docker-compose.yml).
 
+## nginx log file permissions
+
+If nginx runs on the **host** (not in Docker), its logs are owned by the `nginx` group with mode
+`640` (`-rw-r-----`). ArxSentinel runs as `uid 65532`, which is not in the `nginx` group —
+reading the log returns `permission denied`.
+
+**Symptom:**
+```
+[TAIL] file unavailable (open /var/log/nginx/access.log: permission denied)
+```
+
+**Fix — add the nginx group GID as a supplementary group for the container:**
+
+```bash
+# 1. Find the nginx group GID on the host
+getent group nginx   # → nginx:x:993:...
+```
+
+In `docker-compose.yml`:
+```yaml
+services:
+  arxsentinel:
+    group_add:
+      - "993"   # nginx group GID; replace with actual value
+```
+
+In `docker run`:
+```bash
+docker run ... --group-add 993 ghcr.io/mr-addams/arxsentinel:latest
+```
+
+> `group_add` adds a supplementary group to the container process without changing the primary
+> `uid/gid`. Write access to `/var/log/arxsentinel` is preserved — it is owned by `uid 65532`.
+
+---
+
 ## Configuration
 
 ### Volume mounts
@@ -142,6 +178,7 @@ They take priority over the mounted `config.yaml`.
 | `ARXSENTINEL_WHITELIST_DNS_CACHE_IP_LIST_REFRESH` | duration | `24h` | Bot IP range refresh interval |
 | `ARXSENTINEL_WHITELIST_CUSTOM_IPS` | CSV | `` | Trusted IPs (comma-separated) |
 | `ARXSENTINEL_WHITELIST_CUSTOM_CIDRS` | CSV | `` | Trusted subnets (comma-separated) |
+| `ARXSENTINEL_WHITELIST_CUSTOM_PATHS` | CSV | `` | Trusted URL path prefixes (comma-separated) |
 | `ARXSENTINEL_CHAIN_GUARD_ENABLED` | bool | `false` | Enable proxy chain integrity check |
 | `ARXSENTINEL_CHAIN_GUARD_WARNINGS_LOG` | string | `` | Warning log path (required if enabled) |
 | `ARXSENTINEL_CHAIN_GUARD_CLOUDFLARE_ENABLED` | bool | `true` | Enable Cloudflare IP range check |
@@ -255,7 +292,7 @@ docker run -d \
 > **YAML-only features** — the following cannot be configured via env vars and require
 > a custom `config.yaml`:
 > `streams:`, `inputs:`, `outputs:`, `executors:`, `pipelines:`, per-detector `paths:` arrays.
-> Source types `exec` and `syslog` (network syslog receiver; `addr: udp://0.0.0.0:5514`) are also YAML-only.
+> Source types `exec`, `syslog` (network syslog receiver; `addr: udp://0.0.0.0:5514`), and `http` (HTTP/HTTPS log receiver; push/pull) are also YAML-only.
 > Full copy-paste-ready examples: `/etc/arxsentinel/config.yaml.example` (inside the container)
 > or [`config.reference.yaml`](../../../../cookbook/config.reference.yaml) in the repository.
 
