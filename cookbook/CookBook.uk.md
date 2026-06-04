@@ -18,7 +18,7 @@ Sources → Processors → Sinks → Executors
 | `streams.inputs` | Джерела логів | ✅ |
 | `scoring` | Пороги загроз | ✅ |
 | `detectors` | 8 вбудованих процесорів | ✅ |
-| `whitelist.custom` | Довірені IP/CIDR/UA | ✅ |
+| `whitelist.custom` | Довірені IP/CIDR/UA/Paths | ✅ |
 | `chain_guard` | Цілісність проксі-ланцюжка | опційно |
 | `streams.outputs` | Приймачі подій | ✅ |
 | `executors` | Автоматизована відповідь | лише рецепти з executor |

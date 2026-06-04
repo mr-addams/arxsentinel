@@ -16,7 +16,7 @@ Sources → Processors → Sinks → Executors
 | `streams.inputs` | Log sources | ✅ |
 | `scoring` | Threat thresholds | ✅ |
 | `detectors` | 8 built-in processors | ✅ |
-| `whitelist.custom` | Trusted IPs/CIDRs/UAs | ✅ |
+| `whitelist.custom` | Trusted IPs/CIDRs/UAs/Paths | ✅ |
 | `chain_guard` | Proxy chain integrity | optional |
 | `streams.outputs` | Threat sinks | ✅ |
 | `executors` | Automated response | executor recipes only |
