@@ -731,6 +731,402 @@ run_http_plain_scenario
 run_http_ndjson_scenario
 run_http_gzip_scenario
 
+# ── 19. HTTP source: AWS Firehose format ───────────────────────────────────
+run_http_firehose_scenario() {
+    echo "[scenarios/http-firehose] testing HTTP push source (AWS Firehose format)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-firehose] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-firehose-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: firehose
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    python3 - "$TMPDIR/payload.json" << 'PYEOF'
+import sys, json, base64
+paths = ['/.env','/.git/config','/wp-login.php','/admin/config.php','/etc/passwd','/.aws/credentials','/xmlrpc.php']
+clf = '1.2.3.4 - - [04/Jun/2026:12:00:01 +0000] "GET /PATH HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"'
+lines = [clf.replace('/PATH', p) for p in paths]
+records = [{"data": base64.b64encode(l.encode()).decode()} for l in lines]
+body = {"requestId": "req-001", "records": records}
+with open(sys.argv[1], "w") as f:
+    json.dump(body, f)
+PYEOF
+
+    curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-Amz-Firehose-Request-Id: req-001" \
+        --data-binary @"$TMPDIR/payload.json" \
+        "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1 || true
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/http-firehose] PASS -- threat event detected from Firehose HTTP source"
+    else
+        echo "[scenarios/http-firehose] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── 20. HTTP source: GCP Pub/Sub push format ────────────────────────────────
+run_http_pubsub_scenario() {
+    echo "[scenarios/http-pubsub] testing HTTP push source (GCP Pub/Sub push format)"
+
+    local HTTP_PORT JWKS_PORT TMPDIR ARX_PID JWKS_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    JWKS_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-pubsub] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    # Step 1: Generate RSA keypair, JWKS, and JWT token.
+    # aud MUST include the trailing slash: buildPushHandler sets expectedAud =
+    # scheme://host:port + path, and path defaults to "/" — without the slash the
+    # JWT aud check fails with 401.
+    python3 - "$TMPDIR" "http://127.0.0.1:${HTTP_PORT}/" << 'PYEOF'
+import sys, json, base64, os
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.backends import default_backend
+import time
+
+outdir = sys.argv[1]
+arx_aud = sys.argv[2]
+
+priv = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+pub = priv.public_key()
+
+pn = pub.public_numbers()
+n_b64 = base64.urlsafe_b64encode(pn.n.to_bytes((pn.n.bit_length() + 7) // 8, 'big')).decode().rstrip("=")
+e_b64 = base64.urlsafe_b64encode(pn.e.to_bytes((pn.e.bit_length() + 7) // 8, 'big')).decode().rstrip("=")
+jwk = {"kid": "test-kid-1", "kty": "RSA", "n": n_b64, "e": e_b64}
+jwks_body = json.dumps({"keys": [jwk]})
+
+with open(os.path.join(outdir, "jwks.json"), "w") as f:
+    f.write(jwks_body)
+
+hdr = base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "kid": "test-kid-1"}).encode()).decode().rstrip("=")
+now = int(time.time())
+clm = json.dumps({"aud": arx_aud, "exp": now + 3600, "email": "test@example.com", "email_verified": True})
+pay = base64.urlsafe_b64encode(clm.encode()).decode().rstrip("=")
+sig_input = (hdr + "." + pay).encode()
+sig = priv.sign(sig_input, padding.PKCS1v15(), hashes.SHA256())
+sig_b64 = base64.urlsafe_b64encode(sig).decode().rstrip("=")
+token = hdr + "." + pay + "." + sig_b64
+
+with open(os.path.join(outdir, "jwt_token.txt"), "w") as f:
+    f.write(token)
+PYEOF
+
+    # Step 2: Start JWKS server (reads jwks.json at startup)
+    cat > "$TMPDIR/jwks_server.py" << 'PYEOF'
+import sys, json
+from http.server import HTTPServer, BaseHTTPRequestHandler
+port = int(sys.argv[1])
+with open(sys.argv[2]) as f:
+    body = f.read()
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body.encode())
+    def log_message(self, *a): pass
+HTTPServer(("127.0.0.1", port), H).serve_forever()
+PYEOF
+    python3 "$TMPDIR/jwks_server.py" "$JWKS_PORT" "$TMPDIR/jwks.json" &
+    JWKS_PID=$!
+    sleep 0.5
+    local ARX_BIN_JWKS="${TMPDIR}/arx-test-jwks"
+    go build -ldflags \
+        "-X github.com/mr-addams/arxsentinel/pkg/source/http/adapters.jwksFetchURL=http://127.0.0.1:${JWKS_PORT}/certs" \
+        -o "$ARX_BIN_JWKS" ./cmd/arxsentinel 2>&1
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-pubsub-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: pubsub
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN_JWKS" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    JWT_TOKEN=$(cat "$TMPDIR/jwt_token.txt")
+
+    # Step 4: Send 7 Pub/Sub messages with JWT auth
+    python3 - "$TMPDIR/arx_pubsub.log" "http://127.0.0.1:${HTTP_PORT}" "$JWT_TOKEN" << 'PYEOF'
+import sys, json, base64, urllib.request
+paths = ["/.env","/.git/config","/wp-login.php","/admin/config.php","/etc/passwd","/.aws/credentials","/xmlrpc.php"]
+clf = '1.2.3.4 - - [04/Jun/2026:12:00:0N +0000] "GET /PATH HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"'
+url = sys.argv[2]
+token = sys.argv[3]
+for i, p in enumerate(paths):
+    line = clf.replace("/PATH", p).replace("0N", f"0{i+1}")  # 01..07 — keep 2-digit seconds valid
+    encoded = base64.urlsafe_b64encode(line.encode()).decode().rstrip("=")
+    body = json.dumps({"message": {"data": encoded, "messageId": f"msg-{i+1}"}, "subscription": "projects/p/subscriptions/s"})
+    req = urllib.request.Request(url, data=body.encode(),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+        method="POST")
+    try:
+        resp = urllib.request.urlopen(req, timeout=5)
+        with open(sys.argv[1], "a") as f:
+            f.write(f"msg-{i+1} {resp.status}\n")
+    except Exception as e:
+        with open(sys.argv[1], "a") as f:
+            f.write(f"msg-{i+1} ERROR {e}\n")
+PYEOF
+
+    # Longer settle than other scenarios: 7 sequential POSTs each trigger RS256 JWT
+    # verification (JWKS RSA verify) before the envelope reaches the pipeline.
+    sleep 3
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/http-pubsub] PASS -- threat event detected from Pub/Sub HTTP source"
+    else
+        echo "[scenarios/http-pubsub] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        kill "$JWKS_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    kill "$JWKS_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+
+# ── 21. HTTP source: Loki push format ──────────────────────────────────────────
+run_http_loki_scenario() {
+    echo "[scenarios/http-loki] testing HTTP push source (Loki push format)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-loki] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-loki-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: loki
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    python3 - "$TMPDIR/payload-loki.json" << 'PYEOF'
+import sys, json, time
+paths = ['/.env','/.git/config','/wp-login.php','/admin/config.php','/etc/passwd','/.aws/credentials','/xmlrpc.php']
+clf = '1.2.3.4 - - [04/Jun/2026:12:00:01 +0000] "GET /PATH HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"'
+values = []
+base_ts = int(time.time() * 1e9)
+for i, p in enumerate(paths):
+    line = clf.replace('/PATH', p)
+    values.append([str(base_ts + i), line])
+body = {"streams": [{"stream": {"job": "nginx", "host": "web01"}, "values": values}]}
+with open(sys.argv[1], "w") as f:
+    json.dump(body, f)
+PYEOF
+
+    curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        --data-binary @"$TMPDIR/payload-loki.json" \
+        "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1 || true
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/http-loki] PASS -- threat event detected from Loki HTTP source"
+    else
+        echo "[scenarios/http-loki] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── 22. HTTP source: Loki protobuf content-type rejection ──────────────────
+run_http_loki_protobuf_rejection_scenario() {
+    echo "[scenarios/http-loki-protobuf-rejection] testing HTTP source rejects Loki protobuf Content-Type"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-loki-protobuf-rejection] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-loki-reject-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: loki
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+        -X POST \
+        -H "Content-Type: application/x-protobuf" \
+        --data-binary "small body" \
+        "http://127.0.0.1:${HTTP_PORT}" 2>/dev/null || true)
+
+    if [ "$HTTP_CODE" = "415" ]; then
+        echo "[scenarios/http-loki-protobuf-rejection] PASS -- server returned 415 for protobuf Content-Type"
+    else
+        echo "[scenarios/http-loki-protobuf-rejection] FAIL -- expected 415, got $HTTP_CODE"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── HTTP source BATCH A scenario calls ─────────────────────────────────────
+run_http_firehose_scenario
+run_http_pubsub_scenario
+run_http_loki_scenario
+run_http_loki_protobuf_rejection_scenario
+
 # ====================== Syslog source scenarios (direct binary) =====================
 #   Six scenarios: UDP/TCP/Unix × RFC3164/RFC5424.
 #   Each wraps 7 probe lines in the corresponding syslog envelope.
