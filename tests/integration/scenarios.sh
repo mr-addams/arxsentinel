@@ -485,3 +485,248 @@ run_executor_nginx_ban_scenario() {
     echo "[executor-nginx-ban] blocklist content: $result" >&2
 }
 run_executor_nginx_ban_scenario
+
+# ── 16. HTTP source: plain text push ─────────────────────────────────────────────
+run_http_plain_scenario() {
+    echo "[scenarios/http-plain] testing HTTP push source (plain text)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-plain] SKIP — binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-plain-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: plain
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 40
+  ban_threshold: 60
+  window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    PROBE_LINES=$(cat << 'LINES'
+1.2.3.4 - - [04/Jun/2026:00:00:01 +0000] "GET /.env HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+1.2.3.4 - - [04/Jun/2026:00:00:02 +0000] "GET /.git/config HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+1.2.3.4 - - [04/Jun/2026:00:00:03 +0000] "GET /wp-login.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+1.2.3.4 - - [04/Jun/2026:00:00:04 +0000] "GET /admin/config.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+1.2.3.4 - - [04/Jun/2026:00:00:05 +0000] "GET /etc/passwd HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+1.2.3.4 - - [04/Jun/2026:00:00:06 +0000] "GET /.aws/credentials HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+1.2.3.4 - - [04/Jun/2026:00:00:07 +0000] "GET /xmlrpc.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+LINES
+)
+
+    curl -sf -X POST \
+        -H "Content-Type: text/plain" \
+        -d "$PROBE_LINES" \
+        "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1 || true
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/http-plain] PASS — threat event detected from HTTP push source"
+    else
+        echo "[scenarios/http-plain] FAIL — no threat event in $TMPDIR/threats.log"
+        echo "[scenarios/http-plain] ArxSentinel log:" >&2
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── 17. HTTP source: NDJSON push ────────────────────────────────────────────────
+run_http_ndjson_scenario() {
+    echo "[scenarios/http-ndjson] testing HTTP push source (NDJSON with field extraction)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-ndjson] SKIP — binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-ndjson-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: ndjson
+            envelope_field: log
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 40
+  ban_threshold: 60
+  window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    NDJSON_BODY=$(cat << 'LINES'
+{"log":"1.2.3.4 - - [04/Jun/2026:00:00:01 +0000] \"GET /.env HTTP/1.1\" 404 0 \"-\" \"curl/8.0\" \"1.2.3.4\""}
+{"log":"1.2.3.4 - - [04/Jun/2026:00:00:02 +0000] \"GET /.git/config HTTP/1.1\" 404 0 \"-\" \"curl/8.0\" \"1.2.3.4\""}
+{"log":"1.2.3.4 - - [04/Jun/2026:00:00:03 +0000] \"GET /wp-login.php HTTP/1.1\" 404 0 \"-\" \"curl/8.0\" \"1.2.3.4\""}
+{"log":"1.2.3.4 - - [04/Jun/2026:00:00:04 +0000] \"GET /admin/config.php HTTP/1.1\" 404 0 \"-\" \"curl/8.0\" \"1.2.3.4\""}
+{"log":"1.2.3.4 - - [04/Jun/2026:00:00:05 +0000] \"GET /etc/passwd HTTP/1.1\" 404 0 \"-\" \"curl/8.0\" \"1.2.3.4\""}
+{"log":"1.2.3.4 - - [04/Jun/2026:00:00:06 +0000] \"GET /.aws/credentials HTTP/1.1\" 404 0 \"-\" \"curl/8.0\" \"1.2.3.4\""}
+{"log":"1.2.3.4 - - [04/Jun/2026:00:00:07 +0000] \"GET /xmlrpc.php HTTP/1.1\" 404 0 \"-\" \"curl/8.0\" \"1.2.3.4\""}
+LINES
+)
+
+    curl -sf -X POST \
+        -H "Content-Type: application/x-ndjson" \
+        -d "$NDJSON_BODY" \
+        "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1 || true
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/http-ndjson] PASS — threat event detected from HTTP NDJSON source"
+    else
+        echo "[scenarios/http-ndjson] FAIL — no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── 18. HTTP source: gzip-compressed push ──────────────────────────────────────
+run_http_gzip_scenario() {
+    echo "[scenarios/http-gzip] testing HTTP push source (gzip Content-Encoding)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-gzip] SKIP — binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-gzip-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: plain
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 40
+  ban_threshold: 60
+  window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    PROBE_LINES='1.2.3.4 - - [04/Jun/2026:00:00:01 +0000] "GET /.env HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+1.2.3.4 - - [04/Jun/2026:00:00:02 +0000] "GET /.git/config HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+1.2.3.4 - - [04/Jun/2026:00:00:03 +0000] "GET /wp-login.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+1.2.3.4 - - [04/Jun/2026:00:00:04 +0000] "GET /admin/config.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+1.2.3.4 - - [04/Jun/2026:00:00:05 +0000] "GET /etc/passwd HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+1.2.3.4 - - [04/Jun/2026:00:00:06 +0000] "GET /.aws/credentials HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"
+1.2.3.4 - - [04/Jun/2026:00:00:07 +0000] "GET /xmlrpc.php HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"'
+
+    echo "$PROBE_LINES" | gzip | curl -sf -X POST \
+        -H "Content-Type: text/plain" \
+        -H "Content-Encoding: gzip" \
+        --data-binary @- \
+        "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1 || true
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/http-gzip] PASS — threat event detected from gzip-compressed HTTP push"
+    else
+        echo "[scenarios/http-gzip] FAIL — no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── HTTP source scenario calls (direct binary, no Docker) ─────────────────────
+run_http_plain_scenario
+run_http_ndjson_scenario
+run_http_gzip_scenario
