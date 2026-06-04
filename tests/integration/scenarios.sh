@@ -1127,6 +1127,760 @@ run_http_pubsub_scenario
 run_http_loki_scenario
 run_http_loki_protobuf_rejection_scenario
 
+# ── 23. HTTP source: OTLP JSON format ──────────────────────────────────────
+run_http_otlp_scenario() {
+    echo "[scenarios/http-otlp] testing HTTP push source (OTLP JSON format)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-otlp] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-otlp-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: otlp
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    python3 - "$TMPDIR/payload-otlp.json" << 'PYEOF'
+import sys, json, time
+paths = ['/.env','/.git/config','/wp-login.php','/admin/config.php','/etc/passwd','/.aws/credentials','/xmlrpc.php']
+clf = '1.2.3.4 - - [04/Jun/2026:12:00:01 +0000] "GET /PATH HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"'
+records = []
+base_ts = int(time.time() * 1e9)
+for i, p in enumerate(paths):
+    line = clf.replace('/PATH', p)
+    records.append({"timeUnixNano": str(base_ts + i), "body": {"stringValue": line}})
+body = {"resourceLogs": [{"scopeLogs": [{"logRecords": records}]}]}
+with open(sys.argv[1], "w") as f:
+    json.dump(body, f)
+PYEOF
+
+    curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        --data-binary @"$TMPDIR/payload-otlp.json" \
+        "http://127.0.0.1:${HTTP_PORT}" > "$TMPDIR/otlp_resp.json" 2>&1 || true
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/http-otlp] PASS -- threat event detected from OTLP HTTP source"
+    else
+        echo "[scenarios/http-otlp] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── 24. HTTP source: OTLP protobuf content-type rejection ─────────────────
+run_http_otlp_protobuf_rejection_scenario() {
+    echo "[scenarios/http-otlp-protobuf-rejection] testing HTTP source rejects OTLP protobuf Content-Type"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-otlp-protobuf-rejection] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-otlp-reject-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: otlp
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+        -X POST \
+        -H "Content-Type: application/x-protobuf" \
+        --data-binary "small body" \
+        "http://127.0.0.1:${HTTP_PORT}" 2>/dev/null || true)
+
+    if [ "$HTTP_CODE" = "415" ]; then
+        echo "[scenarios/http-otlp-protobuf-rejection] PASS -- server returned 415 for protobuf Content-Type"
+    else
+        echo "[scenarios/http-otlp-protobuf-rejection] FAIL -- expected 415, got $HTTP_CODE"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── 25. HTTP source: Splunk HEC single event ────────────────────────────────
+run_http_splunk_scenario() {
+    echo "[scenarios/http-splunk] testing HTTP push source (Splunk HEC single event)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-splunk] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-splunk-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: splunk
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    python3 - "$TMPDIR/payload-splunk.json" << 'PYEOF'
+import sys, json, time
+paths = ['/.env','/.git/config','/wp-login.php','/admin/config.php','/etc/passwd','/.aws/credentials','/xmlrpc.php']
+clf = '1.2.3.4 - - [04/Jun/2026:12:00:0N +0000] "GET /PATH HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"'
+events = []
+base_ts = time.time()
+for i, p in enumerate(paths):
+    line = clf.replace('/PATH', p).replace('0N', f'0{i+1}')
+    events.append({"time": base_ts + i, "event": line})
+body = ''.join(json.dumps(e) for e in events)
+with open(sys.argv[1], "w") as f:
+    f.write(body)
+PYEOF
+
+    curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        --data-binary @"$TMPDIR/payload-splunk.json" \
+        "http://127.0.0.1:${HTTP_PORT}" > "$TMPDIR/splunk_resp.json" 2>&1 || true
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/http-splunk] PASS -- threat event detected from Splunk HTTP source"
+    else
+        echo "[scenarios/http-splunk] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── 26. HTTP source: Splunk HEC multi-event batch ───────────────────────────
+run_http_splunk_multievent_scenario() {
+    echo "[scenarios/http-splunk-multievent] testing HTTP push source (Splunk HEC multi-event batch)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-splunk-multievent] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-splunk-multievent-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: splunk
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    python3 - "$TMPDIR/payload-splunk-multi.json" << 'PYEOF'
+import sys, json, time
+paths = ['/.env','/.git/config','/wp-login.php','/admin/config.php','/etc/passwd','/.aws/credentials','/xmlrpc.php']
+clf = '1.2.3.4 - - [04/Jun/2026:12:00:0N +0000] "GET /PATH HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"'
+events = []
+base_ts = time.time()
+for i, p in enumerate(paths):
+    line = clf.replace('/PATH', p).replace('0N', f'0{i+1}')
+    events.append({"time": base_ts + i, "event": line})
+body = ''.join(json.dumps(e) for e in events)
+with open(sys.argv[1], "w") as f:
+    f.write(body)
+PYEOF
+
+    curl -sf -X POST \
+        -H "Content-Type: application/json" \
+        --data-binary @"$TMPDIR/payload-splunk-multi.json" \
+        "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1 || true
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/http-splunk-multievent] PASS -- threat event detected from Splunk multi-event batch"
+    else
+        echo "[scenarios/http-splunk-multievent] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── HTTP source BATCH B scenario calls ─────────────────────────────────────
+run_http_otlp_scenario
+run_http_otlp_protobuf_rejection_scenario
+run_http_splunk_scenario
+run_http_splunk_multievent_scenario
+
+# ── 27. HTTP source: Azure Monitor JSON array format ────────────────────────
+run_http_azure_scenario() {
+    echo "[scenarios/http-azure] testing HTTP push source (Azure Monitor JSON array format)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-azure] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-azure-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: azure
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    python3 - "$TMPDIR/payload.json" << 'PYEOF'
+import sys, json
+records = [
+    {"time": "2026-06-04T12:00:01Z", "message": "test log 1", "level": "INFO"},
+    {"time": "2026-06-04T12:00:02Z", "message": "test log 2", "level": "WARN"},
+    {"time": "2026-06-04T12:00:03Z", "message": "test log 3", "level": "ERROR"},
+]
+with open(sys.argv[1], 'w') as f:
+    json.dump(records, f)
+PYEOF
+
+    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+        -H "Content-Type: application/json" \
+        --data-binary @"$TMPDIR/payload.json" \
+        "http://127.0.0.1:${HTTP_PORT}" 2>/dev/null || true)
+
+    if [ "$HTTP_CODE" = "204" ]; then
+        echo "[scenarios/http-azure] PASS -- server returned 204 for Azure JSON array"
+    else
+        echo "[scenarios/http-azure] FAIL -- expected 204, got $HTTP_CODE"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── 28. HTTP source: Cloudflare Logpush (gzip-compressed body) ─────────────
+run_http_cloudflare_gzip_scenario() {
+    echo "[scenarios/http-cloudflare-gzip] testing HTTP push source (Cloudflare Logpush gzip-compressed)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-cloudflare-gzip] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-cloudflare-gzip-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: cloudflare
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    python3 - "$TMPDIR/payload.gz" << 'PYEOF'
+import sys, gzip
+paths = ['/.env','/.git/config','/wp-login.php','/admin/config.php','/etc/passwd','/.aws/credentials','/xmlrpc.php']
+clf = '1.2.3.4 - - [04/Jun/2026:12:00:0N +0000] "GET /PATH HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"'
+lines = []
+for i, p in enumerate(paths):
+    lines.append(clf.replace('/PATH', p).replace('0N', f'0{i+1}'))
+body = '\n'.join(lines).encode()
+with open(sys.argv[1], 'wb') as f:
+    f.write(gzip.compress(body))
+PYEOF
+
+    curl -sf -X POST \
+        -H "Content-Type: text/plain" \
+        -H "Content-Encoding: gzip" \
+        --data-binary @"$TMPDIR/payload.gz" \
+        "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1 || true
+
+    sleep 1
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/http-cloudflare-gzip] PASS -- threat event detected from gzip-compressed CLF"
+    else
+        echo "[scenarios/http-cloudflare-gzip] FAIL -- no threat event"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── 29. HTTP source: Cloudflare Logpush ownership challenge ─────────────────
+run_http_cloudflare_challenge_scenario() {
+    echo "[scenarios/http-cloudflare-challenge] testing HTTP source (Cloudflare ownership challenge)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-cloudflare-challenge] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-cloudflare-challenge-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: cloudflare
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    CHALLENGE_RESP=$(curl -sf -X GET \
+        -H "Ownership-Challenge: test-token-abc" \
+        "http://127.0.0.1:${HTTP_PORT}/?validate=true" 2>/dev/null || true)
+
+    if [ "$CHALLENGE_RESP" = "test-token-abc" ]; then
+        echo "[scenarios/http-cloudflare-challenge] PASS -- ownership challenge returned correct token"
+    else
+        echo "[scenarios/http-cloudflare-challenge] FAIL -- expected 'test-token-abc', got '$CHALLENGE_RESP'"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── 30. HTTP source: bearer token authentication ────────────────────────────
+run_http_bearer_auth_scenario() {
+    echo "[scenarios/http-bearer-auth] testing HTTP source (bearer token authentication)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-bearer-auth] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-bearer-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: generic
+            token: "test-secret-token-xyz"
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" --config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    for _ in $(seq 1 20); do
+        curl -sf --max-time 0.5 "http://127.0.0.1:${HTTP_PORT}" > /dev/null 2>&1
+        [ $? -ne 7 ] && break
+        sleep 0.3
+    done
+
+    CODE1=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+        -H "Content-Type: text/plain" \
+        --data-binary "test body" \
+        "http://127.0.0.1:${HTTP_PORT}" 2>/dev/null || echo "000")
+
+    CODE2=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+        -H "Content-Type: text/plain" \
+        -H "Authorization: Bearer wrong-token" \
+        --data-binary "test body" \
+        "http://127.0.0.1:${HTTP_PORT}" 2>/dev/null || echo "000")
+
+    python3 - "$TMPDIR/payload.txt" << 'PYEOF'
+import sys
+paths = ['/.env','/.git/config','/wp-login.php','/admin/config.php','/etc/passwd','/.aws/credentials','/xmlrpc.php']
+clf = '1.2.3.4 - - [04/Jun/2026:12:00:0N +0000] "GET /PATH HTTP/1.1" 404 0 "-" "curl/8.0" "1.2.3.4"'
+lines = [clf.replace('/PATH', p).replace('0N', f'0{i+1}') for i, p in enumerate(paths)]
+with open(sys.argv[1], 'w') as f:
+    f.write('\n'.join(lines))
+PYEOF
+
+    CODE3=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+        -H "Content-Type: text/plain" \
+        -H "Authorization: Bearer test-secret-token-xyz" \
+        --data-binary @"$TMPDIR/payload.txt" \
+        "http://127.0.0.1:${HTTP_PORT}" 2>/dev/null || echo "000")
+
+    sleep 1
+
+    if [ "$CODE1" != "401" ]; then
+        echo "[scenarios/http-bearer-auth] FAIL -- expected 401 for no-auth, got $CODE1"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    if [ "$CODE2" != "401" ]; then
+        echo "[scenarios/http-bearer-auth] FAIL -- expected 401 for wrong token, got $CODE2"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    if [ "$CODE3" != "200" ]; then
+        echo "[scenarios/http-bearer-auth] FAIL -- expected 200 for correct token, got $CODE3"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    if [ -f "$TMPDIR/threats.log" ] && grep -q '"ip":"1.2.3.4"' "$TMPDIR/threats.log" 2>/dev/null; then
+        echo "[scenarios/http-bearer-auth] PASS -- auth enforced, threat detected with correct token"
+    else
+        echo "[scenarios/http-bearer-auth] FAIL -- no threat event with correct token"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── 31. HTTP source: request body size limit ────────────────────────────────
+run_http_body_limit_scenario() {
+    echo "[scenarios/http-body-limit] testing HTTP source (request body size limit)"
+
+    local HTTP_PORT TMPDIR ARX_PID
+    HTTP_PORT=$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()")
+    TMPDIR=$(mktemp -d)
+
+    if [[ ! -x "$ARX_BIN" ]]; then
+        echo "[scenarios/http-body-limit] SKIP -- binary not found at $ARX_BIN"
+        rm -rf "$TMPDIR"
+        return
+    fi
+
+    cat > "$TMPDIR/config.yaml" << YAML
+streams:
+  - name: http-body-limit-test
+    pipelines:
+      - name: probe-detect
+        inputs:
+          - type: http
+            addr: "http://127.0.0.1:${HTTP_PORT}"
+            protocol: generic
+            max_body_bytes: 500
+        outputs:
+          - type: file
+            path: "$TMPDIR/threats.log"
+            format: json
+        detectors:
+          probe:
+            enabled: true
+            score: 60
+scoring:
+  alert_threshold: 10
+  ban_threshold: 20
+  observation_window: 60s
+parser:
+  log_format: combined
+YAML
+
+    "$ARX_BIN" -config "$TMPDIR/config.yaml" > "$TMPDIR/arx.log" 2>&1 &
+    ARX_PID=$!
+
+    # Wait for HTTP source to start
+    local WAIT=20
+    while ! grep -q "http source started" "$TMPDIR/arx.log" 2>/dev/null; do
+        WAIT=$((WAIT - 1))
+        [ $WAIT -le 0 ] && break
+        sleep 0.3
+    done
+
+    # Check 1: 501-byte body → 413
+    python3 -c "
+import sys
+with open(sys.argv[1], 'w') as f:
+    f.write('x' * 501)
+" "$TMPDIR/big.txt"
+    CODE_BIG=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: text/plain" --data-binary @"$TMPDIR/big.txt" "http://127.0.0.1:${HTTP_PORT}" 2>/dev/null || echo "000")
+
+    # Check 2: 499-byte body → 200
+    python3 -c "
+import sys
+with open(sys.argv[1], 'w') as f:
+    f.write('x' * 499)
+" "$TMPDIR/small.txt"
+    CODE_SMALL=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: text/plain" --data-binary @"$TMPDIR/small.txt" "http://127.0.0.1:${HTTP_PORT}" 2>/dev/null || echo "000")
+
+    if [ "$CODE_BIG" = "413" ] && [ "$CODE_SMALL" = "200" ]; then
+        echo "[scenarios/http-body-limit] PASS -- 413 for 501b, 200 for 499b"
+    else
+        echo "[scenarios/http-body-limit] FAIL -- expected 413 for 501b, got $CODE_BIG; expected 200 for 499b, got $CODE_SMALL"
+        cat "$TMPDIR/arx.log" >&2
+        kill "$ARX_PID" 2>/dev/null || true
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+
+    kill "$ARX_PID" 2>/dev/null || true
+    rm -rf "$TMPDIR"
+}
+
+# ── HTTP source BATCH C scenario calls ─────────────────────────────────────
+run_http_azure_scenario
+run_http_cloudflare_gzip_scenario
+run_http_cloudflare_challenge_scenario
+run_http_bearer_auth_scenario
+
+# ── HTTP source BATCH D scenario calls ─────────────────────────────────────
+run_http_body_limit_scenario
+
 # ====================== Syslog source scenarios (direct binary) =====================
 #   Six scenarios: UDP/TCP/Unix × RFC3164/RFC5424.
 #   Each wraps 7 probe lines in the corresponding syslog envelope.
