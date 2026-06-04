@@ -128,7 +128,7 @@ helm upgrade arxsentinel ./deploy/container/k8s/arxsentinel -f values-production
 > Full examples with all YAML-only sections: [`config.reference.yaml`](../../../cookbook/config.reference.yaml) in the repository root.
 
 Arrays are marked **YAML-only** — configure via ConfigMap `config.yaml` or a mounted config file.
-Source types `exec` and `syslog` (network syslog receiver; `addr: udp://0.0.0.0:5514`) are also YAML-only.
+Source types `exec`, `syslog` (network syslog receiver; `addr: udp://0.0.0.0:5514`), and `http` (HTTP/HTTPS log receiver; push/pull) are also YAML-only.
 
 #### General, logging, parser
 

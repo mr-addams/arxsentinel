@@ -26,6 +26,7 @@ Sources → Processors → Sinks → Executors
 
 - [Fail2Ban (file-based logging)](#fail2ban)
 - [Syslog (network log transport)](#syslog)
+- [HTTP source (push/pull log receiver)](#http)
 - [Cloudflare Executor (automated IP banning)](#cloudflare)
 - [MikroTik Executor (RouterOS address-list)](#mikrotik)
 - [Nginx Executor (blocklist file + reload)](#nginx-executor)
@@ -102,6 +103,24 @@ internal Docker network — no shared volume mount needed.
 |------|---------|
 | [syslog/docker/config.yaml](syslog/docker/config.yaml) | ArxSentinel config for syslog Docker deployment |
 | [syslog/docker/docker-compose.yml](syslog/docker/docker-compose.yml) | Compose stack: nginx → syslog → arxsentinel |
+
+---
+
+## HTTP
+
+HTTP/HTTPS log receiver supporting 9 push protocols and pull mode.
+Use when vendors push logs directly to ArxSentinel over HTTP.
+
+**When to use HTTP source:**
+- Cloudflare Logpush, AWS Firehose, GCP Pub/Sub push
+- Loki push API, OTLP HTTP logs, Azure Monitor export, Splunk HEC
+- NDJSON streams with field extraction
+- Polling remote endpoints (pull mode)
+- Receiving logs over HTTPS with TLS
+
+| Recipe | Description | File |
+|--------|-------------|------|
+| Full reference with examples | 9 protocols + pull + TLS | [http/CookBook.md](http/CookBook.md) |
 
 ---
 

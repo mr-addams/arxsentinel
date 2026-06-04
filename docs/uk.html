@@ -978,7 +978,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
                     <span class="integration-tag">будь-який лог-файл</span>
                     <span class="integration-tag">stdin pipe</span>
                     <span class="integration-tag">syslog-приймач</span>
-                    <span class="integration-tag muted">HTTP (незабаром)</span>
+                    <span class="integration-tag">HTTP (push/pull)</span>
                 </div>
             </div>
             <div class="integrations-col">
@@ -1001,6 +1001,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
             <div style="display:flex;flex-direction:column;gap:0.5rem;align-items:center;">
                 <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: file &nbsp;·&nbsp; path: /var/log/nginx/access.log</code>
                 <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: syslog &nbsp;·&nbsp; addr: udp://0.0.0.0:5514 &nbsp;·&nbsp; без спільного тому</code>
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: http &nbsp;·&nbsp; protocol: plain|cloudflare|firehose|pubsub|loki|otlp|azure|splunk|ndjson</code>
             </div>
         </div>
     </section>

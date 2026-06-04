@@ -318,10 +318,16 @@ output:
 # ── inputs / outputs: universal I/O syntax ─────────────────────────────────────────────────
 # Use instead of general.log_file / output.threat_log for multi-source or exec plugin I/O.
 #
+# HTTP source: all configuration is YAML-only (no env overrides)
+# See cookbook/config.reference.yaml for http input examples
+#
 # inputs:
 #   - type: file
 #     path: /var/log/nginx/access.log
 #     parser: combined
+#   - type: http
+#     addr: "http://0.0.0.0:8888"
+#     protocol: plain
 #   - type: stdin
 #     parser: combined
 #
