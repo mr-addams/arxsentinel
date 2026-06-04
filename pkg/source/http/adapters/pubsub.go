@@ -22,7 +22,7 @@ func (a *PubSubAdapter) Decode(body []byte) ([]EnvelopeRecord, error) {
 	if err := json.Unmarshal(body, &ps); err != nil {
 		return nil, fmt.Errorf("pubsub: %w", err)
 	}
-	decoded, err := base64.StdEncoding.DecodeString(ps.Message.Data)
+	decoded, err := base64.RawURLEncoding.DecodeString(ps.Message.Data)
 	if err != nil {
 		return nil, fmt.Errorf("pubsub: base64 decode: %w", err)
 	}

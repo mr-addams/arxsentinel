@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	nethttp "net/http"
 )
@@ -31,15 +32,21 @@ type logRecord struct {
 type otlpBody struct {
 	StringValue string `json:"stringValue"`
 	BytesValue  string `json:"bytesValue"`
+	IntValue    *int64 `json:"intValue,omitempty"`
+	DoubleValue *float64 `json:"doubleValue,omitempty"`
+	BoolValue   *bool  `json:"boolValue,omitempty"`
 }
 
 type otlpAttr struct {
-	Key   string      `json:"key"`
-	Value otlpAttrVal `json:"value"`
+	Key   string        `json:"key"`
+	Value otlpAnyValue  `json:"value"`
 }
 
-type otlpAttrVal struct {
-	StringValue string `json:"stringValue"`
+type otlpAnyValue struct {
+	StringValue string  `json:"stringValue"`
+	IntValue    *int64  `json:"intValue,omitempty"`
+	DoubleValue *float64 `json:"doubleValue,omitempty"`
+	BoolValue   *bool   `json:"boolValue,omitempty"`
 }
 
 func (a *OTLPAdapter) Decode(body []byte) ([]EnvelopeRecord, error) {
@@ -51,21 +58,13 @@ func (a *OTLPAdapter) Decode(body []byte) ([]EnvelopeRecord, error) {
 	for _, rl := range req.ResourceLogs {
 		for _, sl := range rl.ScopeLogs {
 			for _, lr := range sl.LogRecords {
-				rawLine := lr.Body.StringValue
-				if rawLine == "" && lr.Body.BytesValue != "" {
-					decoded, err := base64.StdEncoding.DecodeString(lr.Body.BytesValue)
-					if err != nil {
-						rawLine = lr.Body.BytesValue
-					} else {
-						rawLine = string(decoded)
-					}
-				}
+				rawLine := decodeOTLPBody(&lr.Body)
 
-				ts, _ := normalizeTimestamp(lr.TimeUnixNano, "unix_ns_str") // per-record best-effort; 0 if unparseable
+				ts, _ := normalizeTimestamp(lr.TimeUnixNano, "unix_ns_str")
 
 				meta := make(map[string]string)
 				for _, attr := range lr.Attributes {
-					meta[attr.Key] = attr.Value.StringValue
+					meta[attr.Key] = formatOTLPAttrValue(&attr.Value)
 				}
 
 				records = append(records, EnvelopeRecord{
@@ -77,6 +76,45 @@ func (a *OTLPAdapter) Decode(body []byte) ([]EnvelopeRecord, error) {
 		}
 	}
 	return records, nil
+}
+
+func decodeOTLPBody(b *otlpBody) string {
+	if b.StringValue != "" {
+		return b.StringValue
+	}
+	if b.BytesValue != "" {
+		decoded, err := base64.StdEncoding.DecodeString(b.BytesValue)
+		if err != nil {
+			return b.BytesValue
+		}
+		return string(decoded)
+	}
+	if b.IntValue != nil {
+		return strconv.FormatInt(*b.IntValue, 10)
+	}
+	if b.DoubleValue != nil {
+		return strconv.FormatFloat(*b.DoubleValue, 'f', -1, 64)
+	}
+	if b.BoolValue != nil {
+		return strconv.FormatBool(*b.BoolValue)
+	}
+	return ""
+}
+
+func formatOTLPAttrValue(v *otlpAnyValue) string {
+	if v.StringValue != "" {
+		return v.StringValue
+	}
+	if v.IntValue != nil {
+		return strconv.FormatInt(*v.IntValue, 10)
+	}
+	if v.DoubleValue != nil {
+		return strconv.FormatFloat(*v.DoubleValue, 'f', -1, 64)
+	}
+	if v.BoolValue != nil {
+		return strconv.FormatBool(*v.BoolValue)
+	}
+	return ""
 }
 
 func (a *OTLPAdapter) WriteAck(w nethttp.ResponseWriter, meta map[string]string) {

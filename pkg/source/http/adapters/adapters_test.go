@@ -307,7 +307,7 @@ func TestFirehoseAdapterWriteAck(t *testing.T) {
 
 func TestPubSubAdapterDecode(t *testing.T) {
 	logContent := "order created: 12345"
-	encoded := base64.StdEncoding.EncodeToString([]byte(logContent))
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(logContent))
 	payload := fmt.Sprintf(`{
 		"message": {
 			"data": "%s",
@@ -647,9 +647,7 @@ func TestAzureAdapterWriteAck(t *testing.T) {
 // =============================================================================
 
 func TestSplunkAdapterDecode(t *testing.T) {
-	t.Run("event field raw JSON preserved verbatim", func(t *testing.T) {
-		// SplunkAdapter stores se.Event as json.RawMessage — raw JSON bytes.
-		// For a JSON string field, RawMessage preserves the surrounding quotes.
+	t.Run("event field string unwrapped", func(t *testing.T) {
 		payload := `{"event":"raw log line","host":"web-1","sourcetype":"nginx:access","time":1720000000.123,"index":"main","fields":{"custom_field":"value"}}`
 
 		a := &SplunkAdapter{}
@@ -660,8 +658,8 @@ func TestSplunkAdapterDecode(t *testing.T) {
 		if len(records) != 1 {
 			t.Fatalf("expected 1 record, got %d", len(records))
 		}
-		if records[0].RawLine != `"raw log line"` {
-			t.Fatalf("expected '\"raw log line\"', got %q", records[0].RawLine)
+		if records[0].RawLine != `raw log line` {
+			t.Fatalf("expected 'raw log line', got %q", records[0].RawLine)
 		}
 	})
 

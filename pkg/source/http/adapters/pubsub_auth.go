@@ -39,6 +39,7 @@ type jwtHeader struct {
 type jwtClaims struct {
 	Aud           string `json:"aud"`
 	Exp           int64  `json:"exp"`
+	Email         string `json:"email"`
 	EmailVerified bool   `json:"email_verified"`
 }
 
@@ -115,7 +116,7 @@ func jwkToPublicKey(jk *jwkKey) (*rsa.PublicKey, error) {
 	return &rsa.PublicKey{N: n, E: e}, nil
 }
 
-func PubSubJWTMiddleware(next nethttp.Handler) nethttp.Handler {
+func PubSubJWTMiddleware(expectedAud string, next nethttp.Handler) nethttp.Handler {
 	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		auth := r.Header.Get("Authorization")
 		if len(auth) < 7 || auth[:7] != "Bearer " {
@@ -159,7 +160,11 @@ func PubSubJWTMiddleware(next nethttp.Handler) nethttp.Handler {
 			httpError(w, 401)
 			return
 		}
-		if !claims.EmailVerified {
+		if claims.Aud != expectedAud {
+			httpError(w, 401)
+			return
+		}
+		if claims.Email == "" || !claims.EmailVerified {
 			httpError(w, 401)
 			return
 		}

@@ -122,7 +122,8 @@ func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *p
 	handler := bearerAuth(cfg.token, h)
 	handler = adapters.CloudflareChallengeMiddleware(handler)
 	if cfg.proto == protocolPubSub {
-		handler = adapters.PubSubJWTMiddleware(handler)
+		endpointURL := cfg.scheme + "://" + cfg.host + ":" + cfg.port + cfg.path
+		handler = adapters.PubSubJWTMiddleware(endpointURL, handler)
 	}
 
 	return handler

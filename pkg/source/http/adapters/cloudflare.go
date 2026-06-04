@@ -27,7 +27,7 @@ func (a *CloudflareAdapter) WriteAck(w nethttp.ResponseWriter, meta map[string]s
 
 func CloudflareChallengeMiddleware(next nethttp.Handler) nethttp.Handler {
 	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
-		if r.Method == "GET" {
+		if r.Method == "GET" && r.URL.Query().Get("validate") == "true" {
 			challenge := r.Header.Get("Ownership-Challenge")
 			if challenge != "" {
 				w.WriteHeader(200)

@@ -26,7 +26,12 @@ func (a *SplunkAdapter) Decode(body []byte) ([]EnvelopeRecord, error) {
 		}
 		rawLine := ""
 		if se.Event != nil {
-			rawLine = string(se.Event)
+			var s string
+			if err := json.Unmarshal(se.Event, &s); err == nil {
+				rawLine = s
+			} else {
+				rawLine = string(se.Event)
+			}
 		}
 		var ts int64
 		if se.Time != nil {
