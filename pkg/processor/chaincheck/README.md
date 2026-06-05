@@ -43,6 +43,21 @@ Parameters passed via `map[string]any` in processor factory.
   2. If `cloudflare_enabled` and IP matches Cloudflare CIDR → `entry.ChainIssue = "cloudflare:ip/cidr"`.
   3. If `bogon_enabled` and IP is bogon → `entry.ChainIssue = "bogon:ip"`.
   4. Always returns `(entry, nil)` — enrichment only, no drop.
+- **Bogon explanation (for operators):** Bogon = non-public / reserved IP addresses that should never appear as the client IP in access logs of a production server. If they do appear, the proxy chain is broken (the `real_ip_header` is misconfigured or not set). Concrete ranges from `bogon.go`:
+  - RFC 1918: `10/8`, `172.16/12`, `192.168/16`
+  - CGNAT (RFC 6598): `100.64/10` — commonly seen when an ISP uses Carrier-Grade NAT
+  - Loopback: `127/8`, `::1/128`
+  - Link-local: `169.254/16`, `fe80::/10`
+  - Documentation: `192.0.2/24`, `198.51.100/24`, `203.0.113/24`
+  - Unspecified/reserved: `0/8`, `240/4`
+  - IPv6 unique local (RFC 4193): `fc00::/7`
+  For an operator: **a bogon is always a problem** with the proxy-chain configuration or a broken `real_ip_header`.
+- **Behaviour on Cloudflare refresh failure (graceful degradation):**
+  - On startup: the fallback list is loaded synchronously in `NewCloudflareChecker` (`cloudflare.go:124`) — `c.nets = parseCIDRList(append(fallbackCloudflareV4, fallbackCloudflareV6...))`. `IsLoaded()` returns true immediately — it does not wait for the first HTTP request.
+  - In the background: refresh runs on a ticker. If a fetch fails, the error is logged via `utils.Log`, but `nets` are not replaced.
+  - If **all sources are down** (`len(collected)==0`, `cloudflare.go:236-240`): the function `return`s without replacing — the old list is preserved (*"graceful degradation, not empty list"*).
+  - Mechanism: `sync.RWMutex` protects `c.nets` — reads (`Contains`) only block each other (`RLock`), writes (`fetchAll`) are exclusive (`Lock`).
+  - **Conclusion:** on a refresh error, **the old cache is preserved** (fallback or last successful fetch). There is no degradation to an empty list and no blocking of checks.
 - **Cloudflare CIDR Refresh:** Background refresh at configurable interval; sources are HTTP URLs returning CIDR lists.
 - **Checker:** Uses `internal/core/chaincheck.Checker` for actual CIDR matching.
 
