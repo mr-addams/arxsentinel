@@ -192,6 +192,75 @@ context passed to `Run()`.
 
 ---
 
+## Constructors
+
+A single constructor is exposed:
+
+```go
+// NewFileSource creates a new file source that tails path and sends parsed lines downstream.
+// path — absolute path to the log file (e.g. "/var/log/nginx/access.log").
+// p — parser.Parser for log lines; must not be nil.
+// retryInterval — delay between retry attempts on file errors; 0 defaults to 5s.
+// logFn — structured logger; nil defaults to utils.Log.
+func NewFileSource(path string, p parser.Parser, retryInterval time.Duration, logFn func(tag, msg, level string)) (*FileSource, error)
+```
+
+The constructor validates:
+- `path` must be non-empty — empty path returns
+  `"file source: path must not be empty"`.
+- `p` (parser) must not be nil — nil returns
+  `"file source %s: parser must not be nil"`.
+- `retryInterval` — zero or negative values default to `5 * time.Second`.
+- `logFn` — nil values default to `utils.Log`.
+
+The constructor is non-blocking and returns immediately with a fully
+configured instance or an error.
+
+---
+
+## Registration
+
+The plugin is registered in `init()`:
+
+```go
+func init() {
+	pkgsource.Register("file", func(cfg pkgsource.InputConfig, opts pkgsource.BuildOptions) (plugin.Source, error) {
+		return NewFileSource(cfg.Path, opts.Parser, opts.RetryInterval, opts.LogFn)
+	})
+	pkgsource.RegisterManifest("file", (&FileSource{}).Manifest())
+}
+```
+
+The factory extracts `Path` from `InputConfig` (the only mandatory field)
+and `Parser`, `RetryInterval`, `LogFn` from `BuildOptions`. The manifest
+declares the plugin as a `Source` with `InputType: none` and
+`OutputType: structured`, tagged `file`, `tail`, `log-rotation`.
+
+---
+
+## EOF and Cancellation
+
+The source has a single exit path, always clean:
+
+- **Context cancellation** — `ctx.Done()` fires. The `TailReader` goroutine
+  observes the cancelled context and exits. Closing the tailer causes the
+  `lines` channel to be closed. The main `Run()` loop iterates over the
+  remaining buffered lines (the channel is drained), then exits with a
+  `nil` return.
+
+There is no EOF path: unlike `stdin`, a log file never signals EOF in the
+traditional sense — the tailer follows the file indefinitely. There is no
+scanner-error path: the `TailReader` handles file read errors internally by
+retrying after `retryInterval`.
+
+### Close()
+
+`Close()` is a **no-op** on `FileSource`. The `TailReader` lifetime is
+owned by the context passed to `Run()` — cancelling the context is the
+only correct way to stop the source.
+
+---
+
 ## Quick-Start Examples
 
 The following snippets are self-contained, copy-pasteable fragments for
@@ -300,3 +369,24 @@ localised to `source.go`:
 
 The `TailReader` → `Parser` → `out` pipeline is deliberately narrow, so
 most changes stay well under 100 lines.
+
+---
+
+## Dependencies
+
+Standard library:
+
+- `context` — cancellation propagation.
+- `fmt` — error and log message formatting.
+- `sync/atomic` — counters (`linesRead`, `parseErrors`, `dropped`).
+- `time` — `retryInterval` for file retry logic.
+
+Project:
+
+- `internal/core/parser` — `parser.Parser` with
+  `Parse(line) → (*plugin.LogEntry, bool)`.
+- `internal/sys/utils` — `utils.TailReader` (file follow with inotify),
+  `utils.Log` (default logger).
+- `pkg/plugin` — `Source`, `Manifest`, `SourceStats`, `LogEntry`.
+- `pkg/source` — registry (`Register`, `RegisterManifest`, `InputConfig`,
+  `BuildOptions`).

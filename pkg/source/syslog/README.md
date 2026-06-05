@@ -359,6 +359,42 @@ from the metrics endpoint without taking a lock.
 
 ---
 
+## Constructors
+
+A single constructor is exposed:
+
+```go
+// New creates a SyslogSource that listens for syslog messages.
+// addr — URI string: "udp://:5514", "tcp://:514",
+//        "unix:///var/run/arx.sock", "unixgram:///tmp/arx.sock".
+// parser — LineParser for log lines after envelope stripping; must not be nil.
+// logFn — structured logger; nil-safe.
+func New(addr string, parser pkgsource.LineParser, logFn func(string, string, string)) (*SyslogSource, error)
+```
+
+The constructor parses `addr` through `parseAddr()` to extract the Go
+`network` name and `host` value. The following URIs succeed:
+
+| Input                              | network     | host                |
+|------------------------------------|-------------|---------------------|
+| `"udp://:5514"`                    | `"udp"`     | `":5514"`           |
+| `"tcp://127.0.0.1:514"`           | `"tcp"`     | `"127.0.0.1:514"`   |
+| `"unix:///var/run/arx.sock"`      | `"unix"`    | `"/var/run/arx.sock"` |
+| `"unixgram:///tmp/arx.sock"`      | `"unixgram"`| `"/tmp/arx.sock"`    |
+
+Any scheme outside `{udp, tcp, unix, unixgram}` fails at startup with
+`"unknown syslog scheme %q in address %q"`. An empty host (e.g.
+`"udp://"`) is a configuration error.
+
+The `parser` parameter is validated for nil — passing nil returns
+`"syslog source %s: parser must not be nil"`. The constructor itself is
+non-blocking and returns immediately.
+
+> **Примечание:** Registration НЕ добавляем — она уже покрыта в секции
+> How It Works (строки 38–39) и Source Interface (строки 87–93).
+
+---
+
 ## Graceful Shutdown
 
 `Run()` accepts a `context.Context`. When the context is cancelled:
@@ -439,3 +475,23 @@ inputs:
 - **Stale Unix sockets.** The source does not pre-`unlink()` the socket
   path. Remove a stale socket file with `rm -f` before starting
   ArxSentinel if a previous run died uncleanly.
+
+---
+
+## Dependencies
+
+Standard library:
+
+- `bufio` — line scanner for TCP/Unix stream connections.
+- `context` — cancellation propagation.
+- `fmt` — error and log message formatting.
+- `net` — network listeners (`ListenPacket`, `Listen`, `Accept`, `Conn`).
+- `strings` — address parsing (`strings.Cut`).
+- `sync` — `WaitGroup` for joining in-flight `handleConn` goroutines.
+- `sync/atomic` — counters (`linesRead`, `parseErrors`, `dropped`).
+
+Project:
+
+- `pkg/plugin` — `Source`, `Manifest`, `SourceStats`, `LogEntry`.
+- `pkg/source` — registry (`Register`, `RegisterManifest`, `InputConfig`,
+  `BuildOptions`, `LineParser`).

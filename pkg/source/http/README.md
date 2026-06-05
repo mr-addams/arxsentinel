@@ -74,8 +74,7 @@ The handler is assembled as a middleware chain (outer to inner):
    - `adapter.WriteAck(w, meta)` writes the protocol-specific
      acknowledgment.
 
-The server supports graceful shutdown: when the source context is cancelled,
-`server.Shutdown` is invoked with a 5-second timeout.
+Graceful shutdown is handled automatically — see [EOF and Cancellation](#eof-and-cancellation).
 
 ### Pull Mode (`mode: pull`)
 
@@ -485,6 +484,75 @@ from the metrics endpoint without taking a lock.
 
 ---
 
+## Constructors
+
+A single constructor is exposed:
+
+```go
+// New creates an HTTPSource from configuration.
+// cfg — validated input config (addr, protocol, mode, etc.).
+// par — LineParser for raw log lines; must not be nil.
+// logFn — structured logger; safe to pass nil (falls back to utils.Log).
+func New(cfg pkgsource.InputConfig, par pkgsource.LineParser, logFn func(string, string, string)) (*HTTPSource, error)
+```
+
+The constructor parses the input configuration via `parseHTTPConfig()` and
+returns an error if the protocol is unknown or the parser is nil. The caller
+is expected to pass `BuildOptions.Parser` and `BuildOptions.LogFn` — these
+are wired by the registry factory in `init()`.
+
+Unlike `stdin`, there is no test-only constructor: the HTTP source creates
+real network listeners and cannot be unit-tested with an injected reader.
+Integration tests exercise the source through in-process HTTP clients against
+a `httptest.Server` wrapper.
+
+---
+
+## Registration
+
+The plugin is registered in `init()`:
+
+```go
+func init() {
+	pkgsource.Register("http", func(cfg pkgsource.InputConfig, opts pkgsource.BuildOptions) (plugin.Source, error) {
+		return New(cfg, opts.Parser, opts.LogFn)
+	})
+	pkgsource.RegisterManifest("http", (&HTTPSource{}).Manifest())
+}
+```
+
+The factory delegates to `New()` with the stream-level `Parser` and `LogFn`
+from `BuildOptions`. The manifest declares the plugin as a `Source` with
+`InputType: none` and `OutputType: structured`.
+
+---
+
+## EOF and Cancellation
+
+The source has three exit paths, all clean:
+
+- **Push mode: context cancellation** — when `ctx.Done()` fires, a
+  goroutine calls `server.Shutdown` with a 5-second timeout
+  (`context.WithTimeout`). In-flight requests are allowed to drain before
+  the server exits. `ListenAndServe` returns `http.ErrServerClosed`, which
+  `runPush` converts to a `nil` return.
+- **Pull mode: context cancellation** — the select loop observes
+  `<-ctx.Done()` and returns `nil` immediately. No in-flight request is
+  interrupted (the loop waits for the current tick/request to finish
+  before the next `select` iteration; the context check gates the next
+  iteration).
+- **Startup error** — if the push server cannot bind to its address (port
+  in use, TLS cert missing) or the pull client has a bad URL, the error
+  is returned directly from `Run()` without starting any goroutine.
+
+### Close()
+
+`Close()` is a **no-op** on `HTTPSource`. The HTTP server/listener lifetime
+is owned by the `Run()` context — cancellation of the context triggers
+`server.Shutdown`, which is the only correct way to stop the server.
+
+---
+
 ## Quick-Start Examples
 
 The following snippets are self-contained, copy-pasteable fragments for
@@ -639,3 +707,26 @@ the request pipeline.
 The interface and surrounding code paths are deliberately narrow so the
 change set for a new adapter typically stays below 200 lines, including
 tests.
+
+---
+
+## Dependencies
+
+Standard library:
+
+- `context` — cancellation propagation.
+- `crypto/subtle` — constant-time token comparison (`bearerAuth`).
+- `crypto/tls` — TLS certificate loading for HTTPS.
+- `encoding/json` — JSON encoding for ACK/error responses.
+- `fmt` — error and log message formatting.
+- `net/http` — HTTP server (push) and client (pull).
+- `sync/atomic` — counters (`linesRead`, `parseErrors`, `dropped`).
+- `time` — 5-second shutdown timeout, pull interval ticker.
+
+Project:
+
+- `pkg/plugin` — `Source`, `Manifest`, `SourceStats`, `LogEntry`.
+- `pkg/source` — registry (`Register`, `RegisterManifest`, `InputConfig`,
+  `BuildOptions`, `LineParser`).
+- `pkg/source/http/adapters` — `Adapter`, `EnvelopeRecord`, and all
+  nine protocol adapters.
