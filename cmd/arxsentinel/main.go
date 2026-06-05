@@ -97,19 +97,19 @@ import (
 	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
 	_ "github.com/mr-addams/arxsentinel/pkg/executor/mikrotik"
 	_ "github.com/mr-addams/arxsentinel/pkg/executor/nginx"
+	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	_ "github.com/mr-addams/arxsentinel/pkg/processor"
-	pkgsinkfile "github.com/mr-addams/arxsentinel/pkg/sink/file"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/exec"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/file"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/http"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/syslog"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/stdin"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 	_ "github.com/mr-addams/arxsentinel/pkg/sink/exec"
+	pkgsinkfile "github.com/mr-addams/arxsentinel/pkg/sink/file"
 	_ "github.com/mr-addams/arxsentinel/pkg/sink/sentinel"
 	_ "github.com/mr-addams/arxsentinel/pkg/sink/stdout"
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/exec"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/file"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/http"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/stdin"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/syslog"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -124,21 +124,21 @@ var version = "dev"
 // Shared is passed by value — SharedResources fields are pointers, so the copy is cheap
 // and any nil-check in processLine correctly reflects the state at pipeline construction.
 type PipelineContext struct {
-	StreamName     string        // YAML: streams[].name, "" — stream identifier for metrics/logs. Consumer: metrics, processLine
-	PipelineName   string        // YAML: pipelines[].name, "" — pipeline identifier. Consumer: metrics
-	processedCount *atomic.Int64  // Internal — per-pipeline counter, owned by runPipeline. Consumer: stats goroutine
-	threatCount    *atomic.Int64  // Internal — per-pipeline threat counter, owned by runPipeline. Consumer: stats goroutine
-	Tracker        *state.Tracker // YAML: state.tracker_gc_interval, 5m — IP state storage. Consumer: processLine (line 1200)
-	Scorer         *scorer.Scorer // Internal — scoring engine built from detectors. Consumer: processLine (line 1220)
-	Sinks          []plugin.Sink  // YAML: streams[].outputs — threat output destinations. Consumer: processLine (line 1248)
-	Executors      []plugin.Executor // YAML: executors[].name — NCS source consumers. Consumer: N/A (top-level, not used by processLine)
-	Matcher        *whitelist.Matcher // YAML: whitelist.ip_whitelist, cidr_whitelist, ua_whitelist, path_whitelist — early-exit rules. Consumer: processLine
-	Verifier       *whitelist.Verifier // Internal — rDNS/fDNS bot verification. Consumer: processLine (line 1178)
-	FakeBotScore   int            // YAML: whitelist.fake_bot_score, 50 — penalty applied before scoring. Consumer: processLine (line 1213)
-	DNSVerifyTimeout time.Duration // YAML: whitelist.dns_verify_timeout, 2s — per-request DNS timeout. Consumer: processLine (line 1177)
-	Shared         SharedResources // Internal — chain checker + warnings writer (nil when disabled). Consumer: processLine (line 1152)
-	SourceName     string        // Internal — ThreatEvent metadata, warnings file. Consumer: ThreatEvent, WarningsWriter
-	SourceType     string        // Internal — ThreatEvent metadata ("file"|"stdin"). Consumer: ThreatEvent, metrics
+	StreamName       string              // YAML: streams[].name, "" — stream identifier for metrics/logs. Consumer: metrics, processLine
+	PipelineName     string              // YAML: pipelines[].name, "" — pipeline identifier. Consumer: metrics
+	processedCount   *atomic.Int64       // Internal — per-pipeline counter, owned by runPipeline. Consumer: stats goroutine
+	threatCount      *atomic.Int64       // Internal — per-pipeline threat counter, owned by runPipeline. Consumer: stats goroutine
+	Tracker          *state.Tracker      // YAML: state.tracker_gc_interval, 5m — IP state storage. Consumer: processLine (line 1200)
+	Scorer           *scorer.Scorer      // Internal — scoring engine built from detectors. Consumer: processLine (line 1220)
+	Sinks            []plugin.Sink       // YAML: streams[].outputs — threat output destinations. Consumer: processLine (line 1248)
+	Executors        []plugin.Executor   // YAML: executors[].name — NCS source consumers. Consumer: N/A (top-level, not used by processLine)
+	Matcher          *whitelist.Matcher  // YAML: whitelist.ip_whitelist, cidr_whitelist, ua_whitelist, path_whitelist — early-exit rules. Consumer: processLine
+	Verifier         *whitelist.Verifier // Internal — rDNS/fDNS bot verification. Consumer: processLine (line 1178)
+	FakeBotScore     int                 // YAML: whitelist.fake_bot_score, 50 — penalty applied before scoring. Consumer: processLine (line 1213)
+	DNSVerifyTimeout time.Duration       // YAML: whitelist.dns_verify_timeout, 2s — per-request DNS timeout. Consumer: processLine (line 1177)
+	Shared           SharedResources     // Internal — chain checker + warnings writer (nil when disabled). Consumer: processLine (line 1152)
+	SourceName       string              // Internal — ThreatEvent metadata, warnings file. Consumer: ThreatEvent, WarningsWriter
+	SourceType       string              // Internal — ThreatEvent metadata ("file"|"stdin"). Consumer: ThreatEvent, metrics
 }
 
 // SharedResources holds singleton dependencies shared across all streams.
@@ -452,6 +452,17 @@ func main() {
 		}
 	}()
 
+	// ── Pre-register Named Channel Switch queues with non-default backends ─────────────
+	// Pre-registration lets a YAML `queue: { type: bbolt, ... }` win over the sink's
+	// later AttachWriter call (fan-in refcount++ on existing names). Sources without
+	// `queue:` take the legacy path: the sink creates its own MemoryQueue on first
+	// AttachWriter. Failure is fatal — silently falling back to memory would surprise
+	// the operator after a config error.
+	if err := preRegisterExecutorQueues(&cfg); err != nil {
+		utils.Log("STARTUP", "executor queue pre-registration: "+err.Error(), "error")
+		os.Exit(1)
+	}
+
 	// ── Start executor goroutines (top-level autonomous, Flow #042) ───────────────────────
 	// Executors are built from cfg.Executors and connect to Named Channel Switch sources
 	// that are registered by sentinel-threat sinks inside stream pipelines (T5).
@@ -741,8 +752,6 @@ func runPipeline(
 
 // ── TrackerGroup helpers ───────────────────────────────────────────────────────────────
 
-
-
 // buildTrackerGroups creates one *state.Tracker per unique tracker group in the stream.
 // Called from: runStream (line 514).
 // Non-blocking.
@@ -860,7 +869,7 @@ func buildPipelineDetectors(cfg config.Config, pipeCfg config.PipelineConfig, sh
 			specs[name] = pkgdetector.DetectorConfig{
 				Enabled: dc.Enabled,
 				Params:  dc.Params,
-				Exec:    dc.Exec,  // exec plugin binary path (empty for built-in detectors)
+				Exec:    dc.Exec, // exec plugin binary path (empty for built-in detectors)
 			}
 		}
 	}
@@ -983,10 +992,10 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 			return nil, fmt.Errorf("input %q: %w", in.Type, err)
 		}
 		src, err := pkgsource.Build(in.Type, pkgsource.InputConfig{
-			Type: in.Type,
-			Path: in.Path,
-			Exec: in.Exec,  // NEW
-			Addr: in.Addr,
+			Type:          in.Type,
+			Path:          in.Path,
+			Exec:          in.Exec, // NEW
+			Addr:          in.Addr,
 			Mode:          in.Mode,
 			URL:           in.URL,
 			HTTPPath:      in.HTTPPath,
@@ -1008,6 +1017,99 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 		sources = append(sources, src)
 	}
 	return sources, nil
+}
+
+// preRegisterExecutorQueues pre-registers each executor source that has a queue:
+// section with its declared backend (bbolt/redis) and verifies that every
+// pre-registered name is referenced by at least one sentinel-threat output in
+// the pipeline.
+//
+// Without the wiring check, a typo in an executor source name silently creates
+// a pre-registered backend queue (never written to) while the sink creates a
+// fresh MemoryQueue on first AttachWriter. Events then flow into memory
+// instead of the intended bbolt/redis backend, with no error surfaced. This
+// function returns a fail-fast error in that case.
+//
+// Sources without queue: are skipped (legacy MemoryQueue path inside the sink
+// cannot drift from the executor's source list).
+//
+// Other failure modes also return errors: bbolt file open failure, unreachable
+// Redis, unknown queue type. All are configuration errors that should abort
+// startup rather than silently degrade.
+//
+// IMPORTANT: validation runs FIRST and must complete cleanly across the whole
+// config before any RegisterSinkFromConfig call touches the Named Channel
+// Switch. Otherwise a partial registration (one source OK, the next missing
+// its sink) would leave an orphan bbolt/redis queue sitting in hubQueues with
+// no way to clean it up — the operator would have to restart the process to
+// free it.
+func preRegisterExecutorQueues(cfg *config.Config) error {
+	available := collectSentinelSinkNames(cfg)
+
+	// Phase 1: wiring check. Read-only — no side effects on the channel switch.
+	for _, ec := range cfg.Executors {
+		for _, src := range ec.Sources {
+			if src.Queue == nil {
+				continue
+			}
+			if _, ok := available[src.Name]; !ok {
+				return fmt.Errorf(
+					"executor %q source %q (queue=%s) is not referenced by any sentinel-threat output; "+
+						"available sink names: [%s]",
+					ec.Name, src.Name, src.Queue.Type, strings.Join(sortedKeys(available), ", "),
+				)
+			}
+		}
+	}
+
+	// Phase 2: registration. Only reached when every queue: section matches an
+	// existing sentinel-threat output, so hubQueues is consistent post-call.
+	for _, ec := range cfg.Executors {
+		for _, src := range ec.Sources {
+			if src.Queue == nil {
+				continue
+			}
+			if err := pkgexecutor.RegisterSinkFromConfig(src.Name, src.Queue); err != nil {
+				return fmt.Errorf("executor %q source %q: %w", ec.Name, src.Name, err)
+			}
+		}
+	}
+	return nil
+}
+
+// collectSentinelSinkNames returns the set of channel names declared by
+// sentinel-threat outputs in any of the three config locations (top-level,
+// per-stream, per-pipeline). Non-sentinel-threat outputs and empty names are
+// ignored — the sentinel sink rejects empty names at construction time.
+func collectSentinelSinkNames(cfg *config.Config) map[string]struct{} {
+	set := make(map[string]struct{})
+	add := func(outputs []config.SinkConfig) {
+		for _, out := range outputs {
+			if out.Type != "sentinel-threat" || out.Name == "" {
+				continue
+			}
+			set[out.Name] = struct{}{}
+		}
+	}
+	add(cfg.Outputs)
+	for _, s := range cfg.Streams {
+		add(s.Outputs)
+		for _, p := range s.Pipelines {
+			add(p.Outputs)
+		}
+	}
+	return set
+}
+
+// sortedKeys returns the keys of m in deterministic order. Used for stable
+// error messages.
+func sortedKeys(m map[string]struct{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // startExecutors builds all top-level executors from config and launches them as goroutines.
