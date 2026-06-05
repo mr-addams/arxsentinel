@@ -1,3 +1,7 @@
+// ====== Module: Splunk HTTP Event Collector Adapter ======
+// Implements Splunk HEC JSON format (newline-delimited JSON events).
+// Parses time field (unix_float) and event field from each JSON object.
+
 package adapters
 
 import (
@@ -9,13 +13,20 @@ import (
 	nethttp "net/http"
 )
 
+// SplunkAdapter implements Adapter for Splunk HTTP Event Collector.
+// Expects newline-delimited JSON: {"time":123.456,"event":"log line"}
+// Called from: buildPushHandler() during HTTP request processing.
 type SplunkAdapter struct{}
 
+// splunkEvent represents Splunk HEC event format.
 type splunkEvent struct {
-	Time  *float64        `json:"time"`
-	Event json.RawMessage `json:"event"`
+	Time  *float64        `json:"time"`  // YAML: Unix timestamp as float (e.g., 1234.567)
+	Event json.RawMessage `json:"event"` // YAML: log event content (string or object)
 }
 
+// Decode parses Splunk HEC JSON, extracts time and event from each line.
+// Uses streaming decoder for memory efficiency with large payloads.
+// Called from: buildPushHandler() to process Splunk HEC payloads.
 func (a *SplunkAdapter) Decode(body []byte) ([]EnvelopeRecord, error) {
 	var records []EnvelopeRecord
 	dec := json.NewDecoder(bytes.NewReader(body))
@@ -42,6 +53,9 @@ func (a *SplunkAdapter) Decode(body []byte) ([]EnvelopeRecord, error) {
 	return records, nil
 }
 
+// WriteAck writes JSON acknowledgment with success status.
+// Required by Splunk HEC — client waits for this response.
+// Non-blocking. Called from: buildPushHandler() after successful Decode().
 func (a *SplunkAdapter) WriteAck(w nethttp.ResponseWriter, meta map[string]string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)

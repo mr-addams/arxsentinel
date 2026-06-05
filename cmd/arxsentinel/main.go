@@ -2,17 +2,26 @@
 //   Component initialization, pipeline assembly, daemon startup.
 //
 //   WHAT IS HERE:
-//     - main() — config loading, logger initialization, metrics server, stream launch
-//     - runStream() — per-stream orchestrator: builds TrackerGroup map, launches runPipeline goroutines
-//     - runPipeline() — isolated processing unit: sources, detectors, sinks, whitelist, scorer
-//     - buildPipelineDetectors() — builds detector list from registry (pkg/detector)
-//     - processLine() — processes a single log line
-//     - writePID() / removePID() — daemon PID file management
+//     - main()                          — config loading, logger init, metrics server, stream launch
+//     - runStream()                     — per-stream orchestrator: builds TrackerGroup map, launches runPipeline goroutines
+//     - runPipeline()                   — isolated processing unit: sources, detectors, sinks, whitelist, scorer
+//     - buildPipelineDetectors()        — builds detector list from registry (pkg/detector)
+//     - buildSources() / buildSinks()   — plugin list construction from pipeline config
+//     - buildParserForInput()           — parser selection based on profile/input configuration
+//     - startExecutors()                — top-level autonomous goroutines (NCH-based, Flow #042)
+//     - processLine()                   — core pipeline: whitelist → tracking → scoring → sinks
+//     - sdNotify()                      — systemd readiness notification
+//     - metricsHandler()                — Prometheus metrics endpoint with optional bcrypt auth
+//     - activeEnvOverrides()            — diagnostics: logs which ARXSENTINEL_* vars are active
+//     - writePID() / removePID()        — daemon PID file management
 //
 //   WHAT IS NOT HERE:
 //     - Business logic (core/)
 //     - Configuration structures (sys/config)
 //     - Logging (sys/utils)
+//     - Cleanup subcommand (cleanup.go)
+//     - Validation subcommand (validate.go)
+//     - License subcommand (license.go)
 //
 //   PIPELINE ARCHITECTURE (Flow #4–6, #13):
 //     TailReader → lines chan → whitelist.Matcher (custom IP/UA → early return)
@@ -115,21 +124,21 @@ var version = "dev"
 // Shared is passed by value — SharedResources fields are pointers, so the copy is cheap
 // and any nil-check in processLine correctly reflects the state at pipeline construction.
 type PipelineContext struct {
-	StreamName       string           // empty string for single-stream (backward compat)
-	PipelineName     string           // empty string for auto-wrapped legacy pipelines
-	processedCount   *atomic.Int64    // per-pipeline counter, owned by runPipeline
-	threatCount      *atomic.Int64    // per-pipeline threat counter, owned by runPipeline
-	Tracker          *state.Tracker
-	Scorer           *scorer.Scorer
-	Sinks            []plugin.Sink     // ordered list of output sinks for this stream
-	Executors        []plugin.Executor // ordered list of executors run after sinks; nil when none configured
-	Matcher          *whitelist.Matcher
-	Verifier         *whitelist.Verifier
-	FakeBotScore     int
-	DNSVerifyTimeout time.Duration
-	Shared           SharedResources  // chain checker, warnings writer — nil-safe when disabled
-	SourceName       string           // first source name, e.g. "file:/path" — for ThreatEvent metadata
-	SourceType       string           // "file" | "stdin" — for ThreatEvent metadata
+	StreamName     string        // YAML: streams[].name, "" — stream identifier for metrics/logs. Consumer: metrics, processLine
+	PipelineName   string        // YAML: pipelines[].name, "" — pipeline identifier. Consumer: metrics
+	processedCount *atomic.Int64  // Internal — per-pipeline counter, owned by runPipeline. Consumer: stats goroutine
+	threatCount    *atomic.Int64  // Internal — per-pipeline threat counter, owned by runPipeline. Consumer: stats goroutine
+	Tracker        *state.Tracker // YAML: state.tracker_gc_interval, 5m — IP state storage. Consumer: processLine (line 1200)
+	Scorer         *scorer.Scorer // Internal — scoring engine built from detectors. Consumer: processLine (line 1220)
+	Sinks          []plugin.Sink  // YAML: streams[].outputs — threat output destinations. Consumer: processLine (line 1248)
+	Executors      []plugin.Executor // YAML: executors[].name — NCH source consumers. Consumer: N/A (top-level, not used by processLine)
+	Matcher        *whitelist.Matcher // YAML: whitelist.ip_whitelist, cidr_whitelist, ua_whitelist, path_whitelist — early-exit rules. Consumer: processLine
+	Verifier       *whitelist.Verifier // Internal — rDNS/fDNS bot verification. Consumer: processLine (line 1178)
+	FakeBotScore   int            // YAML: whitelist.fake_bot_score, 50 — penalty applied before scoring. Consumer: processLine (line 1213)
+	DNSVerifyTimeout time.Duration // YAML: whitelist.dns_verify_timeout, 2s — per-request DNS timeout. Consumer: processLine (line 1177)
+	Shared         SharedResources // Internal — chain checker + warnings writer (nil when disabled). Consumer: processLine (line 1152)
+	SourceName     string        // Internal — ThreatEvent metadata, warnings file. Consumer: ThreatEvent, WarningsWriter
+	SourceType     string        // Internal — ThreatEvent metadata ("file"|"stdin"). Consumer: ThreatEvent, metrics
 }
 
 // SharedResources holds singleton dependencies shared across all streams.
@@ -487,6 +496,9 @@ func main() {
 }
 
 // runStream is the per-stream orchestrator.
+// Called from: main (line 454).
+// Non-blocking.
+//
 // It builds a TrackerGroup map, starts GC goroutines for each shared tracker, then
 // launches one runPipeline() goroutine per pipeline. Returns when all pipelines exit.
 func runStream(
@@ -531,6 +543,8 @@ func runStream(
 }
 
 // runPipeline runs a single isolated pipeline within a stream.
+// Called from: runStream (line 528).
+// Non-blocking.
 //
 // Owns its Sources, Sinks, Whitelist Matcher/Verifier, and Scorer.
 // Shares the Tracker from trackers[resolveTrackerGroup(pipeCfg)] with sibling pipelines
@@ -730,7 +744,8 @@ func runPipeline(
 
 
 // buildTrackerGroups creates one *state.Tracker per unique tracker group in the stream.
-// Pipelines that share the same group see the same IP state (shared tracker).
+// Called from: runStream (line 514).
+// Non-blocking.
 func buildTrackerGroups(cfg config.Config, streamCfg config.StreamConfig) map[string]*state.Tracker {
 	groups := make(map[string]*state.Tracker)
 	for _, pipeCfg := range streamCfg.Pipelines {
@@ -743,6 +758,9 @@ func buildTrackerGroups(cfg config.Config, streamCfg config.StreamConfig) map[st
 }
 
 // resolveTrackerGroup returns the effective tracker group key for a pipeline.
+// Called from: runStream (line 527), buildTrackerGroups (line 737).
+// Non-blocking.
+//
 // An empty TrackerGroup means isolated: use the pipeline name as the implicit group.
 // Auto-wrapped pipelines (Name="", TrackerGroup="") all resolve to "" and share one tracker,
 // which is the pre-Task-3 behavior for single-pipeline streams.
@@ -754,6 +772,9 @@ func resolveTrackerGroup(pipeCfg config.PipelineConfig) string {
 }
 
 // pipelineLogTag returns a human-readable log prefix that includes stream and pipeline names.
+// Called from: runPipeline (lines 561, 664, 668, 674, 716, 720), main (lines 280, 285).
+// Non-blocking.
+//
 // Examples: "stream \"nginx\" pipeline \"api\"", "stream \"nginx\"" (unnamed pipeline).
 func pipelineLogTag(streamName, pipelineName string) string {
 	if streamName == "" && pipelineName == "" {
@@ -766,6 +787,9 @@ func pipelineLogTag(streamName, pipelineName string) string {
 }
 
 // findPipelineCfg locates the pipeline config in a (possibly updated) stream config.
+// Called from: runPipeline (line 684).
+// Non-blocking.
+//
 // Named pipelines are matched by name; unnamed (auto-wrapped) by index.
 // Returns fallback when the pipeline is not found (e.g. removed from config on SIGHUP).
 func findPipelineCfg(streamCfg config.StreamConfig, name string, idx int, fallback config.PipelineConfig) config.PipelineConfig {
@@ -786,14 +810,22 @@ func findPipelineCfg(streamCfg config.StreamConfig, name string, idx int, fallba
 // ── Detector construction ──────────────────────────────────────────────────────────────
 
 // detectorShared adapts main.go's SharedResources to pkgdetector.SharedResources.
+// Called from: bridgeShared (line 804).
+// Non-blocking.
+//
 // *blocklist.Manager satisfies pkgdetector.Matcher implicitly (has Match(list, text) bool).
 type detectorShared struct {
 	blocklist pkgdetector.Matcher
 }
 
+// Blocklist implements pkgdetector.SharedResources. Called from: bridgeShared (line 804).
+// Non-blocking.
 func (s detectorShared) Blocklist() pkgdetector.Matcher { return s.blocklist }
 
 // bridgeShared wraps SharedResources into the pkgdetector.SharedResources interface.
+// Called from: buildPipelineDetectors (line 816).
+// Non-blocking.
+//
 // Returns nil when shared.BlocklistManager is nil so detector factories (badbot) get
 // a nil SharedResources and fall back to noopMatcher instead of a non-nil interface
 // wrapping a nil *blocklist.Manager (which would panic on MatchResult).
@@ -805,6 +837,8 @@ func bridgeShared(shared SharedResources) pkgdetector.SharedResources {
 }
 
 // buildPipelineDetectors constructs the detector list for a pipeline.
+// Called from: runPipeline (lines 607, 705).
+// Non-blocking.
 //
 // If pipeCfg.Detectors is nil (auto-wrapped legacy pipeline), all registered detectors
 // are built from the global cfg.Detectors section — preserving backward compat so that
@@ -852,6 +886,9 @@ func buildPipelineDetectors(cfg config.Config, pipeCfg config.PipelineConfig, sh
 }
 
 // globalDetectorSpecs converts the global cfg.Detectors section into the registry format.
+// Called from: buildPipelineDetectors (line 821).
+// Non-blocking.
+//
 // Used by buildPipelineDetectors for auto-wrapped legacy pipelines (Detectors == nil).
 // Preserves all user-configured values so existing configs behave identically after Task 3.
 func globalDetectorSpecs(cfg config.Config) map[string]pkgdetector.DetectorConfig {
@@ -904,6 +941,9 @@ func globalDetectorSpecs(cfg config.Config) map[string]pkgdetector.DetectorConfi
 }
 
 // buildParserForInput returns the parser for a specific InputConfig.
+// Called from: buildSources (line 940).
+// Non-blocking.
+//
 // Priority: global parser.profile → input.parser → global parser.log_format → combined.
 func buildParserForInput(cfg config.Config, input config.InputConfig) (parser.Parser, error) {
 	// Global profile overrides everything — same precedence as the old buildParser.
@@ -930,7 +970,8 @@ func buildParserForInput(cfg config.Config, input config.InputConfig) (parser.Pa
 }
 
 // buildSources constructs the Source list from an explicit inputs slice.
-// Called from runPipeline with pipeCfg.Inputs — each pipeline owns its inputs directly.
+// Called from: runPipeline (line 574).
+// Non-blocking.
 func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Source, error) {
 	if len(inputs) == 0 {
 		return nil, fmt.Errorf("no inputs configured")
@@ -970,6 +1011,9 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 }
 
 // startExecutors builds all top-level executors from config and launches them as goroutines.
+// Called from: main (line 464).
+// Non-blocking.
+//
 // Each executor connects to Named Channel Hub sources and runs until ctx is cancelled
 // or the source channel is closed. Must be called after all NCH sinks are registered.
 //
@@ -1006,7 +1050,8 @@ func startExecutors(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup)
 }
 
 // buildSinks constructs the Sink list from an explicit outputs slice.
-// Called from runPipeline with pipeCfg.Outputs — each pipeline owns its sinks directly.
+// Called from: runPipeline (line 579).
+// Non-blocking.
 func buildSinks(outputs []config.SinkConfig) ([]plugin.Sink, error) {
 	if len(outputs) == 0 {
 		return nil, fmt.Errorf("no outputs configured")
@@ -1029,6 +1074,9 @@ func buildSinks(outputs []config.SinkConfig) ([]plugin.Sink, error) {
 }
 
 // sourceMetadata returns the name and type of the first source for ThreatEvent metadata.
+// Called from: runPipeline (line 593).
+// Non-blocking.
+//
 // With multiple sources merged, Phase 1 uses the first source's identity as the stream label.
 func sourceMetadata(sources []plugin.Source) (name, sourceType string) {
 	if len(sources) == 0 {
@@ -1042,6 +1090,9 @@ func sourceMetadata(sources []plugin.Source) (name, sourceType string) {
 }
 
 // sinkTypeFromName extracts the sink type string from a sink Name() value.
+// Called from: processLine (line 1253).
+// Non-blocking.
+//
 // "file:/path/…" → "file", "stdout" → "stdout".
 func sinkTypeFromName(name string) string {
 	if strings.HasPrefix(name, "file:") {
@@ -1051,6 +1102,9 @@ func sinkTypeFromName(name string) string {
 }
 
 // streamSourceLabel returns a short human-readable source description for startup logging.
+// Called from: main (lines 280, 285).
+// Non-blocking.
+//
 // Checks pipelines when top-level inputs are absent (post-migration configs).
 func streamSourceLabel(streamCfg config.StreamConfig, cfg config.Config) string {
 	inputs := streamCfg.Inputs
@@ -1071,6 +1125,8 @@ func streamSourceLabel(streamCfg config.StreamConfig, cfg config.Config) string 
 }
 
 // parseFlagInputs converts the --input flag value into an InputConfig slice.
+// Called from: main (line 230).
+// Non-blocking.
 func parseFlagInputs(flagVal string, cfg config.Config) []config.InputConfig {
 	switch flagVal {
 	case "stdin":
@@ -1081,6 +1137,9 @@ func parseFlagInputs(flagVal string, cfg config.Config) []config.InputConfig {
 }
 
 // parseFlagOutputs converts the --output flag value into a SinkConfig slice.
+// Called from: main (line 234).
+// Non-blocking.
+//
 // Accepted forms: "stdout", "stdout,json", "stdout,fail2ban".
 func parseFlagOutputs(flagVal string) ([]config.SinkConfig, error) {
 	parts := strings.SplitN(flagVal, ",", 2)
@@ -1100,6 +1159,9 @@ func parseFlagOutputs(flagVal string) ([]config.SinkConfig, error) {
 // ========================== PID file ====================================================
 
 // writePID writes the current process PID to a file.
+// Called from: main (line 263).
+// Non-blocking.
+//
 // Used for: kill -HUP $(cat pid) and logrotate postrotate (Task 7.1).
 // On error — the caller logs a warn and continues: PID is not critical.
 func writePID(path string) error {
@@ -1107,15 +1169,18 @@ func writePID(path string) error {
 }
 
 // removePID removes the PID file when the daemon exits.
+// Called from: main (line 266) via defer.
+// Non-blocking.
+//
 // Called via defer — fires on any return from main, including SIGTERM.
 // Error on removal is intentionally ignored: the file may have been deleted manually by an operator.
 func removePID(path string) {
 	_ = os.Remove(path)
 }
 
-// processLine processes a single parsed log entry:
-//
-//	whitelist early-exit → tracking → fake bot penalty → scoring → sinks.
+// processLine processes a single parsed log entry: whitelist early-exit → tracking → fake bot penalty → scoring → sinks.
+// Called from: runPipeline (lines 660, 723).
+// Non-blocking.
 //
 // The entry is already parsed by the Source — processLine receives a *plugin.LogEntry.
 //
@@ -1260,6 +1325,9 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 // ========================== systemd notify ===============================================
 
 // sdNotify sends a state notification to systemd via NOTIFY_SOCKET.
+// Called from: main (line 472).
+// Non-blocking.
+//
 // Called once after all streams start: READY=1 marks the service active,
 // STATUS= appears in `systemctl status` output.
 // No-op when NOTIFY_SOCKET is absent (non-systemd environments, tests).
@@ -1284,6 +1352,9 @@ func sdNotify(state string) {
 // ========================== Metrics auth ================================================
 
 // metricsHandler wraps promhttp.Handler with optional bcrypt basic auth.
+// Called from: main (line 324).
+// Non-blocking.
+//
 // If username is empty, auth is disabled and the handler is returned as-is.
 // Both username and password are always compared to prevent timing side-channels.
 func metricsHandler(username, passwordHash string) http.Handler {
@@ -1310,6 +1381,9 @@ func metricsHandler(username, passwordHash string) http.Handler {
 // ========================== Env var diagnostics =========================================
 
 // activeEnvOverrides returns sorted ARXSENTINEL_* keys found in the environment.
+// Called from: main (line 291).
+// Non-blocking.
+//
 // Used at startup to log which env var overrides are active — helps users verify
 // their env vars were read. Misspelled or unsupported keys produce no log but also
 // no error; the user can spot them missing from the output.

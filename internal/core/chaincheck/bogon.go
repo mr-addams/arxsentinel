@@ -59,15 +59,17 @@ var bogonCIDRs = []string{
 // BogonChecker checks whether an IP belongs to non-routable / reserved ranges.
 // Static list — no goroutine, no network fetch required.
 // Thread-safe: nets slice is immutable after construction.
+//
+// Internal — not in config. Consumer: checker.go (ChainGuard).
 type BogonChecker struct {
-	// nets is compiled once in NewBogonChecker and never modified afterwards.
-	// No mutex needed because immutability is the thread-safety guarantee here.
-	nets []*net.IPNet
+	nets []*net.IPNet // Internal — compiled bogon CIDRs, immutable. Consumer: Contains.
 }
 
 // NewBogonChecker compiles the static bogon CIDR list and returns a ready checker.
-// Panics if any CIDR in the hardcoded list is malformed — this would be a programming error,
-// not a runtime condition.
+// Panics if any CIDR in the hardcoded list is malformed — programming error.
+//
+// Called from: checker.go (ChainGuard initialization).
+// Non-blocking.
 func NewBogonChecker() *BogonChecker {
 	nets := make([]*net.IPNet, 0, len(bogonCIDRs))
 	for _, cidr := range bogonCIDRs {

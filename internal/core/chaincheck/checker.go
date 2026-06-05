@@ -23,36 +23,43 @@ import (
 )
 
 // CheckResult describes a single chain-integrity finding.
-// Kind is always "cloudflare" or "bogon".
+//
+// Internal — not in config. Consumer: pipeline (main.go), WarningsWriter.
 type CheckResult struct {
-	Kind        string // "cloudflare" | "bogon"
-	IP          string
-	MatchedCIDR string // e.g. "104.16.0.0/13"
+	Kind        string // Internal — "cloudflare" or "bogon". Consumer: formatChainWarningLine (warnings.go).
+	IP          string // Internal — IP address from log entry. Consumer: formatChainWarningLine (warnings.go).
+	MatchedCIDR string // Internal — matched CIDR, e.g. "104.16.0.0/13". Consumer: formatChainWarningLine (warnings.go).
 }
 
 // BogonConfig holds the enable flag for bogon detection.
-// The CIDR list is static and does not need additional configuration.
+//
+// YAML: chain_guard.bogon.enabled. Consumer: NewChecker, Update.
 type BogonConfig struct {
-	Enabled bool
+	Enabled bool // YAML: chain_guard.bogon.enabled, default false. Consumer: NewChecker, Update.
 }
 
 // Config is the top-level configuration for the Checker.
+//
+// YAML: chain_guard.*. Consumer: NewChecker, Update.
 type Config struct {
-	Cloudflare CloudflareConfig
-	Bogon      BogonConfig
+	Cloudflare CloudflareConfig // YAML: chain_guard.cloudflare.*. Consumer: NewChecker, Update.
+	Bogon      BogonConfig      // YAML: chain_guard.bogon.*. Consumer: NewChecker, Update.
 }
 
 // Checker orchestrates CloudflareChecker and BogonChecker.
 // Either sub-checker may be nil when the corresponding feature is disabled in Config.
+//
+// YAML: chain_guard.*. Consumer: pipeline (main.go).
 type Checker struct {
-	// cf is nil when Config.Cloudflare.Enabled == false.
-	cf *CloudflareChecker
-	// bogon is nil when Config.Bogon.Enabled == false.
-	bogon *BogonChecker
+	cf    *CloudflareChecker // YAML: chain_guard.cloudflare.enabled, nil if disabled. Consumer: Check, Update, Close.
+	bogon *BogonChecker      // YAML: chain_guard.bogon.enabled, nil if disabled. Consumer: Check, Update.
 }
 
 // NewChecker creates a Checker and starts the CloudflareChecker refresh goroutine if enabled.
 // The goroutine stops when ctx is cancelled.
+//
+// Called from: cmd/arxsentinel.main (pipeline setup).
+// Non-blocking.
 func NewChecker(ctx context.Context, cfg Config) *Checker {
 	c := &Checker{}
 	if cfg.Cloudflare.Enabled {
@@ -68,6 +75,9 @@ func NewChecker(ctx context.Context, cfg Config) *Checker {
 // Cloudflare check runs first — a broken Cloudflare chain is the more critical finding.
 // Returns nil if both checks pass (ip looks like a legitimate routable address).
 // Returns nil if ip is empty or unparseable — never panics.
+//
+// Called from: pipeline (main.go, pre-detector check).
+// Non-blocking.
 func (c *Checker) Check(ip string) *CheckResult {
 	if ip == "" {
 		return nil
@@ -102,6 +112,9 @@ func (c *Checker) Check(ip string) *CheckResult {
 
 // Update replaces config and restarts internal goroutines.
 // Called on SIGHUP to apply new configuration without restarting the process.
+//
+// Called from: SIGHUP handler (main.go).
+// Non-blocking.
 func (c *Checker) Update(ctx context.Context, cfg Config) {
 	// CloudflareChecker requires goroutine management — delegate to it.
 	if cfg.Cloudflare.Enabled {
@@ -129,6 +142,9 @@ func (c *Checker) Update(ctx context.Context, cfg Config) {
 }
 
 // Close stops internal goroutines. Safe to call on a nil Checker.
+//
+// Called from: graceful shutdown (main.go).
+// Non-blocking.
 func (c *Checker) Close() {
 	if c == nil {
 		return

@@ -1,3 +1,6 @@
+// ========================== pkg/sink — registry tests ===================================
+//   Tests: Register, Build (by name and unknown), Names, duplicate-panic.
+
 package sink
 
 import (

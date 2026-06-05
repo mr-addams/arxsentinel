@@ -1,5 +1,13 @@
-// ========================== Package mikrotik ==========================
-//   MikroTik RouterOS executor — blocks IPs via firewall address-list REST API.
+// ====== Module: mikrotik — executor ==============================================
+//   MikroTikExecutor manages a RouterOS firewall address-list via the REST API.
+//   Receives ThreatEvents, accumulates them in a buffer, and flushes to RouterOS
+//   (with TTL-based sweep, dedup, min-level filtering).
+//
+//   WHAT IS HERE:
+//     MikroTikExecutor struct, Run loop, flush, sweep, syncExisting
+//
+//   WHAT IS NOT HERE:
+//     HTTP client (client.go), config parsing (config.go), registration (register.go)
 
 package mikrotik
 

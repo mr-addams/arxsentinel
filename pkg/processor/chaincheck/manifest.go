@@ -1,6 +1,10 @@
 // ========================== pkg/processor/chaincheck — Manifest ============================
 //   Manifest returns the processor's identity and data contract for the pipeline framework.
 
+// ====== Module: chaincheck — manifest =========================================
+//   Plugin identity and data contract for the chaincheck processor.
+//   Declares: Role=Processor, Input=TypeStructured, Output=TypeStructured.
+
 package chaincheck
 
 import "github.com/mr-addams/arxsentinel/pkg/plugin"

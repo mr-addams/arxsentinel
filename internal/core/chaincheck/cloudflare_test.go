@@ -1,3 +1,6 @@
+// ========================== internal/core/chaincheck — cloudflare_test.go =====
+//   Tests for CloudflareChecker: API fetching, error handling, range updates.
+
 package chaincheck
 
 import (

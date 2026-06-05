@@ -1,14 +1,12 @@
-// ========================== Package cloudflare ==========================
+// ====== Module: cloudflare — config ===============================================
 //   Configuration for Cloudflare API communication — parses from YAML/JSON
 //   with validation of required fields and time.Duration handling.
 //
 //   WHAT IS HERE:
-//     - Config — configuration struct with json and yaml tags
-//     - parseConfig — parsing from map[string]interface{} with defaults and validation
+//     Config struct with json/yaml tags, parseConfig function
 //
 //   WHAT IS NOT HERE:
-//     - HTTP client implementation (see client.go)
-//     - IP list sync logic (see syncer.go)
+//     HTTP client implementation (client.go), executor logic (executor.go), registration (register.go)
 
 package cloudflare
 

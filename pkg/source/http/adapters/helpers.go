@@ -1,3 +1,6 @@
+// ====== Module: Adapter Helpers ======
+// Shared utilities for adapters: timestamp normalization and map copying.
+
 package adapters
 
 import (
@@ -7,6 +10,10 @@ import (
 	"time"
 )
 
+// normalizeTimestamp converts various timestamp formats to Unix nanoseconds.
+// Supports: unix_ns, unix_ns_str, unix_ms, rfc3339, unix_float.
+// Returns error if format is unknown or value is out of range.
+// Called from: adapter Decode() methods to normalize vendor timestamps.
 func normalizeTimestamp(val string, kind string) (int64, error) {
 	switch kind {
 	case "unix_ns":
@@ -49,6 +56,9 @@ func normalizeTimestamp(val string, kind string) (int64, error) {
 	}
 }
 
+// copyMap creates a shallow copy of a string map.
+// Returns nil if input is nil. Used to safely copy metadata.
+// Non-blocking. Called from: adapter WriteAck() methods for meta manipulation.
 func copyMap(m map[string]string) map[string]string {
 	if m == nil {
 		return nil

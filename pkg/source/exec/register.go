@@ -1,3 +1,7 @@
+// ========================== pkg/source/exec — registration =====================================
+//   Registers the "exec" source type with the global source registry.
+//   Delegates to execplugin.NewSource for actual implementation.
+
 package exec
 
 import (

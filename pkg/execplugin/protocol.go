@@ -31,45 +31,48 @@ const ProtoVersion = "1"
 // LogEntryJSON is the wire representation of plugin.LogEntry for JSON transport.
 // Flat struct mirrors plugin.LogEntry field-by-field to avoid requiring
 // external plugin authors to import internal packages.
+// Consumer: protocol.go (DetectRequest.entry), source.go (SourceEntry.entry).
 type LogEntryJSON struct {
-	RemoteAddr string `json:"remote_addr"`
-	RemoteUser string `json:"remote_user"`
-	Time       string `json:"time"` // RFC3339
-	Method     string `json:"method"`
-	RawURI     string `json:"raw_uri"`
-	Path       string `json:"path"`
-	Query      string `json:"query"`
-	Protocol   string `json:"protocol"`
-	Status     int    `json:"status"`
-	BytesSent  int64  `json:"bytes_sent"`
-	Referer    string `json:"referer"`
-	UserAgent  string `json:"user_agent"`
-	RealIP     string `json:"real_ip"`
+	RemoteAddr string `json:"remote_addr"` // YAML: — parsed from log line. Consumer: protocol.logEntryToJSON
+	RemoteUser string `json:"remote_user"` // YAML: — parsed from log line. Consumer: protocol.logEntryToJSON
+	Time       string `json:"time"`        // YAML: — RFC3339 parsed timestamp. Consumer: protocol.logEntryToJSON
+	Method     string `json:"method"`      // YAML: — HTTP method (GET, POST, etc.). Consumer: protocol.logEntryToJSON
+	RawURI     string `json:"raw_uri"`     // YAML: — full URI before parsing. Consumer: protocol.logEntryToJSON
+	Path       string `json:"path"`        // YAML: — URL path component. Consumer: protocol.logEntryToJSON
+	Query      string `json:"query"`       // YAML: — URL query string. Consumer: protocol.logEntryToJSON
+	Protocol   string `json:"protocol"`     // YAML: — HTTP protocol version. Consumer: protocol.logEntryToJSON
+	Status     int    `json:"status"`      // YAML: — HTTP response status code. Consumer: protocol.logEntryToJSON
+	BytesSent  int64  `json:"bytes_sent"`  // YAML: — bytes sent to client. Consumer: protocol.logEntryToJSON
+	Referer    string `json:"referer"`     // YAML: — HTTP Referer header. Consumer: protocol.logEntryToJSON
+	UserAgent  string `json:"user_agent"`  // YAML: — User-Agent header. Consumer: protocol.logEntryToJSON
+	RealIP     string `json:"real_ip"`     // YAML: — real client IP from X-Forwarded-For. Consumer: protocol.logEntryToJSON
 }
 
 // IPViewJSON is the wire representation of plugin.IPView for JSON transport.
 // Captures a point-in-time snapshot of per-IP state.
+// Consumer: protocol.go (DetectRequest.state).
 type IPViewJSON struct {
-	IP            string   `json:"ip"`
-	TotalRequests int      `json:"total_requests"`
-	Requests404   int      `json:"requests_404"`
-	RecentPaths   []string `json:"recent_paths"`
-	ApproxRate    float64  `json:"approx_rate_1m"` // requests/second over 1 minute window
+	IP            string   `json:"ip"`             // YAML: — client IP address. Consumer: protocol.ipViewToJSON
+	TotalRequests int      `json:"total_requests"` // YAML: — cumulative request count. Consumer: protocol.ipViewToJSON
+	Requests404   int      `json:"requests_404"`   // YAML: — count of 404 responses. Consumer: protocol.ipViewToJSON
+	RecentPaths   []string `json:"recent_paths"`   // YAML: — last N request paths (scored). Consumer: protocol.ipViewToJSON
+	ApproxRate    float64  `json:"approx_rate_1m"` // YAML: — requests/second over 1 minute window. Consumer: protocol.ipViewToJSON
 }
 
 // ThreatEventJSON is the wire representation of plugin.ThreatEvent for JSON transport.
 // Includes all fields needed to route the event to external systems.
+// Consumer: protocol.go (WriteRequest.event, ExecuteRequest.event).
 type ThreatEventJSON struct {
-	Timestamp  string   `json:"timestamp"` // RFC3339
-	Level      string   `json:"level"`
-	Stream     string   `json:"stream"`
-	Source     string   `json:"source"`
-	SourceType string   `json:"source_type"`
-	IP         string   `json:"ip"`
-	Score      int      `json:"score"`
-	Modules    []string `json:"modules"`
-	Reason     string   `json:"reason"`
-	RawLine    string   `json:"raw_line,omitempty"` // omit if empty
+	Timestamp  string   `json:"timestamp"`   // YAML: — RFC3339 event timestamp. Consumer: protocol.threatEventToJSON
+	Level      string   `json:"level"`       // YAML: — threat level (WARN/THREAT). Consumer: protocol.threatEventToJSON
+	Stream     string   `json:"stream"`      // YAML: — stream name. Consumer: protocol.threatEventToJSON
+	Source     string   `json:"source"`      // YAML: — source path. Consumer: protocol.threatEventToJSON
+	SourceType string   `json:"source_type"` // YAML: — source type (file, etc.). Consumer: protocol.threatEventToJSON
+	IP         string   `json:"ip"`          // YAML: — client IP address. Consumer: protocol.threatEventToJSON
+	Score      int      `json:"score"`        // YAML: — accumulated threat score. Consumer: protocol.threatEventToJSON
+	Modules    []string `json:"modules"`     // YAML: — triggered detector names. Consumer: protocol.threatEventToJSON
+	Reason     string   `json:"reason"`      // YAML: — human-readable reason. Consumer: protocol.threatEventToJSON
+	RawLine    string   `json:"raw_line,omitempty"` // YAML: — original log line (omit if empty). Consumer: protocol.threatEventToJSON
 }
 
 // DetectRequest is sent to a detector plugin stdin.
@@ -140,6 +143,7 @@ type SourceEntry struct {
 }
 
 // logEntryToJSON converts a plugin.LogEntry to wire format for JSON transport.
+// Called from: Detector.SendRequest, Source.SendStart. Non-blocking.
 func logEntryToJSON(e *plugin.LogEntry) LogEntryJSON {
 	return LogEntryJSON{
 		RemoteAddr: e.RemoteAddr,
@@ -161,6 +165,7 @@ func logEntryToJSON(e *plugin.LogEntry) LogEntryJSON {
 // logEntryFromJSON converts wire format back to plugin.LogEntry.
 // Time parsing failure returns a zero-valued time with error suppression
 // to ensure robust recovery from malformed timestamps.
+// Called from: Detector.SendRequest, Source.run. Non-blocking.
 func logEntryFromJSON(j LogEntryJSON) *plugin.LogEntry {
 	t, _ := time.Parse(time.RFC3339, j.Time)
 	return &plugin.LogEntry{
@@ -220,6 +225,7 @@ func ipViewToJSON(sv plugin.IPView) IPViewJSON {
 
 // ParseDetectResponse parses a JSON response from a detector plugin.
 // Returns an error if JSON is malformed.
+// Called from: Detector.SendRequest. Non-blocking.
 func ParseDetectResponse(data []byte) (DetectResponse, error) {
 	var resp DetectResponse
 	err := json.Unmarshal(data, &resp)
@@ -229,6 +235,7 @@ func ParseDetectResponse(data []byte) (DetectResponse, error) {
 // ParseWriteAck parses an optional JSON ack from a sink plugin.
 // Returns an error if JSON is malformed. Absence of ack is not an error
 // — the caller should assume OK if no response is sent.
+// Called from: Sink.SendRequest. Non-blocking.
 func ParseWriteAck(data []byte) (WriteAck, error) {
 	var ack WriteAck
 	err := json.Unmarshal(data, &ack)

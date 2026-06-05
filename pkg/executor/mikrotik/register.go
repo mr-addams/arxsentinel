@@ -1,7 +1,7 @@
-// ========================== Package mikrotik ==========================
+// ====== Module: mikrotik — registration ==========================================
 //   Self-registration of MikroTikExecutor in pkg/executor registry.
 //   Uses init() to register the executor factory, enabling discovery
-//   without a central import list — same pattern as pkg/executor/cloudflare.
+//   without a central import list.
 
 package mikrotik
 

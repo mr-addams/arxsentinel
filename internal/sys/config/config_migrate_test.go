@@ -1,3 +1,6 @@
+// ========================== internal/sys/config — config_migrate_test.go ====
+//   Tests for config migration: version upgrade, defaults, backward compat.
+
 package config_test
 
 import (

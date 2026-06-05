@@ -41,23 +41,21 @@ import (
 
 // Scorer aggregates detector results and issues a verdict per IP.
 //
-// Evaluate call lifecycle:
-//   1. Apply decay to the accumulated IP score
-//   2. Run each detector, collect DetectResult
-//   3. Sum scores, update score in IPState via ScoreAccess
-//   4. Compare against thresholds → return threat level
+// YAML: scorer.* — score thresholds and observation window.
+// Consumer: pipeline (main.go Evaluate call).
 type Scorer struct {
-	alertThreshold int
-	banThreshold   int
-	window         time.Duration
-	detectors      []detector.Detector
+	alertThreshold int                   // YAML: scorer.alert_threshold, default 50 — threshold for WARN level. Consumer: levelFor.
+	banThreshold   int                   // YAML: scorer.ban_threshold, default 80 — threshold for THREAT level. Consumer: levelFor.
+	window         time.Duration         // YAML: scorer.observation_window, default 5m — decay window. Consumer: Evaluate, applyDecay.
+	detectors      []detector.Detector   // YAML: detectors.* — active detector list. Consumer: Evaluate.
 
-	logFn func(tag, msg, level string) // injected from main.go
+	logFn func(tag, msg, level string) // Internal — debug logger injected from main.go. Consumer: Evaluate.
 }
 
 // NewScorer creates a Scorer from config.
-// detectors is passed empty in Flow #2 — first real detectors will be added in Flow #4.
-// logFn is passed from main.go — core/ does not import sys/utils directly.
+//
+// Called from: cmd/arxsentinel.main (pipeline setup).
+// Non-blocking.
 func NewScorer(cfg config.ScoringConfig, detectors []detector.Detector, logFn func(tag, msg, level string)) *Scorer {
 	return &Scorer{
 		alertThreshold: cfg.AlertThreshold,
@@ -143,6 +141,9 @@ func (s *Scorer) Evaluate(sv detector.ScoreAccess, entry *parser.LogEntry, exemp
 
 // levelFor returns the threat level for the given score.
 // Check order: high threshold first (THREAT), then low (WARN).
+//
+// Called from: Evaluate.
+// Non-blocking.
 func (s *Scorer) levelFor(score int) string {
 	switch {
 	case score >= s.banThreshold:
@@ -157,13 +158,11 @@ func (s *Scorer) levelFor(score int) string {
 // ========================== Decay =====================================================
 
 // applyDecay computes the score after linear decay.
+// Formula: decayed = current × max(0, 1 − elapsed/window).
+// When lastUpdate.IsZero() (first request from IP) or elapsed ≥ window — returns 0.
 //
-// Formula: decayed = current × max(0, 1 − elapsed/window)
-//   elapsed = now − lastUpdate  (now is passed from Evaluate — single point in time)
-//   window  = scoring.observation_window from config
-//
-// When lastUpdate.IsZero() (first request from IP) — returns 0.
-// When elapsed ≥ window — returns 0 (score fully dissipated).
+// Internal — no config mapping. Consumer: Evaluate.
+// Non-blocking.
 func applyDecay(current int, lastUpdate time.Time, window time.Duration, now time.Time) int {
 	if current <= 0 || lastUpdate.IsZero() || window <= 0 {
 		return 0

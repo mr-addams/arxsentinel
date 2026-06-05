@@ -53,6 +53,9 @@ func (d *bruteforceDetector) Name() string { return "bruteforce" }
 //
 // min_requests reduces sensitivity during the initial data accumulation phase:
 // the first few requests from an IP with 100% 404s are noise, not an anomaly.
+// Called from: pipeline.processEntries.
+//
+// Non-blocking.
 func (d *bruteforceDetector) Detect(sv plugin.IPView, _ *plugin.LogEntry) plugin.DetectResult {
 	total := sv.GetTotalRequests()
 	if total < d.minRequests {

@@ -1,3 +1,6 @@
+// ========================== pkg/executor — namedhub_test.go ===============
+//   Tests for NamedHub: named executor registration, lookup, lifecycle.
+
 package executor_test
 
 import (

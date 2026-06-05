@@ -59,6 +59,9 @@ func newRateFactory(cfg DetectorConfig, _ SharedResources) (plugin.Detector, err
 func (d *rateDetector) Name() string { return "rate" }
 
 // Detect checks whether the IP's request rate exceeds the configured threshold.
+// Called from: pipeline.processEntries.
+//
+// Non-blocking.
 func (d *rateDetector) Detect(sv plugin.IPView, _ *plugin.LogEntry) plugin.DetectResult {
 	if sv.ApproxRate(d.window) <= d.thresholdRPS {
 		return plugin.DetectResult{}

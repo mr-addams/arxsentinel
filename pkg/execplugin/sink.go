@@ -28,12 +28,13 @@ import (
 // the plugin to process events asynchronously.
 //
 // Concurrent Write() calls are protected by a mutex on the ManagedProcess.
-type ExecSink struct {
-	name          string
-	proc          *ManagedProcess
-	eventsWritten atomic.Int64
-	errors        atomic.Int64
-}
+	// ExecSink holds a persistent ManagedProcess — recreated only on Close+reopen.
+	type ExecSink struct {
+		name          string            // Internal — sink identifier. Consumer: Name
+		proc          *ManagedProcess  // Internal — plugin subprocess. Consumer: Write, Close
+		eventsWritten atomic.Int64     // Internal — successful writes. Consumer: Stats
+		errors        atomic.Int64     // Internal — write failures. Consumer: Stats
+	}
 
 // NewSink spawns the plugin binary at execPath and returns an ExecSink.
 // The subprocess is started immediately and kept alive for all Write() calls.
@@ -43,6 +44,9 @@ type ExecSink struct {
 // (JSON-encoded). If params is empty or nil, the environment variable is not set.
 //
 // Returns an error if the binary is not executable or cannot be started.
+// Called from: pipeline.newSink.
+//
+// Blocking — NewManagedProcess is called synchronously.
 func NewSink(execPath string) (*ExecSink, error) {
 	proc, err := NewManagedProcess(context.Background(), execPath)
 	if err != nil {
@@ -56,6 +60,7 @@ func NewSink(execPath string) (*ExecSink, error) {
 }
 
 // Name returns the sink name, prefixed with "exec:".
+// Called from: pipeline.runSink (logging). Non-blocking.
 func (s *ExecSink) Name() string {
 	return s.name
 }
@@ -65,6 +70,9 @@ func (s *ExecSink) Name() string {
 //
 // If the write fails, the error counter is incremented and an error is returned.
 // If the write succeeds, the events counter is incremented.
+// Called from: pipeline.runSink.
+//
+// Non-blocking.
 func (s *ExecSink) Write(event plugin.ThreatEvent) error {
 	s.proc.Lock()
 	defer s.proc.Unlock()

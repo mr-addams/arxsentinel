@@ -1,3 +1,7 @@
+// ====== Module: mikrotik — manifest ===============================================
+//   Plugin identity and data contract for the MikroTik executor.
+//   Declares: Role=Executor, Input=TypeScoredEvent, Output=TypeNone.
+
 package mikrotik
 
 import (

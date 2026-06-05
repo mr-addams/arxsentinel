@@ -1,3 +1,7 @@
+// ====== Module: GCP Pub/Sub JWT Authentication ======
+// Validates OIDC JWT tokens from GCP Pub/Sub push subscriptions.
+// Fetches JWKS from Google, validates RS256 signatures, and checks claims.
+
 package adapters
 
 import (
@@ -15,39 +19,48 @@ import (
 	nethttp "net/http"
 )
 
+// jwksCache caches Google JWKS with TTL to avoid repeated fetches.
 type jwksCache struct {
-	keys   []jwkKey
-	expiry time.Time
+	keys   []jwkKey    // YAML: RSA public keys from Google JWKS endpoint
+	expiry time.Time   // YAML: cache expiry (1 hour TTL)
 }
 
+// jwkKey represents an RSA public key from Google JWKS.
 type jwkKey struct {
-	Kid string `json:"kid"`
-	N   string `json:"n"`
-	E   string `json:"e"`
-	Kty string `json:"kty"`
+	Kid string `json:"kid"` // YAML: key ID for matching JWT header
+	N   string `json:"n"`   // YAML: base64.RawURLEncoding modulus
+	E   string `json:"e"`   // YAML: base64.RawURLEncoding exponent
+	Kty string `json:"kty"` // YAML: key type (always "RSA")
 }
 
+// jwksResponse wraps JWKS key array.
 type jwksResponse struct {
 	Keys []jwkKey `json:"keys"`
 }
 
+// jwtHeader represents JWT header (before payload).
 type jwtHeader struct {
-	Kid string `json:"kid"`
-	Alg string `json:"alg"`
+	Kid string `json:"kid"` // YAML: key ID to find matching JWK
+	Alg string `json:"alg"` // YAML: algorithm (must be RS256)
 }
 
+// jwtClaims represents JWT payload claims for Pub/Sub validation.
 type jwtClaims struct {
-	Aud           string `json:"aud"`
-	Exp           int64  `json:"exp"`
-	Email         string `json:"email"`
-	EmailVerified bool   `json:"email_verified"`
+	Aud           string `json:"aud"`            // YAML: audience (must match endpoint URL)
+	Exp           int64  `json:"exp"`            // YAML: expiration timestamp (must be in future)
+	Email         string `json:"email"`          // YAML: service account email (must be non-empty)
+	EmailVerified bool   `json:"email_verified"` // YAML: must be true for valid service accounts
 }
 
+// jwksStore is a sync.Map cache for JWKS responses (key: "jwks").
 var (
 	jwksStore    sync.Map
 	jwksFetchURL = "https://www.googleapis.com/oauth2/v3/certs"
 )
 
+// getJWKS fetches Google JWKS, returns cached version if still valid.
+// Returns error if fetch fails or response is malformed.
+// Called from: PubSubJWTMiddleware() during JWT validation.
 func getJWKS() ([]jwkKey, error) {
 	val, ok := jwksStore.Load("jwks")
 	if ok {
@@ -83,6 +96,8 @@ func getJWKS() ([]jwkKey, error) {
 	return keysCopy, nil
 }
 
+// findJWK searches for a key by kid in the JWKS array.
+// Returns nil if not found. Non-blocking. Called from: PubSubJWTMiddleware().
 func findJWK(keys []jwkKey, kid string) *jwkKey {
 	for _, k := range keys {
 		if k.Kid == kid {
@@ -92,6 +107,9 @@ func findJWK(keys []jwkKey, kid string) *jwkKey {
 	return nil
 }
 
+// jwkToPublicKey converts JWK RSA key to crypto.PublicKey.
+// Handles variable-length exponent encoding (1 or 3 bytes).
+// Returns error if N or E decode fails. Non-blocking.
 func jwkToPublicKey(jk *jwkKey) (*rsa.PublicKey, error) {
 	nBytes, err := base64.RawURLEncoding.DecodeString(jk.N)
 	if err != nil {
@@ -116,6 +134,10 @@ func jwkToPublicKey(jk *jwkKey) (*rsa.PublicKey, error) {
 	return &rsa.PublicKey{N: n, E: e}, nil
 }
 
+// PubSubJWTMiddleware validates OIDC JWT from GCP Pub/Sub push subscriptions.
+// Checks: Bearer token present, RS256 algorithm, valid signature, audience, email verified.
+// Adds middleware before pubsub handler in buildPushHandler().
+// Returns 401 if any validation fails. Non-blocking.
 func PubSubJWTMiddleware(expectedAud string, next nethttp.Handler) nethttp.Handler {
 	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		auth := r.Header.Get("Authorization")
@@ -204,6 +226,9 @@ func PubSubJWTMiddleware(expectedAud string, next nethttp.Handler) nethttp.Handl
 	})
 }
 
+// splitJWT splits JWT into header.payload.signature parts.
+// Manual parse to avoid string splitting on last segment ambiguity.
+// Non-blocking. Called from: PubSubJWTMiddleware().
 func splitJWT(token string) []string {
 	parts := make([]string, 0, 3)
 	start := 0
@@ -217,6 +242,7 @@ func splitJWT(token string) []string {
 	return parts
 }
 
+// httpError writes HTTP error response. Non-blocking.
 func httpError(w nethttp.ResponseWriter, code int) {
 	nethttp.Error(w, "Unauthorized", code)
 }

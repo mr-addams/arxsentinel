@@ -1,3 +1,6 @@
+// ========================== pkg/execplugin — detector_test.go ==============
+//   Tests for ExecDetector: Manifest, CanHandle, lifecycle.
+
 package execplugin
 
 import (

@@ -1,3 +1,6 @@
+// ========================== pkg/execplugin — sink_test.go =================
+//   Tests for ExecSink: Manifest, Sink, lifecycle.
+
 package execplugin
 
 import (

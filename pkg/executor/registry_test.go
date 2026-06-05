@@ -1,3 +1,6 @@
+// ========================== pkg/executor — registry_test.go ==============
+//   Tests for ExecutorRegistry: registration, lookup, error handling.
+
 package executor_test
 
 import (

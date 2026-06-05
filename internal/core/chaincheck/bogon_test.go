@@ -1,3 +1,6 @@
+// ========================== internal/core/chaincheck — bogon_test.go ==========
+//   Tests for BogonChecker: RFC1918, public IP detection.
+
 package chaincheck
 
 import (

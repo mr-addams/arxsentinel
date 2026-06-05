@@ -34,33 +34,36 @@ import (
 // parsed LogEntry values to the pipeline.
 type SyslogSource struct {
 	name    string
-	network string // "udp", "tcp", "unixgram", "unix"
-	host    string // ":5514" or "/var/run/arx.sock"
-	par     pkgsource.LineParser
+	network string   // "udp", "tcp", "unixgram", "unix"
+	host    string   // ":5514" or "/var/run/arx.sock"
+	parser  pkgsource.LineParser // parses extracted log line into *plugin.LogEntry
 	logFn   func(tag, msg, level string)
 
-	linesRead   atomic.Int64
-	parseErrors atomic.Int64
-	dropped     atomic.Int64
+	linesRead   atomic.Int64 // total messages received
+	parseErrors atomic.Int64 // messages that failed to parse
+	dropped     atomic.Int64 // entries dropped due to full channel buffer
 }
 
 // New creates a SyslogSource. addr is a URI-like string parsed by parseAddr:
 //
 //	"udp://:5514", "tcp://:514", "unix:///var/run/arx.sock",
 //	"unixgram:///var/run/arx.sock"
-func New(addr string, par pkgsource.LineParser, logFn func(string, string, string)) (*SyslogSource, error) {
+//
+// Called from: pkg/source registry (init() → Build).
+// Non-blocking — returns immediately with a configured instance or error.
+func New(addr string, parser pkgsource.LineParser, logFn func(string, string, string)) (*SyslogSource, error) {
 	network, host, err := parseAddr(addr)
 	if err != nil {
 		return nil, fmt.Errorf("syslog source: %w", err)
 	}
-	if par == nil {
+	if parser == nil {
 		return nil, fmt.Errorf("syslog source %s: parser must not be nil", addr)
 	}
 	return &SyslogSource{
 		name:    "syslog:" + addr,
 		network: network,
 		host:    host,
-		par:     par,
+		parser:  parser,
 		logFn:   logFn,
 	}, nil
 }
@@ -148,7 +151,7 @@ func (s *SyslogSource) runPacket(ctx context.Context, out chan<- *plugin.LogEntr
 			}
 			continue
 		}
-		entry, ok := s.par.Parse(line)
+		entry, ok := s.parser.Parse(line)
 		if !ok {
 			s.parseErrors.Add(1)
 			continue
@@ -209,7 +212,7 @@ func (s *SyslogSource) handleConn(ctx context.Context, conn net.Conn, out chan<-
 			}
 			continue
 		}
-		entry, ok := s.par.Parse(line)
+		entry, ok := s.parser.Parse(line)
 		if !ok {
 			s.parseErrors.Add(1)
 			continue

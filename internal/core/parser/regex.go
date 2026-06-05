@@ -34,14 +34,19 @@ import (
 var mandatoryGroups = []string{"remote_addr", "time", "request", "status", "bytes_sent"}
 
 // RegexParser implements Parser using a compiled regex with named capture groups.
+//
+// Internal — not exposed via config. Consumer: profiles.go (profile constructors).
 type RegexParser struct {
-	re      *regexp.Regexp
-	indices map[string]int // group name → subexpression index (1-based)
+	re      *regexp.Regexp           // Compiled regex pattern. Consumer: Parse.
+	indices map[string]int           // Internal — group name to subexpression index. Consumer: Parse.
 }
 
 // NewRegexParser compiles pattern and verifies all mandatory named groups are present.
 // Returns an error if the regex is invalid or a mandatory group is missing.
-// Callers (buildParser in main.go) should treat this as a fatal startup error.
+// Callers should treat this as a fatal startup error.
+//
+// Called from: profiles.go (profile constructors).
+// Non-blocking.
 func NewRegexParser(pattern string) (*RegexParser, error) {
 	re, err := regexp.Compile(pattern)
 	if err != nil {
@@ -68,6 +73,9 @@ func NewRegexParser(pattern string) (*RegexParser, error) {
 
 // Parse extracts a LogEntry from a single log line.
 // Returns (nil, false) if the line does not match the pattern.
+//
+// Called from: pipeline (main.go parser loop).
+// Non-blocking.
 func (p *RegexParser) Parse(line string) (*LogEntry, bool) {
 	m := p.re.FindStringSubmatch(line)
 	if m == nil {

@@ -1,3 +1,7 @@
+// ====== Module: cf-api-mock ======
+//   Cloudflare API mock server for integration tests.
+//   Simulates Cloudflare IP Access Rules API (create/delete/list endpoints).
+
 package main
 
 import (

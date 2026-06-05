@@ -1,3 +1,6 @@
+// ========================== internal/core/input — merge_test.go ============
+//   Tests for Merge: multi-source input merging, priority, deduplication.
+
 package input_test
 
 import (

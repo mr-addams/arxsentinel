@@ -1,3 +1,7 @@
+// ====== Module: HTTP Source ======
+// Accepts log events via HTTP/HTTPS in various cloud formats.
+// Supports push (webhook) and pull (polling) modes with protocol-specific adapters.
+
 package http
 
 import (
@@ -10,20 +14,27 @@ import (
 	"github.com/mr-addams/arxsentinel/pkg/source/http/adapters"
 )
 
+// sourceCounters holds runtime statistics for the HTTP source.
+// These are atomically updated by multiple goroutines.
 type sourceCounters struct {
-	linesRead   int64
-	parseErrors int64
-	dropped     int64
+	linesRead   int64 // YAML: linesRead — total log lines received. Consumer: /metrics
+	parseErrors int64 // YAML: parseErrors — failed to parse envelope. Consumer: /metrics
+	dropped     int64 // YAML: dropped — dropped due to body size limit. Consumer: /metrics
 }
 
+// HTTPSource implements plugin.Source for HTTP log ingestion.
+// Manages both push (webhook) and pull (polling) HTTP server modes.
 type HTTPSource struct {
-	name     string
-	cfg      *parsedConfig
-	par      pkgsource.LineParser
-	logFn    func(string, string, string)
-	counters sourceCounters
+	name     string                          // YAML: name — human-readable source name. Consumer: /metrics
+	cfg      *parsedConfig                   // YAML: addr, protocol, mode — runtime config. Consumer: runPush/runPull
+	par      pkgsource.LineParser            // YAML: parser — parses raw log lines. Consumer: runPush/runPull
+	logFn    func(string, string, string)   // YAML: logFn — structured logger function. Consumer: runPush/runPull
+	counters sourceCounters                  // YAML: counters — runtime statistics. Consumer: Stats()
 }
 
+// New creates a new HTTPSource from configuration.
+// Returns error if protocol is unsupported or parser is nil.
+// Called from: pkgsource.Register() during plugin initialization.
 func New(cfg pkgsource.InputConfig, par pkgsource.LineParser, logFn func(string, string, string)) (*HTTPSource, error) {
 	if par == nil {
 		return nil, fmt.Errorf("http source: parser is required")
@@ -40,14 +51,17 @@ func New(cfg pkgsource.InputConfig, par pkgsource.LineParser, logFn func(string,
 	}, nil
 }
 
+// Name returns the source identifier. Non-blocking.
 func (s *HTTPSource) Name() string {
 	return "http"
 }
 
+// Close releases resources. Non-blocking.
 func (s *HTTPSource) Close() error {
 	return nil
 }
 
+// Stats returns current counters for metrics endpoint. Non-blocking.
 func (s *HTTPSource) Stats() plugin.SourceStats {
 	return plugin.SourceStats{
 		LinesRead:   atomic.LoadInt64(&s.counters.linesRead),
@@ -56,6 +70,7 @@ func (s *HTTPSource) Stats() plugin.SourceStats {
 	}
 }
 
+// Manifest declares plugin capabilities to the registry. Non-blocking.
 func (s *HTTPSource) Manifest() plugin.Manifest {
 	return plugin.Manifest{
 		PluginID:      "http",
@@ -67,6 +82,8 @@ func (s *HTTPSource) Manifest() plugin.Manifest {
 	}
 }
 
+// buildAdapter creates the appropriate adapter for the protocol.
+// Factory function — no side effects, no external state. Non-blocking.
 func buildAdapter(proto protocol, cfg *parsedConfig) adapters.Adapter {
 	switch proto {
 	case protocolPlain:
@@ -92,6 +109,9 @@ func buildAdapter(proto protocol, cfg *parsedConfig) adapters.Adapter {
 	}
 }
 
+// Run starts the HTTP source — either push (webhook) or pull (polling).
+// Routes to runPush or runPull based on mode configuration.
+// Called from: plugin exec loop. Non-blocking.
 func (s *HTTPSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
 	adapter := buildAdapter(s.cfg.proto, s.cfg)
 	if s.cfg.mode == "pull" {
@@ -101,6 +121,8 @@ func (s *HTTPSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 	return runPush(ctx, s.cfg, handler)
 }
 
+// init registers this plugin with the source registry.
+// Called from: plugin exec loop during initialization. Non-blocking.
 func init() {
 	pkgsource.Register("http", func(cfg pkgsource.InputConfig, opts pkgsource.BuildOptions) (plugin.Source, error) {
 		return New(cfg, opts.Parser, opts.LogFn)

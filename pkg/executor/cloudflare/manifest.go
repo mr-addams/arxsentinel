@@ -1,4 +1,6 @@
-// ========================== pkg/cloudflare — Manifest =====================================
+// ====== Module: cloudflare — manifest =============================================
+//   Plugin identity and data contract for the Cloudflare executor.
+//   Declares: Role=Executor, Input=TypeScoredEvent, Output=TypeNone.
 
 package cloudflare
 

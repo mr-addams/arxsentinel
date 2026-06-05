@@ -41,11 +41,17 @@ var iso8601Layouts = []string{
 
 // JSONParser parses nginx access log lines in JSON format.
 // Field names are configurable via JSONFieldsConfig to match any nginx log_format.
+//
+// YAML: parser.json — JSON field mapping for nginx JSON log_format.
+// Consumer: parser.NewJSONParser, pipeline (profiles.go).
 type JSONParser struct {
-	fields config.JSONFieldsConfig
+	fields config.JSONFieldsConfig // YAML: parser.json — field key mapping. Consumer: Parse.
 }
 
 // NewJSONParser creates a JSONParser using the provided field mapping.
+//
+// Called from: parser (profiles.go), config loader (internal/sys/config).
+// Non-blocking.
 func NewJSONParser(fields config.JSONFieldsConfig) *JSONParser {
 	return &JSONParser{fields: fields}
 }
@@ -53,6 +59,9 @@ func NewJSONParser(fields config.JSONFieldsConfig) *JSONParser {
 // Parse parses a single JSON-formatted nginx access log line.
 // Returns (entry, true) on success, (nil, false) for invalid or unparseable input.
 // Unknown JSON keys are silently ignored — only the mapped fields are consumed.
+//
+// Called from: pipeline (profiles.go).
+// Non-blocking.
 func (p *JSONParser) Parse(line string) (*LogEntry, bool) {
 	var raw map[string]any
 	if err := json.Unmarshal([]byte(line), &raw); err != nil {
@@ -126,6 +135,8 @@ func (p *JSONParser) Parse(line string) (*LogEntry, bool) {
 // stringField reads a string value from a JSON map by key.
 // Handles both string and numeric JSON values (nginx logs status/bytes as strings or numbers).
 // Returns "" for missing or unsupported types.
+//
+// Internal — no config mapping. Consumer: JSONParser.Parse.
 func stringField(m map[string]any, key string) string {
 	if key == "" {
 		return ""
