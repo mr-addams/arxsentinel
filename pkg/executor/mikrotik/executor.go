@@ -18,6 +18,7 @@ import (
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
+	"github.com/mr-addams/arxsentinel/pkg/dedup"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -38,10 +39,11 @@ func NewMikroTikExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 	client := NewHTTPClient(parsed.Host, parsed.Port, parsed.Username, parsed.Password, parsed.TLSVerify, parsed.CAFile, parsed.UseTLS)
 
 	exec := &MikroTikExecutor{
-		name:   cfg.Name,
-		cfg:    parsed,
-		client: client,
-		banned: make(map[string]banRecord),
+		name:     cfg.Name,
+		cfg:      parsed,
+		client:   client,
+		banned:   make(map[string]banRecord),
+		dedupWin: dedup.NewWindow(parsed.DedupWindow),
 	}
 
 	return exec, nil
@@ -144,9 +146,10 @@ func (e *MikroTikExecutor) Run(ctx context.Context, source plugin.EventSource) e
 				e.stats.skipped.Add(1)
 				continue
 			}
-			// Note: do NOT add to e.banned here — flush() populates it only after a
-			// successful Add. Pre-marking would make flush()'s own banned-check skip
-			// every event, so nothing would ever reach the RouterOS API.
+			// Note: do NOT add to e.banned and do NOT call dedupWin.Mark here.
+			// Both are populated only after a successful Add in flush().
+			// This makes the dedup window flaky-safe: a transient RouterOS
+			// error does not poison the window and the next event will retry.
 			buffer = append(buffer, event)
 			if len(buffer) >= e.cfg.BatchSize {
 				e.flush(ctx, buffer)
@@ -199,11 +202,18 @@ func (e *MikroTikExecutor) flush(ctx context.Context, events []plugin.ThreatEven
 		if err != nil {
 			utils.Log("EXECUTOR", fmt.Sprintf("mikrotik: flush: add %s: %v", ev.IP, err), "error")
 			e.stats.errors.Add(1)
+			// Не помечаем IP в dedup-окне при ошибке — иначе flaky RouterOS
+			// приведёт к тому, что IP будет заблокирован в окне на TTL,
+			// хотя фактически бан не применился. Следующий event дойдёт
+			// снова и попробует заново.
 			continue
 		}
 		e.mu.Lock()
 		e.banned[ev.IP] = banRecord{id: id, addedAt: time.Now()}
 		e.mu.Unlock()
+		// Помечаем IP в dedup-окне только после успешного Add — это и есть
+		// "flaky-safe" семантика, описанная в Task 4.
+		e.dedupWin.Mark(ev.IP)
 		e.stats.executed.Add(1)
 	}
 }
@@ -249,8 +259,19 @@ func (e *MikroTikExecutor) meetsMinLevel(level string) bool {
 	return levelOrder[level] >= levelOrder[e.cfg.MinLevel]
 }
 
-// isDuplicate checks if an IP is already in the banned map.
+// isDuplicate проверяет, банился ли IP в течение dedup-окна или есть ли он
+// в локальной banned-map. Использует чистый Contains (без side-effect):
+// Mark вызывается отдельно из flush() после успешного Add — это делает
+// dedup-окно flaky-safe (RouterOS сбои не отравляют окно).
+//
+// Проверка dedup-окна идёт первой, потому что она покрывает post-sweep
+// сценарий (IP удалён из banned-map по TTL, но ещё в окне) — проверка
+// в обратном порядке привела бы к лишнему API-вызову.
 func (e *MikroTikExecutor) isDuplicate(ip string) bool {
+	if e.dedupWin.Contains(ip) {
+		return true
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	_, exists := e.banned[ip]

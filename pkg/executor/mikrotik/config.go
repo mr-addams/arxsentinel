@@ -57,6 +57,11 @@ type Config struct {
 	BatchSize     int           `json:"batch_size" yaml:"batch_size"`
 	FlushInterval time.Duration `json:"-" yaml:"flush_interval"`
 	MinLevel      string        `json:"min_level" yaml:"min_level"`
+	// DedupWindow skips re-banning an IP within this window after a successful ban.
+	// 0 means disabled (only banned-map dedup is applied). This prevents hammering the
+	// RouterOS API with redundant Add calls when the same attacking IP is reported
+	// repeatedly within a short period.
+	DedupWindow time.Duration `json:"-" yaml:"dedup_window"`
 }
 
 // ++++++++++++++++++++++++++ Defaults ++++++++++++++++++++++++++++++++++++++++
@@ -110,6 +115,23 @@ func parseConfig(raw map[string]any) (Config, error) {
 			cfg.FlushInterval = d
 		case int:
 			cfg.FlushInterval = time.Duration(v) * time.Second
+		}
+	}
+
+	// DedupWindow: optional, default 0 (disabled).
+	// Парсим так же, как flush_interval — отдельная ветка до JSON round-trip,
+	// потому что time.Duration не сериализуется нативно.
+	if dwVal, ok := rawCopy["dedup_window"]; ok {
+		delete(rawCopy, "dedup_window")
+		switch v := dwVal.(type) {
+		case string:
+			d, err := time.ParseDuration(v)
+			if err != nil {
+				return Config{}, fmt.Errorf("mikrotik: parseConfig: invalid dedup_window format %q: %w", v, err)
+			}
+			cfg.DedupWindow = d
+		case int:
+			cfg.DedupWindow = time.Duration(v) * time.Second
 		}
 	}
 

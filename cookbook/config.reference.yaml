@@ -490,6 +490,34 @@ pipeline:
   #     flush_interval: "10s"            # max delay before flushing partial batch
   #     instance_id: ""                  # auto-detected from hostname if empty
   #     comment_extra: ""                # appended to ban comment: "sentinel-<id> <extra>"
+  #     dedup_window: "5m"              # skip re-banning same IP within this window; 0 = disabled
+
+  # ── MikroTik RouterOS address-list executor ───────────────────────────────────────────
+  # - name: mikrotik-blocklist
+  #   type: mikrotik
+  #   sources:
+  #     - name: sentinel-cf            # matches sentinel-threat sink name in streams outputs
+  #       queue:                       # optional per-source queue backend; omit → default in-memory channel
+  #         type: bbolt                # "memory" | "bbolt" | "redis"
+  #         path: /var/lib/arxsentinel/queue-mikrotik.db
+  #         bucket: arxsentinel
+  #   config:
+  #     host: "192.0.2.10"             # RouterOS REST API host
+  #     port: 443                      # default 443
+  #     username: "arxsentinel"        # RouterOS user with API write access
+  #     password: "ROUTEROS_PASSWORD"  # use env/secret in production
+  #     list_name: "arxsentinel_blocklist" # address-list to manage
+  #     sentinel_id: "edge-fw-01"      # used in entry comments; syncExisting filters by this
+  #     min_level: "THREAT"            # INFO | WARN | THREAT — minimum event level to act on
+  #     ttl: "24h"                     # auto-unban after this duration (0 = permanent ban)
+  #     tls_verify: true               # verify RouterOS TLS certificate
+  #     ca_file: ""                    # optional: path to internal CA cert (PEM)
+  #     use_tls: true                  # false → plain HTTP (only for local mock in tests)
+  #     batch_size: 10                 # IPs per RouterOS Add call
+  #     flush_interval: "30s"          # max delay before flushing partial batch
+  #     dedup_window: "5m"             # flaky-safe dedup: skip re-Add of same IP within this window
+  #                                    # after a SUCCESSFUL Add; 0 = disabled. On Add error,
+  #                                    # the IP is NOT marked, so the next event retries.
 
   # ── nginx blocklist executor ──────────────────────────────────────────────────────────
   # - name: nginx-blocklist
@@ -504,6 +532,7 @@ pipeline:
   #     batch_size: 10
   #     flush_interval: 30s
   #     reload_cmd: "nginx -s reload"
+  #     dedup_window: "5m"              # skip re-banning same IP within this window; 0 = disabled
 
 # ── inputs: universal log source syntax / универсальный синтаксис источников ────────────
 #
