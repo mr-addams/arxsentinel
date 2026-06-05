@@ -84,6 +84,74 @@ sinks:
 arxsentinel --config /etc/arxsentinel/config.yaml
 ```
 
+## Inter-Pipeline Routing
+
+This sink is the **output half** of the Named Channel Switch bridge. Any
+`plugin.ThreatEvent` written here is consumed by whichever reader attaches
+to the same name. There is no "inter-pipeline" config knob — the routing
+falls out of the NCS map. Three concrete topologies are supported.
+
+### Pipeline A → Pipeline B (the canonical bridge)
+
+Pipeline A writes ThreatEvents to a named NCS queue; Pipeline B reads them
+back through a `sentinel` source. The two pipelines can be:
+
+- Two `streams[]` blocks inside the same ArxSentinel process (the
+  in-process case, queue backend defaults to `memory`).
+- Two separate ArxSentinel processes pointing at the same `bbolt` file
+  or the same `redis` key.
+
+```yaml
+# pipeline-a.yaml — writes
+outputs:
+  - plugin: sentinel-threat
+    name: inter-pipeline
+    bufferSize: 1000
+```
+
+```yaml
+# pipeline-b.yaml — reads
+inputs:
+  - type: sentinel
+    addr: ncs://inter-pipeline
+```
+
+The sink's `name:` field must equal the source's `addr:` field
+(`ncs://<name>`). The wiring validator
+(`pkg/pipeline/validator.go:ValidateExecutorWiring`) catches a mismatch
+at startup.
+
+### Same-process fan-in
+
+A single pipeline can both write and read the NCS through this sink
+and its sibling `sentinel` source. Useful for routing ThreatEvents
+from one detector chain into a second, specialised chain (e.g. only
+high-score events into a stricter scorer). See
+`pkg/source/sentinel/README.md` for the full example.
+
+### Plugin-only routing chain
+
+A pipeline whose only job is to forward events from one NCS queue to
+another — a routing layer in front of multiple specialised downstream
+pipelines. The pipeline declares a `sentinel` source (reads from NCS)
+and a `sentinel-threat` sink (writes to NCS); the rest of the
+processing chain is empty.
+
+### Operational notes
+
+- The sink **does not own queue lifecycle in the bbolt/redis case**
+  (`AttachWriterWithQueue` is used by `RegisterSinkFromConfig`); the
+  pre-registered queue from `preRegisterExecutorQueues` outlives the
+  sink. The sink still calls `DetachWriter` on `Close()` to decrement
+  the writer refcount, but the queue itself is closed by the last
+  `DetachWriter`, not by this sink in isolation.
+- The default `bufferSize: 0` means "use the executor's default". For
+  pipeline-to-pipeline scenarios where the downstream reader is in a
+  different process, set an explicit `bufferSize` (e.g. `1000`) to
+  avoid blocking the pipeline when the reader briefly falls behind.
+- For the full NCS contract, see `pkg/executor/README.md`. For the
+  queue backend selection guide, see `pkg/executor/queue/README.md`.
+
 ## Dependencies
 
 - `pkg/executor` — AttachWriter, DetachWriter, queue.Queue
