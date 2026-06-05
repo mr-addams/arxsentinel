@@ -586,6 +586,29 @@ pipeline:
 #     tls_cert: /etc/arxsentinel/tls/server.crt
 #     tls_key: /etc/arxsentinel/tls/server.key
 
+  # Sentinel (NCS) input — reads ThreatEvent from the in-process Named Channel Switch.
+  # Sentinel-вход — читает ThreatEvent из Named Channel Switch того же процесса.
+  #
+  # Use case: pipeline A pushes ThreatEvents into the NCS via a `sentinel-threat`
+  # sink (see outputs: below), pipeline B reads them back via this source. The two
+  # YAML files can be one process, two streams[] blocks, or two separate daemons
+  # that share the same NCS queue name.
+  # Сценарий: pipeline A пушит ThreatEvent в NCS через sink `sentinel-threat`
+  # (см. outputs: ниже), pipeline B читает их обратно через этот source. Два YAML
+  # могут быть одним процессом, двумя streams[], или двумя отдельными демонами
+  # с общим именем NCS-очереди.
+  #
+  # The address scheme `ncs://<queue-name>` MUST match the `name:` field of a
+  # `sentinel-threat` sink that is registered first (pipeline startup registers
+  # sinks before constructing sources, and the wiring validator rejects dangling
+  # queues at startup).
+  # Схема адреса `ncs://<queue-name>` ОБЯЗАНА совпадать с полем `name:` уже
+  # зарегистрированного sink'а `sentinel-threat` (startup регистрирует sink'и
+  # до source'ов, и валидатор wiring отвергает висячие очереди).
+  #
+  # - type: sentinel
+  #   addr: ncs://inter-pipeline
+
 # ── outputs: universal threat sink syntax / универсальный синтаксис приёмников ──────────
 #
 # Alternative to output.threat_log — supports multiple sinks, stdout, and exec plugins.
@@ -600,6 +623,14 @@ pipeline:
 #     format: json
 #   - type: sentinel-threat   # feed THREAT events to an executor via Named Channel Switch
 #     name: sentinel-cf       # must match executor sources[].name above
+#   # When a separate `sentinel` source reads from the SAME NCS name (see inputs:
+#   # above, `type: sentinel`, `addr: ncs://<name>`), the two YAMLs form a
+#   # pipeline-to-pipeline bridge: pipeline A writes ThreatEvents here, pipeline B
+#   # reads them via its `sentinel` source and runs them through its own chain.
+#   # Когда отдельный source `sentinel` читает из той же NCS-очереди (см. inputs:
+#   # выше, `type: sentinel`, `addr: ncs://<name>`), два YAML образуют мост
+#   # pipeline-to-pipeline: pipeline A пишет ThreatEvent сюда, pipeline B читает
+#   # их через свой `sentinel` source и пропускает через свою цепочку.
 #   - type: exec              # exec plugin: events written as JSON to plugin stdin
 #     exec: /usr/local/lib/arxsentinel/plugins/my-sink.sh
 

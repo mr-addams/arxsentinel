@@ -108,6 +108,7 @@ import (
 	_ "github.com/mr-addams/arxsentinel/pkg/source/exec"
 	_ "github.com/mr-addams/arxsentinel/pkg/source/file"
 	_ "github.com/mr-addams/arxsentinel/pkg/source/http"
+	_ "github.com/mr-addams/arxsentinel/pkg/source/sentinel"
 	_ "github.com/mr-addams/arxsentinel/pkg/source/stdin"
 	_ "github.com/mr-addams/arxsentinel/pkg/source/syslog"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -219,13 +220,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Fail-fast: validate plugin pipeline compatibility before starting any goroutines.
+	// Fail-fast: validate plugin + executor wiring compatibility before starting
+	// any goroutines. validateConfig() walks the full NCS graph (Decision D2 of
+	// flow 061): spine type-checks, sink type-compatibility, executor channel
+	// resolution и orphan-channel detection (writer-without-reader). On any
+	// failure the daemon refuses to start — better than a silent hang at runtime.
 	if errs := validateConfig(cfg); len(errs) > 0 {
 		for _, e := range errs {
 			fmt.Fprintf(os.Stderr, "arxsentinel: pipeline validation: %s\n", e)
 		}
 		os.Exit(1)
 	}
+	fmt.Fprintf(os.Stderr, "arxsentinel: pipeline validation: OK\n")
 
 	// --input / --output flags override the config I/O sections entirely.
 	// When either flag is present, cfg.Streams is replaced by a single CLI-driven stream.
