@@ -78,8 +78,9 @@ restart.
 - **Back-pressure is strict.** `Push` returns `ErrQueueFull`
   immediately if the buffer is full and the context has not been
   cancelled. The `pkg/sink/sentinel/` sink treats this as a silent
-  drop and increments its `Dropped` counter. Tune `bufferSize` to the
-  expected burst size.
+  drop and increments its `Dropped` counter. The buffer is fixed
+  at the package's `DefaultBufferSize` (1000) and is not exposed
+  via `QueueConfig` — see the package source for the constant.
 
 ---
 
@@ -117,13 +118,14 @@ per executor (or per NCS channel name).
 
 ### When it bites
 
-- **Disk fills up.** The bucket is append-only until `Pop` calls
-  `deleteAndAdvance`. If consumers fall behind, the file grows
+- **Disk fills up.** The bucket is append-only until `Pop` removes
+  the claimed key and advances the read pointer atomically via the
+  write goroutine. If consumers fall behind, the file grows
   monotonically. Monitor `Len()` and provision enough disk.
-- **100 ms poll on `Pop`.** The reader polls the file every 100 ms
-  for new events — cheap, but it sets a floor on `Pop` latency.
-  This is by design (see `bbolt.go:Pop`); a busy-wait alternative
-  would pin a CPU.
+- **100 ms poll on `Pop`.** When the queue is empty, `Pop` retries
+  every 100 ms — cheap, but it sets a floor on latency for the
+  first event after an idle period. If events arrive continuously,
+  `Pop` claims them without waiting for the tick.
 - **No multi-process writes.** A second process opening the same
   file fails the bbolt lock. If you need horizontal scale, switch
   to `redis`.
@@ -191,7 +193,9 @@ type QueueConfig struct {
 ```
 
 ```yaml
-# Memory — default. buffer is optional, falls back to 1000.
+# Memory — default. Buffer size is not configurable via YAML;
+# QueueConfig has no `buffer`/`bufferSize` field. The buffer is
+# the package's default (DefaultBufferSize = 1000).
 executors:
   - name: cf-block
     type: cloudflare
@@ -199,8 +203,6 @@ executors:
       - name: cf-stream
         queue:
           type: memory
-          memory:
-            buffer: 1000
 
   # Bbolt — persistent single-host queue.
   - name: cf-block
@@ -209,9 +211,8 @@ executors:
       - name: cf-stream
         queue:
           type: bbolt
-          bbolt:
-            path: /var/lib/arxsentinel/cf-stream.db
-            bucket: q
+          path: /var/lib/arxsentinel/cf-stream.db
+          bucket: q
 
   # Redis — distributed, multi-replica.
   - name: cf-block
@@ -220,9 +221,8 @@ executors:
       - name: cf-stream
         queue:
           type: redis
-          redis:
-            url: redis://redis.svc:6379
-            key: arxsentinel:queue:cf-stream
+          url: redis://redis.svc:6379
+          key: arxsentinel:queue:cf-stream
 ```
 
 The configuration is consumed by `RegisterSinkFromConfig` in
@@ -330,8 +330,7 @@ executors:
       - name: cf-stream
         queue:
           type: bbolt
-          bbolt:
-            path: /var/lib/arxsentinel/cf.db
+          path: /var/lib/arxsentinel/cf.db
 
   # MikroTik lives in another region → redis.
   - name: mk-block
@@ -340,9 +339,8 @@ executors:
       - name: mk-stream
         queue:
           type: redis
-          redis:
-            url: redis://redis.eu-west:6379
-            key: arxsentinel:queue:mk-stream
+          url: redis://redis.eu-west:6379
+          key: arxsentinel:queue:mk-stream
 ```
 
 This is by design. The NCS does not care which backend a given

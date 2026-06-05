@@ -7,13 +7,11 @@
 //     NewBboltQueue — open or create .db file, initialize bucket
 //
 //   CONCURRENCY:
-//     Write-goroutine pattern: single background writer owns all bbolt write
-//     transactions. Push sends to writes channel; Pop polls in read-only tx.
-//     This is idiomatic Go for single-writer resources, not a workaround.
-//
-//   BUCKET LAYOUT:
-//     Bucket "q": "\x00seq" (next write key), "\x00read" (next read key),
-//     uint64 big-endian keys → JSON ThreatEvent values.
+//     Single-writer pattern: все bbolt-транзакции (Push, claim) сериализуются
+//     через одну фоновую горутину. Pop отправляет opPopAndAdvance в канал
+//     writes; writeLoop выполняет read+delete+advance в одной db.Update,
+//     гарантируя, что каждое событие доставляется ровно одному Pop'еру.
+//     Push идёт через тот же канал (opPush) на запись.
 // ================================================================================
 
 package queue
@@ -39,20 +37,35 @@ var (
 type opKind int
 
 const (
-	opPush    opKind = iota // write a new event
-	opDelete                // delete the current read key and advance the read pointer
+	opPush opKind = iota // write a new event
+	// opPopAndAdvance atomically claims the next event: reads it, deletes the
+	// key, and advances the read pointer — all in a single db.Update tx.
+	// Only one concurrent Pop gets each event; others receive (zero, false, nil)
+	// and retry on the next ticker tick.
+	opPopAndAdvance
 )
 
+// popResult is the outcome of an opPopAndAdvance claim.
+type popResult struct {
+	event plugin.ThreatEvent
+	found bool
+	err   error
+}
+
 // writeOp carries a single write request to the background write goroutine.
+// result is used by opPush; popResult is used by opPopAndAdvance.
+// Exactly one of the two channels is meaningful for a given op.kind.
 type writeOp struct {
-	kind   opKind
-	event  plugin.ThreatEvent
-	result chan error
+	kind      opKind
+	event     plugin.ThreatEvent
+	result    chan error
+	popResult chan popResult
 }
 
 // BboltQueue implements Queue using an embedded bbolt database.
-// All bbolt write transactions are serialised through a single background
-// goroutine. Read transactions are performed directly on Pop.
+// All bbolt write transactions (Push, Pop claim) are serialised through a
+// single background goroutine, which is the only writer of the underlying
+// db. Len() uses a read-only View since it does not mutate state.
 type BboltQueue struct {
 	db     *bbolt.DB
 	bucket []byte
@@ -114,8 +127,9 @@ func NewBboltQueue(path string, bucket string) (*BboltQueue, error) {
 }
 
 // writeLoop is the single background goroutine that owns all bbolt write
-// transactions. It serialises Push and delete operations, guaranteeing
-// that only one Update call is in flight at any time.
+// transactions. It serialises Push, delete, and claim operations, guaranteeing
+// that only one Update call is in flight at any time and that concurrent Pop
+// callers never receive the same event (the claim is atomic).
 //
 // Exits when q.done is closed. q.writes is never closed — closing a channel
 // that has concurrent senders causes a race; q.done is the sole shutdown signal.
@@ -126,18 +140,42 @@ func (q *BboltQueue) writeLoop() {
 		case <-q.done:
 			return
 		case op := <-q.writes:
-			var err error
 			switch op.kind {
 			case opPush:
-				err = q.db.Update(func(tx *bbolt.Tx) error {
+				err := q.db.Update(func(tx *bbolt.Tx) error {
 					return q.writePush(tx, op.event)
 				})
-			case opDelete:
-				err = q.db.Update(func(tx *bbolt.Tx) error {
-					return q.writeDeleteAndAdvance(tx)
+				// Неблокирующая запись: получатель (Push) мог уже выйти по
+				// ctx/done — иначе Close() зависнет на wg.Wait().
+				select {
+				case op.result <- err:
+				case <-q.done:
+				}
+			case opPopAndAdvance:
+				// Атомарный claim: читаем, удаляем, продвигаем read-указатель
+				// в ОДНОЙ db.Update. Только один Pop получает событие.
+				var res popResult
+				res.err = q.db.Update(func(tx *bbolt.Tx) error {
+					event, found, err := q.readAndClaim(tx)
+					if err != nil {
+						return err
+					}
+					if !found {
+						// Пустая очередь — никаких мутаций, продвижения не было.
+						return nil
+					}
+					res.event = event
+					res.found = true
+					return nil
 				})
+				// Неблокирующая запись: получатель мог уже уйти по ctx/done,
+				// иначе Close() зависнет на wg.Wait() — writeLoop пишет в
+				// resCh, а resCh никто не читает.
+				select {
+				case op.popResult <- res:
+				case <-q.done:
+				}
 			}
-			op.result <- err
 		}
 	}
 }
@@ -169,35 +207,60 @@ func (q *BboltQueue) writePush(tx *bbolt.Tx, event plugin.ThreatEvent) error {
 		return err
 	}
 
-	seq++
-	binary.BigEndian.PutUint64(seqBytes, seq)
-	return b.Put([]byte("\x00seq"), seqBytes)
+	// Use a fresh buffer — b.Get() returns a read-only slice owned by bbolt;
+	// writing into it via PutUint64 corrupts bbolt's internal mmap memory.
+	var newSeq [8]byte
+	binary.BigEndian.PutUint64(newSeq[:], seq+1)
+	return b.Put([]byte("\x00seq"), newSeq[:])
 }
 
-// writeDeleteAndAdvance deletes the current read key and increments the
-// read pointer.
-func (q *BboltQueue) writeDeleteAndAdvance(tx *bbolt.Tx) error {
+// readAndClaim — ядро атомарного Pop. Вызывается ТОЛЬКО из writeLoop
+// внутри db.Update. Читает событие по текущему read-указателю, удаляет
+// ключ и продвигает указатель — всё в одной write-транзакции.
+//
+// Возвращает (event, true, nil) если событие было, (zero, false, nil)
+// если очередь пуста. При corrupted bucket — (zero, false, err).
+//
+// Вызывающий (writeLoop) обязан проставить res.found=true и res.event
+// ТОЛЬКО при err==nil && found==true, чтобы избежать возврата данных
+// при ошибке tx.
+func (q *BboltQueue) readAndClaim(tx *bbolt.Tx) (plugin.ThreatEvent, bool, error) {
 	b := tx.Bucket(q.bucket)
 	if b == nil {
-		return errors.New("queue: bucket not found")
+		return plugin.ThreatEvent{}, false, errors.New("queue: bucket not found")
 	}
 
 	readBytes := b.Get([]byte("\x00read"))
 	if len(readBytes) != 8 {
-		return ErrQueueCorrupted
+		return plugin.ThreatEvent{}, false, ErrQueueCorrupted
 	}
 	read := binary.BigEndian.Uint64(readBytes)
 
 	var key [8]byte
 	binary.BigEndian.PutUint64(key[:], read)
 
-	if err := b.Delete(key[:]); err != nil {
-		return err
+	data := b.Get(key[:])
+	if data == nil {
+		// Пустая очередь — нечего удалять, указатель не двигаем.
+		return plugin.ThreatEvent{}, false, nil
 	}
 
-	read++
-	binary.BigEndian.PutUint64(readBytes, read)
-	return b.Put([]byte("\x00read"), readBytes)
+	var event plugin.ThreatEvent
+	if err := json.Unmarshal(data, &event); err != nil {
+		return plugin.ThreatEvent{}, false, err
+	}
+
+	// Удаляем ключ и продвигаем read-указатель в той же tx — атомарно.
+	if err := b.Delete(key[:]); err != nil {
+		return plugin.ThreatEvent{}, false, err
+	}
+	var newRead [8]byte
+	binary.BigEndian.PutUint64(newRead[:], read+1)
+	if err := b.Put([]byte("\x00read"), newRead[:]); err != nil {
+		return plugin.ThreatEvent{}, false, err
+	}
+
+	return event, true, nil
 }
 
 // Push enqueues a ThreatEvent into the bbolt queue. It sends the event to
@@ -234,14 +297,22 @@ func (q *BboltQueue) safeSend(ctx context.Context, event plugin.ThreatEvent) err
 }
 
 // Pop dequeues the next ThreatEvent. It blocks until an event is available,
-// the context is cancelled, or the queue is closed. When the queue is empty
-// it polls with a 100ms ticker, checking ctx.Done() between attempts.
+// the context is cancelled, or the queue is closed.
+//
+// Реализация: атомарный claim через writeLoop. Pop отправляет
+// opPopAndAdvance в writes, writeLoop делает read+delete+advance
+// в ОДНОЙ db.Update — это гарантирует, что конкурентные Pop'еры
+// не получают одно и то же событие. Если очередь пуста, Pop ждёт
+// 100ms и повторяет попытку (ticker-паттерн для responsiveness
+// без busy-loop).
 func (q *BboltQueue) Pop(ctx context.Context) (plugin.ThreatEvent, error) {
 	// 100ms poll interval balances responsiveness with CPU usage (per D_Q2).
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
+		// Проверяем ctx/done перед каждым claim — иначе можем зависнуть
+		// в ожидании result после того как Close() уже отработал.
 		select {
 		case <-q.done:
 			return plugin.ThreatEvent{}, ErrQueueClosed
@@ -250,7 +321,7 @@ func (q *BboltQueue) Pop(ctx context.Context) (plugin.ThreatEvent, error) {
 		default:
 		}
 
-		event, found, err := q.tryRead()
+		event, found, err := q.claimOnce(ctx)
 		if err != nil {
 			return plugin.ThreatEvent{}, err
 		}
@@ -258,6 +329,7 @@ func (q *BboltQueue) Pop(ctx context.Context) (plugin.ThreatEvent, error) {
 			return event, nil
 		}
 
+		// Очередь пуста — ждём либо нового Push (ticker), либо ctx/done.
 		select {
 		case <-q.done:
 			return plugin.ThreatEvent{}, ErrQueueClosed
@@ -268,73 +340,46 @@ func (q *BboltQueue) Pop(ctx context.Context) (plugin.ThreatEvent, error) {
 	}
 }
 
-// tryRead attempts to read one event from the queue in a read transaction.
-// It returns the event and true if found, or false if the queue is empty.
-func (q *BboltQueue) tryRead() (plugin.ThreatEvent, bool, error) {
-	var event plugin.ThreatEvent
-	var found bool
+// claimOnce sends opPopAndAdvance to writeLoop and waits for the atomic
+// result. Returns (event, true, nil) if an event was found, (zero, false,
+// nil) if the queue is empty.
+//
+// ctx cancellation is only honoured BEFORE the op is sent (step 1).
+// Once the op is in the writes channel (step 2), we must wait for the
+// result without a ctx escape: writeLoop will atomically claim the event
+// and send the result to resCh. If we leave step 2 early (e.g. ctx
+// expires), the event is permanently lost from the queue — the advance
+// already happened inside db.Update. q.done is the only escape in step 2.
+func (q *BboltQueue) claimOnce(ctx context.Context) (plugin.ThreatEvent, bool, error) {
+	resCh := make(chan popResult, 1)
+	op := writeOp{kind: opPopAndAdvance, popResult: resCh}
 
-	err := q.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(q.bucket)
-		if b == nil {
-			return errors.New("queue: bucket not found")
-		}
-
-		readBytes := b.Get([]byte("\x00read"))
-		if len(readBytes) != 8 {
-			return ErrQueueCorrupted
-		}
-		read := binary.BigEndian.Uint64(readBytes)
-
-		var key [8]byte
-		binary.BigEndian.PutUint64(key[:], read)
-
-		data := b.Get(key[:])
-		if data == nil {
-			return nil
-		}
-
-		if err := json.Unmarshal(data, &event); err != nil {
-			return err
-		}
-		found = true
-		return nil
-	})
-	if err != nil {
-		return plugin.ThreatEvent{}, false, err
-	}
-	if !found {
-		return plugin.ThreatEvent{}, false, nil
-	}
-
-	// Delete processed key and advance read pointer via the write goroutine.
-	err = q.deleteAndAdvance()
-	if err != nil {
-		return plugin.ThreatEvent{}, false, err
-	}
-
-	return event, true, nil
-}
-
-// deleteAndAdvance sends a delete operation to the write goroutine.
-func (q *BboltQueue) deleteAndAdvance() error {
-	result := make(chan error, 1)
-	op := writeOp{kind: opDelete, result: result}
-
+	// Step 1: send op — bail if ctx is done before we even queue the request.
 	select {
 	case <-q.done:
-		return ErrQueueClosed
+		return plugin.ThreatEvent{}, false, ErrQueueClosed
+	case <-ctx.Done():
+		return plugin.ThreatEvent{}, false, ctx.Err()
 	case q.writes <- op:
 	}
 
-	// Mirror safeSend: also select on q.done when waiting for result, so Pop
-	// does not deadlock if Close fires after the op was enqueued but before
-	// writeLoop processes it.
+	// Step 2: wait for result — NO ctx escape here.
+	// The op is already in flight; cancelling now would silently lose the event.
 	select {
 	case <-q.done:
-		return ErrQueueClosed
-	case err := <-result:
-		return err
+		// Queue is shutting down. Drain resCh opportunistically — writeLoop
+		// may have already sent the result before closing q.done.
+		select {
+		case res := <-resCh:
+			return res.event, res.found, res.err
+		default:
+			return plugin.ThreatEvent{}, false, ErrQueueClosed
+		}
+	case res := <-resCh:
+		if res.err != nil {
+			return plugin.ThreatEvent{}, false, res.err
+		}
+		return res.event, res.found, nil
 	}
 }
 

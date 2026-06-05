@@ -35,7 +35,6 @@ inputs:
 outputs:
   - type: sentinel-threat
     name: fanout-east              # write to NCS queue "fanout-east"
-    bufferSize: 1000
 ```
 
 `plugin.ThreatEvent` enters the pipeline through the `sentinel`
@@ -83,7 +82,6 @@ inputs:
 outputs:
   - type: sentinel-threat
     name: inter-pipeline           # NCS queue name (the contract)
-    bufferSize: 1000
 ```
 
 ```yaml
@@ -130,37 +128,42 @@ executors:
 
 A single ArxSentinel process can run multiple `streams[]` blocks
 that share an NCS queue. This is the in-process version of chain
-forwarding — useful when the split is logical (different scorers,
-different executors) rather than operational.
+forwarding — useful when the split is logical (different
+executors, different actions) rather than operational. The shared
+`scoring:` block sits at the root so every stream uses the same
+threat model.
 
 ```yaml
+scoring:
+  ban_threshold: 50                # shared across all streams
+
 streams:
-  # First chain: catch everything with a low threshold.
+  # First chain: catch everything with the shared threshold.
   - name: catch-all
     inputs:
       - type: file
         path: /var/log/nginx/access.log
-    scoring:
-      ban_threshold: 50
     executors:
       - name: cf-block-soft
         type: cloudflare
+        sources:
+          - name: high-confidence
         # soft challenge via rate-limit rule
 
     outputs:
       - type: sentinel-threat
         name: high-confidence      # forward only the survivors
 
-  # Second chain: stricter scorer, hard block.
+  # Second chain: same scorer, harder action.
   - name: strict
     inputs:
       - type: sentinel
         addr: ncs://high-confidence
-    scoring:
-      ban_threshold: 95
     executors:
       - name: cf-block-hard
         type: cloudflare
+        sources:
+          - name: high-confidence
         # hard block via IP access rule
 ```
 
@@ -168,8 +171,8 @@ streams:
 
 - Two-stage filtering without two processes. The first chain
   catches everything; the second chain only sees the survivors.
-- Different executor types for different scores — e.g. rate-limit
-  for `score ≥ 50`, IP-block for `score ≥ 95`.
+- Different executor actions on the same scored event — e.g. one
+  Cloudflare executor soft-challenges, the other hard-blocks.
 - Tests and demos. The whole pattern runs in a single process
   with a `memory` queue, so it is fast to spin up locally.
 
@@ -200,9 +203,8 @@ executors:
       - name: cf-stream
         queue:
           type: bbolt
-          bbolt:
-            path: /var/lib/arxsentinel/cf.db
-            bucket: q
+          path: /var/lib/arxsentinel/cf.db
+          bucket: q
 
   # MikroTik lives in another region — share state via redis.
   - name: mk-block
@@ -211,16 +213,15 @@ executors:
       - name: mk-stream
         queue:
           type: redis
-          redis:
-            url: redis://redis.eu-west:6379
-            key: arxsentinel:queue:mk-stream
+          url: redis://redis.eu-west:6379
+          key: arxsentinel:queue:mk-stream
 
   # In-process detector chain — memory is enough.
   - name: detect-local
     type: nginx
     sources:
       - name: local-stream
-        # (no queue: block → memory with default buffer)
+        # (no queue: block → memory with default buffer = 1000)
 ```
 
 **Why use it:**
@@ -253,13 +254,12 @@ share a queue over a private network. The queue is `redis` (or
 ```yaml
 # region-a.yaml
 inputs:
-  - type: nginx-exec
-    # ... produces local threats
+  - type: file
+    path: /var/log/nginx/region-a.access.log
 
 outputs:
   - type: sentinel-threat
     name: shared-threats
-    bufferSize: 1000
     # (sinks don't pick the queue backend — see below)
 ```
 
@@ -276,9 +276,8 @@ executors:
       - name: threat-stream
         queue:
           type: redis
-          redis:
-            url: redis://redis.shared:6379
-            key: arxsentinel:queue:shared-threats
+          url: redis://redis.shared:6379
+          key: arxsentinel:queue:shared-threats
 ```
 
 The producer side (region A) writes to the NCS name
@@ -331,7 +330,6 @@ outputs:
   # Stable: every event.
   - type: sentinel-threat
     name: stable-chain
-    bufferSize: 1000
 
   # Canary: 1% of events. Implemented by an executor or a
   # score-based filter; see the project's filtering plugins.
@@ -378,10 +376,12 @@ this list:
 3. **Run the wiring validator.** It catches reader-without-writer
    and writer-without-reader at startup — exactly the class of
    silent failure these patterns risk.
-4. **Set `bufferSize` explicitly on `sentinel-threat` sinks that
-   cross a process boundary.** The default is the executor's
-   internal default (1000), but cross-process sinks should size
-   the buffer to the expected burst.
+4. **Plan buffer sizes for `sentinel-threat` sinks that cross a
+   process boundary.** `bufferSize` is not a `SinkConfig` field —
+   it is determined by the queue backend that consumes the sink's
+   output (see `pkg/executor/queue/README.md`). For cross-process
+   sinks, size the downstream queue (bbolt disk, redis memory,
+   memory channel) to the expected burst.
 5. **Monitor `Len()`** on every queue. A growing queue means
    consumers are falling behind. `bbolt` queues grow on disk;
    `redis` queues grow in Redis memory; `memory` queues drop
