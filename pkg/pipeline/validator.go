@@ -8,14 +8,18 @@
 
 package pipeline
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import (
+	"sort"
+
+	"github.com/mr-addams/arxsentinel/pkg/plugin"
+)
 
 // SemanticError describes a type mismatch between two adjacent pipeline steps.
 // Consumer: validate.go (pipeline validation), main.go (config error reporting).
 type SemanticError struct {
-	StepIndex int            // Internal — step index in chain. Consumer: Error
-	StepAName string         // Internal — first plugin name. Consumer: Error
-	StepBName string         // Internal — second plugin name. Consumer: Error
+	StepIndex int             // Internal — step index in chain. Consumer: Error
+	StepAName string          // Internal — first plugin name. Consumer: Error
+	StepBName string          // Internal — second plugin name. Consumer: Error
 	Got       plugin.DataType // YAML: — output type of first plugin. Consumer: Error
 	Want      plugin.DataType // YAML: — input type of second plugin. Consumer: Error
 
@@ -66,10 +70,10 @@ func (e SemanticError) Error() string {
 // PipelineContext carries one pipeline's stages for validation.
 // Consumer: validate.go, main.go.
 type PipelineContext struct {
-	StreamName   string             // YAML: streams[i].name — stream identifier. Consumer: ValidateSpine, ValidateTerminals
-	PipelineName string             // YAML: pipelines[i].name — pipeline identifier. Consumer: ValidateSpine, ValidateTerminals
-	Spine        []plugin.Manifest  // YAML: — Source → [Processors] → [Detectors] → [synthetic Scorer]. Consumer: ValidateSpine
-	Sinks        []plugin.Manifest   // YAML: — terminal sinks of this pipeline. Consumer: ValidateTerminals
+	StreamName   string            // YAML: streams[i].name — stream identifier. Consumer: ValidateSpine, ValidateTerminals
+	PipelineName string            // YAML: pipelines[i].name — pipeline identifier. Consumer: ValidateSpine, ValidateTerminals
+	Spine        []plugin.Manifest // YAML: — Source → [Processors] → [Detectors] → [synthetic Scorer]. Consumer: ValidateSpine
+	Sinks        []plugin.Manifest // YAML: — terminal sinks of this pipeline. Consumer: ValidateTerminals
 }
 
 // PipelineResult holds validation errors for one pipeline plus the type its spine
@@ -159,9 +163,9 @@ func ValidateTerminals(ctx PipelineContext, producedType plugin.DataType) []Sema
 // for wiring validation. Constructed from config by the caller (validate.go).
 // Consumer: main.go (executor wiring).
 type ExecutorBinding struct {
-	Name        string            // YAML: executors[i].name — executor instance name. Consumer: ValidateExecutorWiring
-	InputType   plugin.DataType   // YAML: — executor's InputType from ManifestByName. Consumer: ValidateExecutorWiring
-	SourceNames []string          // YAML: executors[i].sources[].name — NCS channel names. Consumer: ValidateExecutorWiring
+	Name        string          // YAML: executors[i].name — executor instance name. Consumer: ValidateExecutorWiring
+	InputType   plugin.DataType // YAML: — executor's InputType from ManifestByName. Consumer: ValidateExecutorWiring
+	SourceNames []string        // YAML: executors[i].sources[].name — NCS channel names. Consumer: ValidateExecutorWiring
 }
 
 // ValidatePipelines runs ValidateSpine + ValidateTerminals for each pipeline.
@@ -190,14 +194,60 @@ func ValidatePipelines(pipes []PipelineContext, hasDetectors []bool) []PipelineR
 	return results
 }
 
-// ValidateExecutorWiring checks each executor's InputType against the produced
-// type of the sentinel-threat sink channel it is wired to.
-// channelTypes: map of sentinel-threat sink name → produced DataType (TypeScoredEvent).
+// ValidateExecutorWiring performs three fail-fast checks on the NamedChannelSwitch
+// graph (decision D2, flow 061):
+//
+//  1. Every executor has at least one source channel configured (else it can never run).
+//  2. Every channel an executor references exists in channelTypes (i.e. some
+//     sentinel-threat sink writes to it). Otherwise the executor is "reader without
+//     writer" — it would block forever on Pop() at runtime.
+//  3. Every channel that has a writer (sentinel-threat sink) has at least one
+//     executor reading from it. Otherwise the sink is "writer without reader" —
+//     an unbounded queue that grows without bound (memory leak on memory/bbolt,
+//     network/Redis pressure on the redis backend).
+//
+// Per-binding InputType compatibility (rule: producedType == b.InputType) is also
+// enforced for every (binding, sourceName) pair once both ends of the wire exist.
+//
+// channelTypes: map of sentinel-threat sink name → produced DataType. Only
+// sentinel-threat sinks feed the NamedChannelSwitch; other sinks (file, es, ...)
+// write to their own backend and are out of scope for wiring validation.
 // Called from: main.go.
 //
 // Non-blocking.
 func ValidateExecutorWiring(bindings []ExecutorBinding, channelTypes map[string]plugin.DataType) []SemanticError {
+	// Сначала собираем множество имён каналов, к которым подключён хотя бы один
+	// executor. Используется в шаге 3 для обнаружения "писатель без читателя".
+	readChannels := make(map[string]struct{}, len(bindings))
+	for _, b := range bindings {
+		for _, srcName := range b.SourceNames {
+			readChannels[srcName] = struct{}{}
+		}
+	}
+
+	// Шаг 3 (writer-without-reader): для каждого зарегистрированного writer'а
+	// проверяем, что нашёлся хотя бы один reader. Проходим по детерминированному
+	// списку ключей — map сама по себе в Go итерируется в случайном порядке,
+	// что давало бы нестабильные сообщения об ошибках между запусками.
+	writtenNames := make([]string, 0, len(channelTypes))
+	for name := range channelTypes {
+		writtenNames = append(writtenNames, name)
+	}
+	sort.Strings(writtenNames)
+
 	var errs []SemanticError
+	for _, name := range writtenNames {
+		if _, read := readChannels[name]; read {
+			continue
+		}
+		errs = append(errs, SemanticError{
+			ConsumerType: "channel",
+			ConsumerName: name,
+			Note:         "has writer but no reader",
+		})
+	}
+
+	// Шаги 1, 2 и проверка совместимости типов для каждой привязки.
 	for _, b := range bindings {
 		if len(b.SourceNames) == 0 {
 			errs = append(errs, SemanticError{
@@ -210,6 +260,8 @@ func ValidateExecutorWiring(bindings []ExecutorBinding, channelTypes map[string]
 		for _, srcName := range b.SourceNames {
 			producedType, ok := channelTypes[srcName]
 			if !ok {
+				// reader-without-writer: канал, на который ссылается executor,
+				// не зарегистрирован ни одним sentinel-threat sink'ом.
 				errs = append(errs, SemanticError{
 					Got:          plugin.TypeNone,
 					Want:         b.InputType,
