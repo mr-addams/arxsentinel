@@ -33,6 +33,7 @@ import (
 
 	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
 	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
+	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
 )
 
 // ========================== Duration helper type =======================================
@@ -135,8 +136,26 @@ type ExecutorTopConfig struct {
 }
 
 // ExecutorSourceRef — reference to a Named Channel Switch source.
+//
+// Queue — optional override of the queue backend for this named channel.
+// If nil (omitted from YAML), the default MemoryQueue with DefaultBufferSize
+// is used (legacy behaviour, identical to pre-QueueConfig state).
+//
+// When set, main.go pre-registers the queue with the chosen backend (memory/bbolt/redis)
+// BEFORE stream goroutines start, so the sentinel-threat sink picks it up via
+// Named Channel Switch fan-in (AttachWriter reuses an existing queue by name).
+//
+// YAML example:
+//
+//	sources:
+//	  - name: sentinel-cf
+//	    queue:
+//	      type: bbolt          # memory | bbolt | redis
+//	      path: /var/lib/arxsentinel/cf-queue.db
+//	      bucket: q            # optional, default "arxsentinel"
 type ExecutorSourceRef struct {
-	Name string `yaml:"name"` // YAML: channel name registered by sentinel-threat sink
+	Name  string           `yaml:"name"`           // YAML: channel name registered by sentinel-threat sink
+	Queue *queue.QueueConfig `yaml:"queue,omitempty"` // YAML: optional per-source queue backend; nil → default MemoryQueue
 }
 
 // PipelineRuntimeConfig — tuning parameters for the Source→Merge→Pipeline channel.

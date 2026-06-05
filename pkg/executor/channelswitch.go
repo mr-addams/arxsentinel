@@ -8,6 +8,7 @@
 //     NamedChannelSwitch — global singleton behind package-level functions
 //     AttachWriter    — create a named MemoryQueue, return Queue for Push
 //     AttachWriterWithQueue — register a custom Queue (for bbolt/redis)
+//     RegisterSinkFromConfig — create Queue from QueueConfig (bbolt/redis/memory) and register
 //     AttachReader       — return Queue for Pop
 //     DetachWriter      — close Queue and delete from map
 //
@@ -76,6 +77,49 @@ func AttachWriterWithQueue(name string, q queue.Queue) error {
 	hubQueues[name] = q
 	hubRefs[name] = 1
 	return nil
+}
+
+// RegisterSinkFromConfig constructs a Queue for the given name based on cfg
+// (memory / bbolt / redis backend) and registers it with the Named Channel Switch.
+//
+// Called from: main.go startup, before stream goroutines run sentinel-threat sinks.
+// Must run BEFORE AttachWriter/AttachWriterWithQueue for the same name — the first
+// registration wins, later calls fan-in (refcount++). This lets pre-registration
+// of bbolt/redis backends coexist with the sink's later AttachWriter call.
+//
+// cfg == nil → identical to AttachWriter(name, 0): default MemoryQueue.
+//
+// For bbolt and redis, the returned error is propagated to the caller so the
+// pipeline fails fast on misconfiguration (e.g. invalid path, unreachable Redis).
+// For memory (and nil cfg), no error is possible — the function always returns nil.
+// The error return exists for bbolt/redis paths and for future backend types.
+func RegisterSinkFromConfig(name string, cfg *queue.QueueConfig) error {
+	// Nil config → defer to legacy MemoryQueue path so existing behaviour
+	// is preserved without any code change at the call site.
+	if cfg == nil {
+		_, err := AttachWriter(name, 0)
+		return err
+	}
+	switch cfg.Type {
+	case queue.QueueTypeMemory, "":
+		// Empty type also resolves to memory — same default as nil cfg.
+		_, err := AttachWriter(name, 0)
+		return err
+	case queue.QueueTypeBbolt:
+		q, err := queue.NewBboltQueue(cfg.Path, cfg.EffectiveBucket())
+		if err != nil {
+			return fmt.Errorf("channelswitch: bbolt queue for %q (path=%q): %w", name, cfg.Path, err)
+		}
+		return AttachWriterWithQueue(name, q)
+	case queue.QueueTypeRedis:
+		q, err := queue.NewRedisQueue(cfg.URL, cfg.EffectiveKey(name))
+		if err != nil {
+			return fmt.Errorf("channelswitch: redis queue for %q (url=%q): %w", name, cfg.URL, err)
+		}
+		return AttachWriterWithQueue(name, q)
+	default:
+		return fmt.Errorf("channelswitch: unknown queue type %q for %q (want memory|bbolt|redis)", cfg.Type, name)
+	}
 }
 
 // AttachReader returns the Queue for a previously registered name.

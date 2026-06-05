@@ -467,9 +467,18 @@ pipeline:
   #   type: cloudflare
   #   sources:
   #     - name: sentinel-cf            # matches sentinel-threat sink name in streams outputs
-  #       # queue:                     # optional persistent queue backend (default: memory)
-  #       #   type: bbolt              # "memory" | "bbolt" (bare-metal) | "redis" (k8s/cloud)
-  #       #   path: /var/lib/arxsentinel/queue-cf.db   # bbolt only
+  #       queue:                       # optional per-source queue backend; omit → default in-memory channel
+  #         type: bbolt                # "memory" | "bbolt" | "redis"
+  #         path: /var/lib/arxsentinel/queue-cf.db   # bbolt only: path to persistent .db file
+  #         bucket: arxsentinel        # bbolt only: bucket name; default "arxsentinel"
+  #       # ── alternate: in-memory (explicit, no persistence) ──
+  #       # queue:
+  #       #   type: memory
+  #       # ── alternate: distributed (k8s / multi-replica) ──
+  #       # queue:
+  #       #   type: redis
+  #       #   url: redis://localhost:6379   # required: Redis URL
+  #       #   key: arxsentinel:queue:cf    # optional list key; default "arxsentinel:queue:<source.name>"
   #   config:
   #     api_token: "YOUR_CF_API_TOKEN"   # Cloudflare API token with Lists:Edit permission
   #     account_id: "YOUR_CF_ACCOUNT_ID" # Cloudflare account ID
