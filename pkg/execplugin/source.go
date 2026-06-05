@@ -33,17 +33,19 @@ import (
 // to the pipeline startup sequence, allowing clean restart semantics.
 //
 // Run() sends {"v":"1","action":"start"} to the plugin stdin, then reads SourceEntry
-// lines from stdout in a loop. When ctx is cancelled, it sends {"v":"1","action":"stop"}
-// and exits gracefully.
-type ExecSource struct {
-	execPath  string
-	linesRead atomic.Int64
-	parseErrs atomic.Int64
-}
+	// lines from stdout in a loop. When ctx is cancelled, it sends {"v":"1","action":"stop"}
+	// and exits gracefully.
+	// ExecSource creates a fresh ManagedProcess on each Run() — allows clean restart.
+	type ExecSource struct {
+		execPath  string // Internal — plugin binary path. Consumer: Run
+		linesRead atomic.Int64 // Internal — lines successfully parsed. Consumer: Stats
+		parseErrs atomic.Int64 // Internal — JSON parse failures. Consumer: Stats
+	}
 
 // NewSource creates an ExecSource.
-// The subprocess is NOT started until Run() is called.
-// This defers process startup to the pipeline startup sequence.
+	// The subprocess is NOT started until Run() is called.
+	// This defers process startup to the pipeline startup sequence.
+	// Called from: pipeline.newSource. Non-blocking.
 func NewSource(execPath string) (*ExecSource, error) {
 	// Validate that execPath is non-empty
 	if execPath == "" {
@@ -56,6 +58,7 @@ func NewSource(execPath string) (*ExecSource, error) {
 }
 
 // Name returns "exec:<execPath>".
+// Called from: pipeline.runSource (logging). Non-blocking.
 func (s *ExecSource) Name() string {
 	return fmt.Sprintf("exec:%s", s.execPath)
 }
@@ -66,6 +69,9 @@ func (s *ExecSource) Name() string {
 // When ctx is cancelled, sends {"v":"1","action":"stop"} to stdin and exits.
 // Closes the subprocess via proc.Close() on return.
 // Does NOT close the out channel (contract: Source must not close out).
+// Called from: pipeline.runSource.
+//
+// Blocking — runs until ctx cancellation or plugin error.
 func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
 	// Create the ManagedProcess for this Run() session
 	proc, err := NewManagedProcess(context.Background(), s.execPath)
@@ -82,6 +88,7 @@ func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 
 	// Channel for forwarding entries from read goroutine.
 	// Larger buffer to ensure entries are delivered even if main loop is slow.
+	// WHY 256: accommodates burst parsing during initial sync while staying bounded.
 	entries := make(chan *plugin.LogEntry, 256)
 	readErr := make(chan error, 1)
 

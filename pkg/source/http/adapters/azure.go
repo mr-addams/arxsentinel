@@ -1,3 +1,7 @@
+// ====== Module: Azure Monitor Data Collector Adapter ======
+// Implements Azure Monitor Data Collector API format.
+// Expects JSON array of records with "time" field (RFC3339).
+
 package adapters
 
 import (
@@ -7,8 +11,14 @@ import (
 	nethttp "net/http"
 )
 
+// AzureAdapter implements Adapter for Azure Monitor Data Collector API.
+// Expects JSON array payload: [{"time":"RFC3339","msg":"..."}, ...]
+// Called from: buildPushHandler() during HTTP request processing.
 type AzureAdapter struct{}
 
+// Decode parses Azure JSON array, extracts RFC3339 timestamps from "time" field.
+// Returns raw JSON and timestamp for each record.
+// Called from: buildPushHandler() to process Azure webhook payloads.
 func (a *AzureAdapter) Decode(body []byte) ([]EnvelopeRecord, error) {
 	var rawMsgs []json.RawMessage
 	if err := json.Unmarshal(body, &rawMsgs); err != nil {
@@ -31,6 +41,8 @@ func (a *AzureAdapter) Decode(body []byte) ([]EnvelopeRecord, error) {
 	return records, nil
 }
 
+// WriteAck writes 204 No Content response — Azure expects empty success acknowledgment.
+// Non-blocking. Called from: buildPushHandler() after successful Decode().
 func (a *AzureAdapter) WriteAck(w nethttp.ResponseWriter, meta map[string]string) {
 	w.WriteHeader(204)
 }

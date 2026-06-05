@@ -1,6 +1,12 @@
-// ========================== Package mikrotik ==========================
+// ====== Module: mikrotik — config ===============================================
 //   Configuration for MikroTik RouterOS REST API executor — parses from
 //   YAML/JSON with validation and time.Duration handling.
+//
+//   WHAT IS HERE:
+//     Config struct, threatLevel enum, parseConfig function
+//
+//   WHAT IS NOT HERE:
+//     HTTP client (client.go), executor logic (executor.go), registration (register.go)
 
 package mikrotik
 

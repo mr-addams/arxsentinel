@@ -103,6 +103,9 @@ func (d *uaDetector) Name() string { return "ua" }
 //
 // Order: empty UA → scanners → grabbers → automation.
 // First match returns a result — prevents double scoring.
+// Called from: pipeline.processEntries.
+//
+// Non-blocking.
 func (d *uaDetector) Detect(_ plugin.IPView, entry *plugin.LogEntry) plugin.DetectResult {
 	ua := entry.UserAgent
 

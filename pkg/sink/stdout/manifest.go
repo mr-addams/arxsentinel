@@ -1,3 +1,7 @@
+// ====== Module: pkg/sink/stdout — Manifest ======
+//   Plugin manifest for the stdout sink plugin.
+//   Declares plugin ID, version, role, and I/O types.
+
 package stdout
 
 import "github.com/mr-addams/arxsentinel/pkg/plugin"

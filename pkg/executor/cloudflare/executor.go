@@ -1,3 +1,14 @@
+// ====== Module: cloudflare — executor =============================================
+//   CloudflareExecutor manages a Cloudflare IP banlist via the Lists API.
+//   Receives ThreatEvents, accumulates them in a buffer, and flushes to the
+//   Cloudflare API (with 429 retry, pending operation polling, TTL-based sweep).
+//
+//   WHAT IS HERE:
+//     CloudflareExecutor struct, Run loop, flush, sweep, retry, polling logic
+//
+//   WHAT IS NOT HERE:
+//     CF API client (client.go), config parsing (config.go), registration (register.go)
+
 package cloudflare
 
 import (

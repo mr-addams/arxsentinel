@@ -1,7 +1,12 @@
+// ========================== pkg/source/file — Manifest ========================================
+//   Plugin metadata for the file source.
+//   Describes identity and data contract for pipeline validation.
+
 package file
 
 import "github.com/mr-addams/arxsentinel/pkg/plugin"
 
+// Manifest returns the file source's plugin metadata.
 func (s *FileSource) Manifest() plugin.Manifest {
 	return plugin.Manifest{
 		PluginID:      "file",

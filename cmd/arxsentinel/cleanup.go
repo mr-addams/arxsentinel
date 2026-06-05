@@ -16,6 +16,9 @@ import (
 	cloudflare "github.com/mr-addams/arxsentinel/pkg/executor/cloudflare"
 )
 
+// cleanupCmd parses flags for the cleanup subcommand.
+// Called from: main (line 156).
+// Blocking until flag.Parse() completes.
 var (
 	cleanupCmd        = flag.NewFlagSet("cleanup", flag.ExitOnError)
 	cleanupDoCF       = cleanupCmd.Bool("cf", false, "cleanup Cloudflare IP List")
@@ -26,6 +29,8 @@ var (
 )
 
 // handleCleanup is the entry point for the cleanup subcommand.
+// Called from: main (line 156).
+// Non-blocking (exits via os.Exit on errors).
 func handleCleanup(args []string) {
 	if err := cleanupCmd.Parse(args); err != nil {
 		os.Exit(1)
@@ -55,6 +60,8 @@ func handleCleanup(args []string) {
 }
 
 // cfInfo holds the subset of cloudflare executor config needed for cleanup.
+// Called from: runCFCleanup (line 83), extractCFInfo (line 66).
+// Non-blocking.
 type cfInfo struct {
 	APIToken  string
 	AccountID string
@@ -63,6 +70,8 @@ type cfInfo struct {
 
 // extractCFInfo finds the first cloudflare executor in cfg.Executors and
 // extracts its API credentials. Returns nil when none is configured.
+// Called from: handleCleanup (line 45).
+// Non-blocking.
 func extractCFInfo(cfg *config.Config) *cfInfo {
 	for _, ec := range cfg.Executors {
 		if ec.Type != "cloudflare" {
@@ -80,6 +89,8 @@ func extractCFInfo(cfg *config.Config) *cfInfo {
 }
 
 // runCFCleanup performs GET→filter→DELETE against the Cloudflare IP List.
+// Called from: handleCleanup (line 51).
+// Non-blocking (makes HTTP calls, uses ctx for cancellation).
 func runCFCleanup(ctx context.Context, info *cfInfo, dryRun bool, instanceID, listID string) error {
 	client := cloudflare.NewHTTPCFClient(info.AccountID, info.APIToken)
 
@@ -146,6 +157,8 @@ func runCFCleanup(ctx context.Context, info *cfInfo, dryRun bool, instanceID, li
 }
 
 // FilterByComment returns items whose Comment has the given prefix.
+// Called from: runCFCleanup (line 109).
+// Non-blocking.
 func FilterByComment(items []cloudflare.CFItem, prefix string) []cloudflare.CFItem {
 	var result []cloudflare.CFItem
 	for _, item := range items {

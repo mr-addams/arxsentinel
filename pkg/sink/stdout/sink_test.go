@@ -1,3 +1,6 @@
+// ====== Module: pkg/sink/stdout — Tests ======
+//   Unit tests for StdoutSink: JSON/fail2ban output, concurrent writes, format validation.
+
 package stdout_test
 
 import (

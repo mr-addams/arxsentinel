@@ -1,3 +1,8 @@
+// ====== Module: pkg/sink/stdout — Stdout Sink ======
+//   Writes ThreatEvent records to stdout.
+//   Supports three output formats: fail2ban, json, sentinel-threat.
+//   Uses mutex + atomic counters for thread-safe writes and statistics.
+
 package stdout
 
 import (
@@ -10,6 +15,14 @@ import (
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
+// StdoutSink writes threat events to stdout in the configured output format.
+// YAML: sink.stdout.format.
+// Fields:
+//   - name: fixed identifier "stdout". Consumer: pipeline/executor.go
+//   - format: output format ("fail2ban" | "json" | "sentinel-threat"). Consumer: Write
+//   - w: output file (default stdout, injectable for testing). Consumer: Write
+//   - mu: serializes stdout writes. Consumer: Write
+//   - eventsWritten, dropped, errors: atomic counters. Consumer: Stats
 type StdoutSink struct {
 	name   string
 	format string
@@ -22,11 +35,17 @@ type StdoutSink struct {
 	errors        atomic.Int64
 }
 
+// NewStdoutSink creates a StdoutSink writing to os.Stdout.
+// Called from: sink/stdout/register.go (plugin factory).
 func NewStdoutSink(format string) (*StdoutSink, error) {
 	return NewStdoutSinkWithWriter(os.Stdout, format)
 }
 
+// NewStdoutSinkWithWriter creates a StdoutSink with a custom writer (for testing).
+// Called from: NewStdoutSink, sink_test.go.
+// Returns: configured StdoutSink on success, or error if format is unknown.
 func NewStdoutSinkWithWriter(w *os.File, format string) (*StdoutSink, error) {
+	// Reject unknown formats early to prevent silent misconfiguration.
 	if format != "fail2ban" && format != "json" && format != "sentinel-threat" {
 		return nil, fmt.Errorf("stdout sink: unknown format %q (want fail2ban, json, or sentinel-threat)", format)
 	}
@@ -37,10 +56,16 @@ func NewStdoutSinkWithWriter(w *os.File, format string) (*StdoutSink, error) {
 	}, nil
 }
 
+// Name returns the sink identifier.
+// Called from: pipeline/executor.go (logging, error messages).
 func (s *StdoutSink) Name() string { return s.name }
 
+// Close is a no-op for stdout (no file handle to close).
+// Called from: pipeline/executor.go during shutdown.
 func (s *StdoutSink) Close() error { return nil }
 
+// Stats returns counters for events written, dropped, and errors.
+// Called from: pipeline/executor.go (metrics reporting).
 func (s *StdoutSink) Stats() plugin.SinkStats {
 	return plugin.SinkStats{
 		EventsWritten: s.eventsWritten.Load(),
@@ -49,7 +74,11 @@ func (s *StdoutSink) Stats() plugin.SinkStats {
 	}
 }
 
+// Write formats and writes a single threat event to stdout.
+// Called from: pipeline/executor.go (per-event).
+// Non-blocking: mutex-protected write.
 func (s *StdoutSink) Write(event plugin.ThreatEvent) error {
+	// Serialize event to bytes according to configured format.
 	var line []byte
 	switch s.format {
 	case "json":
@@ -67,6 +96,7 @@ func (s *StdoutSink) Write(event plugin.ThreatEvent) error {
 		}
 		line = append(b, '\n')
 	default:
+		// "fail2ban" — default format.
 		line = []byte(output.FormatFailban(event) + "\n")
 	}
 

@@ -1,3 +1,7 @@
+// ========================== pkg/sink/exec — registration ====================================
+//   Registers the "exec" sink type with the global sink registry.
+//   Delegates to execplugin.NewSink for actual implementation.
+
 package exec
 
 import (

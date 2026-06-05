@@ -1,3 +1,7 @@
+// ====== Module: HTTP Pull Client ======
+// Implements HTTP polling client for pulling logs from external sources.
+// Periodically fetches from URL, decodes via protocol adapter, sends to pipeline.
+
 package http
 
 import (
@@ -12,6 +16,10 @@ import (
 	nethttp "net/http"
 )
 
+// runPull polls the remote HTTP endpoint at cfg.pullInterval.
+// Decodes response with protocol-specific adapter, sends parsed entries to out channel.
+// Logs errors via logFn but continues polling (does not fail on transient errors).
+// Called from: HTTPSource.Run() when mode == "pull". Blocks until ctx is cancelled.
 func runPull(ctx context.Context, cfg *parsedConfig, adapter adapters.Adapter, out chan<- *plugin.LogEntry, par pkgsource.LineParser, logFn func(string, string, string), counters *sourceCounters) error {
 	ticker := time.NewTicker(cfg.pullInterval)
 	defer ticker.Stop()
@@ -73,6 +81,7 @@ func runPull(ctx context.Context, cfg *parsedConfig, adapter adapters.Adapter, o
 				case out <- entry:
 					atomic.AddInt64(&counters.linesRead, 1)
 				default:
+					// Non-blocking send — drop if channel is full.
 					atomic.AddInt64(&counters.dropped, 1)
 				}
 			}

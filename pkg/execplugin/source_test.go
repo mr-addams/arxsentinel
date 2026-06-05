@@ -1,3 +1,6 @@
+// ========================== pkg/execplugin — source_test.go ================
+//   Tests for ExecSource: lifecycle, Start, Stop, channel operations.
+
 package execplugin
 
 import (

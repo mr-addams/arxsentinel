@@ -1,3 +1,7 @@
+// ====== Module: HTTP Configuration ======
+// Parses and validates HTTP source configuration from YAML.
+// Handles protocol selection, URL parsing, TLS setup, and defaults.
+
 package http
 
 import (
@@ -9,35 +13,43 @@ import (
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 )
 
+// protocol represents supported HTTP log ingestion protocols.
+// Used in parsedConfig.proto field to route to appropriate adapter.
 type protocol int
 
 const (
-	protocolPlain      protocol = iota
-	protocolNDJSON
-	protocolCloudflare
-	protocolFirehose
-	protocolPubSub
-	protocolLoki
-	protocolOTLP
-	protocolAzure
-	protocolSplunk
+	protocolPlain      protocol = iota // plain: raw newline-delimited logs
+	protocolNDJSON                     // ndjson: newline-delimited JSON with optional envelope field
+	protocolCloudflare                 // cloudflare: Cloudflare Logpull format
+	protocolFirehose                   // firehose: AWS Kinesis Firehose format
+	protocolPubSub                     // pubsub: GCP Pub/Sub push format
+	protocolLoki                       // loki: Grafana Loki push API format
+	protocolOTLP                       // otlp: OpenTelemetry Protocol format
+	protocolAzure                      // azure: Azure Monitor Data Collector API format
+	protocolSplunk                     // splunk: Splunk HTTP Event Collector format
 )
 
+// parsedConfig holds validated runtime configuration for HTTP source.
+// Derived from pkgsource.InputConfig during initialization.
 type parsedConfig struct {
-	mode          string
-	scheme        string
-	host          string
-	port          string
-	path          string
-	proto         protocol
-	token         string
-	envelopeField string
-	tlsCert       string
-	tlsKey        string
-	pullInterval  time.Duration
-	maxBodyBytes  int64
+	mode          string        // YAML: mode — push or pull. Default: push. Consumer: Run()
+	scheme        string        // YAML: scheme from addr — http or https. Consumer: runPush (TLS setup)
+	host          string        // YAML: host from addr/url — target hostname. Consumer: runPush/runPull
+	port          string        // YAML: port from addr/url — target port. Consumer: runPush/runPull
+	path          string        // YAML: path from addr/url — HTTP endpoint path. Consumer: runPush/runPull
+	proto         protocol      // YAML: protocol — log format to parse. Consumer: buildAdapter
+	token         string        // YAML: token — bearer/token auth for push endpoints. Consumer: buildPushHandler
+	envelopeField string        // YAML: envelope_field — JSON field for envelope in ndjson. Consumer: GenericAdapter
+	tlsCert       string        // YAML: tls_cert — TLS certificate path. Consumer: runPush (TLS server)
+	tlsKey        string        // YAML: tls_key — TLS private key path. Consumer: runPush (TLS server)
+	pullInterval  time.Duration // YAML: pull_interval — polling interval for pull mode. Default: 30s. Consumer: runPull
+	maxBodyBytes  int64        // YAML: max_body_bytes — max request body size. Default: 10MB. Consumer: runPush
 }
 
+// parseHTTPConfig converts pkgsource.InputConfig to parsedConfig.
+// Validates URL/addr format, sets defaults (mode=push, port=80/443), handles TLS.
+// Returns error if required fields are missing or format is invalid.
+// Called from: New() during HTTPSource initialization.
 func parseHTTPConfig(cfg pkgsource.InputConfig) (*parsedConfig, error) {
 	mode := cfg.Mode
 	if mode == "" {
@@ -128,6 +140,9 @@ func parseHTTPConfig(cfg pkgsource.InputConfig) (*parsedConfig, error) {
 	}, nil
 }
 
+// parseProtocol converts protocol string to protocol enum.
+// Returns error if protocol string is unknown or empty.
+// Called from: parseHTTPConfig() during configuration parsing.
 func parseProtocol(s string) (protocol, error) {
 	switch s {
 	case "plain":

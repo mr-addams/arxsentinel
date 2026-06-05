@@ -41,28 +41,36 @@ import (
 // logMu protects operationalWriter and threatWriter from concurrent access during SIGHUP reload:
 // the GC goroutine calls Log/LogThreat in parallel with Reload() in the main goroutine.
 // Readers (Log, LogThreat) acquire RLock; Reload acquires Lock for descriptor swap.
+// Consumer: main.go (runStream goroutine), Reload, Close.
 
 var (
 	// debugEnabled / colorEnabled — atomics: read from Log without a lock (fast path),
 	// updated in Init/Reload from the main goroutine.
+	// YAML: general.debug — enables DEBUG/PARSER tags. Default: false.
+	// YAML: general.console_color — colored console output. Default: true.
+	// Consumer: Log (fast path).
 	debugEnabled atomic.Bool
 	colorEnabled atomic.Bool
 
 	// logMu protects operationalWriter and threatWriter.
+	// Consumer: Log, LogThreat, Reload, Close.
 	logMu sync.RWMutex
 
 	// operationalWriter — file descriptor for sentinel.log.
 	// nil if the file could not be opened — we continue with console only.
+	// Consumer: Log (write), Close (close).
 	operationalWriter *os.File
 
 	// threatWriter — file descriptor for threats.log.
 	// nil if the file could not be opened — Init returns an error.
+	// Consumer: LogThreat (write), Close (close).
 	threatWriter *os.File
 
 	// ConsoleWriter is the destination for console log lines produced by Log().
 	// Defaults to os.Stdout. Tests can replace it with io.Discard to suppress
 	// operational noise (e.g. CHAIN_WARN from expected error-path tests) without
 	// redirecting the os.Stdout fd that the testing framework uses for -v output.
+	// Consumer: Log (write).
 	ConsoleWriter io.Writer = os.Stdout
 )
 

@@ -1,3 +1,9 @@
+// ====== Module: pkg/sink/sentinel — Sentinel Threat Sink ======
+//   Writes ThreatEvent records to the Sentinel Hub bridge via executor queue.
+//   Acts as a bridge: receives events from the pipeline and enqueues them
+//   for asynchronous processing by the SentinelHub executor.
+//   Implements back-pressure: drops events silently when the queue is full.
+
 package sentinel
 
 import (
@@ -11,12 +17,21 @@ import (
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
+// SentinelThreatSink enqueues threat events for the Sentinel Hub executor.
+// YAML: sink.sentinel-threat.name.
+// Fields:
+//   - name: queue name passed to executor.RegisterSink. Consumer: executor
+//   - q: shared queue handle for Push/Unregister. Consumer: Write, Close
+//   - dropped: atomic counter for events dropped due to full queue. Consumer: Stats
 type SentinelThreatSink struct {
 	name    string
 	q       queue.Queue
 	dropped atomic.Int64
 }
 
+// NewSentinelThreatSink creates a sink that enqueues events to the Sentinel Hub bridge.
+// Called from: sink/sentinel/register.go (plugin factory).
+// Returns: configured SentinelThreatSink, or error if name is empty or queue registration fails.
 func NewSentinelThreatSink(name string, bufferSize int) (*SentinelThreatSink, error) {
 	if name == "" {
 		return nil, fmt.Errorf("sentinel-threat sink: name is required")
@@ -28,10 +43,17 @@ func NewSentinelThreatSink(name string, bufferSize int) (*SentinelThreatSink, er
 	return &SentinelThreatSink{name: name, q: q}, nil
 }
 
+// Name returns the sink identifier.
+// Called from: pipeline/executor.go (logging, error messages).
 func (s *SentinelThreatSink) Name() string {
 	return "sentinel-threat:" + s.name
 }
 
+// Write enqueues a single threat event for the Sentinel Hub executor.
+// Called from: pipeline/executor.go (per-event).
+// Non-blocking: Push() uses a bounded channel; blocks only if channel is full.
+// Silent drop: events are dropped without returning error when the queue is full
+// (implements back-pressure without propagating errors up the pipeline).
 func (s *SentinelThreatSink) Write(event plugin.ThreatEvent) error {
 	if err := s.q.Push(context.Background(), event); err != nil {
 		if errors.Is(err, queue.ErrQueueFull) {
@@ -43,11 +65,16 @@ func (s *SentinelThreatSink) Write(event plugin.ThreatEvent) error {
 	return nil
 }
 
+// Close unregisters the queue from the executor.
+// Called from: pipeline/executor.go during shutdown.
+// The Sentinel Hub executor drains the queue asynchronously after unregister.
 func (s *SentinelThreatSink) Close() error {
 	executor.Unregister(s.name)
 	return nil
 }
 
+// Stats returns counters for dropped events.
+// Called from: pipeline/executor.go (metrics reporting).
 func (s *SentinelThreatSink) Stats() plugin.SinkStats {
 	return plugin.SinkStats{
 		Dropped: s.dropped.Load(),

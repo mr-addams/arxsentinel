@@ -1,3 +1,7 @@
+// ====== Module: HTTP Envelope Utilities ======
+// Shared utilities for HTTP log processing: timestamp normalization, decompression,
+// body reading with limits, NDJSON parsing, and JSON field extraction.
+
 package http
 
 import (
@@ -13,6 +17,10 @@ import (
 	"time"
 )
 
+// normalizeTimestamp converts various timestamp formats to Unix nanoseconds.
+// Supports: unix_ns, unix_ns_str, unix_ms, rfc3339, unix_float.
+// Returns error if format is unknown or value is out of range.
+// Called from: various adapter Decode() methods to normalize timestamps.
 func normalizeTimestamp(val string, kind string) (int64, error) {
 	switch kind {
 	case "unix_ns", "unix_ns_str":
@@ -49,6 +57,10 @@ func normalizeTimestamp(val string, kind string) (int64, error) {
 	}
 }
 
+// maybeGunzip decompresses gzip-encoded body if Content-Encoding matches.
+// Returns original body if encoding is empty or "identity".
+// Returns error if decompressed size exceeds maxBytes (prevents zip bombs).
+// Called from: buildPushHandler() and runPull() to decompress request/response bodies.
 func maybeGunzip(body []byte, contentEncoding string, maxBytes int64) ([]byte, error) {
 	if contentEncoding == "" || contentEncoding == "identity" {
 		return body, nil
@@ -73,6 +85,9 @@ func maybeGunzip(body []byte, contentEncoding string, maxBytes int64) ([]byte, e
 	return nil, fmt.Errorf("unsupported Content-Encoding: %q", contentEncoding)
 }
 
+// readLimited reads up to maxBytes from reader, returns error if limit exceeded.
+// Prevents memory exhaustion from oversized request bodies.
+// Called from: buildPushHandler() and runPull() to read HTTP request/response bodies.
 func readLimited(r io.Reader, maxBytes int64) ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
 	if err != nil {
@@ -84,6 +99,8 @@ func readLimited(r io.Reader, maxBytes int64) ([]byte, error) {
 	return data, nil
 }
 
+// decodePlain splits body into lines, trims trailing \r, and returns non-empty lines.
+// Used by generic adapter for plain newline-delimited logs. Non-blocking.
 func decodePlain(body []byte) []string {
 	lines := strings.Split(string(body), "\n")
 	var result []string
@@ -135,6 +152,8 @@ func decodeNDJSON(body []byte, field string) ([]string, error) {
 	return result, nil
 }
 
+// base64Decode decodes base64-encoded string to bytes.
+// Called from: adapters that receive base64-encoded log data (e.g., Cloudflare).
 func base64Decode(s string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(s)
 }

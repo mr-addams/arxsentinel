@@ -1,3 +1,6 @@
+// ========================== pkg/executor/queue — queue_test.go ============
+//   Tests for Queue: buffering, ordering, worker pool, shutdown.
+
 package queue_test
 
 import (

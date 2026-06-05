@@ -1,3 +1,7 @@
+// ====== Module: HTTP Push Server ======
+// Implements HTTP webhook server for receiving log events via push mode.
+// Handles TLS, authentication, middleware chain, and request routing.
+
 package http
 
 import (
@@ -15,6 +19,9 @@ import (
 	nethttp "net/http"
 )
 
+// runPush starts the HTTP server in push (webhook) mode.
+// Listens on host:port with optional TLS, shuts down gracefully on ctx cancel.
+// Called from: HTTPSource.Run() when mode == "push". Non-blocking.
 func runPush(ctx context.Context, cfg *parsedConfig, handler nethttp.Handler) error {
 	server := &nethttp.Server{
 		Addr:    cfg.host + ":" + cfg.port,
@@ -48,6 +55,9 @@ func runPush(ctx context.Context, cfg *parsedConfig, handler nethttp.Handler) er
 	return err
 }
 
+// bearerAuth wraps handler with Bearer token authentication.
+// Returns original handler if token is empty (no auth required).
+// Called from: buildPushHandler() to add auth middleware.
 func bearerAuth(token string, next nethttp.Handler) nethttp.Handler {
 	if token == "" {
 		return next
@@ -58,6 +68,7 @@ func bearerAuth(token string, next nethttp.Handler) nethttp.Handler {
 			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
 			return
 		}
+		// Constant-time comparison prevents timing attacks on token validation.
 		if subtle.ConstantTimeCompare([]byte(auth[7:]), []byte(token)) != 1 {
 			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
 			return
@@ -66,6 +77,9 @@ func bearerAuth(token string, next nethttp.Handler) nethttp.Handler {
 	})
 }
 
+// buildPushHandler creates HTTP handler with protocol-specific processing.
+// Assembles middleware chain: cloudflare challenge → bearer auth → pubsub jwt → request handler.
+// Non-blocking. Called from: HTTPSource.Run().
 func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *plugin.LogEntry, par pkgsource.LineParser, logFn func(string, string, string), maxBodyBytes int64, counters *sourceCounters) nethttp.Handler {
 	var h nethttp.Handler
 	h = nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
@@ -75,12 +89,14 @@ func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *p
 			return
 		}
 
+		// Gunzip if Content-Encoding: gzip, but only if result stays within limit.
 		body, err = maybeGunzip(body, r.Header.Get("Content-Encoding"), maxBodyBytes)
 		if err != nil {
 			writeJSON(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
 
+		// Reject protobuf for Loki/OTLP — we only handle JSON.
 		if cfg.proto == protocolLoki || cfg.proto == protocolOTLP {
 			if r.Header.Get("Content-Type") == "application/x-protobuf" {
 				nethttp.Error(w, "unsupported content type: application/x-protobuf", 415)
@@ -88,6 +104,7 @@ func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *p
 			}
 		}
 
+		// Preserve vendor request IDs for tracing.
 		meta := make(map[string]string)
 		if rid := r.Header.Get("X-Amz-Firehose-Request-Id"); rid != "" {
 			meta["X-Amz-Firehose-Request-Id"] = rid
@@ -112,6 +129,7 @@ func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *p
 			case out <- entry:
 				atomic.AddInt64(&counters.linesRead, 1)
 			default:
+				// Non-blocking send — drop if channel is full.
 				atomic.AddInt64(&counters.dropped, 1)
 			}
 		}
@@ -122,6 +140,7 @@ func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *p
 	handler := bearerAuth(cfg.token, h)
 	handler = adapters.CloudflareChallengeMiddleware(handler)
 	if cfg.proto == protocolPubSub {
+		// PubSub requires JWT validation — build endpoint URL for audience claim.
 		endpointURL := cfg.scheme + "://" + cfg.host + ":" + cfg.port + cfg.path
 		handler = adapters.PubSubJWTMiddleware(endpointURL, handler)
 	}
@@ -129,6 +148,8 @@ func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *p
 	return handler
 }
 
+// writeJSON writes a JSON response with specified HTTP status code.
+// Helper for writing error responses. Non-blocking.
 func writeJSON(w nethttp.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

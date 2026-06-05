@@ -56,25 +56,33 @@ var boltPatternsKey = []byte("patterns")
 // ── Config ────────────────────────────────────────────────────────────────────────────
 
 // SourceConfig describes one upstream URL and its parse format.
+//
+// YAML: blocklist.lists[].sources[].url, blocklist.lists[].sources[].format.
+// Consumer: NewManager, startList.
 type SourceConfig struct {
-	URL    string `yaml:"url"`
-	Format string `yaml:"format"` // "plain_text" or "nginx_map"
+	URL    string `yaml:"url"`    // YAML: blocklist.lists[].sources[].url — upstream URL. Consumer: fetch.
+	Format string `yaml:"format"` // YAML: blocklist.lists[].sources[].format, default "plain_text". Consumer: NewParser.
 }
 
 // ListConfig describes one named blocklist: refresh cadence and one or more sources.
-// Enabled defaults to true when omitted from YAML (zero value false is overridden by
-// manager.NewManager — lists without an explicit enabled:false are treated as active).
+// Enabled defaults to true when omitted from YAML.
+//
+// YAML: blocklist.lists[].name, blocklist.lists[].enabled, blocklist.lists[].refresh_interval, blocklist.lists[].sources.
+// Consumer: NewManager, startList, Update.
 type ListConfig struct {
-	Name            string         `yaml:"name"`
-	Enabled         *bool          `yaml:"enabled"` // nil = default true; explicit false = skip list
-	RefreshInterval Duration       `yaml:"refresh_interval"`
-	Sources         []SourceConfig `yaml:"sources"`
+	Name            string         `yaml:"name"`              // Internal — list identifier. Consumer: startList, Match, MatchResult.
+	Enabled         *bool          `yaml:"enabled"`           // YAML: blocklist.lists[].enabled, default true. Consumer: listEnabled.
+	RefreshInterval Duration       `yaml:"refresh_interval"`  // YAML: blocklist.lists[].refresh_interval. Consumer: startList (ticker interval).
+	Sources         []SourceConfig `yaml:"sources"`           // YAML: blocklist.lists[].sources[]. Consumer: startList, fetchAndUpdate.
 }
 
 // Config is the top-level blocklist configuration embedded in the application config.
+//
+// YAML: blocklist.storage, blocklist.lists.
+// Consumer: NewManager, Update.
 type Config struct {
-	Storage string       `yaml:"storage"` // "" = in-memory only; path = bbolt file
-	Lists   []ListConfig `yaml:"lists"`
+	Storage string       `yaml:"storage"` // YAML: blocklist.storage, default "" (in-memory). Consumer: NewManager, Update.
+	Lists   []ListConfig `yaml:"lists"`    // YAML: blocklist.lists[]. Consumer: NewManager, Update.
 }
 
 // Duration is a time.Duration that unmarshals from YAML strings like "24h", "30m".
@@ -98,10 +106,12 @@ func (d *Duration) UnmarshalYAML(unmarshal func(any) error) error {
 // ── listState ─────────────────────────────────────────────────────────────────────────
 
 // listState holds the live Aho-Corasick automaton and the per-list goroutine cancel.
+//
+// Internal — no config mapping. Consumer: startList, fetchAndUpdate, Match, MatchResult.
 type listState struct {
 	mu      sync.RWMutex
-	matcher *ahocorasick.Matcher // nil until first successful load
-	cancel  context.CancelFunc
+	matcher *ahocorasick.Matcher // Internal — compiled Aho-Corasick automaton, nil until first load. Consumer: getMatcher, setMatcher.
+	cancel  context.CancelFunc   // Internal — cancels the per-list goroutine. Consumer: Update, Close.
 }
 
 func (s *listState) setMatcher(m *ahocorasick.Matcher) {
@@ -120,16 +130,21 @@ func (s *listState) getMatcher() *ahocorasick.Matcher {
 
 // Manager owns all blocklist data. Create once in main() via NewManager; pass to
 // detectors via SharedResources. On SIGHUP call Update() — same pointer, new goroutines.
+//
+// YAML: blocklist.* (storage, lists). Consumer: main.go (SharedResources), pipeline detectors.
 type Manager struct {
 	mu     sync.RWMutex
-	lists  map[string]*listState
-	db     *bolt.DB
-	client *http.Client
+	lists  map[string]*listState // Internal — list name to listState. Consumer: startList, Update, Match, MatchResult, Close.
+	db     *bolt.DB              // YAML: blocklist.storage, nil if not configured. Consumer: loadFromBolt, saveToBolt, Update.
+	client *http.Client          // Internal — HTTP client with 30s timeout. Consumer: fetch.
 }
 
 // NewManager creates a Manager and starts per-list refresh goroutines.
 // ctx must be appCtx so goroutines stop on SIGTERM.
 // Blocks only to open bbolt (if configured); network fetches happen in background.
+//
+// Called from: cmd/arxsentinel.main (pipeline setup).
+// Non-blocking: bbolt open blocks, network fetch is async.
 func NewManager(ctx context.Context, cfg Config) *Manager {
 	m := &Manager{
 		lists:  make(map[string]*listState),
@@ -160,6 +175,9 @@ func NewManager(ctx context.Context, cfg Config) *Manager {
 // Update replaces all per-list goroutines with goroutines running the new config.
 // Called by the SIGHUP fan-out goroutine in main() — exactly once per reload.
 // If the storage path changed, the old bbolt is closed and a new one is opened.
+//
+// Called from: SIGHUP handler (main.go).
+// Blocking: write lock on Manager.mu.
 func (m *Manager) Update(ctx context.Context, cfg Config) {
 	m.mu.Lock()
 
@@ -205,6 +223,9 @@ func (m *Manager) Update(ctx context.Context, cfg Config) {
 // Match returns true if text contains any pattern from the named list.
 // Returns false if the list does not exist or has not been loaded yet (graceful degradation).
 // Never panics. Safe for concurrent use.
+//
+// Called from: detectors (probe, crawler) via SharedResources.
+// Non-blocking: read locks only.
 func (m *Manager) Match(list string, text string) bool {
 	m.mu.RLock()
 	s, ok := m.lists[list]
@@ -225,6 +246,9 @@ func (m *Manager) Match(list string, text string) bool {
 // MatchResult returns the first matched pattern from the named list, or ("", false) if no match.
 // Returns ("", false) if the list does not exist or has not been loaded yet (graceful degradation).
 // Never panics. Safe for concurrent use.
+//
+// Called from: detectors (probe, crawler) via SharedResources.
+// Non-blocking: read locks only.
 func (m *Manager) MatchResult(list string, text string) (string, bool) {
 	m.mu.RLock()
 	s, ok := m.lists[list]
@@ -248,6 +272,9 @@ func (m *Manager) MatchResult(list string, text string) (string, bool) {
 
 // Close cancels all per-list goroutines and closes the bbolt database.
 // After Close, Match always returns false.
+//
+// Called from: graceful shutdown (main.go).
+// Blocking: write lock on Manager.mu.
 func (m *Manager) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()

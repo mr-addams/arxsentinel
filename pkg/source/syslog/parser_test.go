@@ -1,3 +1,6 @@
+// ========================== pkg/source/syslog — parser tests ================================
+//   Tests: RFC3164, RFC5424 (nil SD + with SD), MissingPRI, EmptyInput, Short messages.
+
 package syslog
 
 import (

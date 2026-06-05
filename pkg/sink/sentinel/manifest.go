@@ -1,3 +1,7 @@
+// ====== Module: pkg/sink/sentinel — Manifest ======
+//   Plugin manifest for the Sentinel Threat sink plugin.
+//   Declares plugin ID, version, role, and I/O types.
+
 package sentinel
 
 import "github.com/mr-addams/arxsentinel/pkg/plugin"

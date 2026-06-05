@@ -35,11 +35,12 @@ import (
 //   - cmd.Start() is called in NewManagedProcess — the process is immediately running
 //   - Send() and Recv() MUST be called with lock held — no internal locking
 //   - Close() should be called during shutdown to clean up resources
+// Consumer: detector.go, sink.go, executor.go, source.go.
 type ManagedProcess struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout *bufio.Scanner
-	mu     sync.Mutex // protects atomic Send/Recv cycles
+	cmd    *exec.Cmd         // Internal — spawned plugin subprocess. Consumer: Lock, Send, Recv, Close
+	stdin  io.WriteCloser   // Internal — plugin stdin pipe for sending requests. Consumer: Send, Close
+	stdout *bufio.Scanner    // Internal — plugin stdout scanner for reading responses. Consumer: Recv
+	mu     sync.Mutex        // Internal — protects atomic Send/Recv cycles. Consumer: Lock, Unlock
 }
 
 // NewManagedProcess spawns the plugin binary at execPath and wires up stdin/stdout pipes.
@@ -49,6 +50,9 @@ type ManagedProcess struct {
 // ctx is stored in cmd for context-aware Wait; the process runs independently.
 //
 // Returns an error if the binary is not executable or cannot be started.
+// Called from: detector.New, sink.New, executor.New, source.New.
+//
+// Blocking — Start() is called synchronously; process begins execution.
 func NewManagedProcess(ctx context.Context, execPath string) (*ManagedProcess, error) {
 	cmd := exec.CommandContext(ctx, execPath)
 
@@ -89,12 +93,15 @@ func NewManagedProcess(ctx context.Context, execPath string) (*ManagedProcess, e
 }
 
 // Lock acquires the process mutex. Must be paired with Unlock.
-// Detector implementations call Lock/Unlock to serialize request/response cycles.
+// Called from: Detector.SendRequest, Sink.SendRequest, Executor.SendRequest, Source.SendRequest.
+// Non-blocking.
 func (p *ManagedProcess) Lock() {
 	p.mu.Lock()
 }
 
 // Unlock releases the process mutex.
+// Called from: Detector.SendRequest, Sink.SendRequest, Executor.SendRequest, Source.SendRequest.
+// Non-blocking.
 func (p *ManagedProcess) Unlock() {
 	p.mu.Unlock()
 }
@@ -106,6 +113,8 @@ func (p *ManagedProcess) Unlock() {
 // the protocol if mu is not held by the caller.
 //
 // Returns an error if the pipe is closed (plugin exited) or write fails.
+// Called from: Detector.SendRequest, Sink.SendRequest, Executor.SendRequest, Source.SendRequest.
+// Non-blocking.
 func (p *ManagedProcess) Send(line []byte) error {
 	_, err := p.stdin.Write(append(line, '\n'))
 	if err != nil {
@@ -121,6 +130,8 @@ func (p *ManagedProcess) Send(line []byte) error {
 // messages out-of-order if mu is not held by the caller.
 //
 // Returns (nil, error) if stdout closed or scanner.Err() is non-nil.
+// Called from: Detector.SendRequest, Sink.SendRequest, Executor.SendRequest, Source.SendRequest.
+// Non-blocking.
 func (p *ManagedProcess) Recv() ([]byte, error) {
 	if !p.stdout.Scan() {
 		// Scan returned false: either EOF or error
@@ -138,6 +149,9 @@ func (p *ManagedProcess) Recv() ([]byte, error) {
 // If the process doesn't exit, sends SIGKILL.
 //
 // It is safe to call Close multiple times (idempotent).
+// Called from: detector.Close, sink.Close, executor.Close, source.Close.
+//
+// Blocking — waits up to 3 seconds for process exit.
 func (p *ManagedProcess) Close() error {
 	// Close stdin to signal end-of-input to the plugin
 	if err := p.stdin.Close(); err != nil && err != io.ErrClosedPipe {

@@ -1,3 +1,7 @@
+// ====== Module: Grafana Loki Adapter ======
+// Implements Grafana Loki push API format.
+// Expects JSON with streams array, each containing labels and values.
+
 package adapters
 
 import (
@@ -8,17 +12,25 @@ import (
 	nethttp "net/http"
 )
 
+// LokiAdapter implements Adapter for Grafana Loki push API.
+// Expects JSON: {"streams":[{"stream":{"label":"val"},"values":[["ts","line"]]}]}
+// Called from: buildPushHandler() during HTTP request processing.
 type LokiAdapter struct{}
 
+// lokiPushRequest represents Grafana Loki push API request format.
 type lokiPushRequest struct {
 	Streams []lokiStream `json:"streams"`
 }
 
+// lokiStream represents a Loki stream with labels and log entries.
 type lokiStream struct {
-	Stream map[string]string `json:"stream"`
-	Values [][]string        `json:"values"`
+	Stream map[string]string `json:"stream"` // YAML: Loki labels (job, instance, etc.)
+	Values [][]string        `json:"values"` // YAML: [[timestamp, line], ...]
 }
 
+// Decode parses Loki push JSON, extracts timestamps and lines from values.
+// Populates Metadata with stream labels for downstream processing.
+// Called from: buildPushHandler() to process Loki push payloads.
 func (a *LokiAdapter) Decode(body []byte) ([]EnvelopeRecord, error) {
 	var req lokiPushRequest
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -41,6 +53,7 @@ func (a *LokiAdapter) Decode(body []byte) ([]EnvelopeRecord, error) {
 	return records, nil
 }
 
+// WriteAck writes 204 No Content response. Non-blocking.
 func (a *LokiAdapter) WriteAck(w nethttp.ResponseWriter, meta map[string]string) {
 	w.WriteHeader(204)
 }

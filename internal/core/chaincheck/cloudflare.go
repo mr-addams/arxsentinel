@@ -84,31 +84,36 @@ const (
 )
 
 // CloudflareConfig holds the configuration for CloudflareChecker.
+//
+// YAML: chain_guard.cloudflare.enabled, chain_guard.cloudflare.refresh_interval, chain_guard.cloudflare.sources[].
+// Consumer: NewCloudflareChecker, Update.
 type CloudflareConfig struct {
-	Enabled         bool
-	RefreshInterval time.Duration
-	// Sources lists URLs that each return one CIDR per line.
-	// Lines starting with '#' and blank lines are ignored.
-	Sources []string
+	Enabled         bool          // YAML: chain_guard.cloudflare.enabled, default false. Consumer: NewCloudflareChecker, Update.
+	RefreshInterval time.Duration // YAML: chain_guard.cloudflare.refresh_interval. Consumer: startRefreshLoop.
+	Sources         []string      // YAML: chain_guard.cloudflare.sources[]. Consumer: fetchAll.
 }
 
 // CloudflareChecker detects whether an IP belongs to a Cloudflare-owned range.
 // The CIDR list is refreshed from upstream sources on a background ticker.
 // sync.RWMutex allows concurrent Contains() calls with minimal contention.
+//
+// YAML: chain_guard.cloudflare.*. Consumer: checker.go (Check).
 type CloudflareChecker struct {
 	mu     sync.RWMutex
-	nets   []*net.IPNet
-	cfg    CloudflareConfig
-	client *http.Client
+	nets   []*net.IPNet           // Internal — compiled Cloudflare CIDRs, replaced on refresh. Consumer: Contains, IsLoaded.
+	cfg    CloudflareConfig        // YAML: current config. Consumer: startRefreshLoop, fetchAll.
+	client *http.Client           // Internal — HTTP client with 30s timeout. Consumer: fetchSource.
 
-	// cancel stops the refresh goroutine; replaced on Update().
-	cancel context.CancelFunc
-	done   chan struct{} // closed when the goroutine exits
+	cancel context.CancelFunc      // Internal — cancels the refresh goroutine. Consumer: stopRefreshLoop, Update.
+	done   chan struct{}           // Internal — closed when the goroutine exits. Consumer: stopRefreshLoop.
 }
 
 // NewCloudflareChecker loads the fallback CIDRs synchronously so that IsLoaded()
 // returns true immediately, then starts the refresh goroutine.
 // The goroutine stops when ctx is cancelled or Close() is called.
+//
+// Called from: checker.go (NewChecker).
+// Non-blocking: fallback load is sync, goroutine is async.
 func NewCloudflareChecker(ctx context.Context, cfg CloudflareConfig) *CloudflareChecker {
 	c := &CloudflareChecker{
 		cfg:    cfg,
@@ -154,6 +159,9 @@ func (c *CloudflareChecker) startRefreshLoop(ctx context.Context) {
 // Contains reports whether ip belongs to any known Cloudflare CIDR.
 // Returns (true, matchedCIDR) on match, (false, "") otherwise.
 // A nil ip always returns false — no panic.
+//
+// Called from: checker.go (Check).
+// Non-blocking: read lock only.
 func (c *CloudflareChecker) Contains(ip net.IP) (bool, string) {
 	if ip == nil {
 		return false, ""
@@ -170,6 +178,9 @@ func (c *CloudflareChecker) Contains(ip net.IP) (bool, string) {
 
 // IsLoaded reports whether at least the fallback CIDRs have been loaded.
 // Always true after NewCloudflareChecker returns.
+//
+// Called from: tests, pipeline (main.go).
+// Non-blocking: read lock only.
 func (c *CloudflareChecker) IsLoaded() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -268,6 +279,8 @@ func (c *CloudflareChecker) fetchSource(ctx context.Context, url string) ([]stri
 // parseCIDRList converts a slice of CIDR strings into []*net.IPNet.
 // Invalid entries are silently skipped — a single bad line from a remote source
 // should not prevent the rest of the list from being used.
+//
+// Internal — no config mapping. Consumer: NewCloudflareChecker, fetchAll.
 func parseCIDRList(cidrs []string) []*net.IPNet {
 	nets := make([]*net.IPNet, 0, len(cidrs))
 	for _, cidr := range cidrs {

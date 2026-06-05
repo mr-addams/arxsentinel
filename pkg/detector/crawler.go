@@ -68,6 +68,9 @@ func newCrawlerFactory(cfg DetectorConfig, _ SharedResources) (plugin.Detector, 
 func (d *crawlerDetector) Name() string { return "crawler" }
 
 // Detect searches for numeric sequences in the IP's path history.
+// Called from: pipeline.processEntries.
+//
+// Non-blocking.
 func (d *crawlerDetector) Detect(sv plugin.IPView, _ *plugin.LogEntry) plugin.DetectResult {
 	paths := sv.RecentPaths()
 	if len(paths) < d.minSequential {

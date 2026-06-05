@@ -1,3 +1,7 @@
+// ========================== pkg/source/syslog — tests ==========================================
+//   Tests: UDP, TCP, RFC5424, MalformedPacket, RealParser, ConcurrentTCP,
+//          UnixSocket, DropCounter, ParseAddr, ContextCancel.
+
 package syslog
 
 import (

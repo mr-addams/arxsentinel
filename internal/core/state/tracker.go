@@ -50,50 +50,42 @@ const pathBufSize = 64
 
 // IPState — state of a single IP address.
 //
-// Fields are read by detectors via detector.IPView / detector.ScoreAccess —
-// both interfaces are implemented by the methods below without explicit import of the detector package.
+// YAML: (computed, not stored) — no direct config mapping. Consumer: all detectors.
 //
 // Lifecycle:
 //   created → first Update(entry) for this IP
 //   active  → LastSeen is updated on every Update
 //   deleted → GC when LastSeen < now-retention OR LRU eviction at max_tracked_ips
 type IPState struct {
-	IP        string
-	FirstSeen time.Time
-	LastSeen  time.Time
+	IP        string         // IP address from LogEntry.RealIP. Consumer: all detectors.
+	FirstSeen time.Time      // First request timestamp. Consumer: metrics, logging.
+	LastSeen  time.Time      // Last request timestamp, updated on every Update. Consumer: GC, detectors.
 
-	TotalRequests int
-	Requests404   int // for bruteforce ratio (Flow #6.1)
+	TotalRequests int        // Internal — total request counter. Consumer: metrics, rate detector.
+	Requests404   int        // Internal — 404 count for bruteforce ratio (Flow #6.1). Consumer: to be added.
 
 	// ── Path ring buffer ──────────────────────────────────────────────────────────
-	// Stores the last pathBufSize request paths in chronological order.
-	// pathPos = next write position; pathFull = buffer filled at least once.
-	pathBuf  [pathBufSize]string
-	pathPos  int
-	pathFull bool
+	pathBuf  [pathBufSize]string // Internal — ring buffer, last pathBufSize paths. Consumer: probe detector, crawler detector.
+	pathPos  int                 // Internal — next write position in ring buffer. Consumer: Update, RecentPaths.
+	pathFull bool                // Internal — true when buffer filled at least once (pathPos wrapped). Consumer: RecentPaths.
 
 	// pathCache caches the result of RecentPaths() to avoid make+copy on every detector call.
 	// pathDirty is set to true in Update() after writing to pathBuf; cleared in RecentPaths().
 	// Safe without locks: pipeline is single-threaded, Update() and RecentPaths() never interleave.
-	pathCache []string
-	pathDirty bool
+	pathCache []string         // Internal — cached RecentPaths result. Consumer: RecentPaths.
+	pathDirty bool              // Internal — true when pathBuf written but cache not rebuilt. Consumer: RecentPaths.
 
 	// ── Sliding window rate counters ──────────────────────────────────────────────────
-	// Two counters for the sliding window: avoids storing N thousands of timestamps.
-	// Formula: approxRate = (prevCount*(1-elapsed/window) + currCount) / window.
-	// Source: standard sliding window log counter algorithm.
-	rateWindowStart time.Time
-	rateCurrCount   int
-	ratePrevCount   int
+	rateWindowStart time.Time  // Internal — start of current rate counting window. Consumer: ApproxRate, updateRateLocked.
+	rateCurrCount   int        // Internal — requests in current window. Consumer: ApproxRate, updateRateLocked.
+	ratePrevCount   int        // Internal — requests in previous window. Consumer: ApproxRate, updateRateLocked.
 
 	// ── Score ─────────────────────────────────────────────────────────────────────────
-	// Accumulated score with linear decay. Updated by scorer via SetScore.
-	// Private fields: external access only through GetScore/GetScoreUpdatedAt/SetScore.
-	score          int
-	scoreUpdatedAt time.Time
+	score          int         // Internal — accumulated score with linear decay. Consumer: scorer (via ScoreAccess).
+	scoreUpdatedAt time.Time   // Internal — last score update timestamp. Consumer: scorer (via ScoreAccess).
 
 	// LRU list element — for Tracker use only. Do not modify manually.
-	lruElem *list.Element
+	lruElem *list.Element      // Internal — linked list element for LRU eviction. Consumer: Tracker.updateRateLocked, evictLRULocked.
 }
 
 // ++++++++++++++++++++++++++ Implementation of detector.IPView +++++++++++++++++++++++++++
@@ -103,9 +95,10 @@ func (s *IPState) GetTotalRequests() int   { return s.TotalRequests }
 func (s *IPState) GetRequests404() int     { return s.Requests404 }
 
 // RecentPaths returns the most recent paths in chronological order (oldest → newest).
-// The returned slice is owned by IPState — safe to read within a single pipeline tick
-// (between two consecutive Update() calls). Pipeline is single-threaded, so Update()
-// and RecentPaths() never interleave, and pathCache is not invalidated mid-read.
+// Returns cached slice — caller does not own the returned []string.
+//
+// Called from: detectors (probe, crawler) via IPView.
+// Non-blocking: pipeline is single-threaded.
 func (s *IPState) RecentPaths() []string {
 	if !s.pathDirty {
 		return s.pathCache
@@ -127,13 +120,10 @@ func (s *IPState) RecentPaths() []string {
 }
 
 // ApproxRate returns the approximate request rate per second over the given window.
+// Two-counter sliding window algorithm.
 //
-// Two-counter sliding window algorithm:
-//   approx = prevCount*(1-elapsed/window) + currCount
-//   rate = approx / window.Seconds()
-//
-// Accuracy ±10% compared to exact sliding window log.
-// Non-blocking — called from scoring pipeline without acquiring the mutex.
+// Called from: rate detector via IPView.
+// Non-blocking.
 func (s *IPState) ApproxRate(window time.Duration) float64 {
 	if window <= 0 || s.rateWindowStart.IsZero() {
 		return 0
@@ -170,29 +160,26 @@ func (s *IPState) SetScore(score int, at time.Time) {
 
 // ========================== Tracker =================================================
 
-// Tracker — thread-safe storage of IP states.
+// Tracker — thread-safe storage of IP states with LRU eviction.
 //
-// LRU eviction: when maxIPs is exceeded, remove the least recently used IP.
-// GC eviction: on a timer, remove IPs with LastSeen older than retention.
-//
-// Concurrent access:
-//   - Main pipeline: Update + scorer.Evaluate in a single goroutine
-//   - GC goroutine: RunGC in a separate goroutine
-//   - Both paths acquire write lock → serialized
+// YAML: state.max_tracked_ips, state.gc_interval, detectors.rate.window, scoring.observation_window.
+// Consumer: pipeline (main.go), detectors (via IPView/ScoreAccess).
 type Tracker struct {
 	mu     sync.RWMutex
-	states map[string]*IPState
-	lru    *list.List // Front = most recently used, Back = LRU candidate
+	states map[string]*IPState       // Internal — IP address to IPState map. Consumer: Update, GetStats, Len, Has.
+	lru    *list.List                // Internal — LRU list, front=most recent, back=LRU candidate. Consumer: Update, evictLRULocked.
 
-	maxIPs     int
-	rateWindow time.Duration // from config.Detectors.Rate.Window — for sliding window
-	retention  time.Duration // from config.Scoring.ObservationWindow — for GC
+	maxIPs     int                   // YAML: state.max_tracked_ips, default 100000 — max tracked IPs before LRU eviction. Consumer: Update.
+	rateWindow time.Duration         // YAML: detectors.rate.window, default 60s — sliding window for rate counting. Consumer: updateRateLocked, ApproxRate.
+	retention  time.Duration         // YAML: scoring.observation_window — GC retention threshold. Consumer: runGC.
 
-	logFn func(tag, msg, level string) // injected from main.go
+	logFn func(tag, msg, level string) // Internal — debug/info logger from main.go. Consumer: Update, RunGC, evictLRULocked.
 }
 
 // NewTracker creates a Tracker from config.
-// logFn is passed from main.go — core/ does not import sys/utils directly.
+//
+// Called from: cmd/arxsentinel.main (pipeline setup).
+// Non-blocking.
 func NewTracker(cfg config.Config, logFn func(tag, msg, level string)) *Tracker {
 	rw := time.Duration(cfg.Detectors.Rate.Window)
 	if rw <= 0 {
@@ -210,23 +197,12 @@ func NewTracker(cfg config.Config, logFn func(tag, msg, level string)) *Tracker 
 }
 
 // Update updates the IP state from a log entry and returns a pointer to IPState.
-//
 // Thread-safe. Called from the main pipeline for each line.
-// The returned *IPState implements detector.IPView and detector.ScoreAccess —
-// can be passed directly to scorer.Evaluate without type assertion in main.go.
 //
-// THREAD SAFETY OF THE RETURNED *IPState:
-//   IPState methods (GetScore, SetScore, RecentPaths, etc.) are called by the caller
-//   WITHOUT acquiring the Tracker mutex — this is safe because:
-//     1. Pipeline is single-threaded: Update + scorer.Evaluate execute sequentially
-//        in a single main goroutine.
-//     2. GC (RunGC) removes entries from the map but does not modify *IPState fields —
-//        the caller's local pointer remains valid (Go GC won't collect the object
-//        while there is a live reference).
-//     3. GC will not delete an active IP: LastSeen is updated in Update, the retention
-//        threshold has not been crossed yet.
-//   This assumption must remain valid in Flow #4 when detectors start actively reading
-//   *IPState. If writes from multiple goroutines are needed — add a separate mutex to IPState.
+// Returns: *IPState implementing detector.IPView and detector.ScoreAccess.
+//
+// Called from: pipeline (main.go process loop).
+// Blocking: acquires write lock.
 func (t *Tracker) Update(entry *parser.LogEntry) *IPState {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -275,12 +251,7 @@ func (t *Tracker) Update(entry *parser.LogEntry) *IPState {
 // updateRateLocked updates sliding window rate counters.
 // Called only under write lock from Update.
 //
-// Algorithm: two-counter sliding window.
-// KNOWN LIMITATION: when gap ∈ (w, 2w) prevCount holds data from
-// the previous window (before gap). ApproxRate assumes uniform distribution —
-// bursty traffic may cause false positives (~1–1.5x).
-// Acceptable for the rate detector: a false WARN is better than a missed attack.
-// Algorithm is used in production rate limiters (Cloudflare, nginx).
+// Internal — no config mapping. Consumer: Update.
 func (t *Tracker) updateRateLocked(st *IPState, reqTime time.Time) {
 	w := t.rateWindow // always > 0 — fallback set in NewTracker
 
@@ -312,6 +283,8 @@ func (t *Tracker) updateRateLocked(st *IPState, reqTime time.Time) {
 
 // evictLRULocked removes the least recently used IP (tail of the LRU list).
 // Called only under write lock from Update.
+//
+// Internal — no config mapping. Consumer: Update.
 func (t *Tracker) evictLRULocked() {
 	oldest := t.lru.Back()
 	if oldest == nil {
@@ -328,14 +301,19 @@ func (t *Tracker) evictLRULocked() {
 // ========================== Statistics ==================================================
 
 // Stats — snapshot of tracker state for periodic logging.
+//
+// Internal — not in config. Consumer: metrics loop (main.go).
 type Stats struct {
-	TrackedIPs    int   // current number of tracked IPs
-	TotalRequests int64 // sum of TotalRequests across all IPs
-	Suspicious    int   // IPs with Score > 0 (accumulated at least one point)
+	TrackedIPs    int   // Current number of tracked IPs. Consumer: metrics, logging.
+	TotalRequests int64 // Sum of TotalRequests across all IPs. Consumer: metrics, logging.
+	Suspicious    int   // IPs with Score > 0 (accumulated at least one point). Consumer: metrics.
 }
 
 // GetStats returns a statistics snapshot under read lock.
 // Do not call from the hot path — iterates over all IPs under RLock.
+//
+// Called from: metrics loop (main.go).
+// Non-blocking: read lock only.
 func (t *Tracker) GetStats() Stats {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -351,9 +329,10 @@ func (t *Tracker) GetStats() Stats {
 }
 
 // Reconfigure applies new config parameters after SIGHUP.
-// Called from main.go in the case <-reloadCh block — between pipeline lines,
-// so there is no concurrent access with Update (single-threaded pipeline).
 // GC goroutine may read retention/rateWindow → write lock is required.
+//
+// Called from: SIGHUP handler (main.go).
+// Blocking: write lock.
 func (t *Tracker) Reconfigure(cfg config.Config) {
 	rw := time.Duration(cfg.Detectors.Rate.Window)
 	if rw <= 0 {
@@ -366,6 +345,9 @@ func (t *Tracker) Reconfigure(cfg config.Config) {
 }
 
 // Len returns the number of tracked IPs (thread-safe).
+//
+// Called from: metrics, tests.
+// Non-blocking: read lock only.
 func (t *Tracker) Len() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -374,6 +356,9 @@ func (t *Tracker) Len() int {
 
 // Has returns true if the IP is tracked (thread-safe).
 // Used in tests instead of direct access to tr.states — safe with t.Parallel().
+//
+// Called from: tests.
+// Non-blocking: read lock only.
 func (t *Tracker) Has(ip string) bool {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -384,14 +369,12 @@ func (t *Tracker) Has(ip string) bool {
 // ========================== GC ======================================================
 
 // RunGC starts the background goroutine for garbage collecting inactive IPs.
-//
 // Removes IPs with LastSeen older than retention (= scoring.observation_window).
-// interval comes from config.State.GCInterval — passed from main.go.
 //
-// Pattern from telegram-bot (patterns.md §2 GC):
-//   ticker + ctx.Done() + logger via callback.
+// Pattern: ticker + ctx.Done() + logger via callback (telegram-bot patterns.md §2 GC).
 //
-// Usage: go tracker.RunGC(ctx, time.Duration(cfg.State.GCInterval))
+// Called from: cmd/arxsentinel.main (go tracker.RunGC).
+// Non-blocking: runs in separate goroutine.
 func (t *Tracker) RunGC(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -417,12 +400,10 @@ func (t *Tracker) RunGC(ctx context.Context, interval time.Duration) {
 }
 
 // runGC executes a single garbage collection cycle.
-// Removes IPs that have been inactive longer than retention.
-// Returns (deleted, remaining) — both numbers captured under a single write lock,
-// so the log "deleted N, remaining M" accurately describes the state after this cycle.
+// Returns (deleted, remaining) under a single write lock.
 //
-// threshold is computed inside the lock: Reconfigure() may update t.retention
-// from the main goroutine while the GC goroutine has not yet acquired the mutex.
+// Called from: RunGC (GC goroutine).
+// Blocking: write lock.
 func (t *Tracker) runGC() (int, int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

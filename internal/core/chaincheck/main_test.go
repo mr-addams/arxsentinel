@@ -1,3 +1,6 @@
+// ========================== internal/core/chaincheck — main_test.go ===========
+//   Integration tests for Checker + BogonChecker joint behavior.
+
 package chaincheck
 
 import (

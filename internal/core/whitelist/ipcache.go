@@ -29,30 +29,30 @@ import (
 
 // ========================== IPCache ===================================================
 
-// cacheEntry — a single cache record: verification result + expiry time.
-// isFakeBot is stored explicitly — cannot be inferred from !verified:
-// for ip_ranges bots verified=false means "not checked", not "DNS failed".
+// cacheEntry stores verification result and expiry time for one IP.
+//
+// Internal — not in config. Consumer: IPCache.Get, IPCache.Set.
 type cacheEntry struct {
-	verified  bool
-	isFakeBot bool
-	expiresAt time.Time
+	verified  bool      // Internal — DNS verification result. Consumer: Get, Set.
+	isFakeBot bool      // Internal — true if bot is fake/harvester. Consumer: Get, Set.
+	expiresAt time.Time // Internal — expiry timestamp. Consumer: Get.
 }
 
 // IPCache caches DNS verification results for bot IP addresses.
 //
-// Entry lifecycle:
-//   miss      → Get returns ok=false → Verifier performs DNS lookup → Set
-//   hit       → Get returns verified, ok=true
-//   expired   → Get removes the entry, returns ok=false → re-verification
+// YAML: whitelist.dns_cache.positive_ttl, whitelist.dns_cache.negative_ttl.
+// Consumer: verifier.go (Get/Set), matcher.go (via Verifier).
 type IPCache struct {
 	mu          sync.RWMutex
-	entries     map[string]cacheEntry
-	positiveTTL time.Duration // TTL for verified=true (legitimate bot)
-	negativeTTL time.Duration // TTL for verified=false (fake or unknown)
+	entries     map[string]cacheEntry  // Internal — IP to cacheEntry map. Consumer: Get, Set.
+	positiveTTL time.Duration          // YAML: whitelist.dns_cache.positive_ttl, default 24h. Consumer: Set.
+	negativeTTL time.Duration          // YAML: whitelist.dns_cache.negative_ttl, default 5m. Consumer: Set.
 }
 
 // NewIPCache creates an IPCache from config.
-// Called from main.go at startup and on SIGHUP (Task 7.1).
+//
+// Called from: cmd/arxsentinel.main (pipeline setup), SIGHUP handler (Task 7.1).
+// Non-blocking.
 func NewIPCache(cfg config.DNSCacheConfig) *IPCache {
 	return &IPCache{
 		entries:     make(map[string]cacheEntry),
@@ -64,14 +64,11 @@ func NewIPCache(cfg config.DNSCacheConfig) *IPCache {
 // ========================== Get =======================================================
 
 // Get returns the verification result from cache.
-//
 // ok=false means a cache miss: entry is absent or expired.
-// On an expired entry — delete it under write lock so the next request
-// does not find it again (lazy expiry).
+// On an expired entry — delete it under write lock so the next request does not find it again.
 //
-// Two-phase lock (RLock → Lock on expiry):
-//   Most calls — hit on a live entry → only RLock.
-//   Only on expiry do we upgrade to write lock — a rare case.
+// Called from: verifier.go (DNS verification loop).
+// Non-blocking: uses two-phase locking (RLock → Lock on expiry only).
 func (c *IPCache) Get(ip string) (verified bool, isFakeBot bool, ok bool) {
 	// ── Fast path: read lock ───────────────────────────────────────────────────────────
 	c.mu.RLock()
@@ -106,15 +103,11 @@ func (c *IPCache) Get(ip string) (verified bool, isFakeBot bool, ok bool) {
 // ========================== Set =======================================================
 
 // Set stores the verification result in cache with a TTL depending on verified.
-//
-// Positive TTL (verified=true) is larger than negative (verified=false):
-//   - A legitimate bot rarely changes IP → long cache reduces DNS load.
-//   - Fake or unknown IP → short cache, so a retry re-verifies
-//     (the IP may have moved to a legitimate bot).
-//
+// Positive TTL (verified=true) >> negative TTL (verified=false).
 // isFakeBot is stored explicitly — not derived from !verified on Get.
-// This matters for ip_ranges bots: verified=false there means "not checked",
-// not "DNS failed", so isFakeBot must be false for them.
+//
+// Called from: verifier.go (DNS verification loop).
+// Non-blocking.
 func (c *IPCache) Set(ip string, verified bool, isFakeBot bool) {
 	ttl := c.negativeTTL
 	if verified {

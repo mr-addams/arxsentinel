@@ -20,6 +20,7 @@ import (
 
 // getInt extracts an int value from a params map.
 // Handles int, int64, and float64 (yaml sometimes produces float64 for whole numbers).
+// Called from: each detector factory. Non-blocking.
 func getInt(m map[string]interface{}, key string, def int) int {
 	v, ok := m[key]
 	if !ok {
@@ -38,6 +39,7 @@ func getInt(m map[string]interface{}, key string, def int) int {
 
 // getFloat64 extracts a float64 value from a params map.
 // Handles float64 and integer types for YAML values like `0.6` or `1`.
+// Called from: each detector factory. Non-blocking.
 func getFloat64(m map[string]interface{}, key string, def float64) float64 {
 	v, ok := m[key]
 	if !ok {
@@ -55,6 +57,7 @@ func getFloat64(m map[string]interface{}, key string, def float64) float64 {
 }
 
 // getBool extracts a bool value from a params map.
+// Called from: each detector factory. Non-blocking.
 func getBool(m map[string]interface{}, key string, def bool) bool {
 	v, ok := m[key]
 	if !ok {
@@ -73,6 +76,7 @@ func getBool(m map[string]interface{}, key string, def bool) bool {
 //   - int / int64 / float64: nanoseconds — used directly as time.Duration
 //
 // Returns def on missing key, unknown type, or parse error.
+// Called from: each detector factory. Non-blocking.
 func getDuration(m map[string]interface{}, key string, def time.Duration) time.Duration {
 	v, ok := m[key]
 	if !ok {
@@ -102,6 +106,7 @@ func getDuration(m map[string]interface{}, key string, def time.Duration) time.D
 //   - []interface{}: each element cast to string; non-string items are skipped
 //
 // Returns def on missing key or wrong type.
+// Called from: each detector factory. Non-blocking.
 func getStrings(m map[string]interface{}, key string, def []string) []string {
 	v, ok := m[key]
 	if !ok {
