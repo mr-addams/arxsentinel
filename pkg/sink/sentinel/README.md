@@ -28,14 +28,14 @@ pkg/sink/sentinel/
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `name` | string | yes | – | Sink name passed to executor.RegisterSink |
+| `name` | string | yes | – | Sink name passed to executor.AttachWriter |
 | `bufferSize` | int | no | 0 (default queue size) | Bounded channel capacity for executor queue |
 
 Validation: `name` validated for non-empty inside `NewSentinelThreatSink`.
 
 ## Behaviour Details
 
-- **Startup:** `NewSentinelThreatSink(name, bufferSize)` calls `executor.RegisterSink(name, bufferSize)`. If `bufferSize == 0`, executor uses its internal default.
+- **Startup:** `NewSentinelThreatSink(name, bufferSize)` calls `executor.AttachWriter(name, bufferSize)`. If `bufferSize == 0`, executor uses its internal default.
 - **Write:** Calls `q.Push(ctx, event)` on the executor queue. If `ErrQueueFull` → `dropped++` and returns `nil` (silent drop).
 - **Drop Policy:** Silent drop when queue is full — no error propagated to caller.
 - **No Metrics for EventsWritten:** `Stats()` only returns `Dropped`; `EventsWritten` is not tracked.
@@ -43,7 +43,7 @@ Validation: `name` validated for non-empty inside `NewSentinelThreatSink`.
 
 ## Close / Shutdown
 
-- `Close()` calls `executor.Unregister(name)` — removes sink from executor registry.
+- `Close()` calls `executor.DetachWriter(name)` — removes sink from executor registry.
 
 ## Metrics and Stats
 
@@ -86,7 +86,7 @@ arxsentinel --config /etc/arxsentinel/config.yaml
 
 ## Dependencies
 
-- `pkg/executor` — RegisterSink, Unregister, queue.Queue
+- `pkg/executor` — AttachWriter, DetachWriter, queue.Queue
 - `pkg/executor/queue` — Queue interface, ErrQueueFull
 - `pkg/plugin` — Manifest, ThreatEvent, SinkStats
 - `pkg/sink` — pkgsink register helpers

@@ -50,7 +50,7 @@ TypeNone → TypeRawLog → TypeStructured → TypeScoredEvent → TypeNone
 
 ```
                          ┌───────────────────┐
-                         │   NamedChannelHub  │
+                         │   NamedChannelSwitch  │
                          │  (pkg/executor)    │
                          └──────┬─────▲──────┘
                                 │     │
@@ -79,8 +79,8 @@ TypeNone → TypeRawLog → TypeStructured → TypeScoredEvent → TypeNone
 2. Zero or more Processors transform and optionally drop events
 3. Detectors receive `TypeStructured` and produce `TypeScoredEvent`
 4. Sinks receive `TypeScoredEvent` and persist/forward it
-5. Sinks may also push events into `NamedChannelHub` for Executor consumption
-6. Executors read from `NamedChannelHub` and perform actions (block, notify, etc.)
+5. Sinks may also push events into `NamedChannelSwitch` for Executor consumption
+6. Executors read from `NamedChannelSwitch` and perform actions (block, notify, etc.)
 
 There is always exactly one Source at the start. Processors, Detectors, Sinks, and Executors can be chained in any number.
 

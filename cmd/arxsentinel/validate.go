@@ -42,7 +42,7 @@ func runValidateSubcommand(configPath string) {
 
 // validateConfig collects plugin manifests from the active config and runs
 // topology-aware validation: spine (Source→Processors→Detectors→[Scorer]),
-// terminals (each sink independently), and executor wiring (NCH name-matching).
+// terminals (each sink independently), and executor wiring (NCS name-matching).
 // Called from: main (line 214), runValidateSubcommand (line 31).
 // Non-blocking.
 func validateConfig(cfg config.Config) []pipeline.SemanticError {
@@ -158,7 +158,7 @@ func buildPipelineCtx(streamName string, pl config.PipelineConfig) (pipeline.Pip
 // Called from: validateConfig (line 59).
 // Non-blocking.
 //
-// These are the NamedChannelHub channels executors wire to via sources[].name.
+// These are the NamedChannelSwitch channels executors wire to via sources[].name.
 func sentinelChannelNames(pl config.PipelineConfig) []string {
 	var names []string
 	for _, out := range pl.Outputs {

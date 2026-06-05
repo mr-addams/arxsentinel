@@ -20,8 +20,8 @@ import (
 // SentinelThreatSink enqueues threat events for the Sentinel Hub executor.
 // YAML: sink.sentinel-threat.name.
 // Fields:
-//   - name: queue name passed to executor.RegisterSink. Consumer: executor
-//   - q: shared queue handle for Push/Unregister. Consumer: Write, Close
+//   - name: queue name passed to executor.AttachWriter. Consumer: executor
+//   - q: shared queue handle for Push/DetachWriter. Consumer: Write, Close
 //   - dropped: atomic counter for events dropped due to full queue. Consumer: Stats
 type SentinelThreatSink struct {
 	name    string
@@ -36,7 +36,7 @@ func NewSentinelThreatSink(name string, bufferSize int) (*SentinelThreatSink, er
 	if name == "" {
 		return nil, fmt.Errorf("sentinel-threat sink: name is required")
 	}
-	q, err := executor.RegisterSink(name, bufferSize)
+	q, err := executor.AttachWriter(name, bufferSize)
 	if err != nil {
 		return nil, fmt.Errorf("sentinel-threat sink %q: %w", name, err)
 	}
@@ -69,7 +69,7 @@ func (s *SentinelThreatSink) Write(event plugin.ThreatEvent) error {
 // Called from: pipeline/executor.go during shutdown.
 // The Sentinel Hub executor drains the queue asynchronously after unregister.
 func (s *SentinelThreatSink) Close() error {
-	executor.Unregister(s.name)
+	executor.DetachWriter(s.name)
 	return nil
 }
 

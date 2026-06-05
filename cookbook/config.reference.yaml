@@ -452,7 +452,7 @@ pipeline:
 
 # ── executors: automated threat response ─────────────────────────────────────────────────
 #
-# Executors run autonomously: each reads from a Named Channel Hub source (sentinel-threat
+# Executors run autonomously: each reads from a Named Channel Switch source (sentinel-threat
 # sink) and performs automated response actions (e.g. Cloudflare IP list bans).
 # Configure sources[] to wire an executor to a stream output.
 #
@@ -589,7 +589,7 @@ pipeline:
 #     format: fail2ban        # fail2ban | json
 #   - type: stdout            # print to stdout (useful for piping or debugging)
 #     format: json
-#   - type: sentinel-threat   # feed THREAT events to an executor via Named Channel Hub
+#   - type: sentinel-threat   # feed THREAT events to an executor via Named Channel Switch
 #     name: sentinel-cf       # must match executor sources[].name above
 #   - type: exec              # exec plugin: events written as JSON to plugin stdin
 #     exec: /usr/local/lib/arxsentinel/plugins/my-sink.sh

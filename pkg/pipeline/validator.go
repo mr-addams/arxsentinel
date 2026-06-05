@@ -155,13 +155,13 @@ func ValidateTerminals(ctx PipelineContext, producedType plugin.DataType) []Sema
 	return errs
 }
 
-// ExecutorBinding describes a top-level executor and the NCH channels it reads from
+// ExecutorBinding describes a top-level executor and the NCS channels it reads from
 // for wiring validation. Constructed from config by the caller (validate.go).
 // Consumer: main.go (executor wiring).
 type ExecutorBinding struct {
 	Name        string            // YAML: executors[i].name — executor instance name. Consumer: ValidateExecutorWiring
 	InputType   plugin.DataType   // YAML: — executor's InputType from ManifestByName. Consumer: ValidateExecutorWiring
-	SourceNames []string          // YAML: executors[i].sources[].name — NCH channel names. Consumer: ValidateExecutorWiring
+	SourceNames []string          // YAML: executors[i].sources[].name — NCS channel names. Consumer: ValidateExecutorWiring
 }
 
 // ValidatePipelines runs ValidateSpine + ValidateTerminals for each pipeline.

@@ -76,7 +76,7 @@ type Config struct {
 	Inputs   []InputConfig  `yaml:"inputs"`   // YAML: inputs — top-level source list; alternative to general.log_file
 	Outputs  []SinkConfig   `yaml:"outputs"`  // YAML: outputs — top-level sink list; alternative to output.threat_log
 	DeprecatedExecutors []ExecutorItem          `yaml:"deprecated_executors,omitempty"` // YAML: deprecated_executors — legacy, replaced by top-level executors: (new format). Consumer: main.go, removed in v0.10.0
-	Executors           []ExecutorTopConfig     `yaml:"executors"`                       // YAML: executors — top-level executor list with named channel hub sources. Consumer: main.go startExecutors
+	Executors           []ExecutorTopConfig     `yaml:"executors"`                       // YAML: executors — top-level executor list with named channel switch sources. Consumer: main.go startExecutors
 	Pipeline            PipelineRuntimeConfig   `yaml:"pipeline"`                        // YAML: pipeline — buffer_size and shutdown_timeout; top-level default for all pipelines
 }
 
@@ -126,7 +126,7 @@ type ExecutorItem struct {
 
 // ExecutorTopConfig — configuration for a single top-level executor instance.
 // New syntax: executors: [{name: my-action, type: cloudflare, sources: [{name: cf-stream}], config: {…}}]
-// Each executor reads ThreatEvents from Named Channel Hub sources listed in Sources.
+// Each executor reads ThreatEvents from Named Channel Switch sources listed in Sources.
 type ExecutorTopConfig struct {
 	Name    string              `yaml:"name"`    // YAML: unique name for this executor instance
 	Type    string              `yaml:"type"`    // YAML: executor type registered in pkg/executor
@@ -134,7 +134,7 @@ type ExecutorTopConfig struct {
 	Config  map[string]any      `yaml:"config"`  // YAML: executor-specific structured configuration
 }
 
-// ExecutorSourceRef — reference to a Named Channel Hub source.
+// ExecutorSourceRef — reference to a Named Channel Switch source.
 type ExecutorSourceRef struct {
 	Name string `yaml:"name"` // YAML: channel name registered by sentinel-threat sink
 }

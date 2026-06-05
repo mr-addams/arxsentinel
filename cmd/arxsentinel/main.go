@@ -8,7 +8,7 @@
 //     - buildPipelineDetectors()        — builds detector list from registry (pkg/detector)
 //     - buildSources() / buildSinks()   — plugin list construction from pipeline config
 //     - buildParserForInput()           — parser selection based on profile/input configuration
-//     - startExecutors()                — top-level autonomous goroutines (NCH-based, Flow #042)
+//     - startExecutors()                — top-level autonomous goroutines (NCS-based, Flow #042)
 //     - processLine()                   — core pipeline: whitelist → tracking → scoring → sinks
 //     - sdNotify()                      — systemd readiness notification
 //     - metricsHandler()                — Prometheus metrics endpoint with optional bcrypt auth
@@ -131,7 +131,7 @@ type PipelineContext struct {
 	Tracker        *state.Tracker // YAML: state.tracker_gc_interval, 5m — IP state storage. Consumer: processLine (line 1200)
 	Scorer         *scorer.Scorer // Internal — scoring engine built from detectors. Consumer: processLine (line 1220)
 	Sinks          []plugin.Sink  // YAML: streams[].outputs — threat output destinations. Consumer: processLine (line 1248)
-	Executors      []plugin.Executor // YAML: executors[].name — NCH source consumers. Consumer: N/A (top-level, not used by processLine)
+	Executors      []plugin.Executor // YAML: executors[].name — NCS source consumers. Consumer: N/A (top-level, not used by processLine)
 	Matcher        *whitelist.Matcher // YAML: whitelist.ip_whitelist, cidr_whitelist, ua_whitelist, path_whitelist — early-exit rules. Consumer: processLine
 	Verifier       *whitelist.Verifier // Internal — rDNS/fDNS bot verification. Consumer: processLine (line 1178)
 	FakeBotScore   int            // YAML: whitelist.fake_bot_score, 50 — penalty applied before scoring. Consumer: processLine (line 1213)
@@ -453,7 +453,7 @@ func main() {
 	}()
 
 	// ── Start executor goroutines (top-level autonomous, Flow #042) ───────────────────────
-	// Executors are built from cfg.Executors and connect to Named Channel Hub sources
+	// Executors are built from cfg.Executors and connect to Named Channel Switch sources
 	// that are registered by sentinel-threat sinks inside stream pipelines (T5).
 	// ── Launch streams ────────────────────────────────────────────────────────────────
 
@@ -464,8 +464,8 @@ func main() {
 	}
 
 	// Start executors AFTER stream goroutines so sentinel-threat sinks have time
-	// to register their Named Channel Hub channels. A brief yield lets pipeline
-	// goroutines reach runPipeline → buildSinks → RegisterSink before GetSource.
+	// to register their Named Channel Switch channels. A brief yield lets pipeline
+	// goroutines reach runPipeline → buildSinks → AttachWriter before AttachReader.
 	var execWg sync.WaitGroup
 	if len(cfg.Executors) > 0 {
 		go func() {
@@ -485,10 +485,10 @@ func main() {
 	utils.Log("SHUTDOWN", "all streams done", "info")
 
 	// ── Graceful executor shutdown ──────────────────────────────────────────────────
-	// Unregister all NCH sources so executor Run() loops exit on closed channel.
+	// DetachWriter all NCS sources so executor Run() loops exit on closed channel.
 	for _, ec := range cfg.Executors {
 		for _, src := range ec.Sources {
-			pkgexecutor.Unregister(src.Name)
+			pkgexecutor.DetachWriter(src.Name)
 		}
 	}
 	execWg.Wait()
@@ -602,7 +602,7 @@ func runPipeline(
 	}()
 
 	// Executors are top-level autonomous goroutines (Flow #042) started from main().
-	// Pipeline no longer owns executors — they read from Named Channel Hub (NCH).
+	// Pipeline no longer owns executors — they read from Named Channel Switch (NCS).
 	var executors []plugin.Executor
 	sourceName, sourceType := sourceMetadata(sources)
 
@@ -1014,8 +1014,8 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 // Called from: main (line 464).
 // Non-blocking.
 //
-// Each executor connects to Named Channel Hub sources and runs until ctx is cancelled
-// or the source channel is closed. Must be called after all NCH sinks are registered.
+// Each executor connects to Named Channel Switch sources and runs until ctx is cancelled
+// or the source channel is closed. Must be called after all NCS sinks are registered.
 //
 // Returns an error if any executor cannot be built or any named source cannot be found.
 // On error, the caller should log and continue — executor startup failure is not fatal
@@ -1032,7 +1032,7 @@ func startExecutors(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup)
 		}
 
 		for _, src := range ec.Sources {
-			q, err := pkgexecutor.GetSource(src.Name)
+			q, err := pkgexecutor.AttachReader(src.Name)
 			if err != nil {
 				return fmt.Errorf("executor %q: source %q: %w", ec.Name, src.Name, err)
 			}
@@ -1201,7 +1201,7 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	metrics.RecordLine(pipe.StreamName, pipe.PipelineName)
 	metrics.RecordInputLine(pipe.StreamName, pipe.PipelineName, pipe.SourceName, pipe.SourceType)
 
-	// Forwarder mode (Flow #041) removed: Flow #042 replaces with NCH-based dispatch (T5/T10).
+	// Forwarder mode (Flow #041) removed: Flow #042 replaces with NCS-based dispatch (T5/T10).
 
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
 		entry.RealIP, entry.Method, entry.Path, entry.Status,
@@ -1319,7 +1319,7 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	}
 
 	// Executor dispatch removed: Flow #042 executors are autonomous goroutines
-	// reading from Named Channel Hub (NCH). Wired in T4b/T5.
+	// reading from Named Channel Switch (NCS). Wired in T4b/T5.
 }
 
 // ========================== systemd notify ===============================================
