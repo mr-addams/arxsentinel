@@ -31,7 +31,7 @@ import (
 type threatLevel int
 
 const (
-	levelInfo   threatLevel = iota
+	levelInfo threatLevel = iota
 	levelWarn
 	levelThreat
 )
@@ -372,10 +372,12 @@ func (e *CloudflareExecutor) flush(ctx context.Context, events []plugin.ThreatEv
 	// Помечаем IP в dedup-окне только после успешного AddItems — это
 	// "flaky-safe" семантика из Task 4: при ошибке CF (429, poll timeout,
 	// network) IP не отравляет окно, и повторные events снова дойдут до
-	// попытки. Раньше Mark делался в Run через IsDuplicate — отсюда баг.
-	for _, ev := range events {
-		e.dedupWin.Mark(ev.IP)
+	// попытки. MarkBatch берёт один mutex вместо N — симметрично mikrotik flush.
+	markedIPs := make([]string, len(events))
+	for i, ev := range events {
+		markedIPs[i] = ev.IP
 	}
+	e.dedupWin.MarkBatch(markedIPs)
 }
 
 func (e *CloudflareExecutor) sweep(ctx context.Context) {

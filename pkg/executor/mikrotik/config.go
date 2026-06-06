@@ -23,7 +23,7 @@ import (
 type threatLevel int
 
 const (
-	levelInfo   threatLevel = iota
+	levelInfo threatLevel = iota
 	levelWarn
 	levelThreat
 )
@@ -39,18 +39,18 @@ var levelOrder = map[string]threatLevel{
 // Config contains settings for connecting to a MikroTik RouterOS device via
 // REST API and managing an address-list for IP blocking.
 type Config struct {
-	Host          string        `json:"host" yaml:"host"`
-	Port          int           `json:"port" yaml:"port"`
-	Username      string        `json:"username" yaml:"username"`
-	Password      string        `json:"password" yaml:"password"`
-	ListName      string        `json:"list_name" yaml:"list_name"`
-	TTL           time.Duration `json:"-" yaml:"ttl"`
-	SentinelID    string        `json:"sentinel_id" yaml:"sentinel_id"`
-	TLSVerify     bool          `json:"tls_verify" yaml:"tls_verify"`
+	Host       string        `json:"host" yaml:"host"`
+	Port       int           `json:"port" yaml:"port"`
+	Username   string        `json:"username" yaml:"username"`
+	Password   string        `json:"password" yaml:"password"`
+	ListName   string        `json:"list_name" yaml:"list_name"`
+	TTL        time.Duration `json:"-" yaml:"ttl"`
+	SentinelID string        `json:"sentinel_id" yaml:"sentinel_id"`
+	TLSVerify  bool          `json:"tls_verify" yaml:"tls_verify"`
 	// CAFile is the path to a PEM-encoded CA certificate file used to verify the
 	// RouterOS TLS certificate. If empty, the system trust store is used.
 	// Required when tls_verify: true and the RouterOS cert is signed by an internal CA.
-	CAFile        string        `json:"ca_file" yaml:"ca_file"`
+	CAFile string `json:"ca_file" yaml:"ca_file"`
 	// UseTLS controls whether to use HTTPS (true, default) or plain HTTP (false).
 	// Set to false only for local mock servers in integration tests.
 	UseTLS        bool          `json:"use_tls" yaml:"use_tls"`

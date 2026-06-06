@@ -31,10 +31,10 @@ import (
 //
 // ExecSink holds a persistent ManagedProcess — recreated only on Close+reopen.
 type ExecSink struct {
-	name          string           // Internal — sink identifier. Consumer: Name
-	proc          *ManagedProcess  // Internal — plugin subprocess. Consumer: Write, Close
-	eventsWritten atomic.Int64     // Internal — successful writes. Consumer: Stats
-	errors        atomic.Int64     // Internal — write failures. Consumer: Stats
+	name          string          // Internal — sink identifier. Consumer: Name
+	proc          *ManagedProcess // Internal — plugin subprocess. Consumer: Write, Close
+	eventsWritten atomic.Int64    // Internal — successful writes. Consumer: Stats
+	errors        atomic.Int64    // Internal — write failures. Consumer: Stats
 }
 
 // NewSink spawns the plugin binary at execPath and returns an ExecSink.

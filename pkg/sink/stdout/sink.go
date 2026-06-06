@@ -115,4 +115,3 @@ func (s *StdoutSink) Write(ctx context.Context, event plugin.ThreatEvent) error 
 	s.eventsWritten.Add(1)
 	return nil
 }
-

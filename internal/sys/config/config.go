@@ -59,26 +59,26 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 // ========================== Root Config ===============================================
 
 type Config struct {
-	General   GeneralConfig   `yaml:"general"`
-	Logging   LoggingConfig   `yaml:"logging"`
-	Parser    ParserConfig    `yaml:"parser"`
-	Scoring   ScoringConfig   `yaml:"scoring"`
-	State     StateConfig     `yaml:"state"`
-	Detectors DetectorsConfig `yaml:"detectors"`
-	Whitelist WhitelistConfig `yaml:"whitelist"`
-	Output    OutputConfig    `yaml:"output"`
-	Metrics   MetricsConfig   `yaml:"metrics"`
-	Blocklist  blocklist.Config  `yaml:"blocklist"`   // YAML: blocklist — lists managed by blocklist.Manager (sources, refresh, bbolt). Consumer: main.go NewManager
-	ChainGuard ChainGuardConfig  `yaml:"chain_guard"` // YAML: chain_guard — proxy chain integrity checker. Consumer: main.go NewChecker
-	Streams    []StreamConfig    `yaml:"streams"`     // YAML: streams — multi-stream mode; mutually exclusive with general.log_file
+	General    GeneralConfig    `yaml:"general"`
+	Logging    LoggingConfig    `yaml:"logging"`
+	Parser     ParserConfig     `yaml:"parser"`
+	Scoring    ScoringConfig    `yaml:"scoring"`
+	State      StateConfig      `yaml:"state"`
+	Detectors  DetectorsConfig  `yaml:"detectors"`
+	Whitelist  WhitelistConfig  `yaml:"whitelist"`
+	Output     OutputConfig     `yaml:"output"`
+	Metrics    MetricsConfig    `yaml:"metrics"`
+	Blocklist  blocklist.Config `yaml:"blocklist"`   // YAML: blocklist — lists managed by blocklist.Manager (sources, refresh, bbolt). Consumer: main.go NewManager
+	ChainGuard ChainGuardConfig `yaml:"chain_guard"` // YAML: chain_guard — proxy chain integrity checker. Consumer: main.go NewChecker
+	Streams    []StreamConfig   `yaml:"streams"`     // YAML: streams — multi-stream mode; mutually exclusive with general.log_file
 
 	// Universal I/O (Flow #030) — top-level for single-stream / no-streams mode.
 	// Migrated from general.log_file + output.threat_log by Migrate().
-	Inputs   []InputConfig  `yaml:"inputs"`   // YAML: inputs — top-level source list; alternative to general.log_file
-	Outputs  []SinkConfig   `yaml:"outputs"`  // YAML: outputs — top-level sink list; alternative to output.threat_log
-	DeprecatedExecutors []ExecutorItem          `yaml:"deprecated_executors,omitempty"` // YAML: deprecated_executors — legacy, replaced by top-level executors: (new format). Consumer: main.go, removed in v0.10.0
-	Executors           []ExecutorTopConfig     `yaml:"executors"`                       // YAML: executors — top-level executor list with named channel switch sources. Consumer: main.go startExecutors
-	Pipeline            PipelineRuntimeConfig   `yaml:"pipeline"`                        // YAML: pipeline — buffer_size and shutdown_timeout; top-level default for all pipelines
+	Inputs              []InputConfig         `yaml:"inputs"`                         // YAML: inputs — top-level source list; alternative to general.log_file
+	Outputs             []SinkConfig          `yaml:"outputs"`                        // YAML: outputs — top-level sink list; alternative to output.threat_log
+	DeprecatedExecutors []ExecutorItem        `yaml:"deprecated_executors,omitempty"` // YAML: deprecated_executors — legacy, replaced by top-level executors: (new format). Consumer: main.go, removed in v0.10.0
+	Executors           []ExecutorTopConfig   `yaml:"executors"`                      // YAML: executors — top-level executor list with named channel switch sources. Consumer: main.go startExecutors
+	Pipeline            PipelineRuntimeConfig `yaml:"pipeline"`                       // YAML: pipeline — buffer_size and shutdown_timeout; top-level default for all pipelines
 }
 
 // ========================== Universal I/O config (Flow #030) ==========================
@@ -87,10 +87,10 @@ type Config struct {
 // New syntax: inputs: [{type: file, path: /var/log/nginx/access.log, parser: combined}]
 // Migration: general.log_file / streams[i].log_file → InputConfig automatically.
 type InputConfig struct {
-	Type   string `yaml:"type"`   // YAML: "file" | "stdin". Consumer: cmd/arxsentinel input.NewFileSource / input.NewStdinSource
-	Path   string `yaml:"path"`   // YAML: path to log file; required when type=file. Consumer: input.NewFileSource
-	Parser string `yaml:"parser"` // YAML: "combined" | "json" | "regex" | profile-name; default inherited from parser.log_format. Consumer: main.go buildParser
-	Exec   string `yaml:"exec"`   // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSource
+	Type          string `yaml:"type"`           // YAML: "file" | "stdin". Consumer: cmd/arxsentinel input.NewFileSource / input.NewStdinSource
+	Path          string `yaml:"path"`           // YAML: path to log file; required when type=file. Consumer: input.NewFileSource
+	Parser        string `yaml:"parser"`         // YAML: "combined" | "json" | "regex" | profile-name; default inherited from parser.log_format. Consumer: main.go buildParser
+	Exec          string `yaml:"exec"`           // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSource
 	Addr          string `yaml:"addr"`           // YAML: addr — network address for type=syslog: "udp://:5514", "tcp://:514", "unix:///var/run/arx.sock". Consumer: pkg/source/syslog.New
 	Mode          string `yaml:"mode"`           // YAML: mode — "push" (listen) or "pull" (poll), default "push". Consumer: pkg/source/http.New
 	URL           string `yaml:"url"`            // YAML: url — target URL for pull mode. Consumer: pkg/source/http.New
@@ -154,7 +154,7 @@ type ExecutorTopConfig struct {
 //	      path: /var/lib/arxsentinel/cf-queue.db
 //	      bucket: q            # optional, default "arxsentinel"
 type ExecutorSourceRef struct {
-	Name  string           `yaml:"name"`           // YAML: channel name registered by sentinel-threat sink
+	Name  string             `yaml:"name"`            // YAML: channel name registered by sentinel-threat sink
 	Queue *queue.QueueConfig `yaml:"queue,omitempty"` // YAML: optional per-source queue backend; nil → default MemoryQueue
 }
 
@@ -207,10 +207,10 @@ type StreamConfig struct {
 
 	// Single-pipeline I/O syntax (Flow #030): used when pipelines: is not specified.
 	// Migrate() wraps these into Pipelines[0] before runStream() is called.
-	Inputs   []InputConfig        `yaml:"inputs"`   // YAML: streams[].inputs — Deprecated in favour of pipelines[].inputs; auto-wrapped by Migrate()
-	Outputs  []SinkConfig         `yaml:"outputs"`  // YAML: streams[].outputs — Deprecated in favour of pipelines[].outputs; auto-wrapped by Migrate()
-	Executors []ExecutorItem      `yaml:"executors"` // YAML: streams[].executors — shorthand; Migrate() propagates to pipelines with Executors==nil. Consumer: config.Migrate
-	Pipeline PipelineRuntimeConfig `yaml:"pipeline"` // YAML: streams[].pipeline — per-stream pipeline tuning; overrides top-level
+	Inputs    []InputConfig         `yaml:"inputs"`    // YAML: streams[].inputs — Deprecated in favour of pipelines[].inputs; auto-wrapped by Migrate()
+	Outputs   []SinkConfig          `yaml:"outputs"`   // YAML: streams[].outputs — Deprecated in favour of pipelines[].outputs; auto-wrapped by Migrate()
+	Executors []ExecutorItem        `yaml:"executors"` // YAML: streams[].executors — shorthand; Migrate() propagates to pipelines with Executors==nil. Consumer: config.Migrate
+	Pipeline  PipelineRuntimeConfig `yaml:"pipeline"`  // YAML: streams[].pipeline — per-stream pipeline tuning; overrides top-level
 
 	// Deprecated: use inputs/outputs instead. Kept for backward compatibility and
 	// auto-migration via config.Migrate(). Will be removed in a future major version.
@@ -250,14 +250,14 @@ type ParserConfig struct {
 // Allows users to customize nginx log_format json without changing sentinel config structure.
 // All fields default to standard nginx variable names.
 type JSONFieldsConfig struct {
-	RemoteAddr string `yaml:"remote_addr"`  // default "remote_addr"
-	Time       string `yaml:"time"`         // default "time_iso8601"
-	Request    string `yaml:"request"`      // default "request" — "METHOD /uri PROTO" string
-	Status     string `yaml:"status"`       // default "status"
-	BytesSent  string `yaml:"bytes_sent"`   // default "bytes_sent"
-	Referer    string `yaml:"referer"`      // default "http_referer"
-	UserAgent  string `yaml:"user_agent"`   // default "http_user_agent"
-	RealIP     string `yaml:"real_ip"`      // default "real_ip"
+	RemoteAddr string `yaml:"remote_addr"` // default "remote_addr"
+	Time       string `yaml:"time"`        // default "time_iso8601"
+	Request    string `yaml:"request"`     // default "request" — "METHOD /uri PROTO" string
+	Status     string `yaml:"status"`      // default "status"
+	BytesSent  string `yaml:"bytes_sent"`  // default "bytes_sent"
+	Referer    string `yaml:"referer"`     // default "http_referer"
+	UserAgent  string `yaml:"user_agent"`  // default "http_user_agent"
+	RealIP     string `yaml:"real_ip"`     // default "real_ip"
 }
 
 // ++++++++++++++++++++++++++ Section: scoring +++++++++++++++++++++++++++++++++++++++++++
@@ -336,13 +336,13 @@ type RateConfig struct {
 // -------------------------- User-Agent Anomaly --------------------------------------
 
 type UserAgentConfig struct {
-	Enabled                bool     `yaml:"enabled"`                  // YAML: detectors.useragent.enabled, default true. Consumer: detector.UserAgent
-	ScannerScore           int      `yaml:"scanner_score"`            // YAML: detectors.useragent.scanner_score, default 40 — scanners (Nuclei, sqlmap). Consumer: detector.UserAgent
-	GrabberScore           int      `yaml:"grabber_score"`            // YAML: detectors.useragent.grabber_score, default 20 — grabbers/crawlers. Consumer: detector.UserAgent
-	AutomationScore        int      `yaml:"automation_score"`         // YAML: detectors.useragent.automation_score, default 15 — automation tools (requests, aiohttp). Consumer: detector.UserAgent
-	EmptyUAScore           int      `yaml:"empty_ua_score"`           // YAML: detectors.useragent.empty_ua_score, default 30 — empty UA. Consumer: detector.UserAgent
-	ExtraScannerPatterns   []string `yaml:"extra_scanner_patterns"`   // YAML: detectors.useragent.extra_scanner_patterns — additional scanner UA substrings merged with built-ins. Consumer: detector.UserAgent
-	ExtraGrabberPatterns   []string `yaml:"extra_grabber_patterns"`   // YAML: detectors.useragent.extra_grabber_patterns — additional grabber UA substrings. Consumer: detector.UserAgent
+	Enabled                 bool     `yaml:"enabled"`                   // YAML: detectors.useragent.enabled, default true. Consumer: detector.UserAgent
+	ScannerScore            int      `yaml:"scanner_score"`             // YAML: detectors.useragent.scanner_score, default 40 — scanners (Nuclei, sqlmap). Consumer: detector.UserAgent
+	GrabberScore            int      `yaml:"grabber_score"`             // YAML: detectors.useragent.grabber_score, default 20 — grabbers/crawlers. Consumer: detector.UserAgent
+	AutomationScore         int      `yaml:"automation_score"`          // YAML: detectors.useragent.automation_score, default 15 — automation tools (requests, aiohttp). Consumer: detector.UserAgent
+	EmptyUAScore            int      `yaml:"empty_ua_score"`            // YAML: detectors.useragent.empty_ua_score, default 30 — empty UA. Consumer: detector.UserAgent
+	ExtraScannerPatterns    []string `yaml:"extra_scanner_patterns"`    // YAML: detectors.useragent.extra_scanner_patterns — additional scanner UA substrings merged with built-ins. Consumer: detector.UserAgent
+	ExtraGrabberPatterns    []string `yaml:"extra_grabber_patterns"`    // YAML: detectors.useragent.extra_grabber_patterns — additional grabber UA substrings. Consumer: detector.UserAgent
 	ExtraAutomationPatterns []string `yaml:"extra_automation_patterns"` // YAML: detectors.useragent.extra_automation_patterns — additional automation UA substrings. Consumer: detector.UserAgent
 }
 
@@ -370,11 +370,11 @@ type BadBotConfig struct {
 // ++++++++++++++++++++++++++ Section: whitelist ++++++++++++++++++++++++++++++++++++++++
 
 type WhitelistConfig struct {
-	Bots             []BotConfig          `yaml:"bots"`
+	Bots             []BotConfig           `yaml:"bots"`
 	Custom           CustomWhitelistConfig `yaml:"custom"`
 	DNSCache         DNSCacheConfig        `yaml:"dns_cache"`
-	FakeBotScore     int                  `yaml:"fake_bot_score"`      // YAML: whitelist.fake_bot_score, default 35 — penalty for a legitimate bot UA without DNS confirmation. Consumer: whitelist.Verifier
-	DNSVerifyTimeout Duration             `yaml:"dns_verify_timeout"`  // YAML: whitelist.dns_verify_timeout, default "2s" — bot DNS verification timeout in pipeline. Consumer: main.go processLine
+	FakeBotScore     int                   `yaml:"fake_bot_score"`     // YAML: whitelist.fake_bot_score, default 35 — penalty for a legitimate bot UA without DNS confirmation. Consumer: whitelist.Verifier
+	DNSVerifyTimeout Duration              `yaml:"dns_verify_timeout"` // YAML: whitelist.dns_verify_timeout, default "2s" — bot DNS verification timeout in pipeline. Consumer: main.go processLine
 }
 
 // VerifyMethod constants — must match the yaml values in config.yaml.
@@ -398,7 +398,7 @@ type CustomWhitelistConfig struct {
 	IPs          []string `yaml:"ips"`           // YAML: whitelist.custom.ips — trusted IPs. Consumer: whitelist.Matcher
 	CIDRs        []string `yaml:"cidrs"`         // YAML: whitelist.custom.cidrs — trusted subnets. Consumer: whitelist.Matcher
 	UASubstrings []string `yaml:"ua_substrings"` // YAML: whitelist.custom.ua_substrings — UA substrings to skip. Consumer: whitelist.Matcher
-	Paths        []string `yaml:"paths"`          // YAML: whitelist.custom.paths — URL paths to skip scoring (e.g. ["/ws", "/health"]). Consumer: whitelist.Matcher
+	Paths        []string `yaml:"paths"`         // YAML: whitelist.custom.paths — URL paths to skip scoring (e.g. ["/ws", "/health"]). Consumer: whitelist.Matcher
 }
 
 type DNSCacheConfig struct {
@@ -431,10 +431,10 @@ type MetricsConfig struct {
 // a sign that the proxy chain is misconfigured and real attacker IPs are not reaching the log.
 // Writes to WarningsLog (not threat_log) — these are infrastructure alerts, not threats.
 type ChainGuardConfig struct {
-	Enabled     bool                 `yaml:"enabled"`      // ENV: ARXSENTINEL_CHAIN_GUARD_ENABLED, default false (requires warnings_log to activate)
-	WarningsLog string               `yaml:"warnings_log"` // ENV: ARXSENTINEL_CHAIN_GUARD_WARNINGS_LOG, default "" (required if enabled)
+	Enabled     bool                  `yaml:"enabled"`      // ENV: ARXSENTINEL_CHAIN_GUARD_ENABLED, default false (requires warnings_log to activate)
+	WarningsLog string                `yaml:"warnings_log"` // ENV: ARXSENTINEL_CHAIN_GUARD_WARNINGS_LOG, default "" (required if enabled)
 	Cloudflare  CloudflareGuardConfig `yaml:"cloudflare"`
-	Bogon       BogonGuardConfig     `yaml:"bogon"`
+	Bogon       BogonGuardConfig      `yaml:"bogon"`
 }
 
 // CloudflareGuardConfig controls Cloudflare IP range fetching and caching.
@@ -471,9 +471,9 @@ func (c ChainGuardConfig) ToChainCheckConfig() chaincheck.Config {
 // LoadConfig reads config from path and overlays it on top of Go defaults.
 //
 // Load order (highest priority wins):
-//   1. Go defaults (defaultConfig)
-//   2. YAML file (if present)
-//   3. ARXSENTINEL_* environment variables
+//  1. Go defaults (defaultConfig)
+//  2. YAML file (if present)
+//  3. ARXSENTINEL_* environment variables
 //
 // Behavior when file is missing:
 //   - File not found (os.IsNotExist) → uses defaults; env overrides still apply.
@@ -553,9 +553,10 @@ func LoadConfig(path string) (Config, error) {
 // An empty or unset variable leaves the corresponding field unchanged.
 //
 // Not overridable via env vars (complex types — configure via YAML):
-//   detectors.probe.paths, detectors.noasset.asset_extensions,
-//   detectors.overflow.suspicious_params, detectors.useragent.extra_*_patterns,
-//   whitelist.bots, whitelist.custom.ua_substrings, streams
+//
+//	detectors.probe.paths, detectors.noasset.asset_extensions,
+//	detectors.overflow.suspicious_params, detectors.useragent.extra_*_patterns,
+//	whitelist.bots, whitelist.custom.ua_substrings, streams
 func applyEnvOverrides(cfg *Config) error {
 	// ── general ───────────────────────────────────────────────────────────────────────
 	envStr("ARXSENTINEL_GENERAL_LOG_FILE", &cfg.General.LogFile)
@@ -1110,69 +1111,69 @@ func validateConfig(cfg *Config) error {
 func validateInputs(inputs []InputConfig) error {
 	seen := make(map[string]bool)
 	for i, in := range inputs {
-	if in.Type != "file" && in.Type != "stdin" && in.Type != "exec" && in.Type != "syslog" && in.Type != "http" {
-		return fmt.Errorf("inputs[%d]: unknown type %q (want file, stdin, exec, syslog, or http)", i, in.Type)
-	}
-	if in.Type == "syslog" && in.Addr == "" {
-		return fmt.Errorf("inputs[%d]: type=syslog requires addr (e.g. \"udp://:5514\")", i)
-	}
-	if in.Type == "http" {
-		switch in.Mode {
-		case "", "push":
-			if in.Addr == "" {
-				return fmt.Errorf("inputs[%d]: http push: addr is required", i)
-			}
-			if in.Protocol == "" {
-				return fmt.Errorf("inputs[%d]: http push: protocol is required", i)
-			}
-			if strings.HasPrefix(in.Addr, "https://") {
-				if in.TLSCert == "" {
-					return fmt.Errorf("inputs[%d]: http https: tls_cert is required", i)
+		if in.Type != "file" && in.Type != "stdin" && in.Type != "exec" && in.Type != "syslog" && in.Type != "http" {
+			return fmt.Errorf("inputs[%d]: unknown type %q (want file, stdin, exec, syslog, or http)", i, in.Type)
+		}
+		if in.Type == "syslog" && in.Addr == "" {
+			return fmt.Errorf("inputs[%d]: type=syslog requires addr (e.g. \"udp://:5514\")", i)
+		}
+		if in.Type == "http" {
+			switch in.Mode {
+			case "", "push":
+				if in.Addr == "" {
+					return fmt.Errorf("inputs[%d]: http push: addr is required", i)
 				}
-				if in.TLSKey == "" {
-					return fmt.Errorf("inputs[%d]: http https: tls_key is required", i)
+				if in.Protocol == "" {
+					return fmt.Errorf("inputs[%d]: http push: protocol is required", i)
 				}
-			}
-		case "pull":
-			if in.URL == "" {
-				return fmt.Errorf("inputs[%d]: http pull: url is required", i)
-			}
-			if in.Protocol == "" {
-				return fmt.Errorf("inputs[%d]: http pull: protocol is required", i)
-			}
-			if in.PullInterval == "" {
-				return fmt.Errorf("inputs[%d]: http pull: pull_interval is required", i)
-			}
-			if strings.HasPrefix(in.URL, "https://") {
-				if in.TLSCert == "" {
-					return fmt.Errorf("inputs[%d]: http https: tls_cert is required", i)
+				if strings.HasPrefix(in.Addr, "https://") {
+					if in.TLSCert == "" {
+						return fmt.Errorf("inputs[%d]: http https: tls_cert is required", i)
+					}
+					if in.TLSKey == "" {
+						return fmt.Errorf("inputs[%d]: http https: tls_key is required", i)
+					}
 				}
-				if in.TLSKey == "" {
-					return fmt.Errorf("inputs[%d]: http https: tls_key is required", i)
+			case "pull":
+				if in.URL == "" {
+					return fmt.Errorf("inputs[%d]: http pull: url is required", i)
 				}
+				if in.Protocol == "" {
+					return fmt.Errorf("inputs[%d]: http pull: protocol is required", i)
+				}
+				if in.PullInterval == "" {
+					return fmt.Errorf("inputs[%d]: http pull: pull_interval is required", i)
+				}
+				if strings.HasPrefix(in.URL, "https://") {
+					if in.TLSCert == "" {
+						return fmt.Errorf("inputs[%d]: http https: tls_cert is required", i)
+					}
+					if in.TLSKey == "" {
+						return fmt.Errorf("inputs[%d]: http https: tls_key is required", i)
+					}
+				}
+			default:
+				return fmt.Errorf("inputs[%d]: http: unknown mode %q (want push or pull)", i, in.Mode)
 			}
+			if in.Protocol == "ndjson" && in.EnvelopeField == "" {
+				return fmt.Errorf("inputs[%d]: http ndjson: envelope_field is required", i)
+			}
+		}
+		// Duplicate detection key is type-specific: HTTP uses addr/url (no path), file/syslog use path.
+		var key string
+		switch in.Type {
+		case "http":
+			key = in.Type + ":" + in.Addr + ":" + in.URL
 		default:
-			return fmt.Errorf("inputs[%d]: http: unknown mode %q (want push or pull)", i, in.Mode)
+			key = in.Type + ":" + in.Path
 		}
-		if in.Protocol == "ndjson" && in.EnvelopeField == "" {
-			return fmt.Errorf("inputs[%d]: http ndjson: envelope_field is required", i)
+		if seen[key] {
+			return fmt.Errorf("inputs[%d]: duplicate source %q", i, key)
 		}
-	}
-	// Duplicate detection key is type-specific: HTTP uses addr/url (no path), file/syslog use path.
-	var key string
-	switch in.Type {
-	case "http":
-		key = in.Type + ":" + in.Addr + ":" + in.URL
-	default:
-		key = in.Type + ":" + in.Path
-	}
-	if seen[key] {
-		return fmt.Errorf("inputs[%d]: duplicate source %q", i, key)
-	}
-	seen[key] = true
-	if in.Type == "file" && in.Path == "" {
-		return fmt.Errorf("inputs[%d]: type=file requires path", i)
-	}
+		seen[key] = true
+		if in.Type == "file" && in.Path == "" {
+			return fmt.Errorf("inputs[%d]: type=file requires path", i)
+		}
 	}
 	return nil
 }
@@ -1189,9 +1190,9 @@ func validateSinks(sinks []SinkConfig) error {
 		if s.Type == "file" && s.Path == "" {
 			return fmt.Errorf("outputs[%d]: type=file requires path", i)
 		}
-	if s.Format != "" && s.Format != "fail2ban" && s.Format != "json" && s.Format != "sentinel-threat" {
-		return fmt.Errorf("outputs[%d]: unknown format %q (want fail2ban, json, or sentinel-threat)", i, s.Format)
-	}
+		if s.Format != "" && s.Format != "fail2ban" && s.Format != "json" && s.Format != "sentinel-threat" {
+			return fmt.Errorf("outputs[%d]: unknown format %q (want fail2ban, json, or sentinel-threat)", i, s.Format)
+		}
 	}
 	return nil
 }
