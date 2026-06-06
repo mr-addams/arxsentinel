@@ -407,7 +407,9 @@ func (q *BboltQueue) Len() int {
 		return nil
 	})
 	if err != nil {
-		return 0
+		// -1 сигнализирует ошибку — не путать с 0 (пустая очередь).
+		// Caller проверяет < 0 для обнаружения corruption/I/O-ошибки.
+		return -1
 	}
 
 	if seq < read {

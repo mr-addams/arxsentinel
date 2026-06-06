@@ -1,28 +1,29 @@
 // ========================== pkg/executor — Named Channel Switch =============================
-//   In-process singleton that connects named Sink queues to Executor source queues.
-//   Pipeline sinks call AttachWriter(name, bufferSize) → get Queue for Push.
-//   Executors call AttachReader(name) → get Queue, call Pop(ctx).
-//   On shutdown, pipeline calls DetachWriter(name) → calls Queue.Close() and removes it.
+//   In-process singleton соединяет именованные Sink-очереди с Executor-источниками.
+//   Pipeline-sink вызывает AttachWriter(name, bufferSize) → получает Queue для Push.
+//   Executor вызывает AttachReader(name) → получает Queue, вызывает Pop(ctx).
+//   При shutdown pipeline вызывает DetachWriter(name) → Queue.Close() и удаление из карты.
 //
-//   WHAT IS HERE:
-//     NamedChannelSwitch — global singleton behind package-level functions
-//     AttachWriter    — create a named MemoryQueue, return Queue for Push
-//     AttachWriterWithQueue — register a custom Queue (for bbolt/redis)
-//     RegisterSinkFromConfig — create Queue from QueueConfig (bbolt/redis/memory) and register
-//     AttachReader       — return Queue for Pop
-//     DetachWriter      — close Queue and delete from map
+//   ЧТО ЗДЕСЬ:
+//     NamedChannelSwitch — глобальный singleton за пакетными функциями
+//     AttachWriter         — создать именованную MemoryQueue, вернуть Queue для Push
+//     AttachWriterWithQueue — зарегистрировать произвольную Queue (для bbolt/redis)
+//     RegisterSinkFromConfig — создать Queue из QueueConfig (bbolt/redis/memory) и зарегистрировать
+//     AttachReader         — вернуть Queue для Pop
+//     DetachWriter         — закрыть Queue и удалить из карты
 //
-//   WHAT IS NOT HERE:
-//     Executor lifecycle  — handled by main.go calling AttachReader + Run()
-//     Pipeline lifecycle  — handled by pipeline calling AttachWriter + Write
+//   ЧЕГО ЗДЕСЬ НЕТ:
+//     Жизненный цикл Executor'а — в main.go (AttachReader + Run())
+//     Жизненный цикл Pipeline — в pipeline (AttachWriter + Write)
 //
-//   WHY SINGLETON:
-//     No DI framework, no middleware, no config wiring. Two call sites (pipeline and executor)
-//     that never import each other. Singleton is the simplest correct bridge.
+//   ПОЧЕМУ SINGLETON:
+//     Никакого DI-фреймворка, никаких middleware, никакого config-wiring.
+//     Два места вызова (pipeline и executor), которые никогда не импортируют друг друга.
+//     Singleton — простейший корректный мост.
 //
 //   THREAD SAFETY:
-//     RWMutex — AttachWriter/AttachWriterWithQueue/DetachWriter take write lock,
-//     AttachReader takes read lock.
+//     RWMutex — AttachWriter/AttachWriterWithQueue/DetachWriter берут write-лок,
+//     AttachReader берёт read-лок.
 
 package executor
 
@@ -34,20 +35,20 @@ import (
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
-// DefaultBufferSize is used when AttachWriter is called with bufferSize <= 0.
+// DefaultBufferSize используется при вызове AttachWriter с bufferSize <= 0.
 const DefaultBufferSize = 1000
 
 var (
 	hubMu     sync.RWMutex
 	hubQueues = map[string]queue.Queue{}
-	// hubRefs counts how many sinks share each named queue.
-	// DetachWriter only closes the queue when the last sink deregisters.
+	// hubRefs считает, сколько sink'ов разделяют одну именованную очередь.
+	// DetachWriter закрывает очередь только когда последний sink дерегистрируется.
 	hubRefs = map[string]int{}
 )
 
-// AttachWriter returns the MemoryQueue for the given name, creating it if needed.
-// Fan-in: multiple streams may register the same name and all push to one queue.
-// The queue is only closed when the last caller calls DetachWriter.
+// AttachWriter возвращает MemoryQueue для указанного имени, создавая её при необходимости.
+// Fan-in: несколько стримов могут зарегистрировать одно имя и пушить в одну очередь.
+// Очередь закрывается только когда последний вызвавший вызывает DetachWriter.
 func AttachWriter(name string, bufferSize int) (queue.Queue, error) {
 	if bufferSize <= 0 {
 		bufferSize = DefaultBufferSize
@@ -64,9 +65,9 @@ func AttachWriter(name string, bufferSize int) (queue.Queue, error) {
 	return q, nil
 }
 
-// AttachWriterWithQueue registers a pre-configured Queue for the given name.
-// If the name is already registered, the existing queue is reused (fan-in);
-// the provided q is ignored and the ref count is incremented.
+// AttachWriterWithQueue регистрирует предварительно сконфигурированную Queue для указанного имени.
+// Если имя уже зарегистрировано — существующая очередь переиспользуется (fan-in);
+// переданный q игнорируется, счётчик ссылок инкрементируется.
 func AttachWriterWithQueue(name string, q queue.Queue) error {
 	hubMu.Lock()
 	defer hubMu.Unlock()
@@ -79,30 +80,31 @@ func AttachWriterWithQueue(name string, q queue.Queue) error {
 	return nil
 }
 
-// RegisterSinkFromConfig constructs a Queue for the given name based on cfg
-// (memory / bbolt / redis backend) and registers it with the Named Channel Switch.
+// RegisterSinkFromConfig создаёт Queue для указанного имени по cfg
+// (memory / bbolt / redis backend) и регистрирует её в Named Channel Switch.
 //
-// Called from: main.go startup, before stream goroutines run sentinel-threat sinks.
-// Must run BEFORE AttachWriter/AttachWriterWithQueue for the same name — the first
-// registration wins, later calls fan-in (refcount++). This lets pre-registration
-// of bbolt/redis backends coexist with the sink's later AttachWriter call.
+// Вызывается из: main.go при старте, до запуска горутин стримов с sentinel-threat sink'ами.
+// Должен отработать ДО AttachWriter/AttachWriterWithQueue для того же имени — побеждает
+// первая регистрация, последующие вызовы делают fan-in (refcount++). Это позволяет
+// предварительной регистрации bbolt/redis backend'ов сосуществовать с последующим
+// вызовом AttachWriter из sink'а.
 //
-// cfg == nil → identical to AttachWriter(name, 0): default MemoryQueue.
+// cfg == nil → идентично AttachWriter(name, 0): дефолтная MemoryQueue.
 //
-// For bbolt and redis, the returned error is propagated to the caller so the
-// pipeline fails fast on misconfiguration (e.g. invalid path, unreachable Redis).
-// For memory (and nil cfg), no error is possible — the function always returns nil.
-// The error return exists for bbolt/redis paths and for future backend types.
+// Для bbolt и redis возвращаемая ошибка пробрасывается вызывающему, чтобы pipeline
+// падал на misconfiguration (например, неверный path, недоступный Redis).
+// Для memory (и nil cfg) ошибка невозможна — функция всегда возвращает nil.
+// Возврат ошибки существует ради bbolt/redis и будущих backend-типов.
 func RegisterSinkFromConfig(name string, cfg *queue.QueueConfig) error {
-	// Nil config → defer to legacy MemoryQueue path so existing behaviour
-	// is preserved without any code change at the call site.
+	// Nil-конфиг → откат на legacy MemoryQueue-путь, чтобы существующее поведение
+	// сохранилось без изменения кода в точке вызова.
 	if cfg == nil {
 		_, err := AttachWriter(name, 0)
 		return err
 	}
 	switch cfg.Type {
 	case queue.QueueTypeMemory, "":
-		// Empty type also resolves to memory — same default as nil cfg.
+		// Пустой type тоже резолвится в memory — тот же дефолт, что и nil cfg.
 		_, err := AttachWriter(name, 0)
 		return err
 	case queue.QueueTypeBbolt:
@@ -122,9 +124,9 @@ func RegisterSinkFromConfig(name string, cfg *queue.QueueConfig) error {
 	}
 }
 
-// AttachReader returns the Queue for a previously registered name.
-// The caller uses Queue.Pop(ctx) to consume events.
-// Returns an error if no queue with the given name is registered.
+// AttachReader возвращает Queue для ранее зарегистрированного имени.
+// Вызывающий использует Queue.Pop(ctx) для получения событий.
+// Возвращает ошибку, если очередь с таким именем не зарегистрирована.
 func AttachReader(name string) (queue.Queue, error) {
 	hubMu.RLock()
 	defer hubMu.RUnlock()
@@ -135,8 +137,8 @@ func AttachReader(name string) (queue.Queue, error) {
 	return q, nil
 }
 
-// DetachWriter decrements the ref count for the named queue.
-// The queue is closed and removed only when the last registered sink unregisters.
+// DetachWriter декрементирует счётчик ссылок именованной очереди.
+// Очередь закрывается и удаляется только когда последний зарегистрированный sink дерегистрируется.
 func DetachWriter(name string) {
 	hubMu.Lock()
 	defer hubMu.Unlock()
@@ -151,5 +153,5 @@ func DetachWriter(name string) {
 	}
 }
 
-// Ensure queue.Queue satisfies plugin.EventSource at compile time.
+// Compile-time гарантия, что queue.Queue реализует plugin.EventSource.
 var _ plugin.EventSource = (queue.Queue)(nil)

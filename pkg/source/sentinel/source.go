@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
@@ -164,10 +165,12 @@ func (s *SentinelSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) e
 				// в предыдущих итерациях. Здесь очередь гарантированно пуста — выходим.
 				return nil
 			}
-			// Прочие ошибки (сетевые, I/O) — логируем и продолжаем.
+			// Прочие ошибки (сетевые, I/O) — логируем и делаем паузу перед retry.
+			// Пауза предотвращает busy-loop при персистентной ошибке (I/O, corruption).
 			if s.logFn != nil {
 				s.logFn("SENTINEL", fmt.Sprintf("queue.Pop error: %v", err), "error")
 			}
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
