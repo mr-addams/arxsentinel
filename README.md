@@ -17,9 +17,9 @@
   ╔══════════════════════════════════════════════════════════════════╗
   ║  SOURCES                                                         ║
   ║  nginx · Apache · Caddy · Traefik · HAProxy · LiteSpeed          ║
-  ║  file │ stdin │ syslog receiver │ exec+JSON plugin (any language) ║
+  ║  file │ stdin │ syslog │ exec+JSON plugin (any language)         ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
-                              │ parsed log entries
+                              │ parsed log entries (Direct Go Channels)
   ╔═══════════════════════════╧══════════════════════════════════════╗
   ║  PROCESSORS                                                      ║
   ║                                                                  ║
@@ -40,12 +40,17 @@
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ threat events
   ╔═══════════════════════════╧══════════════════════════════════════╗
-  ║  SINKS                                                           ║
+  ║  SINKS  (Passive Logging)                                        ║
   ║  file (fail2ban format) · stdout JSON · exec+JSON plugin         ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
-                              │ via Named Channel Switch
+                              │ sentinel-threat sink → AttachWriter()
   ╔═══════════════════════════╧══════════════════════════════════════╗
-  ║  EXECUTORS  (automated response — optional)                      ║
+  ║  NAMED CHANNEL SWITCH  (Point-to-Point Work Queue)               ║
+  ║  memory │ bbolt (file) │ redis                                   ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ ncs://<channel-name> → AttachReader()
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  EXECUTORS  (Stateful Active Response — optional)                ║
   ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
   ╚══════════════════════════════════════════════════════════════════╝
 ```
@@ -596,7 +601,20 @@ See [README.whitelist.md](deploy/examples/README.whitelist.md) for configuration
                               │
                   [Sink: Fail2Ban file]  ──→ threats.log ──→ Fail2Ban ──→ iptables ban
                   [Sink: stdout JSON]    ──→ log aggregator (Loki, Splunk, Datadog)
-                  [Sink: Splunk/Kafka]       (Phase 2+)
+                  [Sink: sentinel-threat] ─┐
+                                          │ sentinel-threat sink → AttachWriter()
+                            ╔═════════════╧═══════════════════╗
+                            ║  Named Channel Switch           ║
+                            ║  (ncs://threats · Work Queue)   ║
+                            ╚═════════════╤═══════════════════╝
+                                          │ AttachReader() · Point-to-Point
+                            ╔═════════════╧═══════════════════╗
+                            ║  EXECUTORS  (Stateful)          ║
+                            ║  ├─ Cloudflare IP Lists API     ║
+                            ║  ├─ MikroTik REST address-list  ║
+                            ║  └─ nginx blocklist file        ║
+                            ╚═════════════════════════════════╝
+                            (dedup map · TTL expiry · auto-unban)
                               │
                   sentinel.log (operational)
 ```

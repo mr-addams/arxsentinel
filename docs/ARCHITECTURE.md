@@ -121,7 +121,23 @@ Log Entry (file tail / stdin / exec)
     ├─ FileSink: append to threat log
     ├─ StdoutSink: print to stderr
     ├─ ExecSink: pass JSON to subprocess
-    └─ custom plugins (e.g., webhook, syslog)
+    └─ SentinelThreatSink: push to NCS queue
+       │ executor.AttachWriter("ncs://threats")
+       ↓
+    ╔══════════════════════════════════════════╗
+    ║  Named Channel Switch (Work Queue)       ║
+    ║  backend: memory │ bbolt │ redis         ║
+    ╚═══════════════════╤══════════════════════╝
+                        │ executor.AttachReader("ncs://threats")
+                        ↓
+    Executor source: Pop(ctx) loop
+    ├─ Dedup Map check  → skip if IP already acted on
+    ├─ Executor.Execute(ctx, event)
+    │  ├─ Cloudflare:  API call → add IP to IP List
+    │  ├─ MikroTik:    REST API → add to address-list
+    │  └─ nginx:       atomic file write + reload command
+    ├─ Mark in dedup map
+    └─ TTL Scheduler: goroutine → auto-unban after expiry
     ↓
     metrics.RecordThreat(level, detector, ...)
 ```
