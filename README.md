@@ -17,7 +17,8 @@
   ╔══════════════════════════════════════════════════════════════════╗
   ║  SOURCES                                                         ║
   ║  nginx · Apache · Caddy · Traefik · HAProxy · LiteSpeed          ║
-  ║  file │ stdin │ syslog │ exec+JSON plugin (any language)         ║
+  ║  file │ stdin │ syslog │ http (push/pull · Firehose/Loki/OTLP)   ║
+  ║  exec+JSON plugin (any language)                                 ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ parsed log entries (Direct Go Channels)
   ╔═══════════════════════════╧══════════════════════════════════════╗
