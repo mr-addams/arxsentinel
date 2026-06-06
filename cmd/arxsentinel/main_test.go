@@ -17,6 +17,8 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
+	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
+	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -560,7 +562,7 @@ func TestPipeline_FakeBotStillCaught(t *testing.T) {
 
 	p := &parser.CombinedParser{}
 
-// Send 5 rapid requests from the same IP with ClaudeBot UA.
+	// Send 5 rapid requests from the same IP with ClaudeBot UA.
 	// Rate threshold = 3, so after ~3 requests the rate detector fires.
 	var lastScore int
 	var caughtByRate bool
@@ -614,4 +616,163 @@ func TestPipeline_FakeBotStillCaught(t *testing.T) {
 	}
 
 	t.Logf("Fake bot caught: score=%d, rate module triggered", lastScore)
+}
+
+// TestPreRegisterExecutorQueues_WiringMismatch verifies the fail-fast check
+// added to preRegisterExecutorQueues: an executor source with a queue: section
+// that does not match any sentinel-threat output in the pipeline must produce
+// an error at startup. Without this guard, the source would silently create a
+// pre-registered backend queue (bbolt/redis) and a separate MemoryQueue would
+// be created by the sink — events would be lost without any error.
+func TestPreRegisterExecutorQueues_WiringMismatch(t *testing.T) {
+	// Detach any queues left over from sibling tests so this test starts clean.
+	// Named Channel Switch is a package-level singleton; a leftover bbolt queue
+	// from another test would make us report a false-positive success.
+	//
+	// Use t.Cleanup instead of per-case manual resets: cleanup runs even when
+	// t.Fatal/t.Errorf aborts the test in the middle of a case, so a half-run
+	// test cannot leave an orphan queue behind that pollutes the next test.
+	cleanupNames := []string{"mismatch-stream", "ok-stream", "orphan-stream", "legacy-stream"}
+	t.Cleanup(func() {
+		for _, n := range cleanupNames {
+			pkgexecutor.DetachWriter(n)
+		}
+	})
+
+	// Case 1: source name not referenced by any sentinel-threat output → error.
+	cfg := &config.Config{
+		Executors: []config.ExecutorTopConfig{{
+			Name: "cf-ban",
+			Sources: []config.ExecutorSourceRef{{
+				Name:  "mismatch-stream",
+				Queue: &queue.QueueConfig{Type: queue.QueueTypeBbolt, Path: t.TempDir() + "/q.db"},
+			}},
+		}},
+		Streams: []config.StreamConfig{{
+			Name: "web",
+			Pipelines: []config.PipelineConfig{{
+				Outputs: []config.SinkConfig{
+					{Type: "file", Path: "/tmp/x.log"}, // no sentinel-threat output
+				},
+			}},
+		}},
+	}
+	err := preRegisterExecutorQueues(cfg)
+	if err == nil {
+		t.Fatal("expected fail-fast error for orphan executor source, got nil")
+	}
+	if !strings.Contains(err.Error(), "mismatch-stream") {
+		t.Errorf("error should mention the orphan source name; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "cf-ban") {
+		t.Errorf("error should mention the executor name; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "available sink names") {
+		t.Errorf("error should list available sink names; got: %v", err)
+	}
+
+	// Case 2: source name matches a sentinel-threat output in pipelines → no error.
+	// Use a memory-backed queue so we do not touch the filesystem.
+	cfgOK := &config.Config{
+		Executors: []config.ExecutorTopConfig{{
+			Name: "cf-ban",
+			Sources: []config.ExecutorSourceRef{{
+				Name:  "ok-stream",
+				Queue: &queue.QueueConfig{Type: queue.QueueTypeMemory},
+			}},
+		}},
+		Streams: []config.StreamConfig{{
+			Name: "web",
+			Pipelines: []config.PipelineConfig{{
+				Outputs: []config.SinkConfig{
+					{Type: "sentinel-threat", Name: "ok-stream"},
+				},
+			}},
+		}},
+	}
+	if err := preRegisterExecutorQueues(cfgOK); err != nil {
+		t.Fatalf("expected nil error for matched source/output pair, got: %v", err)
+	}
+
+	// Case 3: source without queue section is skipped — no error even if no
+	// sentinel-threat output exists, because the legacy MemoryQueue path is used.
+	cfgLegacy := &config.Config{
+		Executors: []config.ExecutorTopConfig{{
+			Name: "cf-ban",
+			Sources: []config.ExecutorSourceRef{
+				{Name: "legacy-stream"}, // Queue == nil
+			},
+		}},
+		Streams: []config.StreamConfig{{
+			Name: "web",
+			Pipelines: []config.PipelineConfig{{
+				Outputs: []config.SinkConfig{},
+			}},
+		}},
+	}
+	if err := preRegisterExecutorQueues(cfgLegacy); err != nil {
+		t.Fatalf("expected nil error for legacy (no-queue) source, got: %v", err)
+	}
+
+	// Case 4: mixed — one source matches, another is orphan → fail-fast on the
+	// orphan. Confirms the check is per-source, not all-or-nothing.
+	cfgMixed := &config.Config{
+		Executors: []config.ExecutorTopConfig{{
+			Name: "cf-ban",
+			Sources: []config.ExecutorSourceRef{
+				{Name: "ok-stream", Queue: &queue.QueueConfig{Type: queue.QueueTypeMemory}},
+				{Name: "orphan-stream", Queue: &queue.QueueConfig{Type: queue.QueueTypeMemory}},
+			},
+		}},
+		Streams: []config.StreamConfig{{
+			Name: "web",
+			Pipelines: []config.PipelineConfig{{
+				Outputs: []config.SinkConfig{
+					{Type: "sentinel-threat", Name: "ok-stream"},
+				},
+			}},
+		}},
+	}
+	err = preRegisterExecutorQueues(cfgMixed)
+	if err == nil {
+		t.Fatal("expected fail-fast error when one of two sources is orphan, got nil")
+	}
+	if !strings.Contains(err.Error(), "orphan-stream") {
+		t.Errorf("error should name the orphan source; got: %v", err)
+	}
+}
+
+// TestCollectSentinelSinkNames verifies the helper walks every config location
+// where a sentinel-threat output can be declared and produces the expected set.
+// This is the single source of truth for "is this channel name wired?" — the
+// preRegisterExecutorQueues check relies on it.
+func TestCollectSentinelSinkNames(t *testing.T) {
+	cfg := &config.Config{
+		Outputs: []config.SinkConfig{
+			{Type: "sentinel-threat", Name: "top-level"},
+			{Type: "file", Path: "/tmp/x"}, // ignored: not sentinel-threat
+			{Type: "sentinel-threat"},      // ignored: empty name
+		},
+		Streams: []config.StreamConfig{{
+			Name: "web",
+			Outputs: []config.SinkConfig{
+				{Type: "sentinel-threat", Name: "stream-level"},
+			},
+			Pipelines: []config.PipelineConfig{{
+				Outputs: []config.SinkConfig{
+					{Type: "sentinel-threat", Name: "pipeline-level"},
+				},
+			}},
+		}},
+	}
+	got := collectSentinelSinkNames(cfg)
+	want := []string{"top-level", "stream-level", "pipeline-level"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d names, got %d: %v", len(want), len(got), got)
+	}
+	for _, n := range want {
+		if _, ok := got[n]; !ok {
+			t.Errorf("missing expected name %q in set: %v", n, got)
+		}
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mr-addams/arxsentinel/pkg/dedup"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -23,6 +24,11 @@ type MikroTikExecutor struct {
 		skipped  atomic.Int64
 		errors   atomic.Int64
 	}
+
+	// dedupWin — окно дедупликации поверх banned-map.
+	// TTL = cfg.DedupWindow: 0 → отключено, > 0 → запрещает повторный
+	// Add для одного IP в течение TTL после успешного добавления.
+	dedupWin *dedup.Window
 }
 
 type banRecord struct {

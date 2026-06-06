@@ -21,6 +21,7 @@
 package sink
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -44,9 +45,12 @@ type SinkConfig struct {
 
 // Factory — constructor function for a named sink.
 //
-// Called by Build() to instantiate a sink by name.
+// Called by Build() to instantiate a sink by name. Receives the application
+// context (Build's first argument) so sinks that perform blocking
+// initialization (e.g. spawning a subprocess) can honour shutdown signals
+// from the start.
 // Returns an error if the config is invalid or initialization fails.
-type Factory func(cfg SinkConfig) (plugin.Sink, error)
+type Factory func(ctx context.Context, cfg SinkConfig) (plugin.Sink, error)
 
 var (
 	mu        sync.RWMutex
@@ -68,15 +72,19 @@ func Register(name string, f Factory) {
 
 // Build creates a sink by name using the registered factory.
 //
+// ctx is propagated to the factory so blocking initialization (e.g. spawning
+// a subprocess) can honour shutdown signals from the start. Pass the
+// application context, not context.Background().
+//
 // Returns error when name is not registered or the factory fails.
-func Build(cfg SinkConfig) (plugin.Sink, error) {
+func Build(ctx context.Context, cfg SinkConfig) (plugin.Sink, error) {
 	mu.RLock()
 	f, ok := factories[cfg.Type]
 	mu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("pkg/sink: unknown sink %q; registered: %v", cfg.Type, Names())
 	}
-	return f(cfg)
+	return f(ctx, cfg)
 }
 
 // RegisterManifest stores a static Manifest under name, parallel to Register.

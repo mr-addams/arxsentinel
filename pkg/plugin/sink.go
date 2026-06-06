@@ -15,7 +15,10 @@
 
 package plugin
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // ThreatEvent — fully-populated threat event delivered to all Sinks after scoring.
 //
@@ -56,7 +59,12 @@ type Sink interface {
 
 	// Write delivers a threat event to this sink.
 	// Must be safe for concurrent calls.
-	Write(event ThreatEvent) error
+	//
+	// ctx allows the caller to cancel an in-flight delivery (e.g. shutdown).
+	// Implementations should respect ctx cancellation where the underlying
+	// I/O is blocking (network Push, external process send). For non-blocking
+	// sinks (file, stdout) ctx is informational and may be ignored.
+	Write(ctx context.Context, event ThreatEvent) error
 
 	// Close flushes any buffered data and releases resources.
 	Close() error

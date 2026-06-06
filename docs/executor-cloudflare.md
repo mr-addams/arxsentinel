@@ -3,7 +3,7 @@
 ## Purpose
 
 The Cloudflare Executor bans threat IPs by adding them to a Cloudflare IP List.
-It runs autonomously: a dedicated goroutine reads `ThreatEvent`s from a Named Channel Hub
+It runs autonomously: a dedicated goroutine reads `ThreatEvent`s from a Named Channel Switch
 source, batches them, and issues bulk API calls to Cloudflare.
 A periodic sweep removes expired bans based on a configurable TTL.
 

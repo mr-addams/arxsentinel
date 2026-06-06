@@ -4,6 +4,7 @@
 package sink
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -24,7 +25,7 @@ func (m *mockSink) Name() string {
 
 func (m *mockSink) Manifest() plugin.Manifest { return plugin.Manifest{} }
 
-func (m *mockSink) Write(event plugin.ThreatEvent) error {
+func (m *mockSink) Write(ctx context.Context, event plugin.ThreatEvent) error {
 	return nil
 }
 
@@ -44,7 +45,7 @@ func TestRegistry_Register(t *testing.T) {
 	// For now, we use global and rely on unique names per test.
 
 	testName := "test-register-sink-" + t.Name()
-	factory := func(cfg SinkConfig) (plugin.Sink, error) {
+	factory := func(ctx context.Context, cfg SinkConfig) (plugin.Sink, error) {
 		return &mockSink{name: cfg.Type}, nil
 	}
 
@@ -53,7 +54,7 @@ func TestRegistry_Register(t *testing.T) {
 	// Verify the factory was registered by building with it.
 	cfg := SinkConfig{Type: testName, Path: "/tmp/test.log", Format: "fail2ban"}
 
-	sink, err := Build(cfg)
+	sink, err := Build(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("Build() failed: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestRegistry_Build_Unknown(t *testing.T) {
 	unknownName := "this-sink-does-not-exist-" + t.Name()
 	cfg := SinkConfig{Type: unknownName, Path: "/tmp/test.log", Format: "json"}
 
-	sink, err := Build(cfg)
+	sink, err := Build(context.Background(), cfg)
 	if err == nil {
 		t.Fatal("Build() should return error for unknown sink")
 	}
@@ -88,7 +89,7 @@ func TestRegistry_Names(t *testing.T) {
 		"test-names-cherry-" + t.Name(),
 	}
 
-	factory := func(cfg SinkConfig) (plugin.Sink, error) {
+	factory := func(ctx context.Context, cfg SinkConfig) (plugin.Sink, error) {
 		return &mockSink{name: cfg.Type}, nil
 	}
 
@@ -116,7 +117,7 @@ func TestRegistry_Names(t *testing.T) {
 
 func TestRegistry_Register_Duplicate(t *testing.T) {
 	duplicateName := "test-dup-" + t.Name()
-	factory := func(cfg SinkConfig) (plugin.Sink, error) {
+	factory := func(ctx context.Context, cfg SinkConfig) (plugin.Sink, error) {
 		return &mockSink{name: cfg.Type}, nil
 	}
 

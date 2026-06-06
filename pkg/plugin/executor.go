@@ -50,7 +50,7 @@ type ExecutorStats struct {
 // Executor — public interface for autonomous enforcement actions.
 //
 // Flow #043 changes: Executor receives events via EventSource (Pop) instead of a
-// raw <-chan. Named Channel Hub provides a queue.Queue which satisfies EventSource.
+// raw <-chan. Named Channel Switch provides a queue.Queue which satisfies EventSource.
 // Run() is called as a goroutine and returns when ctx is cancelled.
 //
 // Implementations are responsible for:

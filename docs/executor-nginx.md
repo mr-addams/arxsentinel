@@ -4,7 +4,7 @@
 
 The nginx Executor bans threat IPs by writing them into a plain IP blocklist file. arxsentinel
 only writes the file; you include it into your nginx configuration however suits your setup.
-It runs autonomously: a dedicated goroutine reads `ThreatEvent`s from a Named Channel Hub source,
+It runs autonomously: a dedicated goroutine reads `ThreatEvent`s from a Named Channel Switch source,
 accumulates them, and writes a formatted list file. A periodic sweep removes expired bans
 based on a configurable TTL.
 

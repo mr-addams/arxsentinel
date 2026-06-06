@@ -43,7 +43,7 @@
   ║  SINKS                                                           ║
   ║  file (fail2ban format) · stdout JSON · exec+JSON plugin         ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
-                              │ via Named Channel Hub
+                              │ via Named Channel Switch
   ╔═══════════════════════════╧══════════════════════════════════════╗
   ║  EXECUTORS  (automated response — optional)                      ║
   ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
@@ -540,7 +540,7 @@ See [docs/executor-nginx.md](docs/executor-nginx.md) for the nginx blocklist exe
 
 - **`arxsentinel validate`** — offline, topology-aware config validation using static plugin manifests; catches broken pipeline wiring before deploy
 - **Pluggable queue backends** — buffer executor events via in-memory, bbolt (file) or Redis queue; selectable per executor for bare-metal / single-host / multi-replica K8s
-- **Named Channel Hub** — route threat events between independent pipelines by name (one pipeline detects, another enforces)
+- **Named Channel Switch** — route threat events between independent pipelines by name (one pipeline detects, another enforces)
 - **Bot fast path** — `verify_method: ua_only` (User-Agent match, no DNS) and per-bot `exempt_detectors` to skip specific detectors for trusted crawlers
 - **CLI** — `arxsentinel cleanup --cf --dry-run` to preview/clean stale executor entries
 

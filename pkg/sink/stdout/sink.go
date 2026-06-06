@@ -6,6 +6,7 @@
 package stdout
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sync"
@@ -77,7 +78,11 @@ func (s *StdoutSink) Stats() plugin.SinkStats {
 // Write formats and writes a single threat event to stdout.
 // Called from: pipeline/executor.go (per-event).
 // Non-blocking: mutex-protected write.
-func (s *StdoutSink) Write(event plugin.ThreatEvent) error {
+//
+// ctx is accepted to satisfy the plugin.Sink interface but is intentionally
+// unused: stdout writes are short syscalls bounded by the mutex, so
+// cancellation is not meaningful.
+func (s *StdoutSink) Write(ctx context.Context, event plugin.ThreatEvent) error {
 	// Serialize event to bytes according to configured format.
 	var line []byte
 	switch s.format {
@@ -110,4 +115,3 @@ func (s *StdoutSink) Write(event plugin.ThreatEvent) error {
 	s.eventsWritten.Add(1)
 	return nil
 }
-

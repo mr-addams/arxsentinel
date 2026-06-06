@@ -20,8 +20,8 @@ import (
 // SentinelThreatSink enqueues threat events for the Sentinel Hub executor.
 // YAML: sink.sentinel-threat.name.
 // Fields:
-//   - name: queue name passed to executor.RegisterSink. Consumer: executor
-//   - q: shared queue handle for Push/Unregister. Consumer: Write, Close
+//   - name: queue name passed to executor.AttachWriter. Consumer: executor
+//   - q: shared queue handle for Push/DetachWriter. Consumer: Write, Close
 //   - dropped: atomic counter for events dropped due to full queue. Consumer: Stats
 type SentinelThreatSink struct {
 	name    string
@@ -36,7 +36,7 @@ func NewSentinelThreatSink(name string, bufferSize int) (*SentinelThreatSink, er
 	if name == "" {
 		return nil, fmt.Errorf("sentinel-threat sink: name is required")
 	}
-	q, err := executor.RegisterSink(name, bufferSize)
+	q, err := executor.AttachWriter(name, bufferSize)
 	if err != nil {
 		return nil, fmt.Errorf("sentinel-threat sink %q: %w", name, err)
 	}
@@ -54,8 +54,11 @@ func (s *SentinelThreatSink) Name() string {
 // Non-blocking: Push() uses a bounded channel; blocks only if channel is full.
 // Silent drop: events are dropped without returning error when the queue is full
 // (implements back-pressure without propagating errors up the pipeline).
-func (s *SentinelThreatSink) Write(event plugin.ThreatEvent) error {
-	if err := s.q.Push(context.Background(), event); err != nil {
+//
+// ctx is forwarded to the queue Push so that an in-flight enqueue can be
+// cancelled by the pipeline during shutdown.
+func (s *SentinelThreatSink) Write(ctx context.Context, event plugin.ThreatEvent) error {
+	if err := s.q.Push(ctx, event); err != nil {
 		if errors.Is(err, queue.ErrQueueFull) {
 			s.dropped.Add(1)
 			return nil
@@ -69,7 +72,7 @@ func (s *SentinelThreatSink) Write(event plugin.ThreatEvent) error {
 // Called from: pipeline/executor.go during shutdown.
 // The Sentinel Hub executor drains the queue asynchronously after unregister.
 func (s *SentinelThreatSink) Close() error {
-	executor.Unregister(s.name)
+	executor.DetachWriter(s.name)
 	return nil
 }
 
