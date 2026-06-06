@@ -1,3 +1,6 @@
+// ========================== internal/core/output — format_test.go =========
+//   Tests for OutputFormat: JSON, CSV, text formatting.
+
 package output_test
 
 import (

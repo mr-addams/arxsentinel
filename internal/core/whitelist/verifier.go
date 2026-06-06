@@ -50,8 +50,7 @@ import (
 // Resolver abstracts DNS lookups for testability.
 // *net.Resolver satisfies this interface without modification.
 //
-// Injected via NewVerifier — production passes &net.Resolver{PreferGo: true},
-// tests pass a mockResolver with pre-defined responses.
+// Internal — not in config. Consumer: NewVerifier.
 type Resolver interface {
 	// LookupAddr performs a PTR lookup (rDNS): IP → list of hostnames.
 	// addr is passed as "1.2.3.4" or "2001:db8::1".
@@ -65,20 +64,19 @@ type Resolver interface {
 
 // Verifier performs rDNS+fDNS verification of legitimate bot IP addresses.
 //
-// Lifecycle:
-//   nil       → before NewVerifier is called
-//   *Verifier → after NewVerifier, used for the daemon's lifetime
-//   on SIGHUP (Task 7.1) — a new instance is created with the same cache (cache survives reload)
+// YAML: whitelist.* (via config.BotConfig). Consumer: pipeline (main.go).
 type Verifier struct {
-	cache    *IPCache
-	resolver Resolver
-	logFn    func(tag, msg, level string) // injected from main.go — core/ does not import sys/utils
+	cache    *IPCache                            // Internal — cache from ipcache.go. Consumer: Verify.
+	resolver Resolver                             // Internal — injected Resolver (*net.Resolver in prod). Consumer: verifyRDNS.
+	logFn    func(tag, msg, level string)        // Internal — debug logger from main.go. Consumer: Verify, verifyRDNS.
 }
 
 // NewVerifier creates a Verifier.
-// cache is passed from outside — on SIGHUP the cache is preserved (not reset on config reload).
+// cache is passed from outside — on SIGHUP the cache is preserved.
 // resolver — *net.Resolver{PreferGo: true} in production, mock in tests.
-// logFn — utils.Log from main.go.
+//
+// Called from: cmd/arxsentinel.main (pipeline setup).
+// Non-blocking.
 func NewVerifier(cache *IPCache, resolver Resolver, logFn func(tag, msg, level string)) *Verifier {
 	return &Verifier{
 		cache:    cache,
@@ -90,17 +88,13 @@ func NewVerifier(cache *IPCache, resolver Resolver, logFn func(tag, msg, level s
 // ========================== Verify ====================================================
 
 // Verify checks whether ip is a legitimate bot according to botCfg.VerifyMethod.
+// Called from the pipeline ONLY when MatchBot returned matched=true.
 //
-// Called from the pipeline ONLY when MatchBot returned matched=true — meaning the UA
-// already matched a bot pattern. Verify's job is to confirm or refute via DNS.
+// Returns: verified (DNS passed), isFakeBot (UA matched but DNS failed → add FakeBotScore).
+// Order: cache → DNS → cache.Set (for rdns/rdns_ipjson) → return.
 //
-// Returns:
-//   verified  — true if the IP passed DNS verification (legitimate bot)
-//   isFakeBot — true if UA matched a bot but DNS failed (Task 3.5)
-//               the pipeline must add cfg.Whitelist.FakeBotScore to the IP score
-//
-// Order: cache → DNS → cache.Set (only for rdns/rdns_ipjson) → return.
-// A cache hit avoids DNS lookups on every log line for the same IP.
+// Called from: pipeline (main.go whitelist check).
+// Non-blocking.
 func (v *Verifier) Verify(ctx context.Context, ip string, botCfg config.BotConfig) (verified bool, isFakeBot bool) {
 	// ── Cache hit ─────────────────────────────────────────────────────────────────────
 	// isFakeBot is read directly from cache — cannot be derived from !verified:
@@ -153,19 +147,13 @@ func (v *Verifier) Verify(ctx context.Context, ip string, botCfg config.BotConfi
 
 // ========================== rDNS verification =========================================
 
-// verifyRDNS performs two-step DNS verification:
-//   Step 1 (rDNS): IP → PTR → hostname
-//   Step 2 (fDNS): hostname → A/AAAA → must contain the original IP
+// verifyRDNS performs two-step DNS verification: PTR (rDNS) + A/AAAA (fDNS).
+// Both steps required: PTR alone is insufficient — anyone can set a PTR record.
+// fDNS confirms the host resolves back to the original IP.
+// Hostname suffix is checked against botCfg.RDNSDomains.
 //
-// Both steps are required: PTR alone is insufficient — anyone can set a PTR record
-// for their own IP. The reverse check (fDNS) confirms the host actually resolves
-// back to this IP.
-//
-// Additionally, the hostname suffix is checked against botCfg.RDNSDomains:
-//   Googlebot → ".googlebot.com" or ".google.com"
-//   Bingbot   → ".search.msn.com"
-// Without this check an attacker could create PTR "evil.com" → IP,
-// A: IP → "evil.com", and pass the double check without being Googlebot.
+// Called from: Verify (switch rdns/rdns_ipjson branch).
+// Non-blocking: DNS calls.
 func (v *Verifier) verifyRDNS(ctx context.Context, ip string, botCfg config.BotConfig) bool {
 	// ── Step 1: PTR lookup ────────────────────────────────────────────────────────────
 	hostnames, err := v.resolver.LookupAddr(ctx, ip)

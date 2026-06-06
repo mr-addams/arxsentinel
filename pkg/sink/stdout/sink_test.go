@@ -1,6 +1,10 @@
+// ====== Module: pkg/sink/stdout — Tests ======
+//   Unit tests for StdoutSink: JSON/fail2ban output, concurrent writes, format validation.
+
 package stdout_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"strings"
@@ -47,7 +51,7 @@ func TestStdoutSink_WritesJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := sink.Write(testEvent); err != nil {
+	if err := sink.Write(context.Background(), testEvent); err != nil {
 		t.Fatalf("Write() error: %v", err)
 	}
 	pw.Close()
@@ -76,7 +80,7 @@ func TestStdoutSink_WritesFailban(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := sink.Write(testEvent); err != nil {
+	if err := sink.Write(context.Background(), testEvent); err != nil {
 		t.Fatalf("Write() error: %v", err)
 	}
 	pw.Close()
@@ -111,7 +115,7 @@ func TestStdoutSink_ConcurrentWrites(t *testing.T) {
 				Modules:   []string{"rate"},
 				Reason:    "rate:50rps",
 			}
-			_ = sink.Write(e)
+			_ = sink.Write(context.Background(), e)
 		}()
 	}
 	wg.Wait()

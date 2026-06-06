@@ -70,6 +70,9 @@ func (d *overflowDetector) Name() string { return "overflow" }
 //
 // Checks the full URL (Path + Query) — current request, not IP history.
 // Length check first: more likely a deliberate overflow attempt.
+// Called from: pipeline.processEntries.
+//
+// Non-blocking.
 func (d *overflowDetector) Detect(_ plugin.IPView, entry *plugin.LogEntry) plugin.DetectResult {
 	fullURL := entry.Path
 	if entry.Query != "" {

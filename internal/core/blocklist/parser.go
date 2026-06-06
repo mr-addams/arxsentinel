@@ -30,6 +30,8 @@ var nginxPatternRe = regexp.MustCompile(`\(\?:\\b\)(.+?)\(\?:\\b\)`)
 
 // Parser parses raw bytes from a blocklist source into a slice of lowercase patterns.
 // Implementations must be stateless and safe for concurrent use.
+//
+// Internal — not exposed via config. Consumer: NewParser.
 type Parser interface {
 	Parse(data []byte) ([]string, error)
 }
@@ -37,6 +39,9 @@ type Parser interface {
 // NewParser returns a Parser for the given format name.
 // Supported: "plain_text", "nginx_map".
 // Unknown format returns an error — fail early, before any network fetch.
+//
+// Called from: fetchAndUpdate (manager.go).
+// Non-blocking.
 func NewParser(format string) (Parser, error) {
 	switch format {
 	case "plain_text":
@@ -56,6 +61,9 @@ func NewParser(format string) (Parser, error) {
 type PlainTextParser struct{}
 
 // Parse splits data by newline and returns all valid patterns, lowercased.
+//
+// Called from: fetchAndUpdate (manager.go).
+// Non-blocking.
 func (PlainTextParser) Parse(data []byte) ([]string, error) {
 	var result []string
 	for _, line := range bytes.Split(data, []byte("\n")) {
@@ -80,6 +88,9 @@ func (PlainTextParser) Parse(data []byte) ([]string, error) {
 type NginxMapParser struct{}
 
 // Parse extracts all (?:\b)..(?:\b) captures and returns them lowercased.
+//
+// Called from: fetchAndUpdate (manager.go).
+// Non-blocking.
 func (NginxMapParser) Parse(data []byte) ([]string, error) {
 	matches := nginxPatternRe.FindAllSubmatch(data, -1)
 	result := make([]string, 0, len(matches))

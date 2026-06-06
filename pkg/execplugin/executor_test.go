@@ -1,3 +1,6 @@
+// ========================== pkg/execplugin — executor_test.go ==============
+//   Tests for ExecExecutor: Execute, ExecuteAsync, lifecycle.
+
 package execplugin
 
 import (

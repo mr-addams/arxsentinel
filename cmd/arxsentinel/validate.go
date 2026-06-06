@@ -3,6 +3,7 @@
 //   Runs in two modes:
 //     - arxsentinel validate [--config=path] : static check, exit 0/1
 //     - daemon startup                        : fail-fast before Hub initialisation
+//   Entry point: runValidateSubcommand. Called from: main (line 163).
 
 package main
 
@@ -20,8 +21,8 @@ import (
 )
 
 // runValidateSubcommand handles "arxsentinel validate [--config=path]".
-// Loads config, collects manifests, runs pipeline.Validate, prints errors to stderr.
-// Exits with code 1 if any semantic errors are found.
+// Called from: main (line 163).
+// Non-blocking (exits via os.Exit on errors).
 func runValidateSubcommand(configPath string) {
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
@@ -41,8 +42,9 @@ func runValidateSubcommand(configPath string) {
 
 // validateConfig collects plugin manifests from the active config and runs
 // topology-aware validation: spine (Source→Processors→Detectors→[Scorer]),
-// terminals (each sink independently), and executor wiring (NCH name-matching).
-// Returns all semantic errors across every pipeline and executor.
+// terminals (each sink independently), and executor wiring (NCS name-matching).
+// Called from: main (line 214), runValidateSubcommand (line 31).
+// Non-blocking.
 func validateConfig(cfg config.Config) []pipeline.SemanticError {
 	// config.LoadConfig always runs Migrate(), which wraps any top-level inputs/outputs
 	// (or the deprecated general.log_file/output.threat_log) into streams[].pipelines[].
@@ -107,6 +109,8 @@ func validateConfig(cfg config.Config) []pipeline.SemanticError {
 }
 
 // buildPipelineCtx builds a PipelineContext from a single pipeline config.
+// Called from: validateConfig (line 56).
+// Non-blocking.
 func buildPipelineCtx(streamName string, pl config.PipelineConfig) (pipeline.PipelineContext, bool) {
 	var spine []plugin.Manifest
 	for _, inp := range pl.Inputs {
@@ -151,7 +155,10 @@ func buildPipelineCtx(streamName string, pl config.PipelineConfig) (pipeline.Pip
 }
 
 // sentinelChannelNames returns the names of all sentinel-threat sinks in a pipeline.
-// These are the NamedChannelHub channels executors wire to via sources[].name.
+// Called from: validateConfig (line 59).
+// Non-blocking.
+//
+// These are the NamedChannelSwitch channels executors wire to via sources[].name.
 func sentinelChannelNames(pl config.PipelineConfig) []string {
 	var names []string
 	for _, out := range pl.Outputs {

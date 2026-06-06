@@ -288,7 +288,28 @@
             font-family: var(--font-cyber); font-size: 1.25rem; color: #fff;
             margin-bottom: 1rem; display: flex; align-items: center; gap: 0.75rem;
         }
-        .detector-icon { font-size: 1.5rem; filter: drop-shadow(0 0 5px rgba(255,255,255,0.5)); }
+        .icon {
+            display: inline-block;
+            width: 1.2em;
+            height: 1.2em;
+            stroke: currentColor;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+            vertical-align: -0.2em;
+            flex-shrink: 0;
+        }
+        .detector-icon svg {
+            width: 1.5rem;
+            height: 1.5rem;
+            stroke: currentColor;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+            filter: drop-shadow(0 0 5px rgba(255,255,255,0.3));
+        }
         .detector-desc { color: var(--text-main); font-size: 0.95rem; margin-bottom: 1.5rem; }
         .detector-desc code {
             background: rgba(0,0,0,0.3); padding: 0.1rem 0.3rem; border-radius: 3px;
@@ -351,6 +372,15 @@
 
         .whitelist-section { max-width: 1200px; margin: 6rem auto; }
         .whitelist-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; padding: 0 2rem; }
+        .integrations-section { max-width: 900px; margin: 6rem auto; padding: 0 2rem; }
+        .integrations-grid { display: flex; gap: 3rem; justify-content: center; flex-wrap: wrap; margin-top: 2.5rem; }
+        .integrations-col { flex: 1 1 280px; }
+        .integrations-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .integration-tag {
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 20px; padding: 0.3rem 0.85rem; font-size: 0.82rem; color: #e0e0e0;
+        }
+        .integration-tag.muted { color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.08); }
         .whitelist-card {
             flex: 0 1 260px;
             background: rgba(13, 13, 31, 0.4); border: 1px solid rgba(255, 255, 255, 0.03);
@@ -674,56 +704,56 @@
         <div class="detectors-grid">
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">🔍</span> Probe</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 7v-1a2 2 0 0 1 2 -2h2" /><path d="M4 17v1a2 2 0 0 0 2 2h2" /><path d="M16 4h2a2 2 0 0 1 2 2v1" /><path d="M16 20h2a2 2 0 0 0 2 -2v-1" /><path d="M5 12l14 0" /></svg></span> Probe</h3>
                     <p class="detector-desc">Запити до чутливих шляхів: <code>/.env</code>, <code>/.git/config</code>, <code>/.aws/credentials</code>, <code>/wp-config.php</code>, <code>/phpinfo.php</code>, адмін-панелі, резервні архіви та ще 30+. Активна розвідка — спрацьовує негайно на першому запиті.</p>
                 </div>
                 <span class="detector-score">+25 за запит</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">⚡</span> Rate anomaly</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11" /></svg></span> Rate anomaly</h3>
                     <p class="detector-desc">Більше 100 запитів за 60 секунд з одного IP. Виявляє DDoS-зондування, агресивні сканери вразливостей, спалахи перебору облікових даних та скрепери, що намагаються триматися нижче статичних обмежень.</p>
                 </div>
                 <span class="detector-score">+25</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">🤖</span> Suspicious User-Agent</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 4m0 2a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v4a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2z" /><path d="M12 2v2" /><path d="M9 12v9" /><path d="M15 12v9" /><path d="M5 16l4 -2" /><path d="M15 14l4 2" /><path d="M9 18h6" /><path d="M10 8v.01" /><path d="M14 8v.01" /></svg></span> Suspicious User-Agent</h3>
                     <p class="detector-desc">Регістронезалежне порівняння підрядків з вбудованими списками: <strong>сканери</strong> (Nuclei, sqlmap...), <strong>грабери</strong> (Scrapy, HTTrack...) та <strong>клієнти автоматизації</strong> (python-requests, curl...). Легко розширюється через конфіг.</p>
                 </div>
                 <span class="detector-score">+15 до +40</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">🔐</span> Bruteforce</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 11m0 2a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z" /><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0" /><path d="M8 11v-4a4 4 0 1 1 8 0v4" /></svg></span> Bruteforce</h3>
                     <p class="detector-desc">Більше 60% відповідей — 404 за мінімум 10 запитів. Типова сигнатура інструментів перебору шляхів (dirbuster, gobuster, ffuf). <code>min_requests</code> запобігає хибним спрацьовуванням.</p>
                 </div>
                 <span class="detector-score">+30</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">📄</span> Sequential crawler</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11 6h9" /><path d="M11 12h9" /><path d="M12 18h8" /><path d="M4 16a2 2 0 1 1 4 0c0 .591 -.5 1 -1 1.5l-3 2.5h4" /><path d="M6 10v-6l-2 2" /></svg></span> Sequential crawler</h3>
                     <p class="detector-desc">П'ять і більше послідовно пронумерованих URL поспіль — <code>/page/1</code>, <code>/page/2</code>, <code>/article/100</code>... Характерна ознака автоматичних скреперів, що дампують цілі розділи сайту.</p>
                 </div>
                 <span class="detector-score">+20</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">🖼️</span> No-asset bot</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 3l18 18" /><path d="M15 9a3 3 0 0 1 -2.983 3" /><path d="M9.73 9.733a3 3 0 0 0 3.536 3.536" /><path d="M9 3h9a2 2 0 0 1 2 2v9m-1.165 3.849a2 2 0 0 1 -.835 .151h-12a2 2 0 0 1 -2 -2v-12c0 -.337 .082 -.656 .226 -.935" /><path d="M4.219 7.729a2 2 0 0 0 -.219 .895" /><path d="M5 17l3.5 -4.5" /></svg></span> No-asset bot</h3>
                     <p class="detector-desc">Завантажує сторінки, але запитує CSS, JS або зображення менше ніж у 10% випадків — за мінімум 3 переглядів. Реальний браузер завжди завантажує ресурси; markup-only боти пропускають статику.</p>
                 </div>
                 <span class="detector-score">+20</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">💣</span> URL overflow / WAF bypass</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M15 7m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /> <path d="M10.495 10.495l-7.779 7.779a1 1 0 0 0 0 1.414l1.596 1.596a1 1 0 0 0 1.414 0l7.779 -7.779" /><path d="M18.5 5.5l1.5 -1.5" /><path d="M20 6l-1 -1" /></svg></span> URL overflow / WAF bypass</h3>
                     <p class="detector-desc">URL довший за 2048 символів або який містить відомі ключові слова обходу WAF: <code>bypass</code>, <code>shell</code>, <code>cmd</code>, <code>eval</code>, <code>exec</code>... Спрямований на переповнення буфера та ін'єкції коду.</p>
                 </div>
                 <span class="detector-score">+30</span>
             </div>
             <div class="detector-card">
                 <div class="detector-top">
-                    <h3><span class="detector-icon">🚫</span> Bad Bot Blocklist</h3>
+                    <h3><span class="detector-icon"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /><path d="M5.7 5.7l12.6 12.6" /></svg></span> Bad Bot Blocklist</h3>
                     <p class="detector-desc">Порівнює User-Agent (та опційно Referer) із community-maintained списком ~685 відомих поганих ботів: скрепери, SEO-краулери, спам-боти, сканери вразливостей. Список оновлюється щодня. Засновано на <a href="https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue)">nginx-ultimate-bad-bot-blocker</a> — проекті <strong>Mitchell Krog</strong> та його команди.</p>
                 </div>
                 <span class="detector-score">+60</span>
@@ -846,15 +876,15 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </div>
         <div class="whitelist-grid">
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">☁️</span> Cloudflare WAF</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6.657 18c-2.572 0 -4.657 -2.007 -4.657 -4.483c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99c1.913 0 3.464 1.56 3.464 3.486c0 1.927 -1.551 3.487 -3.465 3.487h-11.878" /></svg></span> Cloudflare WAF</h3>
                 <p>Додання IP загроз до Cloudflare IP List та блокування на краю мережі — без iptables, без host firewall. Пакетні операції, асинхронний polling, автоматичне TTL-закінчення та cross-instance dedup.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🔧</span> nginx</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> nginx</h3>
                 <p>Запис заблокованих IP у простий blocklist-файл з автоматичним TTL-закінченням та атомарним записом. arxsentinel лише пише файл; ви підключаєте його до nginx як вам зручно. Опціональна reload-команда.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">📡</span> MikroTik RouterOS v7</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12l-8 -8l8 -2l2 8z" /><path d="M12 12l4 8l4 -8z" /><path d="M12 12l8 -4l-2 -8z" /><path d="M12 12l-4 -8l-4 8z" /></svg></span> MikroTik RouterOS v7</h3>
                 <p>Керування firewall address-list RouterOS через REST API. TTL-базований auto-unban, безпечне видалення лише власних записів arxsentinel, працює на CHR та ARM-маршрутизаторах.</p>
             </div>
         </div>
@@ -867,35 +897,35 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </div>
         <div class="whitelist-grid">
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">📐</span> Довільний формат логів</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M17 3l4 4l-14 14l-4 -4z" /><path d="M16 7l-1.5 -1.5" /><path d="M13 10l-1.5 -1.5" /><path d="M10 13l-1.5 -1.5" /><path d="M7 16l-1.5 -1.5" /></svg></span> Довільний формат логів</h3>
                 <p>Немає підходящого профілю? Опишіть власний regex з іменованими групами або переключіться на JSON-парсинг — без перекомпіляції. Будь-який формат, що захоплює IP, timestamp, метод, шлях, статус і байти, підключається до повного пайплайну виявлення.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">📂</span> Мультипотік та pipeline-маршрутизація</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" /><path d="M4 7c-1.1 0 -2 .9 -2 2v9c0 1.1 .9 2 2 2h14" /></svg></span> Мультипотік та pipeline-маршрутизація</h3>
                 <p>Стеження за кількома файлами логу в одному процесі. Всередині кожного потоку — незалежні pipeline з власними детекторами, джерелами та sink'ами. Спільний IP-стан через <code>tracker_group</code> для корельованого аналізу кількох логів.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🔧</span> Профілі серверів</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> Профілі серверів</h3>
                 <p>Готові профілі для популярних серверів. Перевизначайте позиції полів, формати дат та правила роздільників для кожного джерела логу без зміни ядра.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🐳</span> Docker Compose sidecar</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M22 12.54c-1.804 -.345 -2.701 -1.08 -3.523 -2.94c-.487 .696 -1.54 1.4 -2.477 1.4h-5c-2.21 0 -4 1.79 -4 4v1.06c0 1.062 .107 1.84 .806 2.5c1.828 1.735 4.494 1.44 6.194 1.44h8c1.1 0 2 -.9 2 -2v-2c0 -1.1 -.9 -2 -2 -2h-.5" /><path d="M6 12h1" /><path d="M10 12h1" /><path d="M6 8h1" /><path d="M10 8h1" /><path d="M14 8h1" /><path d="M10 4h1" /><path d="M14 4h1" /><path d="M18.5 15.5m-0.5 0a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0" /></svg></span> Docker Compose sidecar</h3>
                 <p>Розгортається поруч із будь-яким контейнеризованим HTTP-сервером через спільний том логів — без змін у контейнері застосунку. Готові <code>docker-compose.yml</code> та конфіг у <code>deploy/examples/docker/</code>. Метрики Prometheus доступні на <code>:9117</code>.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">☸️</span> Kubernetes DaemonSet</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg></span> Kubernetes DaemonSet</h3>
                 <p>Один pod на вузол читає host-логи через <code>hostPath</code>. Включено Helm-чарт з довідкою по values та інтеграцією Prometheus Operator. Підтримується також sidecar-топологія для managed-кластерів без доступу до host-логів.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🔎</span> Offline config validation</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l5 5l10 -10" /></svg></span> Offline config validation</h3>
                 <p>Запустіть `arxsentinel validate` щоб перевірити весь конфіг перед деплоєм. Topology-aware валідатор моделює реальний потік даних та ловить зламаний дріт, використовуючи статичні plugin manifests — без live трафіку.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🗃️</span> Pluggable queue backends</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Pluggable queue backends</h3>
                 <p>Буферизація подій executor через in-memory, file-based (bbolt) або Redis queue — виберіть per executor для bare-metal, single-host або multi-replica Kubernetes.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🔀</span> Named Channel Hub</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Named Channel Switch</h3>
                 <p>Маршрутизація подій загроз між незалежними pipelines за назвою — один pipeline може детектувати, інший примусити, повністю decoupled.</p>
             </div>
         </div>
@@ -908,20 +938,70 @@ sudo systemctl enable --now arxsentinel</span></pre>
         </div>
         <div class="whitelist-grid">
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🔬</span> Автоматична верифікація</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 21l6 0" /><path d="M9 21l0 -9" /><path d="M8 5l2 0" /><path d="M7 7l4 0" /><path d="M14 5a2 2 0 0 1 2 2v3l-3.6 5.4a1 1 0 0 0 .6 1.6h3a1 1 0 0 0 .894 -1.447l-3.528 -7.053" /><path d="M9 5a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v5h-4z" /></svg></span> Автоматична верифікація</h3>
                 <p>Googlebot, Bingbot, Яндекс, DuckDuckBot, GPTBot та ще 6 родин верифікуються через зворотний + прямий DNS. Легітимні краулери ніколи не отримують очків. Фейкові боти отримують штраф. Надійні краулери можна матчити за User-Agent лише (`ua_only`, без DNS) та надати per-bot detector exemptions (`exempt_detectors`) щоб легітимна автоматизація ніколи не була покарана.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">✅</span> Кастомні виключення</h3>
-                <p>Додайте IP офісу, VPN-підмережі (CIDR), сервіси моніторингу або SEO-інструменти за підрядком User-Agent. Зміни застосовуються по SIGHUP.</p>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" /><path d="M15 19l2 2l4 -4" /></svg></span> Кастомні виключення</h3>
+                <p>Додайте IP офісу, VPN-підмережі (CIDR), сервіси моніторингу, SEO-інструменти за підрядком User-Agent або URL-шляху. Зміни застосовуються по SIGHUP.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🔄</span> Гаряче перезавантаження</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg></span> Гаряче перезавантаження</h3>
                 <p>Усі зміни конфігурації — білі списки, ваги детекторів, пороги — застосовуються миттєво по SIGHUP. Без перезапуску. IP-стан і DNS-кеш зберігаються.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">🌐</span> Підтримка Cloudflare</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg></span> Підтримка Cloudflare</h3>
                 <p>Детектори завжди оцінюють реального зловмисника — ніколи Cloudflare або балансувальник навантаження. Підтримує CF-Connecting-IP, ланцюжки X-Forwarded-For і CIDR довірених проксі з коробки.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="integrations-section">
+        <div class="section-header">
+            <span class="section-tag">Універсальний I/O</span>
+            <h2 class="section-title">Працює з вашим стеком</h2>
+            <p style="color: var(--text-muted); max-width: 600px; margin: 0 auto;">
+                Читає з будь-якого джерела логів. Записує загрози в будь-який приймач.
+                Fail2Ban залишається варіантом за замовчуванням — тепер одним із багатьох.
+            </p>
+        </div>
+        <div class="integrations-grid">
+            <div class="integrations-col">
+                <h3 style="color: var(--accent-blue); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Джерела</h3>
+                <div class="integrations-list">
+                    <span class="integration-tag">nginx</span>
+                    <span class="integration-tag">Apache</span>
+                    <span class="integration-tag">Traefik</span>
+                    <span class="integration-tag">Caddy</span>
+                    <span class="integration-tag">HAProxy</span>
+                    <span class="integration-tag">LiteSpeed</span>
+                    <span class="integration-tag">будь-який лог-файл</span>
+                    <span class="integration-tag">stdin pipe</span>
+                    <span class="integration-tag">syslog-приймач</span>
+                    <span class="integration-tag">HTTP (push/pull)</span>
+                </div>
+            </div>
+            <div class="integrations-col">
+                <h3 style="color: var(--accent-green); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Приймачі</h3>
+                <div class="integrations-list">
+                    <span class="integration-tag">Fail2Ban</span>
+                    <span class="integration-tag">Cloudflare WAF</span>
+                    <span class="integration-tag">MikroTik RouterOS</span>
+                    <span class="integration-tag">nginx blocklist</span>
+                    <span class="integration-tag">exec+JSON</span>
+                    <span class="integration-tag">stdout&nbsp;JSON</span>
+                    <span class="integration-tag muted">Grafana Loki (незабаром)</span>
+                    <span class="integration-tag muted">Splunk HEC (незабаром)</span>
+                    <span class="integration-tag muted">Datadog (незабаром)</span>
+                    <span class="integration-tag muted">Telegram (незабаром)</span>
+                </div>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 2rem;">
+            <div style="display:flex;flex-direction:column;gap:0.5rem;align-items:center;">
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: file &nbsp;·&nbsp; path: /var/log/nginx/access.log</code>
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: syslog &nbsp;·&nbsp; addr: udp://0.0.0.0:5514 &nbsp;·&nbsp; без спільного тому</code>
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: http &nbsp;·&nbsp; protocol: plain|cloudflare|firehose|pubsub|loki|otlp|azure|splunk|ndjson</code>
             </div>
         </div>
     </section>
@@ -934,12 +1014,12 @@ sudo systemctl enable --now arxsentinel</span></pre>
         <div class="roadmap-grid">
         <div class="roadmap-card">
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-green);border:1px solid rgba(0,255,136,0.35);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">NEXT</span>
-                <h3><span style="color: var(--accent-blue)">📨</span> Alert sinks</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 18h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v7.5" /><path d="M3 6l9 6l9 -6" /><path d="M15 18h6" /><path d="M18 15l3 3l-3 3" /></svg></span> Alert sinks</h3>
                 <p>Відправлення загроз у Telegram, Slack та PagerDuty — з вбудованою дедубліцією та rate-limiting, щоб спалах ніколи не затопив канал.</p>
             </div>
             <div class="roadmap-card">
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
-                <h3><span style="color: var(--accent-purple)">🛡️</span> AWS WAF executor</h3>
+                <h3><span style="color: var(--accent-purple)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> AWS WAF executor</h3>
                 <p>Записування IP загроз прямо в набори IP-правил AWS WAF. Інтегрується з існуючими групами WAF — не потребує Lambda або кастомної інфраструктури.</p>
             </div>
         </div>

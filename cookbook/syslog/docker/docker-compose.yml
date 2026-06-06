@@ -1,0 +1,33 @@
+# ====================== cookbook/syslog/docker/docker-compose.yml =======================
+#
+#   ArxSentinel + nginx using syslog transport — no shared log volume.
+#   nginx sends access logs directly to ArxSentinel via UDP syslog.
+#   Threat log is written to host via bind mount for Fail2Ban.
+#
+#   Quick start:
+#     mkdir -p /var/log/arxsentinel && chown 65532:65532 /var/log/arxsentinel
+#     docker compose up -d
+#
+#   Nginx syslog directive (add to your nginx config inside the container):
+#     access_log syslog:server=arxsentinel:5514,facility=local7,tag=nginx combined;
+#
+# ========================================================================================
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    # No log volume needed — logs ship directly to arxsentinel via UDP syslog
+    restart: unless-stopped
+
+  arxsentinel:
+    image: ghcr.io/mr-addams/arxsentinel:latest
+    volumes:
+      - /var/log/arxsentinel:/var/log/arxsentinel
+      - ./config.yaml:/etc/arxsentinel/config.yaml:ro
+    ports:
+      - "127.0.0.1:9117:9117"   # metrics (optional)
+      # Note: syslog port 5514 is internal — not exposed to host
+    restart: unless-stopped

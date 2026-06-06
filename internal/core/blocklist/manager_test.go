@@ -1,3 +1,6 @@
+// ========================== internal/core/blocklist — manager_test.go ============
+//   Tests for Manager: Match, Update, HTTP/network error handling, bbolt persistence.
+
 package blocklist
 
 import (

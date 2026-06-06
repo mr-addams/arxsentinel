@@ -1,3 +1,13 @@
+// ====== Module: cloudflare — CF API client =========================================
+//   HTTP client for Cloudflare Lists API (WAF banlist management).
+//   Supports: list creation, item add/remove, bulk operations with polling.
+//
+//   WHAT IS HERE:
+//     CFClient interface, HTTPCFClient implementation, CFItem/CFBatchItem types
+//
+//   WHAT IS NOT HERE:
+//     Executor business logic (executor.go), config parsing (config.go), registration (register.go)
+
 package cloudflare
 
 import (

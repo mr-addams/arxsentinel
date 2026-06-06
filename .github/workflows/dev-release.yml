@@ -5,6 +5,8 @@ on:
     branches: [dev]
     paths-ignore:
       - 'docs/**'
+      - 'README.md'
+      - '.github/workflows/**'
 
 permissions:
   contents: write

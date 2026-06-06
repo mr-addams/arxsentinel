@@ -1,3 +1,14 @@
+// ====== Module: cloudflare — executor =============================================
+//   CloudflareExecutor manages a Cloudflare IP banlist via the Lists API.
+//   Receives ThreatEvents, accumulates them in a buffer, and flushes to the
+//   Cloudflare API (with 429 retry, pending operation polling, TTL-based sweep).
+//
+//   WHAT IS HERE:
+//     CloudflareExecutor struct, Run loop, flush, sweep, retry, polling logic
+//
+//   WHAT IS NOT HERE:
+//     CF API client (client.go), config parsing (config.go), registration (register.go)
+
 package cloudflare
 
 import (
@@ -13,13 +24,14 @@ import (
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
+	"github.com/mr-addams/arxsentinel/pkg/dedup"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 type threatLevel int
 
 const (
-	levelInfo   threatLevel = iota
+	levelInfo threatLevel = iota
 	levelWarn
 	levelThreat
 )
@@ -68,6 +80,13 @@ type CloudflareExecutor struct {
 	pendingMu   sync.Mutex
 	pendingOpID string
 	pendingOpAt time.Time
+
+	// dedupWin — окно дедупликации поверх banned-map.
+	// TTL = cfg.DedupWindow: 0 → отключено (nil-логика IsDuplicate),
+	// > 0 → запрещает повторный бан одного IP в течение TTL после
+	// первого успешного бана (даже если IP уже удалён из banned по TTL sweep).
+	// Нужен чтобы не "долбить" CF API при активной атаке с одного IP.
+	dedupWin *dedup.Window
 }
 
 func NewCloudflareExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
@@ -94,6 +113,7 @@ func NewCloudflareExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 		client:     client,
 		banned:     make(map[string]banRecord),
 		instanceID: LoadInstanceID(&parsed),
+		dedupWin:   dedup.NewWindow(parsed.DedupWindow),
 	}
 
 	return exec, nil
@@ -202,6 +222,9 @@ func (e *CloudflareExecutor) Run(ctx context.Context, source plugin.EventSource)
 				continue
 			}
 			// Pre-register in banned so duplicate events in the same batch are caught.
+			// dedup-окно НЕ помечаем здесь — это делает flush() после успешного
+			// AddItems. Это flaky-safe: при ошибке CF API IP не отравляет окно,
+			// и повторный event снова дойдёт до попытки.
 			e.mu.Lock()
 			e.banned[event.IP] = banRecord{addedAt: time.Now(), addedByExecutor: true}
 			e.mu.Unlock()
@@ -345,6 +368,16 @@ func (e *CloudflareExecutor) flush(ctx context.Context, events []plugin.ThreatEv
 		e.banned[ev.IP] = banRecord{addedAt: time.Now(), addedByExecutor: true}
 	}
 	e.mu.Unlock()
+
+	// Помечаем IP в dedup-окне только после успешного AddItems — это
+	// "flaky-safe" семантика из Task 4: при ошибке CF (429, poll timeout,
+	// network) IP не отравляет окно, и повторные events снова дойдут до
+	// попытки. MarkBatch берёт один mutex вместо N — симметрично mikrotik flush.
+	markedIPs := make([]string, len(events))
+	for i, ev := range events {
+		markedIPs[i] = ev.IP
+	}
+	e.dedupWin.MarkBatch(markedIPs)
 }
 
 func (e *CloudflareExecutor) sweep(ctx context.Context) {
@@ -401,6 +434,15 @@ func (e *CloudflareExecutor) meetsMinLevel(level string) bool {
 }
 
 func (e *CloudflareExecutor) isDuplicate(ip string) bool {
+	// Шаг 1: dedup-окно (чистый Contains, без side-effect).
+	// Mark вызывается отдельно из flush() после успешного AddItems —
+	// это flaky-safe семантика: ошибка CF API не отравляет окно.
+	if e.dedupWin.Contains(ip) {
+		return true
+	}
+
+	// Шаг 2: fallback на banned-map для обратной совместимости
+	// (если DedupWindow не сконфигурирован или ещё не отработал).
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	_, exists := e.banned[ip]

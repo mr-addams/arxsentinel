@@ -237,20 +237,38 @@ if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'ros-api-mock'; then
     SENTINEL_PIDS+=($!)
 fi
 
+# Start nginx executor sentinel (reads nginx access log, writes IP blocklist file).
+(cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/nginx-executor.yaml" \
+    "$BIN" >> "$LOGS_DIR/threats/sentinel-nginx-executor.log" 2>&1) &
+SENTINEL_PIDS+=($!)
+
 # Give sentinels time to open and begin tailing log files.
 sleep 3
 
 # ── Step 7: run attack scenarios ─────────────────────────────────────────────────────
 
 echo "[run] running attack scenarios..."
-# Export BIN so scenarios.sh can locate the binary we just built.
-# scenarios.sh uses ARX_BIN with a fallback to its legacy path for standalone runs.
-ARX_BIN="$BIN" bash "$INT_DIR/scenarios.sh"
+SCENARIOS_OUT=$(mktemp)
+# pipefail ловит exit-код scenarios.sh, но `|| true` не даёт run.sh прерваться
+# при FAIL — счётчик накапливается, и run.sh выйдет с ошибкой в конце.
+ARX_BIN="$BIN" bash "$INT_DIR/scenarios.sh" 2>&1 | tee "$SCENARIOS_OUT" || true
 
 # Give sentinels time to process the last log lines.
 sleep 5
 
 # ── Step 8: verify ────────────────────────────────────────────────────────────────────
-# tee preserves the original exit code via pipefail while saving output for CI analysis.
 
-bash "$INT_DIR/verify.sh" "$LOGS_DIR" | tee "$LOGS_DIR/verify-output.txt"
+# ── Step 9: count source plugin scenarios (HTTP + syslog) before verify ─────────────
+# Pass counts to verify.sh via env so it can integrate them into the Results block.
+
+SOURCE_PASS=$(grep -cE '^\[scenarios/(http-|syslog-).*PASS' "$SCENARIOS_OUT" || true)
+SOURCE_FAIL=$(grep -cE '^\[scenarios/(http-|syslog-).*FAIL' "$SCENARIOS_OUT" || true)
+export SOURCE_PASS SOURCE_FAIL
+
+VERIFY_EXIT=0
+bash "$INT_DIR/verify.sh" "$LOGS_DIR" | tee "$LOGS_DIR/verify-output.txt" || VERIFY_EXIT=$?
+
+echo ""
+rm -f "$SCENARIOS_OUT"
+
+[ "$VERIFY_EXIT" -eq 0 ] && [ "$SOURCE_FAIL" -eq 0 ] || exit 1

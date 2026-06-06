@@ -37,10 +37,11 @@ import (
 // Params contains all remaining YAML fields captured via yaml:",inline" in config.DetectorConfig.
 //
 // main.go bridges config.DetectorConfig → DetectorConfig before calling Build().
+// Consumer: pipeline.newDetector, main.go.
 type DetectorConfig struct {
-	Enabled bool
-	Params  map[string]interface{} // arbitrary detector-specific parameters from YAML
-	Exec    string                 // path to exec plugin binary; if set and name not in registry, build ExecDetector
+	Enabled bool                  // YAML: detectors[i].enabled, default false — whether to instantiate. Consumer: Build
+	Params  map[string]interface{} // YAML: detectors[i].params.* — detector-specific config. Consumer: Factory
+	Exec    string                 // YAML: detectors[i].exec — path to exec plugin binary; if set and name not in registry, build ExecDetector. Consumer: Build
 }
 
 // Matcher — read-only view of a blocklist, satisfied by *blocklist.Manager.

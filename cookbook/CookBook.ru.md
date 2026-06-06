@@ -18,7 +18,7 @@ Sources → Processors → Sinks → Executors
 | `streams.inputs` | Источники логов | ✅ |
 | `scoring` | Пороги угроз | ✅ |
 | `detectors` | 8 встроенных процессоров | ✅ |
-| `whitelist.custom` | Доверенные IP/CIDR/UA | ✅ |
+| `whitelist.custom` | Доверенные IP/CIDR/UA/Paths | ✅ |
 | `chain_guard` | Целостность прокси-цепочки | опционально |
 | `streams.outputs` | Приёмники событий | ✅ |
 | `executors` | Автоматизированный ответ | только рецепты с executor |
@@ -27,6 +27,8 @@ Sources → Processors → Sinks → Executors
 ## Содержание
 
 - [Fail2Ban (file-based logging)](#fail2ban)
+- [Syslog (сетевой транспорт логов)](#syslog)
+- [HTTP-источник (push/pull приёмник логов)](#http)
 - [Cloudflare Executor (автоматическая блокировка IP)](#cloudflare)
 - [MikroTik Executor (address-list на RouterOS)](#mikrotik)
 - [Nginx Executor (файл блокировки + перезагрузка)](#nginx-executor)
@@ -62,6 +64,64 @@ Docker Compose stack для запуска ArxSentinel + Fail2Ban в конте�
 |------|------------|
 | [fail2ban/docker/config.yaml](fail2ban/docker/config.yaml) | Конфигурация ArxSentinel для Docker |
 | [fail2ban/docker/docker-compose.yml](fail2ban/docker/docker-compose.yml) | Compose stack: arxsentinel + fail2ban |
+
+---
+
+## Syslog (сетевой транспорт логов)
+
+Получение логов nginx (или любого веб-сервера) напрямую по сети через встроенный
+syslog-источник. Нет общих лог-файлов, нет ротации логов, нет монтирования томов.
+nginx отправляет строки access-логов в ArxSentinel по UDP или TCP — ArxSentinel слушает,
+извлекает строку лога из syslog-конверта и обрабатывает обычным образом.
+
+**Конфигурация nginx** (добавить в `nginx.conf` или блок сайта):
+```nginx
+access_log syslog:server=127.0.0.1:5514,facility=local7,tag=nginx,severity=info combined;
+```
+
+**Когда использовать syslog вместо file:**
+- Контейнеризированные развёртывания, где общие тома неудобны
+- Несколько nginx worker на разных хостах, отправляющих логи на один ArxSentinel
+- Окружения, где лог-файлы не сохраняются (эфемерные контейнеры, read-only fs)
+- Интеграция с rsyslog / syslog-ng для пайплайнов агрегации логов
+
+| Рецепт | Описание | Файл |
+|--------|----------|------|
+| nginx + Fail2Ban | UDP syslog → ArxSentinel → threats.log | [syslog/nginx-fail2ban.yaml](syslog/nginx-fail2ban.yaml) |
+| nginx + Cloudflare | UDP syslog → ArxSentinel → автоматическая блокировка Cloudflare | [syslog/nginx-cloudflare.yaml](syslog/nginx-cloudflare.yaml) |
+| nginx multi-stream | Два vhost на разных syslog-портах | [syslog/nginx-multi-stream.yaml](syslog/nginx-multi-stream.yaml) |
+| HAProxy | UDP syslog → ArxSentinel → threats.log (встроенный syslog-клиент HAProxy) | [syslog/haproxy.yaml](syslog/haproxy.yaml) |
+| Traefik | rsyslog-ретрансляция → ArxSentinel → threats.log | [syslog/traefik.yaml](syslog/traefik.yaml) |
+| Caddy | UDP syslog (net logger) → ArxSentinel → threats.log | [syslog/caddy.yaml](syslog/caddy.yaml) |
+| LiteSpeed | rsyslog-ретрансляция → ArxSentinel → threats.log | [syslog/litespeed.yaml](syslog/litespeed.yaml) |
+
+### Docker
+
+Docker Compose с нулевым объёмом: nginx отправляет логи в контейнер ArxSentinel
+через внутреннюю сеть Docker — общий том не требуется.
+
+| Файл | Назначение |
+|------|------------|
+| [syslog/docker/config.yaml](syslog/docker/config.yaml) | Конфигурация ArxSentinel для syslog Docker |
+| [syslog/docker/docker-compose.yml](syslog/docker/docker-compose.yml) | Compose stack: nginx → syslog → arxsentinel |
+
+---
+
+## HTTP (HTTP/HTTPS приёмник логов)
+
+HTTP/HTTPS источник логов с поддержкой 9 push-протоколов и pull-режима.
+Используйте, когда вендоры отправляют логи напрямую в ArxSentinel по HTTP.
+
+**Когда использовать HTTP-источник:**
+- Cloudflare Logpush, AWS Firehose, GCP Pub/Sub push
+- Loki push API, OTLP HTTP логи, Azure Monitor export, Splunk HEC
+- NDJSON потоки с извлечением полей
+- Опрос удалённых endpoint'ов (pull-режим)
+- Приём логов по HTTPS с TLS
+
+| Рецепт | Описание | Файл |
+|--------|----------|------|
+| Полный справочник с примерами | 9 протоколов + pull + TLS | [http/CookBook.ru.md](http/CookBook.ru.md) |
 
 ---
 

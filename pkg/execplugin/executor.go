@@ -30,24 +30,20 @@ import (
 // sequentially (one at a time).
 //
 // If the plugin crashes or stdout closes unexpectedly, Run() returns an error
-// and increments the Errors counter.
-type ExecExecutor struct {
-	name     string
-	execType string
-	proc     *ManagedProcess
-	mu       sync.Mutex
-	executed atomic.Int64
-	errors   atomic.Int64
-}
+	// and increments the Errors counter.
+	// ExecExecutor holds a persistent ManagedProcess — recreated only on Close+reopen.
+	type ExecExecutor struct {
+		name     string              // YAML: executors[i].name — executor identifier. Consumer: Name, executePlugin
+		execType string              // YAML: — executor type, always "exec". Consumer: Type
+		proc     *ManagedProcess    // Internal — plugin subprocess. Consumer: executePlugin
+		mu       sync.Mutex         // Internal — serializes request/response. Consumer: executePlugin
+		executed atomic.Int64       // Internal — successful executions. Consumer: Stats
+		errors   atomic.Int64       // Internal — failures. Consumer: Stats
+	}
 
 // NewExecutor spawns the plugin binary at execPath and returns an ExecExecutor.
-// The subprocess is started immediately and kept alive for all Run() calls.
-//
-// name is the executor identifier returned by Name().
-// params is passed to the plugin as ARXSENTINEL_PLUGIN_PARAMS environment variable
-// (JSON-encoded). If params is empty or nil, the environment variable is not set.
-//
-// Returns an error if the binary is not executable or cannot be started.
+	// The subprocess is started immediately and kept alive for all Run() calls.
+	// Called from: pipeline.newExecutor. Blocking — NewManagedProcess is called synchronously.
 func NewExecutor(name, execPath string, params map[string]interface{}) (*ExecExecutor, error) {
 	proc, err := NewManagedProcess(context.Background(), execPath)
 	if err != nil {
@@ -61,14 +57,17 @@ func NewExecutor(name, execPath string, params map[string]interface{}) (*ExecExe
 }
 
 // Type returns "exec" — the executor type for exec plugins.
+// Called from: pipeline.newExecutor. Non-blocking.
 func (e *ExecExecutor) Type() string { return e.execType }
 
 // Name returns the executor name as registered in the plugin registry.
+// Called from: pipeline (logging). Non-blocking.
 func (e *ExecExecutor) Name() string {
 	return e.name
 }
 
 // Manifest returns the plugin's identity and data contract.
+// Called from: pipeline (debug logging). Non-blocking.
 func (e *ExecExecutor) Manifest() plugin.Manifest {
 	return plugin.Manifest{
 		Role:       plugin.RoleExecutor,
@@ -80,6 +79,9 @@ func (e *ExecExecutor) Manifest() plugin.Manifest {
 
 // Run reads ThreatEvents from the source via Pop and delegates to executePlugin.
 // Blocks until ctx is cancelled or the source returns a terminal error.
+// Called from: pipeline.runExecutor.
+//
+// Blocking — runs until ctx cancellation or source error.
 func (e *ExecExecutor) Run(ctx context.Context, source plugin.EventSource) error {
 	for {
 		event, err := source.Pop(ctx)
@@ -102,6 +104,9 @@ func (e *ExecExecutor) Run(ctx context.Context, source plugin.EventSource) error
 //   - Response has non-empty Error field
 //
 // On success, increments the Executed counter. On any error, increments Errors.
+// Called from: Run.
+//
+// Non-blocking.
 func (e *ExecExecutor) executePlugin(ctx context.Context, event plugin.ThreatEvent) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()

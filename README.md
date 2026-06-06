@@ -17,9 +17,9 @@
   ╔══════════════════════════════════════════════════════════════════╗
   ║  SOURCES                                                         ║
   ║  nginx · Apache · Caddy · Traefik · HAProxy · LiteSpeed          ║
-  ║  file │ stdin │ exec+JSON plugin (any language)                  ║
+  ║  file │ stdin │ syslog │ exec+JSON plugin (any language)         ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
-                              │ parsed log entries
+                              │ parsed log entries (Direct Go Channels)
   ╔═══════════════════════════╧══════════════════════════════════════╗
   ║  PROCESSORS                                                      ║
   ║                                                                  ║
@@ -40,12 +40,17 @@
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ threat events
   ╔═══════════════════════════╧══════════════════════════════════════╗
-  ║  SINKS                                                           ║
+  ║  SINKS  (Passive Logging)                                        ║
   ║  file (fail2ban format) · stdout JSON · exec+JSON plugin         ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
-                              │ via Named Channel Hub
+                              │ sentinel-threat sink → AttachWriter()
   ╔═══════════════════════════╧══════════════════════════════════════╗
-  ║  EXECUTORS  (automated response — optional)                      ║
+  ║  NAMED CHANNEL SWITCH  (Point-to-Point Work Queue)               ║
+  ║  memory │ bbolt (file) │ redis                                   ║
+  ╚═══════════════════════════╤══════════════════════════════════════╝
+                              │ ncs://<channel-name> → AttachReader()
+  ╔═══════════════════════════╧══════════════════════════════════════╗
+  ║  EXECUTORS  (Stateful Active Response — optional)                ║
   ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
   ╚══════════════════════════════════════════════════════════════════╝
 ```
@@ -532,6 +537,20 @@ Executors are stateful action plugins that run after threat scoring. Unlike Sink
 | **nginx** | `pkg/executor/nginx` | Writes banned IPs to a plain blocklist file (TTL auto-expiry, atomic writes, optional reload command); you include the file into nginx however suits your setup |
 | **mikrotik** | `pkg/executor/mikrotik` | Manages a RouterOS v7 firewall address-list over the REST API; TTL-based auto-unban, removes only arxsentinel-owned entries, CHR/ARM compatible |
 
+> **⚠️ NCS routing: Point-to-Point, not Broadcast.**
+> Executors receive events through the Named Channel Switch (NCS) — a Work Queue,
+> not a pub/sub bus. Connecting two executors to the same `ncs://threats` channel
+> results in round-robin distribution (each executor sees ~half the events).
+> Use one dedicated output channel per executor:
+>
+> ```yaml
+> outputs:
+>   - type: sentinel-threat
+>     name: cf-threats      # Cloudflare executor reads this
+>   - type: sentinel-threat
+>     name: mtk-threats     # MikroTik executor reads this
+> ```
+
 See [docs/executors.md](docs/executors.md) for the framework overview and how to add custom executors.
 See [docs/executor-cloudflare.md](docs/executor-cloudflare.md) for Cloudflare-specific configuration and troubleshooting.
 See [docs/executor-nginx.md](docs/executor-nginx.md) for the nginx blocklist executor.
@@ -540,7 +559,7 @@ See [docs/executor-nginx.md](docs/executor-nginx.md) for the nginx blocklist exe
 
 - **`arxsentinel validate`** — offline, topology-aware config validation using static plugin manifests; catches broken pipeline wiring before deploy
 - **Pluggable queue backends** — buffer executor events via in-memory, bbolt (file) or Redis queue; selectable per executor for bare-metal / single-host / multi-replica K8s
-- **Named Channel Hub** — route threat events between independent pipelines by name (one pipeline detects, another enforces)
+- **Named Channel Switch** — route threat events between independent pipelines by name (one pipeline detects, another enforces)
 - **Bot fast path** — `verify_method: ua_only` (User-Agent match, no DNS) and per-bot `exempt_detectors` to skip specific detectors for trusted crawlers
 - **CLI** — `arxsentinel cleanup --cf --dry-run` to preview/clean stale executor entries
 
@@ -582,7 +601,20 @@ See [README.whitelist.md](deploy/examples/README.whitelist.md) for configuration
                               │
                   [Sink: Fail2Ban file]  ──→ threats.log ──→ Fail2Ban ──→ iptables ban
                   [Sink: stdout JSON]    ──→ log aggregator (Loki, Splunk, Datadog)
-                  [Sink: Splunk/Kafka]       (Phase 2+)
+                  [Sink: sentinel-threat] ─┐
+                                          │ sentinel-threat sink → AttachWriter()
+                            ╔═════════════╧═══════════════════╗
+                            ║  Named Channel Switch           ║
+                            ║  (ncs://threats · Work Queue)   ║
+                            ╚═════════════╤═══════════════════╝
+                                          │ AttachReader() · Point-to-Point
+                            ╔═════════════╧═══════════════════╗
+                            ║  EXECUTORS  (Stateful)          ║
+                            ║  ├─ Cloudflare IP Lists API     ║
+                            ║  ├─ MikroTik REST address-list  ║
+                            ║  └─ nginx blocklist file        ║
+                            ╚═════════════════════════════════╝
+                            (dedup map · TTL expiry · auto-unban)
                               │
                   sentinel.log (operational)
 ```

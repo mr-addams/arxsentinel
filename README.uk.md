@@ -18,7 +18,7 @@
   ╔══════════════════════════════════════════════════════════════════╗
   ║  SOURCES                                                         ║
   ║  nginx · Apache · Caddy · Traefik · HAProxy · LiteSpeed          ║
-  ║  file │ stdin │ exec+JSON plugin (будь-яка мова)                 ║
+  ║  file │ stdin │ syslog-приймач │ exec+JSON plugin (будь-яка мова)  ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ розібрані записи логу
   ╔═══════════════════════════╧══════════════════════════════════════╗
@@ -44,7 +44,7 @@
   ║  SINKS                                                           ║
   ║  file (формат fail2ban) · stdout JSON · exec+JSON plugin         ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
-                              │ через Named Channel Hub
+                              │ через Named Channel Switch
   ╔═══════════════════════════╧══════════════════════════════════════╗
   ║  EXECUTORS  (автоматична відповідь — опціонально)                ║
   ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
@@ -534,7 +534,7 @@ Helm-чарт з довідкою values: [README.helm.md](deploy/container/k8s/
 
 - **`arxsentinel validate`** — автономна валідація конфігу з урахуванням топології, використовуючи статичні маніфести плагінів; ловить зламану розводку pipeline до деплою
 - **Pluggable queue backends** — буферизація подій виконавців через in-memory, bbolt (файл) або Redis; вибір на виконавця для bare-metal / single-host / multi-replica K8s
-- **Named Channel Hub** — маршрутизація подій загроз між незалежними pipeline за іменем (один детектує, інший виконує)
+- **Named Channel Switch** — маршрутизація подій загроз між незалежними pipeline за іменем (один детектує, інший виконує)
 - **Bot fast path** — `verify_method: ua_only` (збіг User-Agent, без DNS) та `exempt_detectors` на бота для пропускання конкретних детекторів у довірених краулерів
 - **CLI** — `arxsentinel cleanup --cf --dry-run` для попереднього перегляду/очищення застарілих записів виконавців
 

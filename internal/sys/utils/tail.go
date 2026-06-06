@@ -46,20 +46,22 @@ const maxLineSize = 64 * 1024 // 64 KB — well above any real access.log line
 //   - copytruncate: file is truncated in place, position moves past the new EOF
 //
 // Lifecycle of the variable f inside Run:
-//   opened at EOF  → reads WRITE events  → closed on RENAME
-//   nil            → waiting for new file after rotation (f == nil is normal)
-//   reopened       → after CREATE of the new file
-type TailReader struct {
-	filePath      string
-	lines         chan string
-	retryInterval time.Duration // retry interval when file is unavailable; from cfg.General.TailRetryInterval
-}
+	//   opened at EOF  → reads WRITE events  → closed on RENAME
+	//   nil            → waiting for new file after rotation (f == nil is normal)
+	//   reopened       → after CREATE of the new file
+	// Internal — tracks current file descriptor. Consumer: Run
+	type TailReader struct {
+		filePath      string              // YAML: inputs[i].path — path to the log file. Consumer: Run
+		lines         chan string         // YAML: — buffered channel for read lines. Consumer: pipeline.runSource
+		retryInterval time.Duration       // YAML: general.tail_retry_interval, default 1s — retry interval when file is unavailable. Consumer: waitForFile
+	}
 
 // NewTailReader creates a TailReader.
 // lines — buffered channel for read lines (size: cfg.General.LinesBufSize).
 // retryInterval — wait interval when file is unavailable (cfg.General.TailRetryInterval).
 // TailReader closes the channel when Run completes — main can wait for !ok during drain.
-// Start with: go t.Run(ctx).
+// Called from: pipeline.runSource.
+// Start with: go t.Run(ctx). Blocking.
 func NewTailReader(filePath string, lines chan string, retryInterval time.Duration) *TailReader {
 	return &TailReader{
 		filePath:      filePath,
@@ -70,9 +72,11 @@ func NewTailReader(filePath string, lines chan string, retryInterval time.Durati
 
 // Run — blocking read loop. Call with: go t.Run(ctx).
 // Stops on ctx.Done().
-//
 // At startup opens the file and seeks to EOF — we only read new lines,
 // not the entire historical log (which may be huge and already processed).
+//
+// Called from: pipeline.runSource (go t.Run(ctx)).
+// Blocking — runs until ctx cancellation or watcher error.
 func (t *TailReader) Run(ctx context.Context) {
 	// Closing the channel signals main that TailReader has finished writing —
 	// the drain loop in main can correctly wait for !ok instead of racing on default.
@@ -192,6 +196,8 @@ func (t *TailReader) Run(ctx context.Context) {
 // time.NewTimer(0) + Reset: reuses one timer instead of time.After,
 // which creates a new *time.Timer on each iteration and does not release it
 // until it fires — on a long wait for the file, timers accumulate.
+//
+// Called from: Run. Non-blocking (timer-driven, yields to ctx).
 func (t *TailReader) waitForFile(ctx context.Context) *os.File {
 	timer := time.NewTimer(0) // first iteration fires immediately, no delay
 	defer timer.Stop()
@@ -219,6 +225,8 @@ func (t *TailReader) waitForFile(ctx context.Context) *os.File {
 // handleTruncation detects file truncation (logrotate copytruncate) and
 // resets the read position to the beginning of the file.
 // Returns true if truncation was detected and seek(0) was performed.
+//
+// Called from: Run (WRITE event handling). Non-blocking.
 func (t *TailReader) handleTruncation(f *os.File, reader *bufio.Reader) bool {
 	pos, err := f.Seek(0, io.SeekCurrent)
 	if err != nil {
@@ -241,6 +249,8 @@ func (t *TailReader) handleTruncation(f *os.File, reader *bufio.Reader) bool {
 // Non-blocking — stops at io.EOF (no more data at this moment).
 // On channel overflow the line is dropped — better to lose a line than to
 // block the watcher loop and miss rotation events.
+//
+// Called from: Run (WRITE, CREATE, RENAME event handling). Non-blocking.
 func (t *TailReader) readAvailableLines(reader *bufio.Reader) {
 	for {
 		line, err := reader.ReadString('\n')

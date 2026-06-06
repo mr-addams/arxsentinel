@@ -18,7 +18,7 @@ Sources → Processors → Sinks → Executors
 | `streams.inputs` | Джерела логів | ✅ |
 | `scoring` | Пороги загроз | ✅ |
 | `detectors` | 8 вбудованих процесорів | ✅ |
-| `whitelist.custom` | Довірені IP/CIDR/UA | ✅ |
+| `whitelist.custom` | Довірені IP/CIDR/UA/Paths | ✅ |
 | `chain_guard` | Цілісність проксі-ланцюжка | опційно |
 | `streams.outputs` | Приймачі подій | ✅ |
 | `executors` | Автоматизована відповідь | лише рецепти з executor |
@@ -27,6 +27,8 @@ Sources → Processors → Sinks → Executors
 ## Зміст
 
 - [Fail2Ban (file-based logging)](#fail2ban)
+- [Syslog (мережевий транспорт логів)](#syslog)
+- [HTTP-джерело (push/pull приймач логів)](#http)
 - [Cloudflare Executor (автоматичне блокування IP)](#cloudflare)
 - [MikroTik Executor (address-list на RouterOS)](#mikrotik)
 - [Nginx Executor (файл блокування + перезавантаження)](#nginx-executor)
@@ -62,6 +64,65 @@ Docker Compose stack для запуску ArxSentinel + Fail2Ban в конте�
 |------|-------------|
 | [fail2ban/docker/config.yaml](fail2ban/docker/config.yaml) | Конфігурація ArxSentinel для Docker |
 | [fail2ban/docker/docker-compose.yml](fail2ban/docker/docker-compose.yml) | Compose stack: arxsentinel + fail2ban |
+
+---
+
+## Syslog (мережевий транспорт логів)
+
+Отримання логів nginx (або будь-якого веб-сервера) безпосередньо по мережі через
+вбудований syslog-джерело. Жодних спільних лог-файлів, жодної ротації логів,
+жодного монтування томів. nginx надсилає рядки access-логів до ArxSentinel
+по UDP або TCP — ArxSentinel слухає, вилучає рядок логу з syslog-конверта
+та обробляє звичайним чином.
+
+**Конфігурація nginx** (додати в `nginx.conf` або блок сайту):
+```nginx
+access_log syslog:server=127.0.0.1:5514,facility=local7,tag=nginx,severity=info combined;
+```
+
+**Коли використовувати syslog замість file:**
+- Контейнеризовані розгортання, де спільні томи незручні
+- Кілька nginx worker на різних хостах, що надсилають логи на один ArxSentinel
+- Середовища, де лог-файли не зберігаються (ефемерні контейнери, read-only fs)
+- Інтеграція з rsyslog / syslog-ng для пайплайнів агрегації логів
+
+| Рецепт | Опис | Файл |
+|--------|------|------|
+| nginx + Fail2Ban | UDP syslog → ArxSentinel → threats.log | [syslog/nginx-fail2ban.yaml](syslog/nginx-fail2ban.yaml) |
+| nginx + Cloudflare | UDP syslog → ArxSentinel → автоматичне блокування Cloudflare | [syslog/nginx-cloudflare.yaml](syslog/nginx-cloudflare.yaml) |
+| nginx multi-stream | Два vhost на різних syslog-портах | [syslog/nginx-multi-stream.yaml](syslog/nginx-multi-stream.yaml) |
+| HAProxy | UDP syslog → ArxSentinel → threats.log (вбудований syslog-клієнт HAProxy) | [syslog/haproxy.yaml](syslog/haproxy.yaml) |
+| Traefik | rsyslog-ретрансляція → ArxSentinel → threats.log | [syslog/traefik.yaml](syslog/traefik.yaml) |
+| Caddy | UDP syslog (net logger) → ArxSentinel → threats.log | [syslog/caddy.yaml](syslog/caddy.yaml) |
+| LiteSpeed | rsyslog-ретрансляція → ArxSentinel → threats.log | [syslog/litespeed.yaml](syslog/litespeed.yaml) |
+
+### Docker
+
+Docker Compose з нульовим об'ємом: nginx надсилає логи до контейнера ArxSentinel
+через внутрішню мережу Docker — спільний том не потрібен.
+
+| Файл | Призначення |
+|------|-------------|
+| [syslog/docker/config.yaml](syslog/docker/config.yaml) | Конфігурація ArxSentinel для syslog Docker |
+| [syslog/docker/docker-compose.yml](syslog/docker/docker-compose.yml) | Compose stack: nginx → syslog → arxsentinel |
+
+---
+
+## HTTP (HTTP/HTTPS приймач логів)
+
+HTTP/HTTPS джерело логів з підтримкою 9 push-протоколів та pull-режиму.
+Використовуйте, коли вендори надсилають логи безпосередньо до ArxSentinel через HTTP.
+
+**Коли використовувати HTTP-джерело:**
+- Cloudflare Logpush, AWS Firehose, GCP Pub/Sub push
+- Loki push API, OTLP HTTP логи, Azure Monitor export, Splunk HEC
+- NDJSON потоки з вилученням полів
+- Опитування віддалених endpoint'ів (pull-режим)
+- Прийом логів через HTTPS з TLS
+
+| Рецепт | Опис | Файл |
+|--------|------|------|
+| Повний довідник з прикладами | 9 протоколів + pull + TLS | [http/CookBook.uk.md](http/CookBook.uk.md) |
 
 ---
 

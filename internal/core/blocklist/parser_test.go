@@ -1,3 +1,6 @@
+// ========================== internal/core/blocklist — parser_test.go ========
+//   Tests for AhoCorasickParser: pattern parsing, matching, reload.
+
 package blocklist
 
 import (

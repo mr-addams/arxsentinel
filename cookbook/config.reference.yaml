@@ -424,6 +424,7 @@ whitelist:
     ips: []      # example: ["10.99.99.1", "192.168.1.100"] / пример: ["10.99.99.1", "192.168.1.100"]
     cidrs: []    # example: ["10.99.99.0/24", "192.168.0.0/16"] / пример: ["10.99.99.0/24", "192.168.0.0/16"]
     ua_substrings: []  # example: ["MyInternalMonitor", "HealthCheck/1.0"] / пример: ["MyInternalMonitor", "HealthCheck/1.0"]
+    paths: []      # example: ["/ws", "/health", "/api/internal"] — skip scoring for these URL prefixes / пример: ["/ws", "/health", "/api/internal"]
 
   # DNS cache for verification results / DNS-кэш результатов верификации.
   dns_cache:
@@ -451,7 +452,7 @@ pipeline:
 
 # ── executors: automated threat response ─────────────────────────────────────────────────
 #
-# Executors run autonomously: each reads from a Named Channel Hub source (sentinel-threat
+# Executors run autonomously: each reads from a Named Channel Switch source (sentinel-threat
 # sink) and performs automated response actions (e.g. Cloudflare IP list bans).
 # Configure sources[] to wire an executor to a stream output.
 #
@@ -466,9 +467,18 @@ pipeline:
   #   type: cloudflare
   #   sources:
   #     - name: sentinel-cf            # matches sentinel-threat sink name in streams outputs
-  #       # queue:                     # optional persistent queue backend (default: memory)
-  #       #   type: bbolt              # "memory" | "bbolt" (bare-metal) | "redis" (k8s/cloud)
-  #       #   path: /var/lib/arxsentinel/queue-cf.db   # bbolt only
+  #       queue:                       # optional per-source queue backend; omit → default in-memory channel
+  #         type: bbolt                # "memory" | "bbolt" | "redis"
+  #         path: /var/lib/arxsentinel/queue-cf.db   # bbolt only: path to persistent .db file
+  #         bucket: arxsentinel        # bbolt only: bucket name; default "arxsentinel"
+  #       # ── alternate: in-memory (explicit, no persistence) ──
+  #       # queue:
+  #       #   type: memory
+  #       # ── alternate: distributed (k8s / multi-replica) ──
+  #       # queue:
+  #       #   type: redis
+  #       #   url: redis://localhost:6379   # required: Redis URL
+  #       #   key: arxsentinel:queue:cf    # optional list key; default "arxsentinel:queue:<source.name>"
   #   config:
   #     api_token: "YOUR_CF_API_TOKEN"   # Cloudflare API token with Lists:Edit permission
   #     account_id: "YOUR_CF_ACCOUNT_ID" # Cloudflare account ID
@@ -480,6 +490,34 @@ pipeline:
   #     flush_interval: "10s"            # max delay before flushing partial batch
   #     instance_id: ""                  # auto-detected from hostname if empty
   #     comment_extra: ""                # appended to ban comment: "sentinel-<id> <extra>"
+  #     dedup_window: "5m"              # skip re-banning same IP within this window; 0 = disabled
+
+  # ── MikroTik RouterOS address-list executor ───────────────────────────────────────────
+  # - name: mikrotik-blocklist
+  #   type: mikrotik
+  #   sources:
+  #     - name: sentinel-cf            # matches sentinel-threat sink name in streams outputs
+  #       queue:                       # optional per-source queue backend; omit → default in-memory channel
+  #         type: bbolt                # "memory" | "bbolt" | "redis"
+  #         path: /var/lib/arxsentinel/queue-mikrotik.db
+  #         bucket: arxsentinel
+  #   config:
+  #     host: "192.0.2.10"             # RouterOS REST API host
+  #     port: 443                      # default 443
+  #     username: "arxsentinel"        # RouterOS user with API write access
+  #     password: "ROUTEROS_PASSWORD"  # use env/secret in production
+  #     list_name: "arxsentinel_blocklist" # address-list to manage
+  #     sentinel_id: "edge-fw-01"      # used in entry comments; syncExisting filters by this
+  #     min_level: "THREAT"            # INFO | WARN | THREAT — minimum event level to act on
+  #     ttl: "24h"                     # auto-unban after this duration (0 = permanent ban)
+  #     tls_verify: true               # verify RouterOS TLS certificate
+  #     ca_file: ""                    # optional: path to internal CA cert (PEM)
+  #     use_tls: true                  # false → plain HTTP (only for local mock in tests)
+  #     batch_size: 10                 # IPs per RouterOS Add call
+  #     flush_interval: "30s"          # max delay before flushing partial batch
+  #     dedup_window: "5m"             # flaky-safe dedup: skip re-Add of same IP within this window
+  #                                    # after a SUCCESSFUL Add; 0 = disabled. On Add error,
+  #                                    # the IP is NOT marked, so the next event retries.
 
   # ── nginx blocklist executor ──────────────────────────────────────────────────────────
   # - name: nginx-blocklist
@@ -494,6 +532,7 @@ pipeline:
   #     batch_size: 10
   #     flush_interval: 30s
   #     reload_cmd: "nginx -s reload"
+  #     dedup_window: "5m"              # skip re-banning same IP within this window; 0 = disabled
 
 # ── inputs: universal log source syntax / универсальный синтаксис источников ────────────
 #
@@ -510,6 +549,94 @@ pipeline:
 #   - type: exec              # exec plugin: binary writes log lines to stdout
 #     exec: /usr/local/lib/arxsentinel/plugins/my-source.sh
 #     parser: json
+#   - type: syslog            # network syslog receiver (RFC 3164 / RFC 5424)
+#     addr: udp://0.0.0.0:5514  # scheme encodes transport: udp | tcp | unixgram | unix
+#     parser: combined        # optional; inherits parser.log_format if omitted
+#     # Nginx: access_log syslog:server=127.0.0.1:5514,facility=local7,tag=nginx combined;
+#
+#   # HTTP/HTTPS source — push mode (receive logs from vendors)
+#   - type: http
+#     addr: "http://0.0.0.0:8888"
+#     protocol: plain
+#
+#   # Cloudflare Logpush (gzip NDJSON, ownership challenge handled automatically)
+#   - type: http
+#     addr: "http://0.0.0.0:8889"
+#     protocol: cloudflare
+#
+#   # AWS Firehose HTTP endpoint (base64-encoded records, JSON ACK)
+#   - type: http
+#     addr: "http://0.0.0.0:8890"
+#     protocol: firehose
+#
+#   # GCP Pub/Sub push (base64 message.data, 204 ACK)
+#   - type: http
+#     addr: "http://0.0.0.0:8891"
+#     protocol: pubsub
+#
+#   # Loki push API (streams[].values[][], 204 ACK, protobuf rejected with 415)
+#   - type: http
+#     addr: "http://0.0.0.0:8892"
+#     protocol: loki
+#
+#   # OTLP HTTP logs (resourceLogs[].logRecords[], 200 + partialSuccess)
+#   - type: http
+#     addr: "http://0.0.0.0:8893"
+#     protocol: otlp
+#
+#   # Azure Monitor data export (JSON array, optional gzip)
+#   - type: http
+#     addr: "http://0.0.0.0:8894"
+#     protocol: azure
+#
+#   # Splunk HEC (concatenated JSON objects, Success ACK)
+#   - type: http
+#     addr: "http://0.0.0.0:8895"
+#     protocol: splunk
+#
+#   # NDJSON push with field extraction
+#   - type: http
+#     addr: "http://0.0.0.0:8896"
+#     protocol: ndjson
+#     envelope_field: message
+#     token: "your-secret-token"
+#
+#   # HTTP pull mode — poll a remote endpoint every 30s
+#   - type: http
+#     mode: pull
+#     url: "http://log-aggregator:9000/export"
+#     protocol: plain
+#     pull_interval: 30s
+#
+#   # HTTPS push with TLS
+#   - type: http
+#     addr: "https://0.0.0.0:8443"
+#     protocol: plain
+#     tls_cert: /etc/arxsentinel/tls/server.crt
+#     tls_key: /etc/arxsentinel/tls/server.key
+
+  # Sentinel (NCS) input — reads ThreatEvent from the in-process Named Channel Switch.
+  # Sentinel-вход — читает ThreatEvent из Named Channel Switch того же процесса.
+  #
+  # Use case: pipeline A pushes ThreatEvents into the NCS via a `sentinel-threat`
+  # sink (see outputs: below), pipeline B reads them back via this source. The two
+  # YAML files can be one process, two streams[] blocks, or two separate daemons
+  # that share the same NCS queue name.
+  # Сценарий: pipeline A пушит ThreatEvent в NCS через sink `sentinel-threat`
+  # (см. outputs: ниже), pipeline B читает их обратно через этот source. Два YAML
+  # могут быть одним процессом, двумя streams[], или двумя отдельными демонами
+  # с общим именем NCS-очереди.
+  #
+  # The address scheme `ncs://<queue-name>` MUST match the `name:` field of a
+  # `sentinel-threat` sink that is registered first (pipeline startup registers
+  # sinks before constructing sources, and the wiring validator rejects dangling
+  # queues at startup).
+  # Схема адреса `ncs://<queue-name>` ОБЯЗАНА совпадать с полем `name:` уже
+  # зарегистрированного sink'а `sentinel-threat` (startup регистрирует sink'и
+  # до source'ов, и валидатор wiring отвергает висячие очереди).
+  #
+  # - type: sentinel
+  #   addr: ncs://inter-pipeline
 
 # ── outputs: universal threat sink syntax / универсальный синтаксис приёмников ──────────
 #
@@ -523,8 +650,16 @@ pipeline:
 #     format: fail2ban        # fail2ban | json
 #   - type: stdout            # print to stdout (useful for piping or debugging)
 #     format: json
-#   - type: sentinel-threat   # feed THREAT events to an executor via Named Channel Hub
+#   - type: sentinel-threat   # feed THREAT events to an executor via Named Channel Switch
 #     name: sentinel-cf       # must match executor sources[].name above
+#   # When a separate `sentinel` source reads from the SAME NCS name (see inputs:
+#   # above, `type: sentinel`, `addr: ncs://<name>`), the two YAMLs form a
+#   # pipeline-to-pipeline bridge: pipeline A writes ThreatEvents here, pipeline B
+#   # reads them via its `sentinel` source and runs them through its own chain.
+#   # Когда отдельный source `sentinel` читает из той же NCS-очереди (см. inputs:
+#   # выше, `type: sentinel`, `addr: ncs://<name>`), два YAML образуют мост
+#   # pipeline-to-pipeline: pipeline A пишет ThreatEvent сюда, pipeline B читает
+#   # их через свой `sentinel` source и пропускает через свою цепочку.
 #   - type: exec              # exec plugin: events written as JSON to plugin stdin
 #     exec: /usr/local/lib/arxsentinel/plugins/my-sink.sh
 

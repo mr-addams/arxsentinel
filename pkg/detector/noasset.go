@@ -76,6 +76,9 @@ func (d *noAssetDetector) Name() string { return "noasset" }
 //
 // Does not trigger if pageCount < minPageRequests — the IP may have just started
 // browsing; statistics are not yet representative.
+// Called from: pipeline.processEntries.
+//
+// Non-blocking.
 func (d *noAssetDetector) Detect(sv plugin.IPView, _ *plugin.LogEntry) plugin.DetectResult {
 	paths := sv.RecentPaths()
 

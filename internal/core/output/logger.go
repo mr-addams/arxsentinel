@@ -29,25 +29,24 @@ import (
 
 // ThreatLogger writes threat events to the threat log.
 //
-// writeFn in production = utils.LogThreat (writes to threats.log + duplicates to console).
-// writeFn in tests = function that captures output into a buffer for format verification.
+// YAML: output.threat_log.path (via injected writeFn). Consumer: pipeline (main.go).
 type ThreatLogger struct {
-	writeFn func(ip string, score int, level string, modules []string, reason string)
+	writeFn func(ip string, score int, level string, modules []string, reason string) // Internal — injected write function. Consumer: Log.
 }
 
 // NewThreatLogger creates a ThreatLogger with an injected write function.
-// writeFn must ensure that a line is written to the threat log and console.
+//
+// Called from: cmd/arxsentinel.main (pipeline setup).
+// Non-blocking.
 func NewThreatLogger(writeFn func(ip string, score int, level string, modules []string, reason string)) *ThreatLogger {
 	return &ThreatLogger{writeFn: writeFn}
 }
 
 // Log writes a threat event if level is not empty (WARN or THREAT).
-//
 // When level = "" (normal activity) — returns silently without writing anything.
-// This is the main filter: scorer calls Evaluate for every line, but only
-// anomalous events are written to the log — otherwise threats.log would overflow.
 //
-// Called from the main pipeline after scorer.Evaluate.
+// Called from: pipeline (main.go post-scorer verdict).
+// Non-blocking.
 func (l *ThreatLogger) Log(ip string, score int, level string, modules []string, reason string) {
 	if level == "" {
 		return

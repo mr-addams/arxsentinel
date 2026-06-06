@@ -65,6 +65,9 @@ func (d *probeDetector) Name() string { return "probe" }
 // Order: exact match → prefix match.
 // Exact match first: O(1) and covers the majority of static sensitive paths.
 // Prefix match second: O(n) over prefix count, catches sub-paths (/wp-admin/login.php).
+// Called from: pipeline.processEntries.
+//
+// Non-blocking.
 func (d *probeDetector) Detect(_ plugin.IPView, entry *plugin.LogEntry) plugin.DetectResult {
 	path := entry.Path
 

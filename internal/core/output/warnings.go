@@ -36,15 +36,19 @@ import (
 // WarningsWriter writes chain-integrity infrastructure warnings to a dedicated file.
 // Thread-safe: concurrent WriteChainWarning calls are serialized with a mutex.
 // The file is opened in append mode — safe for multi-process writes and logrotate.
+//
+// YAML: chain_guard.warnings_log (via path argument). Consumer: chaincheck (main.go).
 type WarningsWriter struct {
 	mu   sync.Mutex
-	file *os.File
-	path string
+	file *os.File   // Internal — open file handle, nil after Close. Consumer: WriteChainWarning, Reopen, Close.
+	path string     // Internal — file path for Reopen. Consumer: Reopen, Close.
 }
 
 // NewWarningsWriter opens path in append mode (O_CREATE|O_WRONLY|O_APPEND, 0644).
-// Returns an error if the file cannot be created or opened — caller should treat
-// this as a startup failure when chain_guard is enabled.
+// Returns an error if the file cannot be created or opened.
+//
+// Called from: cmd/arxsentinel.main (pipeline setup, when chain_guard enabled).
+// Non-blocking.
 func NewWarningsWriter(path string) (*WarningsWriter, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
@@ -54,9 +58,11 @@ func NewWarningsWriter(path string) (*WarningsWriter, error) {
 }
 
 // WriteChainWarning appends one warning line for the given CheckResult.
-// logFile identifies which access log produced the entry — essential for operator diagnostics
-// when multiple log files are monitored and only one has a broken proxy chain.
+// logFile identifies which access log produced the entry — essential for multi-log diagnostics.
 // Thread-safe.
+//
+// Called from: chaincheck (main.go).
+// Non-blocking.
 func (w *WarningsWriter) WriteChainWarning(result *chaincheck.CheckResult, logFile string) error {
 	line := formatChainWarningLine(result, logFile)
 
@@ -71,9 +77,11 @@ func (w *WarningsWriter) WriteChainWarning(result *chaincheck.CheckResult, logFi
 }
 
 // Reopen closes and reopens the file — supports logrotate (SIGHUP handler).
-// After logrotate moves the file, Reopen creates a fresh descriptor at the same path.
 // Data written before Reopen is preserved in the rotated file; writes after Reopen
-// go to the new file. Reopen is thread-safe.
+// go to the new file. Thread-safe.
+//
+// Called from: SIGHUP handler (main.go).
+// Blocking: write lock.
 func (w *WarningsWriter) Reopen() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -93,6 +101,9 @@ func (w *WarningsWriter) Reopen() error {
 }
 
 // Close closes the underlying file. Safe to call multiple times — second call is a no-op.
+//
+// Called from: graceful shutdown (main.go).
+// Blocking: write lock.
 func (w *WarningsWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()

@@ -23,12 +23,12 @@ import (
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
-// Merge runs each Source in its own goroutine and fan-ins their output into
-// a single bounded channel. The channel is closed when all Sources have
-// returned (either ctx cancelled or unrecoverable error in a Source).
+// Merge fans-in multiple Sources into a single output channel.
+// Runs each Source in its own goroutine, closes out when all done.
+// Non-blocking — drops newest entry if buffer is full.
 //
-// bufSize must be > 0; callers should use pipeline.buffer_size from config (D4).
-// Sources that fill the buffer have their entries dropped — see DROP POLICY above.
+// Called from: cmd/arxsentinel.main (pipeline setup).
+// Blocking: waits for all sources to finish before closing the channel.
 func Merge(ctx context.Context, sources []plugin.Source, bufSize int) <-chan *plugin.LogEntry {
 	out := make(chan *plugin.LogEntry, bufSize)
 

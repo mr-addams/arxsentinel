@@ -23,10 +23,12 @@ import (
 )
 
 // Migrate converts deprecated I/O fields to the new inputs/outputs syntax.
-// Modifies cfg in-place. Returns a (possibly empty) list of deprecation warnings
-// that should be logged at WARN level by the caller.
-//
-// Called by LoadConfig after YAML parsing and env overrides, before validateConfig.
+	// Modifies cfg in-place. Returns a (possibly empty) list of deprecation warnings
+	// that should be logged at WARN level by the caller.
+	//
+	// Priority: new syntax (inputs/outputs) wins over legacy fields.
+	// If inputs: is already set in YAML, general.log_file is silently ignored.
+	// Called from: LoadConfig. Non-blocking.
 func Migrate(cfg *Config) []string {
 	var warnings []string
 

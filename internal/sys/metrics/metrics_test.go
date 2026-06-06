@@ -1,3 +1,6 @@
+// ========================== internal/sys/metrics — metrics_test.go =========
+//   Tests for MetricsCollector: Prometheus metrics, labels, aggregation.
+
 package metrics
 
 import (

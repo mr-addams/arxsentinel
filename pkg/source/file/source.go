@@ -1,3 +1,16 @@
+// ========================== pkg/source/file — FileSource =====================================
+//   Reads access log lines from a file using tail-like following.
+//   Parses each line with a Parser, sends *plugin.LogEntry to the pipeline.
+//   Supports log rotation via inotify (TailReader).
+//
+//   WHAT IS HERE:
+//     FileSource — plugin.Source implementation that tails a file
+//     NewFileSource — constructor
+//
+//   WHAT IS NOT HERE:
+//     manifest.go — PluginID, Role, DataType declarations
+//     internal/sys/utils/tail.go — platform-specific file tailing (inotify/FSEvents)
+
 package file
 
 import (
@@ -12,20 +25,27 @@ import (
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 )
 
+// defaultLinesBufSize is the channel buffer between tail goroutine and parser.
+// Non-blocking send with drop policy: if buffer is full, entries are dropped
+// and Dropped counter is incremented. Larger buffer = less drops, more memory.
 const defaultLinesBufSize = 1000
 
+// FileSource tails a log file and delivers parsed LogEntry records.
 type FileSource struct {
 	name          string
 	path          string
-	par           parser.Parser
-	retryInterval time.Duration
+	parser        parser.Parser // parses raw log lines into *plugin.LogEntry
+	retryInterval time.Duration // delay between retry attempts on file errors
 	logFn         func(tag, msg, level string)
 
-	linesRead   atomic.Int64
-	parseErrors atomic.Int64
-	dropped     atomic.Int64
+	linesRead   atomic.Int64 // total lines received from the file
+	parseErrors atomic.Int64 // lines that failed to parse
+	dropped     atomic.Int64 // lines dropped due to full channel buffer
 }
 
+// NewFileSource creates a new file source.
+// Called from: pkg/source registry (init() → Build).
+// Non-blocking — returns immediately with a configured instance or error.
 func NewFileSource(path string, p parser.Parser, retryInterval time.Duration, logFn func(tag, msg, level string)) (*FileSource, error) {
 	if path == "" {
 		return nil, fmt.Errorf("file source: path must not be empty")
@@ -43,16 +63,22 @@ func NewFileSource(path string, p parser.Parser, retryInterval time.Duration, lo
 	return &FileSource{
 		name:          "file:" + path,
 		path:          path,
-		par:           p,
+		parser:        p,
 		retryInterval: retryInterval,
 		logFn:         lf,
 	}, nil
 }
 
+// Name returns the source identifier.
+// Called from: pipeline (logging, metrics).
 func (s *FileSource) Name() string { return s.name }
 
+// Close releases resources.
+// Called from: pipeline shutdown. FileSource is stateless — nothing to close.
 func (s *FileSource) Close() error { return nil }
 
+// Stats returns operational counters.
+// Called from: pipeline (STATS log, Prometheus metrics).
 func (s *FileSource) Stats() plugin.SourceStats {
 	return plugin.SourceStats{
 		LinesRead:   s.linesRead.Load(),
@@ -61,6 +87,9 @@ func (s *FileSource) Stats() plugin.SourceStats {
 	}
 }
 
+// Run starts tailing the file and sends parsed entries to out.
+// Called from: pipeline goroutine.
+// Blocking — runs until ctx is cancelled.
 func (s *FileSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
 	lines := make(chan string, defaultLinesBufSize)
 	tail := utils.NewTailReader(s.path, lines, s.retryInterval)
@@ -68,12 +97,13 @@ func (s *FileSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 
 	for line := range lines {
 		s.linesRead.Add(1)
-		entry, ok := s.par.Parse(line)
+		entry, ok := s.parser.Parse(line)
 		if !ok {
 			s.parseErrors.Add(1)
 			s.logFn("PARSER", fmt.Sprintf("file source %s: skipping malformed line: %.80s", s.path, line), "debug")
 			continue
 		}
+		// Non-blocking send: drop if pipeline is slow. D3 threshold protects memory.
 		select {
 		case out <- entry:
 		default:

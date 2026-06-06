@@ -351,6 +351,72 @@ func TestValidateExecutorWiring(t *testing.T) {
 			t.Errorf("Note = %q, want %q", errs[0].Note, wantNote)
 		}
 	})
+
+	t.Run("channel has writer but no reader", func(t *testing.T) {
+		// Писатель (sentinel-threat sink) зарегистрировал канал "orphan",
+		// но ни один executor на него не подписан — очередь будет расти
+		// бесконечно. Decision D2 требует fail-fast.
+		bindings := []ExecutorBinding{
+			{Name: "cf", InputType: plugin.TypeScoredEvent, SourceNames: []string{"ch1"}},
+		}
+		channelTypes := map[string]plugin.DataType{
+			"ch1":    plugin.TypeScoredEvent,
+			"orphan": plugin.TypeScoredEvent,
+		}
+		errs := ValidateExecutorWiring(bindings, channelTypes)
+		if len(errs) != 1 {
+			t.Fatalf("expected 1 error, got %d", len(errs))
+		}
+		if errs[0].ConsumerType != "channel" {
+			t.Errorf("ConsumerType = %q, want \"channel\"", errs[0].ConsumerType)
+		}
+		if errs[0].ConsumerName != "orphan" {
+			t.Errorf("ConsumerName = %q, want \"orphan\"", errs[0].ConsumerName)
+		}
+		wantNote := "has writer but no reader"
+		if errs[0].Note != wantNote {
+			t.Errorf("Note = %q, want %q", errs[0].Note, wantNote)
+		}
+	})
+
+	t.Run("multiple channels — only unpaired ones error", func(t *testing.T) {
+		// ch1 — ок (читается cf); ch2 — ок (читается mikrotik);
+		// ch3 и ch4 — orphan. Ожидаем две ошибки с правильными именами
+		// и в стабильном лексикографическом порядке.
+		bindings := []ExecutorBinding{
+			{Name: "cf", InputType: plugin.TypeScoredEvent, SourceNames: []string{"ch1"}},
+			{Name: "mk", InputType: plugin.TypeScoredEvent, SourceNames: []string{"ch2"}},
+		}
+		channelTypes := map[string]plugin.DataType{
+			"ch1": plugin.TypeScoredEvent,
+			"ch2": plugin.TypeScoredEvent,
+			"ch3": plugin.TypeScoredEvent,
+			"ch4": plugin.TypeScoredEvent,
+		}
+		errs := ValidateExecutorWiring(bindings, channelTypes)
+		if len(errs) != 2 {
+			t.Fatalf("expected 2 errors, got %d", len(errs))
+		}
+		if errs[0].ConsumerName != "ch3" || errs[1].ConsumerName != "ch4" {
+			t.Errorf("error order = [%q, %q], want [ch3, ch4] (sorted)", errs[0].ConsumerName, errs[1].ConsumerName)
+		}
+	})
+
+	t.Run("empty channelTypes — no orphan errors", func(t *testing.T) {
+		// Если в конфиге вообще нет sink'ов, писать некому — нет и
+		// "писатель без читателя". Все прочие проверки (unknown channel
+		// и т.п.) отрабатывают по bindings.
+		bindings := []ExecutorBinding{
+			{Name: "cf", InputType: plugin.TypeScoredEvent, SourceNames: []string{"ch1"}},
+		}
+		errs := ValidateExecutorWiring(bindings, nil)
+		if len(errs) != 1 {
+			t.Fatalf("expected 1 error (unknown channel), got %d", len(errs))
+		}
+		if errs[0].Note != "wired to unknown channel 'ch1'" {
+			t.Errorf("Note = %q", errs[0].Note)
+		}
+	})
 }
 
 func TestValidatePipelines(t *testing.T) {

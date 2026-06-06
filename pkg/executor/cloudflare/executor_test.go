@@ -1,3 +1,6 @@
+// ========================== pkg/executor/cloudflare — executor_test.go ======
+//   Tests for CloudflareExecutor: rule management, API calls, error handling.
+
 package cloudflare
 
 import (

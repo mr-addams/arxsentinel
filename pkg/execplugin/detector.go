@@ -44,6 +44,9 @@ type ExecDetector struct {
 // (JSON-encoded). If params is empty or nil, the environment variable is not set.
 //
 // Returns an error if the binary is not executable or cannot be started.
+// Called from: pipeline.newDetector.
+//
+// Blocking — NewManagedProcess is called synchronously.
 func NewDetector(name, execPath string, params map[string]interface{}) (*ExecDetector, error) {
 	proc, err := NewManagedProcess(context.Background(), execPath)
 	if err != nil {
@@ -57,11 +60,13 @@ func NewDetector(name, execPath string, params map[string]interface{}) (*ExecDet
 }
 
 // Name returns the detector name as registered in the plugin registry.
+// Called from: pipeline.processEntries (logging). Non-blocking.
 func (d *ExecDetector) Name() string {
 	return d.name
 }
 
 // Manifest returns the plugin's identity and data contract.
+// Called from: pipeline (debug logging). Non-blocking.
 func (d *ExecDetector) Manifest() plugin.Manifest {
 	return plugin.Manifest{
 		Role:       plugin.RoleDetector,
@@ -76,6 +81,9 @@ func (d *ExecDetector) Manifest() plugin.Manifest {
 //
 // Returns a zero DetectResult on transport or parse error. Errors are logged
 // to stderr but do not cause a panic.
+// Called from: pipeline.processEntries.
+//
+// Non-blocking.
 func (d *ExecDetector) Detect(sv plugin.IPView, entry *plugin.LogEntry) plugin.DetectResult {
 	d.mu.Lock()
 	defer d.mu.Unlock()

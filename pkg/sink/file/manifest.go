@@ -1,3 +1,8 @@
+// ====== Module: pkg/sink/file — Manifest ======
+//   Plugin manifest for the file sink plugin.
+//   Declares plugin ID, version, role, and I/O types.
+//   Tags: file, fail2ban, json, log-rotation.
+
 package file
 
 import "github.com/mr-addams/arxsentinel/pkg/plugin"

@@ -51,6 +51,8 @@ const haproxyHTTPPattern = `^(?P<remote_addr>[^:]+):\d+ \[(?P<time>[^\]]+)\] \S+
 // Profiles maps built-in profile names to parser factory functions.
 // Priority in buildParser: profile → log_format → default combined (Decision 1).
 // Adding a new profile requires only a new entry here — main.go is not touched.
+//
+// Internal — not exposed via config. Consumer: profiles.go (this file).
 var Profiles = map[string]func() (Parser, error){
 	"apache":       apacheProfile,
 	"caddy":        caddyProfile,
@@ -59,32 +61,46 @@ var Profiles = map[string]func() (Parser, error){
 	"litespeed":    litespeedProfile,
 }
 
+// apacheProfile creates a RegexParser for Apache Combined Log Format.
+// Also used for Caddy (CLF) and Traefik (CLF default).
+//
+// Called from: AvailableProfiles, config loader (internal/sys/config).
+// Non-blocking.
 func apacheProfile() (Parser, error) {
 	return NewRegexParser(apacheCLFPattern)
 }
 
-// caddyProfile uses Apache CLF pattern.
+// caddyProfile creates a RegexParser for Caddy v2 CLF format.
 // Configure Caddy v2 with the transform-encoder plugin to output CLF format;
 // see deploy/examples/caddy/ for the Caddyfile configuration.
+//
+// Called from: AvailableProfiles, config loader (internal/sys/config).
+// Non-blocking.
 func caddyProfile() (Parser, error) {
 	return NewRegexParser(apacheCLFPattern)
 }
 
-// traefikProfile uses Apache CLF pattern without end anchor.
+// traefikProfile creates a RegexParser for Traefik CLF format without end anchor.
 // Traefik appends extra fields (duration_ms, captured headers, router, service, retries)
 // after the User-Agent; the pattern's lack of $ silently ignores them.
 // Configure Traefik with accessLog enabled (default format is common/CLF).
+//
+// Called from: AvailableProfiles, config loader (internal/sys/config).
+// Non-blocking.
 func traefikProfile() (Parser, error) {
 	return NewRegexParser(apacheCLFPattern)
 }
 
+// haproxyHTTPProfile creates a RegexParser for HAProxy HTTP access logs.
+//
+// Called from: AvailableProfiles, config loader (internal/sys/config).
+// Non-blocking.
 func haproxyHTTPProfile() (Parser, error) {
 	return NewRegexParser(haproxyHTTPPattern)
 }
 
-// litespeedProfile uses Apache CLF pattern.
-// Both LiteSpeed Web Server (LSWS) and OpenLiteSpeed (OLS) emit Apache CLF by default —
-// no server-side log format changes required.
+// litespeedProfile creates a RegexParser for LiteSpeed/OpenLiteSpeed CLF format.
+// Both LSWS and OLS emit Apache CLF by default — no server-side log format changes required.
 //
 // Real IP behind a proxy: enable "Use Client IP in Header" in the WebAdmin panel
 // (or <useIpInProxyHeader>1</useIpInProxyHeader> in httpd_config.xml).
@@ -92,12 +108,18 @@ func haproxyHTTPProfile() (Parser, error) {
 //
 // Default log path: /usr/local/lsws/logs/access.log
 // VirtualHost log:  /usr/local/lsws/logs/<vhostname>/access.log
+//
+// Called from: AvailableProfiles, config loader (internal/sys/config).
+// Non-blocking.
 func litespeedProfile() (Parser, error) {
 	return NewRegexParser(apacheCLFPattern)
 }
 
 // AvailableProfiles returns a sorted, comma-separated list of known profile names.
 // Used in error messages when an unknown profile is specified in config.
+//
+// Called from: config loader (internal/sys/config).
+// Non-blocking.
 func AvailableProfiles() string {
 	names := make([]string, 0, len(Profiles))
 	for k := range Profiles {

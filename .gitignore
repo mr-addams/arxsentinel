@@ -76,3 +76,6 @@ precommit-scan-*.md
 
 # MCP local config (editor tooling, not project config)
 .mcp.json
+
+# Временные брифы для opencode-агентов (gofer, coder, architect)
+.tmp/

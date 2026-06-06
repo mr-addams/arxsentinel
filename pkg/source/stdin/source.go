@@ -39,14 +39,14 @@ const defaultLinesBufSize = 1000
 // Run completes on EOF or ctx cancellation — whichever comes first.
 // In container / pipe mode EOF is the normal termination signal.
 type StdinSource struct {
-	name  string
-	par   parser.Parser
+	name string
+	parser parser.Parser // parses raw log lines into *plugin.LogEntry
 	logFn func(tag, msg, level string) // nil-safe; defaults to utils.Log
-	r     io.Reader                    // injectable for tests; os.Stdin in production
+	r     io.Reader       // injectable for tests; os.Stdin in production
 
-	linesRead   atomic.Int64
-	parseErrors atomic.Int64
-	dropped     atomic.Int64
+	linesRead   atomic.Int64 // total lines read from stdin
+	parseErrors atomic.Int64 // lines that failed to parse
+	dropped     atomic.Int64 // lines dropped due to full channel buffer
 }
 
 // NewStdinSource creates a StdinSource reading from os.Stdin.
@@ -63,10 +63,10 @@ func NewStdinSourceWithReader(r io.Reader, p parser.Parser, logFn func(tag, msg,
 		lf = utils.Log
 	}
 	return &StdinSource{
-		name:  "stdin",
-		par:   p,
-		logFn: lf,
-		r:     r,
+		name:    "stdin",
+		parser:  p,
+		logFn:   lf,
+		r:       r,
 	}
 }
 
@@ -121,10 +121,10 @@ func (s *StdinSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) erro
 				// EOF — drain complete, normal exit.
 				return nil
 			}
-			s.linesRead.Add(1)
-			entry, parsed := s.par.Parse(line)
-			if !parsed {
-				s.parseErrors.Add(1)
+		s.linesRead.Add(1)
+		entry, parsed := s.parser.Parse(line)
+		if !parsed {
+			s.parseErrors.Add(1)
 				s.logFn("PARSER", fmt.Sprintf("stdin source: skipping malformed line: %.80s", line), "debug")
 				continue
 			}

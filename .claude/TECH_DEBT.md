@@ -14,7 +14,7 @@ severity, description, and proposed resolution.
 - **Area:** package or subsystem
 - **Problem:** what is wrong and why it matters
 - **Resolution:** proposed fix
-- **Status:** open / in progress / resolved (Flow #NNN)
+- **Status:** open long-term / in progress / resolved (Flow #NNN)
 ```
 
 ---
@@ -32,7 +32,31 @@ severity, description, and proposed resolution.
 - **Resolution:** Add `AlertSink` wrapper with dedup cache (IP+level → last-sent timestamp)
   and token bucket rate limiter per-sink. Config: `min_level`, `dedup_window`, `rate_limit`.
   Implement alongside `HTTPSink` in Phase 2.
-- **Status:** open
+- **Status:** open long-term
+
+---
+
+### [049-WS] Dedicated WebSocket abuse detector plugin
+
+- **Flow:** #049 — HTTP source plugin (surfaced during integration testing)
+- **Severity:** medium
+- **Area:** `pkg/detector/` (new `websocket.go`), `internal/sys/config/config.go`
+- **Problem:** A single IP can flood WebSocket upgrade endpoints (`GET /ws` → repeated
+  `101 Switching Protocols`, then `444`), exhausting connection slots. Legitimate clients
+  open ONE socket; dozens of `101` from one IP in a short window is the abuse signal.
+  No current detector inspects HTTP status code semantically: `probe` is path-based,
+  `bruteforce` keys on 404 ratio, `rate` counts requests blind to status. A smart attacker
+  sending a real User-Agent evades the empty-UA branch of the `useragent` detector — so
+  the only robust signal (repeated `101`) is currently unused.
+- **Resolution:** New `websocket` detector that counts `status == 101` (optionally `444`/`499`)
+  per IP per window and scores when the count crosses a configurable threshold. Config under
+  `detectors.websocket`: `enabled`, `score`, `max_upgrades`, `window`, optional `status_codes`.
+  Consider a more general `status-anomaly` detector (configurable suspicious codes) if other
+  status-based patterns emerge. Must go through `/architect` as its own flow — it is a new
+  detection subsystem, not part of the HTTP source work.
+- **Interim mitigation (Flow #049):** ✅ DONE — `whitelist.custom.paths` added; operators
+  can exclude legitimate WS traffic (`/ws`) from scoring via YAML or `ARXSENTINEL_WHITELIST_CUSTOM_PATHS`.
+- **Status:** open (detector itself pending; interim mitigation shipped in v2.0.3-dev.4)
 
 ---
 
@@ -56,6 +80,17 @@ severity, description, and proposed resolution.
 ---
 
 ## Resolved
+
+### [051-stdin] Unit tests for pkg/source/stdin
+
+- **Flow:** #057 — stdin unit tests
+- **Severity:** medium
+- **Area:** `pkg/source/stdin/`
+- **Problem:** Пакет не имел unit-тестов. `NewStdinSourceWithReader(io.Reader)` создан специально для тестируемости — без тестов.
+- **Resolution:** Добавлен `source_test.go` с 7 unit-тестами (strings.NewReader, без os.Stdin).
+- **Status:** resolved (Flow #057)
+
+---
 
 ### [001] BadBotDetector: bbolt file opened per-stream, not shared as singleton
 
@@ -192,7 +227,7 @@ severity, description, and proposed resolution.
      `ScoredEvent`. It is invisible to the validator, so a `Detector(→Structured)` placed
      directly before a `Sink`/`Executor(ScoredEvent→)` is a false mismatch.
   2. Sinks and executors are **terminal fan-out** consumers of `ScoredEvent` (executors via
-     the NamedChannelHub), not a linear sequence. Chaining `Sink(→None) → Sink(ScoredEvent→)`
+     the NamedChannelSwitch), not a linear sequence. Chaining `Sink(→None) → Sink(ScoredEvent→)`
      or `Sink → Executor` is also a false mismatch.
   The flaw was latent because executors were excluded (see [046-1]) and most configs put
   sinks under `streams[].pipelines[].outputs` (empty top-level `cfg.Outputs`), so the chain
@@ -214,7 +249,7 @@ severity, description, and proposed resolution.
     manifest only when the pipeline has detectors (ETL stays Structured); `ValidateTerminals`
     checks each sink independently (fan-out, no chaining); `ValidatePipelines` runs both per
     pipeline and returns the produced type; `ValidateExecutorWiring` matches each executor to
-    its sentinel-threat sink by NCH channel name. `SemanticError` carries stream/pipeline/
+    its sentinel-threat sink by NCS channel name. `SemanticError` carries stream/pipeline/
     consumer context.
   - `cmd/arxsentinel/validate.go`: assembles `PipelineContext`s from `streams[].pipelines[]`,
     computes the produced type once per pipeline (reused for channel-type mapping), and flags

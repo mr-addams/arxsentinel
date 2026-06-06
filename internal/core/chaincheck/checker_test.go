@@ -1,3 +1,6 @@
+// ========================== internal/core/chaincheck — checker_test.go =========
+//   Tests for Checker: Init, Resolve, health checks.
+
 package chaincheck
 
 import (

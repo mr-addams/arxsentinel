@@ -1,3 +1,13 @@
+// ====== Module: mikrotik — client ===============================================
+//   HTTP client for MikroTik RouterOS REST API (firewall address-list operations).
+//   Supports: Add, List, Delete address-list entries.
+//
+//   WHAT IS HERE:
+//     AddressListEntry struct, Client interface, HTTPClient implementation
+//
+//   WHAT IS NOT HERE:
+//     Executor business logic (executor.go), config parsing (config.go), registration (register.go)
+
 package mikrotik
 
 import (

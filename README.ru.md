@@ -18,7 +18,7 @@
   ╔══════════════════════════════════════════════════════════════════╗
   ║  SOURCES                                                         ║
   ║  nginx · Apache · Caddy · Traefik · HAProxy · LiteSpeed          ║
-  ║  file │ stdin │ exec+JSON plugin (любой язык)                    ║
+  ║  file │ stdin │ syslog-приёмник │ exec+JSON plugin (любой язык)   ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ разобранные записи лога
   ╔═══════════════════════════╧══════════════════════════════════════╗
@@ -44,7 +44,7 @@
   ║  SINKS                                                           ║
   ║  file (формат fail2ban) · stdout JSON · exec+JSON plugin         ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
-                              │ через Named Channel Hub
+                              │ через Named Channel Switch
   ╔═══════════════════════════╧══════════════════════════════════════╗
   ║  EXECUTORS  (автоматический ответ — опционально)                 ║
   ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
@@ -535,7 +535,7 @@ Helm-чарт с описанием values: [README.helm.md](deploy/container/k8
 
 - **`arxsentinel validate`** — автономная валидация конфига с учётом топологии, используя статические манифесты плагинов; ловит сломанную разводку pipeline до деплоя
 - **Pluggable queue backends** — буферизация событий исполнителей через in-memory, bbolt (файл) или Redis; выбираемо на исполнителя для bare-metal / single-host / multi-replica K8s
-- **Named Channel Hub** — маршрутизация событий угроз между независимыми pipeline по имени (один детектит, другой исполняет)
+- **Named Channel Switch** — маршрутизация событий угроз между независимыми pipeline по имени (один детектит, другой исполняет)
 - **Bot fast path** — `verify_method: ua_only` (совпадение User-Agent, без DNS) и `exempt_detectors` на бота для пропуска конкретных детекторов у доверенных краулеров
 - **CLI** — `arxsentinel cleanup --cf --dry-run` для предпросмотра/очистки устаревших записей исполнителей
 

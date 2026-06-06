@@ -36,20 +36,24 @@ const (
 )
 
 // Metrics holds all Prometheus collectors for ArxSentinel.
+// Consumer: main.go (metrics exposition), pipeline (increment).
 type Metrics struct {
-	linesProcessed *prometheus.CounterVec
-	threats        *prometheus.CounterVec
-	detectorHits   *prometheus.CounterVec
-	trackedIPs     *prometheus.GaugeVec
-	suspiciousIPs  *prometheus.GaugeVec
+	linesProcessed *prometheus.CounterVec // YAML: — internal counter. Consumer: pipeline.processEntries
+	threats        *prometheus.CounterVec // YAML: — internal counter. Consumer: pipeline.processEntries
+	detectorHits   *prometheus.CounterVec // YAML: — internal counter. Consumer: pipeline.processEntries
+	trackedIPs     *prometheus.GaugeVec   // YAML: — internal gauge. Consumer: metrics.UpdateGauges
+	suspiciousIPs  *prometheus.GaugeVec   // YAML: — internal gauge. Consumer: metrics.UpdateGauges
 	// Universal I/O counters (Flow #030).
-	inputLines    *prometheus.CounterVec
-	outputEvents  *prometheus.CounterVec
-	outputDropped *prometheus.CounterVec
+	inputLines    *prometheus.CounterVec // YAML: — per-source counter. Consumer: pipeline.runSource
+	outputEvents  *prometheus.CounterVec // YAML: — per-sink counter. Consumer: pipeline.runSink
+	outputDropped *prometheus.CounterVec // YAML: — per-sink drop counter. Consumer: pipeline.runSink
 }
 
 // New creates and registers all metrics with reg.
 // Pass prometheus.DefaultRegisterer in production; prometheus.NewRegistry() in tests.
+// Called from: Init, tests.
+//
+// Blocking — MustRegister panics on duplicate metrics; panics are fatal.
 func New(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
 		linesProcessed: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -100,37 +104,44 @@ func New(reg prometheus.Registerer) *Metrics {
 
 // RecordLine increments the processed-lines counter for the given stream and pipeline.
 // Legacy auto-wrapped pipelines pass pipeline="" for backward compat.
+// Called from: pipeline.processEntries. Non-blocking.
 func (m *Metrics) RecordLine(stream, pipeline string) {
 	m.linesProcessed.WithLabelValues(stream, pipeline).Inc()
 }
 
 // RecordThreat increments the threat counter for the given stream, pipeline and level ("THREAT" or "WARN").
+// Called from: pipeline.processEntries. Non-blocking.
 func (m *Metrics) RecordThreat(stream, pipeline, level string) {
 	m.threats.WithLabelValues(stream, pipeline, level).Inc()
 }
 
 // RecordDetectorHit increments the hit counter for the given stream, pipeline and detector name.
+// Called from: pipeline.processEntries. Non-blocking.
 func (m *Metrics) RecordDetectorHit(stream, pipeline, detector string) {
 	m.detectorHits.WithLabelValues(stream, pipeline, detector).Inc()
 }
 
 // UpdateGauges sets the current tracked-IP and suspicious-IP counts for the given stream and pipeline.
+// Called from: main.go (periodic tick via runStream). Non-blocking.
 func (m *Metrics) UpdateGauges(stream, pipeline string, tracked, suspicious int) {
 	m.trackedIPs.WithLabelValues(stream, pipeline).Set(float64(tracked))
 	m.suspiciousIPs.WithLabelValues(stream, pipeline).Set(float64(suspicious))
 }
 
 // RecordInputLine increments the per-source line counter.
+// Called from: pipeline.runSource. Non-blocking.
 func (m *Metrics) RecordInputLine(stream, pipeline, source, sourceType string) {
 	m.inputLines.WithLabelValues(stream, pipeline, source, sourceType).Inc()
 }
 
 // RecordOutputEvent increments the per-sink event counter on successful Write.
+// Called from: pipeline.runSink. Non-blocking.
 func (m *Metrics) RecordOutputEvent(stream, pipeline, sink, sinkType string) {
 	m.outputEvents.WithLabelValues(stream, pipeline, sink, sinkType).Inc()
 }
 
 // RecordOutputDropped increments the dropped counter (Phase 2: async sinks with internal buffers).
+// Called from: pipeline.runSink. Non-blocking.
 func (m *Metrics) RecordOutputDropped(stream, pipeline, sink, reason string) {
 	m.outputDropped.WithLabelValues(stream, pipeline, sink, reason).Inc()
 }
@@ -145,6 +156,7 @@ var (
 
 // Init initializes the default metrics instance against prometheus.DefaultRegisterer.
 // Safe to call multiple times — only the first call has effect (sync.Once).
+// Called from: main.go at startup. Blocking.
 func Init() {
 	initOnce.Do(func() {
 		defPtr.Store(New(prometheus.DefaultRegisterer))
@@ -152,6 +164,7 @@ func Init() {
 }
 
 // RecordLine increments the processed-lines counter on the default instance.
+// Called from: pipeline.processEntries. Non-blocking.
 func RecordLine(stream, pipeline string) {
 	if m := defPtr.Load(); m != nil {
 		m.RecordLine(stream, pipeline)
@@ -159,6 +172,7 @@ func RecordLine(stream, pipeline string) {
 }
 
 // RecordThreat increments the threat counter on the default instance.
+// Called from: pipeline.processEntries. Non-blocking.
 func RecordThreat(stream, pipeline, level string) {
 	if m := defPtr.Load(); m != nil {
 		m.RecordThreat(stream, pipeline, level)
@@ -166,6 +180,7 @@ func RecordThreat(stream, pipeline, level string) {
 }
 
 // RecordDetectorHit increments the detector hit counter on the default instance.
+// Called from: pipeline.processEntries. Non-blocking.
 func RecordDetectorHit(stream, pipeline, detector string) {
 	if m := defPtr.Load(); m != nil {
 		m.RecordDetectorHit(stream, pipeline, detector)
@@ -173,6 +188,7 @@ func RecordDetectorHit(stream, pipeline, detector string) {
 }
 
 // UpdateGauges updates tracked/suspicious IP gauges on the default instance.
+// Called from: main.go (periodic tick). Non-blocking.
 func UpdateGauges(stream, pipeline string, tracked, suspicious int) {
 	if m := defPtr.Load(); m != nil {
 		m.UpdateGauges(stream, pipeline, tracked, suspicious)
@@ -180,6 +196,7 @@ func UpdateGauges(stream, pipeline string, tracked, suspicious int) {
 }
 
 // RecordInputLine increments the per-source line counter on the default instance.
+// Called from: pipeline.runSource. Non-blocking.
 func RecordInputLine(stream, pipeline, source, sourceType string) {
 	if m := defPtr.Load(); m != nil {
 		m.RecordInputLine(stream, pipeline, source, sourceType)
@@ -187,6 +204,7 @@ func RecordInputLine(stream, pipeline, source, sourceType string) {
 }
 
 // RecordOutputEvent increments the per-sink event counter on the default instance.
+// Called from: pipeline.runSink. Non-blocking.
 func RecordOutputEvent(stream, pipeline, sink, sinkType string) {
 	if m := defPtr.Load(); m != nil {
 		m.RecordOutputEvent(stream, pipeline, sink, sinkType)
@@ -194,6 +212,7 @@ func RecordOutputEvent(stream, pipeline, sink, sinkType string) {
 }
 
 // RecordOutputDropped increments the dropped counter on the default instance.
+// Called from: pipeline.runSink. Non-blocking.
 func RecordOutputDropped(stream, pipeline, sink, reason string) {
 	if m := defPtr.Load(); m != nil {
 		m.RecordOutputDropped(stream, pipeline, sink, reason)

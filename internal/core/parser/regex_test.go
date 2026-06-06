@@ -1,3 +1,6 @@
+// ========================== internal/core/parser — regex_test.go ==========
+//   Tests for RegexParser: patterns, matching, error handling.
+
 package parser
 
 import (

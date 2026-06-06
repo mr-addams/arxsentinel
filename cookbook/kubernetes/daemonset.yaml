@@ -77,3 +77,14 @@ spec:
         # - name: mikrotik-ca
         #   configMap:
         #     name: mikrotik-ca
+
+    # ── whitelist: trusted sources / белый список доверенных источников ─────────────────────
+    # whitelist:
+    #   custom:
+    #     ips: []           # example: ["10.0.0.1", "192.168.1.100"]
+    #     cidrs: []         # example: ["10.0.0.0/8", "192.168.0.0/16"]
+    #     ua_substrings: [] # example: ["MyMonitor/", "healthcheck"]
+    #     paths: []         # example: ["/ws", "/health", "/api/internal"]
+
+# NOTE: This DaemonSet uses the arxsentinel-config ConfigMap (see configmap.yaml).
+# Uncomment the whitelist section above and edit values as needed.

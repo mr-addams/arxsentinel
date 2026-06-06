@@ -1,6 +1,10 @@
+// ========================== pkg/execplugin — sink_test.go =================
+//   Tests for ExecSink: Manifest, Sink, lifecycle.
+
 package execplugin
 
 import (
+	"context"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -15,7 +19,7 @@ func TestExecSink_Name(t *testing.T) {
 	testdataDir := filepath.Join(filepath.Dir(filename), "testdata")
 	scriptPath := filepath.Join(testdataDir, "sink.sh")
 
-	sink, err := NewSink(scriptPath)
+	sink, err := NewSink(context.Background(), scriptPath)
 	if err != nil {
 		t.Fatalf("NewSink failed: %v", err)
 	}
@@ -33,7 +37,7 @@ func TestExecSink_Write(t *testing.T) {
 	testdataDir := filepath.Join(filepath.Dir(filename), "testdata")
 	scriptPath := filepath.Join(testdataDir, "sink.sh")
 
-	sink, err := NewSink(scriptPath)
+	sink, err := NewSink(context.Background(), scriptPath)
 	if err != nil {
 		t.Fatalf("NewSink failed: %v", err)
 	}
@@ -54,7 +58,7 @@ func TestExecSink_Write(t *testing.T) {
 	}
 
 	// Call Write
-	err = sink.Write(event)
+	err = sink.Write(context.Background(), event)
 	if err != nil {
 		t.Errorf("Write() failed: %v", err)
 	}
@@ -71,7 +75,7 @@ func TestExecSink_Write(t *testing.T) {
 
 // TestExecSink_InvalidExec tests that NewSink fails with a nonexistent binary.
 func TestExecSink_InvalidExec(t *testing.T) {
-	_, err := NewSink("/nonexistent-binary-xyz-definitely-not-found")
+	_, err := NewSink(context.Background(), "/nonexistent-binary-xyz-definitely-not-found")
 	if err == nil {
 		t.Errorf("NewSink with nonexistent binary should return error, got nil")
 	}

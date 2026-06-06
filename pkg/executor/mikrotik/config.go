@@ -1,6 +1,12 @@
-// ========================== Package mikrotik ==========================
+// ====== Module: mikrotik — config ===============================================
 //   Configuration for MikroTik RouterOS REST API executor — parses from
 //   YAML/JSON with validation and time.Duration handling.
+//
+//   WHAT IS HERE:
+//     Config struct, threatLevel enum, parseConfig function
+//
+//   WHAT IS NOT HERE:
+//     HTTP client (client.go), executor logic (executor.go), registration (register.go)
 
 package mikrotik
 
@@ -17,7 +23,7 @@ import (
 type threatLevel int
 
 const (
-	levelInfo   threatLevel = iota
+	levelInfo threatLevel = iota
 	levelWarn
 	levelThreat
 )
@@ -33,24 +39,29 @@ var levelOrder = map[string]threatLevel{
 // Config contains settings for connecting to a MikroTik RouterOS device via
 // REST API and managing an address-list for IP blocking.
 type Config struct {
-	Host          string        `json:"host" yaml:"host"`
-	Port          int           `json:"port" yaml:"port"`
-	Username      string        `json:"username" yaml:"username"`
-	Password      string        `json:"password" yaml:"password"`
-	ListName      string        `json:"list_name" yaml:"list_name"`
-	TTL           time.Duration `json:"-" yaml:"ttl"`
-	SentinelID    string        `json:"sentinel_id" yaml:"sentinel_id"`
-	TLSVerify     bool          `json:"tls_verify" yaml:"tls_verify"`
+	Host       string        `json:"host" yaml:"host"`
+	Port       int           `json:"port" yaml:"port"`
+	Username   string        `json:"username" yaml:"username"`
+	Password   string        `json:"password" yaml:"password"`
+	ListName   string        `json:"list_name" yaml:"list_name"`
+	TTL        time.Duration `json:"-" yaml:"ttl"`
+	SentinelID string        `json:"sentinel_id" yaml:"sentinel_id"`
+	TLSVerify  bool          `json:"tls_verify" yaml:"tls_verify"`
 	// CAFile is the path to a PEM-encoded CA certificate file used to verify the
 	// RouterOS TLS certificate. If empty, the system trust store is used.
 	// Required when tls_verify: true and the RouterOS cert is signed by an internal CA.
-	CAFile        string        `json:"ca_file" yaml:"ca_file"`
+	CAFile string `json:"ca_file" yaml:"ca_file"`
 	// UseTLS controls whether to use HTTPS (true, default) or plain HTTP (false).
 	// Set to false only for local mock servers in integration tests.
 	UseTLS        bool          `json:"use_tls" yaml:"use_tls"`
 	BatchSize     int           `json:"batch_size" yaml:"batch_size"`
 	FlushInterval time.Duration `json:"-" yaml:"flush_interval"`
 	MinLevel      string        `json:"min_level" yaml:"min_level"`
+	// DedupWindow skips re-banning an IP within this window after a successful ban.
+	// 0 means disabled (only banned-map dedup is applied). This prevents hammering the
+	// RouterOS API with redundant Add calls when the same attacking IP is reported
+	// repeatedly within a short period.
+	DedupWindow time.Duration `json:"-" yaml:"dedup_window"`
 }
 
 // ++++++++++++++++++++++++++ Defaults ++++++++++++++++++++++++++++++++++++++++
@@ -104,6 +115,23 @@ func parseConfig(raw map[string]any) (Config, error) {
 			cfg.FlushInterval = d
 		case int:
 			cfg.FlushInterval = time.Duration(v) * time.Second
+		}
+	}
+
+	// DedupWindow: optional, default 0 (disabled).
+	// Парсим так же, как flush_interval — отдельная ветка до JSON round-trip,
+	// потому что time.Duration не сериализуется нативно.
+	if dwVal, ok := rawCopy["dedup_window"]; ok {
+		delete(rawCopy, "dedup_window")
+		switch v := dwVal.(type) {
+		case string:
+			d, err := time.ParseDuration(v)
+			if err != nil {
+				return Config{}, fmt.Errorf("mikrotik: parseConfig: invalid dedup_window format %q: %w", v, err)
+			}
+			cfg.DedupWindow = d
+		case int:
+			cfg.DedupWindow = time.Duration(v) * time.Second
 		}
 	}
 

@@ -16,7 +16,7 @@ Sources → Processors → Sinks → Executors
 | `streams.inputs` | Log sources | ✅ |
 | `scoring` | Threat thresholds | ✅ |
 | `detectors` | 8 built-in processors | ✅ |
-| `whitelist.custom` | Trusted IPs/CIDRs/UAs | ✅ |
+| `whitelist.custom` | Trusted IPs/CIDRs/UAs/Paths | ✅ |
 | `chain_guard` | Proxy chain integrity | optional |
 | `streams.outputs` | Threat sinks | ✅ |
 | `executors` | Automated response | executor recipes only |
@@ -25,6 +25,8 @@ Sources → Processors → Sinks → Executors
 ## Table of Contents
 
 - [Fail2Ban (file-based logging)](#fail2ban)
+- [Syslog (network log transport)](#syslog)
+- [HTTP source (push/pull log receiver)](#http)
 - [Cloudflare Executor (automated IP banning)](#cloudflare)
 - [MikroTik Executor (RouterOS address-list)](#mikrotik)
 - [Nginx Executor (blocklist file + reload)](#nginx-executor)
@@ -60,6 +62,65 @@ Docker Compose stack for running ArxSentinel + Fail2Ban in containers.
 |------|---------|
 | [fail2ban/docker/config.yaml](fail2ban/docker/config.yaml) | ArxSentinel config for Docker deployment |
 | [fail2ban/docker/docker-compose.yml](fail2ban/docker/docker-compose.yml) | Compose stack: arxsentinel + fail2ban |
+
+---
+
+## Syslog
+
+Receive nginx (or any web server) access logs directly over the network using the
+built-in syslog source. No shared log files, no log rotation, no volume mounts.
+nginx streams access log lines to ArxSentinel via UDP or TCP — ArxSentinel listens,
+strips the syslog envelope, and processes the embedded access log line normally.
+
+**Nginx configuration** (add to `nginx.conf` or a site block):
+```nginx
+access_log syslog:server=127.0.0.1:5514,facility=local7,tag=nginx,severity=info combined;
+```
+
+**When to use syslog instead of file:**
+- Containerised deployments where shared volumes are inconvenient
+- Multiple nginx workers on different hosts sending to one ArxSentinel instance
+- Environments where log files are not persisted (ephemeral containers, read-only fs)
+- Integration with rsyslog / syslog-ng for log aggregation pipelines
+- HAProxy natively sends logs to syslog (no file or rsyslog needed at all)
+
+| Recipe | Description | File |
+|--------|-------------|------|
+| nginx + Fail2Ban | UDP syslog → ArxSentinel → threats.log | [syslog/nginx-fail2ban.yaml](syslog/nginx-fail2ban.yaml) |
+| nginx + Cloudflare | UDP syslog → ArxSentinel → Cloudflare automated banning | [syslog/nginx-cloudflare.yaml](syslog/nginx-cloudflare.yaml) |
+| nginx multi-stream | Two vhosts on separate syslog ports | [syslog/nginx-multi-stream.yaml](syslog/nginx-multi-stream.yaml) |
+| HAProxy | UDP syslog → ArxSentinel → threats.log (native HAProxy syslog client) | [syslog/haproxy.yaml](syslog/haproxy.yaml) |
+| Traefik | rsyslog relay → ArxSentinel → threats.log | [syslog/traefik.yaml](syslog/traefik.yaml) |
+| Caddy | UDP syslog (net logger) → ArxSentinel → threats.log | [syslog/caddy.yaml](syslog/caddy.yaml) |
+| LiteSpeed | rsyslog relay → ArxSentinel → threats.log | [syslog/litespeed.yaml](syslog/litespeed.yaml) |
+
+### Docker
+
+Zero-volume Docker Compose: nginx sends logs to ArxSentinel container over the
+internal Docker network — no shared volume mount needed.
+
+| File | Purpose |
+|------|---------|
+| [syslog/docker/config.yaml](syslog/docker/config.yaml) | ArxSentinel config for syslog Docker deployment |
+| [syslog/docker/docker-compose.yml](syslog/docker/docker-compose.yml) | Compose stack: nginx → syslog → arxsentinel |
+
+---
+
+## HTTP
+
+HTTP/HTTPS log receiver supporting 9 push protocols and pull mode.
+Use when vendors push logs directly to ArxSentinel over HTTP.
+
+**When to use HTTP source:**
+- Cloudflare Logpush, AWS Firehose, GCP Pub/Sub push
+- Loki push API, OTLP HTTP logs, Azure Monitor export, Splunk HEC
+- NDJSON streams with field extraction
+- Polling remote endpoints (pull mode)
+- Receiving logs over HTTPS with TLS
+
+| Recipe | Description | File |
+|--------|-------------|------|
+| Full reference with examples | 9 protocols + pull + TLS | [http/CookBook.md](http/CookBook.md) |
 
 ---
 

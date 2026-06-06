@@ -6,6 +6,7 @@
 //     - MatchBot(ua) → (botName, botCfg, matched) — Task 3.1
 //     - IsWhitelistedIP(ip) bool   — custom whitelist by IP and CIDR — Task 3.4
 //     - IsWhitelistedUA(ua) bool   — custom whitelist by UA substring — Task 3.4
+//     - IsWhitelistedPath(path) bool — custom whitelist by URL path prefix — Flow 049
 //
 //   WHAT IS NOT HERE:
 //     - DNS verification → verifier.go (Tasks 3.2, 3.5)
@@ -37,22 +38,23 @@ import (
 
 // Matcher holds pre-processed data for fast UA/IP/CIDR matching.
 //
-// Lifecycle:
-//   nil      → before NewMatcher is called
-//   *Matcher → after NewMatcher, used until daemon shutdown
-//   rebuild  → on SIGHUP (Task 7.1) — a new instance is created from the new config
+// YAML: whitelist.bots[], whitelist.custom.*
+// Consumer: matcher.go (MatchBot, IsWhitelisted*), verifier.go (via Verifier).
 type Matcher struct {
-	bots []config.BotConfig // bot list from config — order defines match priority
+	bots []config.BotConfig // YAML: whitelist.bots[] — bot list, order defines match priority. Consumer: MatchBot.
 
 	// custom whitelist — pre-processed for O(1) / O(n) lookup
-	customIPs    map[string]struct{} // exact IP addresses
-	customCIDRs  []*net.IPNet        // pre-compiled subnets
-	customUASubs []string            // UA substrings (used in strings.Contains)
+	customIPs    map[string]struct{} // YAML: whitelist.custom.ips[] — exact IP whitelist. Consumer: IsWhitelistedIP.
+	customCIDRs  []*net.IPNet        // YAML: whitelist.custom.cidrs[] — pre-compiled CIDRs. Consumer: IsWhitelistedIP.
+	customUASubs []string            // YAML: whitelist.custom.ua_substrings[] — UA substring whitelist. Consumer: IsWhitelistedUA.
+	customPaths  []string            // YAML: whitelist.custom.paths[] — path prefix whitelist. Consumer: IsWhitelistedPath.
 }
 
 // NewMatcher creates a Matcher from config.
 // Returns an error if any CIDR in whitelist.custom.cidrs is invalid.
-// Called from main.go at startup and on SIGHUP.
+//
+// Called from: cmd/arxsentinel.main (pipeline setup), SIGHUP handler (Task 7.1).
+// Non-blocking.
 func NewMatcher(cfg config.WhitelistConfig) (*Matcher, error) {
 	// ── CIDR pre-compilation ──────────────────────────────────────────────────────────
 	// net.ParseCIDR is called once at startup — expensive parsing removed from hot path.
@@ -80,27 +82,25 @@ func NewMatcher(cfg config.WhitelistConfig) (*Matcher, error) {
 	// copy is not needed; only the top-level slice header is copied.
 	bots := append([]config.BotConfig(nil), cfg.Bots...)
 	uaSubs := append([]string(nil), cfg.Custom.UASubstrings...)
+	paths := append([]string(nil), cfg.Custom.Paths...)
 
 	return &Matcher{
 		bots:         bots,
 		customIPs:    ips,
 		customCIDRs:  cidrs,
 		customUASubs: uaSubs,
+		customPaths:  paths,
 	}, nil
 }
 
 // ========================== Task 3.1 — UA Matcher =====================================
 
 // MatchBot checks the UA against legitimate bot patterns from config.
+// Algorithm: strings.Contains, case-sensitive — bot UAs have fixed casing in vendor docs.
+// Empty UA returns matched=false immediately.
 //
-// Returns:
-//   botName — bot identifier (e.g. "google", "bing")
-//   botCfg  — full bot config record (needed by Verifier for rdns_domains and verify_method)
-//   matched — true if a match was found
-//
-// Algorithm: strings.Contains, case-sensitive — search bot UAs have a fixed casing
-// defined in vendor documentation (RFC-like specifications per vendor).
-// Empty UA returns matched=false immediately — no need to iterate over patterns.
+// Called from: verifier.go (DNS verification loop).
+// Non-blocking.
 func (m *Matcher) MatchBot(ua string) (botName string, botCfg config.BotConfig, matched bool) {
 	if ua == "" {
 		return "", config.BotConfig{}, false
@@ -118,13 +118,10 @@ func (m *Matcher) MatchBot(ua string) (botName string, botCfg config.BotConfig, 
 // ========================== Task 3.4 — Custom Whitelist ================================
 
 // IsWhitelistedIP returns true if ip is in the custom whitelist (exact IP or CIDR).
+// Check order: exact match (O(1)) → CIDR check (O(n)). Exact check first.
 //
-// Check order:
-//   1. Exact match — O(1) map lookup
-//   2. CIDR — O(n) over pre-compiled subnets
-// Exact check first: most whitelists contain individual IPs, not subnets.
-//
-// An invalid ip (not parsed by net.ParseIP) does not match any CIDR — returns false.
+// Called from: verifier.go (DNS verification loop).
+// Non-blocking.
 func (m *Matcher) IsWhitelistedIP(ip string) bool {
 	// ── Exact match ───────────────────────────────────────────────────────────────────
 	if _, ok := m.customIPs[ip]; ok {
@@ -149,16 +146,36 @@ func (m *Matcher) IsWhitelistedIP(ip string) bool {
 }
 
 // IsWhitelistedUA returns true if ua contains any of the custom UA substrings.
+// Case-sensitive — custom whitelist assumes precisely known UAs.
 //
-// Case-sensitive — custom whitelist assumes precisely known UAs of monitoring tools,
-// load balancer health checks, and internal services. Fuzzy matching creates a risk
-// of accidentally skipping scanners with a similar UA.
+// Called from: verifier.go (DNS verification loop).
+// Non-blocking.
 func (m *Matcher) IsWhitelistedUA(ua string) bool {
 	if ua == "" {
 		return false
 	}
 	for _, sub := range m.customUASubs {
 		if strings.Contains(ua, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsWhitelistedPath returns true if path matches any entry in whitelist.custom.paths.
+// Exact prefix match: path must START WITH the configured entry.
+//
+// Called from: verifier.go (DNS verification loop).
+// Non-blocking.
+func (m *Matcher) IsWhitelistedPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	for _, p := range m.customPaths {
+		if p == "" {
+			continue
+		}
+		if path == p || strings.HasPrefix(path, p+"/") || strings.HasPrefix(path, p+"?") {
 			return true
 		}
 	}

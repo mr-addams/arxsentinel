@@ -40,6 +40,17 @@ type InputConfig struct {
 	Type string // "file", "stdin", etc.
 	Path string // for type="file"; ignored for others
 	Exec string // path to exec plugin binary; used when type="exec"
+	Addr          string // network address for type="syslog": "udp://:5514", "tcp://:514", "unix:///var/run/arx.sock"
+	Mode          string // "push" | "pull"; for type="http"
+	URL           string // for type="http" pull mode: full URL to poll
+	HTTPPath      string // URL path for push handler, default "/"
+	Token         string // optional Bearer token for auth
+	TLSCert       string // path to TLS certificate file (for https://)
+	TLSKey        string // path to TLS private key file (for https://)
+	Protocol      string // envelope protocol: "plain"|"ndjson"|"cloudflare"|"firehose"|"pubsub"|"loki"|"otlp"|"azure"|"splunk"
+	EnvelopeField string // field name for ndjson envelope extraction
+	PullInterval  string // polling interval for pull mode, e.g. "30s"
+	MaxBodyBytes  int    // max request body size; default 10485760 (10MB)
 }
 
 // LineParser — read-only view of a log line parser.

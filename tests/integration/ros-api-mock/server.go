@@ -1,3 +1,7 @@
+// ====== Module: ros-api-mock ======
+//   RouterOS REST API mock server for integration tests.
+//   Simulates MikroTik RouterOS address-list endpoints.
+
 package main
 
 import (

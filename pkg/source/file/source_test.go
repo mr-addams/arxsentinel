@@ -1,3 +1,6 @@
+// ========================== pkg/source/file — tests ==========================================
+//   Tests: ReadsLines, StopOnCtxCancel, ParseError, InvalidPath.
+
 package file_test
 
 import (

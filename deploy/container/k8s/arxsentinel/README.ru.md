@@ -221,6 +221,7 @@ helm upgrade arxsentinel ./deploy/container/k8s/arxsentinel -f values-production
 | `ARXSENTINEL_WHITELIST_DNS_CACHE_IP_LIST_REFRESH` | duration | `24h` | Интервал обновления диапазонов IP ботов |
 | `ARXSENTINEL_WHITELIST_CUSTOM_IPS` | CSV | `` | Доверенные IP (через запятую) |
 | `ARXSENTINEL_WHITELIST_CUSTOM_CIDRS` | CSV | `` | Доверенные подсети (через запятую) |
+| `ARXSENTINEL_WHITELIST_CUSTOM_PATHS` | CSV | `` | Доверенные URL-пути (через запятую) |
 | `ARXSENTINEL_WHITELIST_BOTS` | array | _(11 ботов)_ | **YAML-only** |
 | `ARXSENTINEL_CHAIN_GUARD_ENABLED` | bool | `false` | Включить проверку proxy chain |
 | `ARXSENTINEL_CHAIN_GUARD_WARNINGS_LOG` | string | `` | Путь к логу предупреждений |
