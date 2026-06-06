@@ -3,6 +3,10 @@ name: Release
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'README*.md'
+      - '.github/workflows/**'
 
 # contents:write — create tag and GitHub Release.
 # pull-requests:write — open auto VERSION-bump PR to dev after stable release.
