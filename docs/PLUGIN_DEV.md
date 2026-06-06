@@ -11,16 +11,17 @@ Both types implement the same interfaces and are configured the same way in YAML
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Plugin Interfaces](#plugin-interfaces)
-3. [Compiled-in Detector](#compiled-in-detector)
-4. [Compiled-in Source](#compiled-in-source)
-5. [Compiled-in Sink](#compiled-in-sink)
-6. [exec+JSON Protocol](#execjson-protocol)
-7. [exec+JSON Detector](#execjson-detector)
-8. [exec+JSON Sink](#execjson-sink)
-9. [exec+JSON Source](#execjson-source)
-10. [Testing Your Plugin](#testing-your-plugin)
-11. [Security Model](#security-model)
+2. [Sink Plugins vs Executor Plugins: Choosing the Right Abstraction](#sink-plugins-vs-executor-plugins-choosing-the-right-abstraction)
+3. [Plugin Interfaces](#plugin-interfaces)
+4. [Compiled-in Detector](#compiled-in-detector)
+5. [Compiled-in Source](#compiled-in-source)
+6. [Compiled-in Sink](#compiled-in-sink)
+7. [exec+JSON Protocol](#execjson-protocol)
+8. [exec+JSON Detector](#execjson-detector)
+9. [exec+JSON Sink](#execjson-sink)
+10. [exec+JSON Source](#execjson-source)
+11. [Testing Your Plugin](#testing-your-plugin)
+12. [Security Model](#security-model)
 
 ---
 
@@ -52,6 +53,122 @@ as subprocesses and communicate via stdin/stdout NDJSON (newline-delimited JSON)
 - Third-party services (ML model inference, Slack API, custom webhooks)
 
 **Example:** Python ML detector, bash Telegram notifier, Node.js webhook sink.
+
+---
+
+## Sink Plugins vs Executor Plugins: Choosing the Right Abstraction
+
+ArxSentinel exposes two different ways to react to a scored threat event:
+**Sinks** and **Executors**. They look similar at a glance, but they solve
+fundamentally different problems. Picking the wrong one leads to subtle bugs
+— duplicate API calls, lost events, race conditions on dedup state, or an
+entire pipeline that does nothing.
+
+### Key difference in one line
+
+**Sinks** are stateless log writers. **Executors** are stateful action
+managers that enforce policy via external APIs.
+
+### Sink vs Executor — full comparison
+
+| Aspect | Sink | Executor |
+|---|---|---|
+| Role | Passive — writes event data | Active — enforces policy via external resource |
+| Input | `Sink.Write(ctx, event)` direct call | `ncs://<name>` queue via NCS |
+| State | Stateless | Holds dedup map, TTL timers, ban list |
+| Deduplication | None | Built-in (prevents duplicate API calls) |
+| TTL expiry | None | Automatic unban / cleanup after configured duration |
+| Persistence | None | Optional (bbolt/redis queue backend) |
+| Routing | Direct Go channel | Named Channel Switch (Work Queue) |
+| Backpressure | None | Queue buffer (configurable backend) |
+| Startup sync | Not applicable | Loads remote state on Init (e.g. existing ban list) |
+| Failure handling | Log error, continue | Retry / circuit-breaker, increment `Errors` counter |
+
+### When to create an Executor (not a Sink)
+
+Create an **Executor** when your integration:
+
+- **Modifies external state** — firewall rules, IP lists, databases, CDN configs
+- **Needs deduplication** — you must not call the external API twice for the same IP / event
+- **Requires TTL-based cleanup** — automatic reversal of actions (e.g. auto-unban after 24h)
+- **Must survive restarts** — queue persistence means no event loss if the process crashes
+- **Targets distributed environments** — multi-replica K8s with shared Redis queue
+- **Needs startup state sync** — load the current remote state (existing ban list) before processing the first event
+
+Create a **Sink** when your integration:
+
+- Only writes / forwards event data (files, syslog, webhooks, Kafka, Slack, Telegram)
+- Is stateless and idempotent at the I/O level
+- Does not need deduplication, TTL, or cross-process delivery
+- Has no concept of "current state" beyond the event itself
+
+### Executor data flow
+
+```
+Pipeline (detector)
+  └─ sentinel-threat sink
+       └─ executor.AttachWriter("threats") → NCS queue "threats"
+                                                    │
+                                             executor.AttachReader("threats")
+                                                    │
+                                            Executor source (Pop loop)
+                                                    │
+                                            Run(ctx, source)
+                                              ├─ Startup sync (load remote state)
+                                              ├─ for event := range source.Pop(ctx):
+                                              │    ├─ Dedup check (skip if known)
+                                              │    ├─ External API call
+                                              │    ├─ Mark in dedup map
+                                              │    └─ Schedule TTL expiry
+                                              └─ Close (cancel timers, drain)
+```
+
+Note that the executor does **not** receive events via a direct call — it
+runs its own `Run` goroutine and pulls events from the NCS queue
+asynchronously. This is what allows it to apply stateful logic (dedup,
+TTL) without blocking the pipeline.
+
+### Quick reference: which interface to implement
+
+If you are implementing a **Sink**, implement `plugin.Sink` from
+[`pkg/plugin/sink.go`](../pkg/plugin/sink.go):
+
+```go
+type Sink interface {
+    Name() string
+    Write(ctx context.Context, event ThreatEvent) error
+    Close() error
+    Manifest() Manifest
+    Stats() SinkStats
+}
+```
+
+Register it via `pkgsink.Register(typeName, factory)` in `init()`.
+
+If you are implementing an **Executor**, implement `plugin.Executor` from
+[`pkg/plugin/executor.go`](../pkg/plugin/executor.go):
+
+```go
+type Executor interface {
+    Name() string
+    Type() string
+    Run(ctx context.Context, source EventSource) error
+    Manifest() Manifest
+    Stats() ExecutorStats
+}
+```
+
+Register it via `executor.Register(typeName, factory)` in `init()`,
+and expose a source side that reads from `ncs://<name>` — see
+[`pkg/source/sentinel/`](../pkg/source/sentinel/) for the canonical
+source plugin and [`pkg/executor/registry.go`](../pkg/executor/registry.go)
+for the registration helper.
+
+### See also
+
+- [`docs/executors.md`](executors.md) — full executor framework overview (registry, `ExecutorConfig`, exec+JSON)
+- [`pkg/executor/README.md`](../pkg/executor/README.md) — NCS API used by executor sources
+- [`pkg/executor/cloudflare/`](../pkg/executor/cloudflare/) and [`pkg/executor/mikrotik/`](../pkg/executor/mikrotik/) — reference implementations
 
 ---
 
