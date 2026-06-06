@@ -120,7 +120,7 @@ func TestNamedSwitch_GetSourceNotFound(t *testing.T) {
 //
 // Каждый тест использует уникальное имя очереди (t.Name()), чтобы не пересекаться
 // с глобальным singleton'ом NamedChannelSwitch при параллельном запуске.
-// После каждого теста DetachWriter обязателен — иначе queue утечёт в hub-карту.
+// После каждого теста DetachWriter обязателен — иначе queue утечёт в NCS-карту.
 
 // TestRegisterSinkFromConfig_NilCfg — cfg == nil → дефолтный MemoryQueue,
 // функция ведёт себя идентично AttachWriter(name, 0).
@@ -206,7 +206,7 @@ func TestRegisterSinkFromConfig_TypeBbolt(t *testing.T) {
 		t.Fatalf("RegisterSinkFromConfig(bbolt) error = %v, want nil", err)
 	}
 
-	// BboltQueue зарегистрирован в hub, AttachReader находит её.
+	// BboltQueue зарегистрирован в NCS, AttachReader находит её.
 	src, err := executor.AttachReader(name)
 	if err != nil {
 		t.Fatalf("AttachReader(%q) error = %v, want nil", name, err)
@@ -217,7 +217,7 @@ func TestRegisterSinkFromConfig_TypeBbolt(t *testing.T) {
 
 	// ВАЖНО: BboltQueue.DetachWriter закроет её ДО того, как BboltQueue обработает
 	// background-writeLoop. После Close повторный Push вернёт ErrQueueClosed —
-	// это и проверяем ниже, чтобы убедиться, что в hub лежит именно BboltQueue.
+	// это и проверяем ниже, чтобы убедиться, что в NCS лежит именно BboltQueue.
 	ctx := context.Background()
 	evt := plugin.ThreatEvent{IP: "10.0.0.3", Level: "THREAT"}
 	if err := src.Push(ctx, evt); err != nil {
@@ -229,7 +229,7 @@ func TestRegisterSinkFromConfig_TypeBbolt(t *testing.T) {
 
 // TestRegisterSinkFromConfig_TypeRedis_InvalidURL — type=redis с невалидным URL
 // → NewRedisQueue возвращает ошибку (redis.ParseURL не справляется),
-// RegisterSinkFromConfig пробрасывает её дальше, в hub ничего не попадает.
+// RegisterSinkFromConfig пробрасывает её дальше, в NCS ничего не попадает.
 func TestRegisterSinkFromConfig_TypeRedis_InvalidURL(t *testing.T) {
 	name := t.Name()
 	cfg := &queue.QueueConfig{
@@ -249,7 +249,7 @@ func TestRegisterSinkFromConfig_TypeRedis_InvalidURL(t *testing.T) {
 		t.Errorf("error %q should mention redis backend", err.Error())
 	}
 
-	// В hub ничего не зарегистрировано — AttachReader обязан вернуть ошибку.
+	// В NCS ничего не зарегистрировано — AttachReader обязан вернуть ошибку.
 	_, err = executor.AttachReader(name)
 	if err == nil {
 		t.Fatal("AttachReader after failed register expected error, got nil")
@@ -257,7 +257,7 @@ func TestRegisterSinkFromConfig_TypeRedis_InvalidURL(t *testing.T) {
 }
 
 // TestRegisterSinkFromConfig_UnknownType — type с неподдерживаемым значением
-// → возврат ошибки, hub остаётся чистым.
+// → возврат ошибки, NCS остаётся чистым.
 func TestRegisterSinkFromConfig_UnknownType(t *testing.T) {
 	name := t.Name()
 	cfg := &queue.QueueConfig{Type: queue.QueueType("kafka")}
@@ -273,7 +273,7 @@ func TestRegisterSinkFromConfig_UnknownType(t *testing.T) {
 		t.Errorf("error %q should mention sink name %q", err.Error(), name)
 	}
 
-	// Hub не должен содержать ничего под этим именем.
+	// NCS не должен содержать ничего под этим именем.
 	_, err = executor.AttachReader(name)
 	if err == nil {
 		t.Fatal("AttachReader after unknown-type error expected error, got nil")

@@ -753,7 +753,7 @@
                 <div class="pipeline-node">Whitelist (IP · CIDR · UA · bot DNS verify)</div>
                 <div class="pipeline-node">Tracker (per-IP state · ring buffer · rate counters)</div>
                 <div class="pipeline-node">Scorer (8 detectors · linear decay)</div>
-                <div class="pipeline-node">threats.log / Named Channel Hub</div>
+                <div class="pipeline-node">threats.log / Named Channel Switch</div>
                 <div class="pipeline-node final">Executor → Fail2Ban · Cloudflare WAF · MikroTik · nginx blocklist · exec+JSON</div>
             </div>
         </div>
@@ -1080,7 +1080,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
                 <p>Buffer executor events through an in-memory, file-based (bbolt) or Redis queue — pick per executor to fit bare-metal, single-host or multi-replica Kubernetes setups.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Named Channel Hub</h3>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Named Channel Switch</h3>
                 <p>Route threat events between independent pipelines by name — one pipeline can detect while another enforces, fully decoupled.</p>
             </div>
         </div>
