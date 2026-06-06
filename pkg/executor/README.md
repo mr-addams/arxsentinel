@@ -24,6 +24,25 @@ The Named Channel Switch is a **package-level singleton** that maps
 look it up by the same name. There is no broadcasting: each name has
 exactly one underlying queue, and any number of readers can attach to it.
 
+> **⚠️ Point-to-Point semantics (Work Queue), not Publish-Subscribe.**
+> Each event is delivered to exactly one reader. If two executors attach to
+> the same `ncs://name` queue, they compete for events in round-robin fashion —
+> each executor receives roughly half of the threat events, not all of them.
+>
+> **To fan out events to multiple executors**, declare multiple outputs in your
+> pipeline config, one per executor:
+>
+> ```yaml
+> outputs:
+>   - type: sentinel-threat
+>     name: cf-feed      # read by Cloudflare executor
+>   - type: sentinel-threat
+>     name: mtk-feed     # read by MikroTik executor
+> ```
+>
+> The same producer pipeline pushes to both queues independently; each executor
+> gets the full event stream. This is the only supported fan-out pattern.
+
 The name "switch" is deliberate (flow 061, Decision 9). A *hub* would imply
 broadcast semantics — every reader gets every message. A *switch* implies
 addressed routing — the writer picks a name, the reader picks the same
