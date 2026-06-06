@@ -5,6 +5,8 @@
 package file
 
 import (
+	"context"
+
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 )
@@ -12,7 +14,8 @@ import (
 // init registers the "file" sink with the global sink registry.
 // Blocking: runs at package import time during program initialization.
 func init() {
-	pkgsink.Register("file", func(cfg pkgsink.SinkConfig) (plugin.Sink, error) {
+	pkgsink.Register("file", func(_ context.Context, cfg pkgsink.SinkConfig) (plugin.Sink, error) {
+		// ctx не используется: NewFileSink делает только stat() — неблокирующий.
 		return NewFileSink(cfg.Path, cfg.Format)
 	})
 	pkgsink.RegisterManifest("file", (&FileSink{}).Manifest())

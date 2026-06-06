@@ -377,3 +377,68 @@ func TestWindow_FlakySafePattern(t *testing.T) {
 	// 4) Четвёртый event: Contains=true, пропускаем.
 	assert.True(t, w.Contains(ip), "after successful action + Mark, skip duplicates")
 }
+
+// ── MarkBatch: одна mutex-блокировка для группы ключей. ──────────────────
+// Используется mikrotik flush — после успешного batch Add помечаем
+// все IP одним вызовом вместо N отдельных Mark.
+
+func TestWindow_MarkBatchBasic(t *testing.T) {
+	w := NewWindow(5 * time.Minute)
+
+	w.MarkBatch([]string{"1.1.1.1", "2.2.2.2", "3.3.3.3"})
+
+	assert.Equal(t, 3, w.Size())
+	assert.True(t, w.Contains("1.1.1.1"))
+	assert.True(t, w.Contains("2.2.2.2"))
+	assert.True(t, w.Contains("3.3.3.3"))
+}
+
+func TestWindow_MarkBatchEmptyIsNoOp(t *testing.T) {
+	clk := newFakeClock()
+	w := NewWindow(5 * time.Minute)
+	setNow(w, clk.Now)
+
+	// Пустой slice: MarkBatch не должен даже инициализировать map
+	// (важно для случая, когда flush вернул ноль успешных IP).
+	w.MarkBatch(nil)
+	w.MarkBatch([]string{})
+	assert.Equal(t, 0, w.Size(), "empty MarkBatch must not allocate map")
+}
+
+func TestWindow_MarkBatchNoOpOnZeroTTL(t *testing.T) {
+	w := NewWindow(0)
+	w.MarkBatch([]string{"1.1.1.1", "2.2.2.2"})
+	assert.Equal(t, 0, w.Size(), "MarkBatch on ttl=0 must be no-op")
+}
+
+func TestWindow_MarkBatchNoOpOnNilReceiver(t *testing.T) {
+	var w *Window
+	assert.NotPanics(t, func() { w.MarkBatch([]string{"1.1.1.1"}) })
+}
+
+func TestWindow_MarkBatchCleansExpired(t *testing.T) {
+	// Как и Mark, MarkBatch должен попутно чистить истёкшие.
+	clk := newFakeClock()
+	w := NewWindow(10 * time.Minute)
+	setNow(w, clk.Now)
+
+	w.MarkBatch([]string{"a", "b", "c"})
+	assert.Equal(t, 3, w.Size())
+
+	clk.Advance(11 * time.Minute)
+
+	w.MarkBatch([]string{"d"})
+	assert.Equal(t, 1, w.Size(), "expired entries cleaned during MarkBatch")
+	assert.True(t, w.Contains("d"))
+}
+
+func TestWindow_MarkBatchDedupWithinInput(t *testing.T) {
+	// Дубликаты внутри keys — идемпотентны: map[ip] = deadline.
+	// Size не должен расти сверх уникальных ключей.
+	clk := newFakeClock()
+	w := NewWindow(5 * time.Minute)
+	setNow(w, clk.Now)
+
+	w.MarkBatch([]string{"1.1.1.1", "1.1.1.1", "1.1.1.1"})
+	assert.Equal(t, 1, w.Size(), "duplicate keys in batch collapse to one entry")
+}

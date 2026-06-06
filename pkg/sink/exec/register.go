@@ -5,6 +5,7 @@
 package exec
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/mr-addams/arxsentinel/pkg/execplugin"
@@ -13,11 +14,14 @@ import (
 )
 
 func init() {
-	pkgsink.Register("exec", func(cfg pkgsink.SinkConfig) (plugin.Sink, error) {
+	pkgsink.Register("exec", func(ctx context.Context, cfg pkgsink.SinkConfig) (plugin.Sink, error) {
 		if cfg.Exec == "" {
 			return nil, fmt.Errorf("sink type=exec requires exec field (path to plugin binary)")
 		}
-		return execplugin.NewSink(cfg.Exec)
+		// ctx проброшен в NewSink → NewManagedProcess — спавн subprocess'а
+		// теперь отменяется по сигналу (SIGHUP/SIGTERM), а не висит вечно
+		// при зависшем бинарнике.
+		return execplugin.NewSink(ctx, cfg.Exec)
 	})
 	pkgsink.RegisterManifest("exec", (&execplugin.ExecSink{}).Manifest())
 }

@@ -233,7 +233,11 @@ func ValidateExecutorWiring(bindings []ExecutorBinding, channelTypes map[string]
 	for name := range channelTypes {
 		writtenNames = append(writtenNames, name)
 	}
-	sort.Strings(writtenNames)
+	// sort.Slice (а не sort.Strings) не аллоцирует на каждом вызове:
+	// sort.Strings использует sort.Sort + StringSlice, который каждый раз
+	// аллоцирует лямбду. Валидация запускается один раз на старте, но
+	// вынос константы поведения в sort.Slice делает код явно декларативным.
+	sort.Slice(writtenNames, func(i, j int) bool { return writtenNames[i] < writtenNames[j] })
 
 	var errs []SemanticError
 	for _, name := range writtenNames {

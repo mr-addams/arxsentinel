@@ -177,6 +177,10 @@ func (e *MikroTikExecutor) flush(ctx context.Context, events []plugin.ThreatEven
 	comment := sentinelPrefix + e.cfg.SentinelID
 	timeout := durationToRouterOS(e.cfg.TTL)
 
+	// addedIPs — IP, успешно добавленные в этом flush. MarkBatch'им их
+	// одним вызовом после цикла (см. ниже), чтобы не брать mutex N раз.
+	addedIPs := make([]string, 0, len(events))
+
 	e.mu.Lock()
 	unique := make([]plugin.ThreatEvent, 0, len(events))
 	for _, ev := range events {
@@ -211,10 +215,17 @@ func (e *MikroTikExecutor) flush(ctx context.Context, events []plugin.ThreatEven
 		e.mu.Lock()
 		e.banned[ev.IP] = banRecord{id: id, addedAt: time.Now()}
 		e.mu.Unlock()
-		// Помечаем IP в dedup-окне только после успешного Add — это и есть
-		// "flaky-safe" семантика, описанная в Task 4.
-		e.dedupWin.Mark(ev.IP)
+		// Собираем успешно забаненные IP — MarkBatch в конце flush
+		// пометит их ОДНИМ взятием mutex (вместо N отдельных Mark).
+		// Семантика идентична N вызовам Mark: каждый IP получает TTL,
+		// dedup-окно остаётся flaky-safe (failed Add не попадает в батч).
+		addedIPs = append(addedIPs, ev.IP)
 		e.stats.executed.Add(1)
+	}
+
+	// Один batch-mark после цикла — дешевле N взятий mutex при большом flush.
+	if len(addedIPs) > 0 {
+		e.dedupWin.MarkBatch(addedIPs)
 	}
 }
 

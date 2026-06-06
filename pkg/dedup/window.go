@@ -184,6 +184,21 @@ func (w *Window) Mark(key string) {
 // ВНИМАНИЕ: эта обёртка имеет side-effect (Mark) при первом появлении
 // ключа. Для flaky-safe паттерна (Contains до, Mark после успеха)
 // используйте Contains и Mark по отдельности, а не эту обёртку.
+//
+// RACE WINDOW (известное поведение, by design):
+//
+//	IsDuplicate = Contains (Lock) → Mark (Lock) — два отдельных взятия mutex.
+//	Между отпусканием первого Lock и взятием второго другая горутина может
+//	вызвать Mark на тот же ключ. В этом случае обе горутины увидят
+//	Contains == false и обе вызовут Mark, после чего обе вернут false
+//	(т.е. "не duplicate"). Функционально это безвредно: дублирующий Mark
+//	просто обновляет TTL того же ключа. Но детерминизм теряется: при
+//	параллельном вызове для свежего ключа результат зависит от планировщика.
+//
+//	Если нужен атомарный Check+Mark, используйте вызывающий код с одним
+//	Mutex на уровне вызывающего (см. pkg/executor/mikrotik/flush) — пакет
+//	dedup не пытается решить эту задачу внутри, чтобы сохранить
+//	flaky-safe разделение Contains/Mark.
 func (w *Window) IsDuplicate(key string) bool {
 	if w.Contains(key) {
 		return true
@@ -202,4 +217,47 @@ func (w *Window) Size() int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return len(w.entries)
+}
+
+// MarkBatch записывает все keys в окно за ОДНО взятие mutex.
+//
+// Назначение: вызывающий код, который только что успешно применил батч
+// операций (например, mikrotik flush), должен пометить все IP в окне
+// дедупликации. С Mark по одному это N взятий mutex; с MarkBatch — 1.
+//
+// Семантика (идентична Mark, применённому N раз):
+//   - (nil) → no-op, без паники
+//   - ttl == 0 → no-op
+//   - для каждого ключа: записать/продлить TTL
+//   - попутно почистить истёкшие записи в окрестности
+//
+// Дубликаты внутри keys: идемпотентно (map[key] = now+ttl).
+// Пустой slice: чистый no-op, без взятия mutex и аллокации map.
+func (w *Window) MarkBatch(keys []string) {
+	if w == nil || w.ttl == 0 {
+		return
+	}
+	if len(keys) == 0 {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.entries == nil {
+		w.entries = make(map[string]time.Time, len(keys))
+	}
+
+	now := w.nowFn()
+	deadline := now.Add(w.ttl)
+	for _, k := range keys {
+		w.entries[k] = deadline
+	}
+
+	// Тот же opportunistic cleanup, что и в Mark — чтобы Size() оставался
+	// точным без отдельного janitor-цикла.
+	for k, t := range w.entries {
+		if !t.After(now) {
+			delete(w.entries, k)
+		}
+	}
 }

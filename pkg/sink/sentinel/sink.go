@@ -54,8 +54,11 @@ func (s *SentinelThreatSink) Name() string {
 // Non-blocking: Push() uses a bounded channel; blocks only if channel is full.
 // Silent drop: events are dropped without returning error when the queue is full
 // (implements back-pressure without propagating errors up the pipeline).
-func (s *SentinelThreatSink) Write(event plugin.ThreatEvent) error {
-	if err := s.q.Push(context.Background(), event); err != nil {
+//
+// ctx is forwarded to the queue Push so that an in-flight enqueue can be
+// cancelled by the pipeline during shutdown.
+func (s *SentinelThreatSink) Write(ctx context.Context, event plugin.ThreatEvent) error {
+	if err := s.q.Push(ctx, event); err != nil {
 		if errors.Is(err, queue.ErrQueueFull) {
 			s.dropped.Add(1)
 			return nil

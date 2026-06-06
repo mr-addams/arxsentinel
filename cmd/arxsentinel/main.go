@@ -615,7 +615,7 @@ func runPipeline(
 		utils.Log("ERROR", fmt.Sprintf("%s: source init error: %v", logTag, err), "error")
 		return
 	}
-	sinks, err := buildSinks(pipeCfg.Outputs)
+	sinks, err := buildSinks(ctx, pipeCfg.Outputs)
 	if err != nil {
 		utils.Log("ERROR", fmt.Sprintf("%s: sink init error: %v", logTag, err), "error")
 		return
@@ -1168,13 +1168,13 @@ func startExecutors(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup)
 // buildSinks constructs the Sink list from an explicit outputs slice.
 // Called from: runPipeline (line 579).
 // Non-blocking.
-func buildSinks(outputs []config.SinkConfig) ([]plugin.Sink, error) {
+func buildSinks(ctx context.Context, outputs []config.SinkConfig) ([]plugin.Sink, error) {
 	if len(outputs) == 0 {
 		return nil, fmt.Errorf("no outputs configured")
 	}
 	sinks := make([]plugin.Sink, 0, len(outputs))
 	for _, out := range outputs {
-		sink, err := pkgsink.Build(pkgsink.SinkConfig{
+		sink, err := pkgsink.Build(ctx, pkgsink.SinkConfig{
 			Type:   out.Type,
 			Name:   out.Name,
 			Path:   out.Path,
@@ -1427,7 +1427,9 @@ func processLine(ctx context.Context, entry *plugin.LogEntry, pipe *PipelineCont
 	utils.Log("THREAT", fmt.Sprintf("%s score=%d modules=%s reason=%q",
 		entry.RealIP, score, strings.Join(modules, ","), reason), "warning")
 	for _, sink := range pipe.Sinks {
-		if err := sink.Write(event); err != nil {
+		// Передаём ctx процесса в sink, чтобы in-flight записи
+		// (особенно сетевые Push в Sentinel Hub) могли быть отменены при shutdown.
+		if err := sink.Write(ctx, event); err != nil {
 			utils.Log("ERROR", fmt.Sprintf("stream %q: sink %s: %v", pipe.StreamName, sink.Name(), err), "error")
 			continue
 		}

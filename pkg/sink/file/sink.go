@@ -6,6 +6,7 @@
 package file
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -95,7 +96,11 @@ func (s *FileSink) Stats() plugin.SinkStats {
 // Write formats and writes a single threat event to the file.
 // Called from: pipeline/executor.go (per-event).
 // Non-blocking: mutex-protected file write.
-func (s *FileSink) Write(event plugin.ThreatEvent) error {
+//
+// ctx is accepted to satisfy the plugin.Sink interface but is intentionally
+// unused: file I/O here is a single short syscall that is bounded by the
+// mutex, so cancellation is not meaningful.
+func (s *FileSink) Write(ctx context.Context, event plugin.ThreatEvent) error {
 	// Serialize event to bytes according to configured format.
 	var line []byte
 	switch s.format {

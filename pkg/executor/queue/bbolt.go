@@ -45,6 +45,11 @@ const (
 	opPopAndAdvance
 )
 
+// bboltPopPollInterval — интервал опроса пустой bbolt-очереди в Pop.
+// 100ms обеспечивает баланс между отзывчивостью и CPU (D_Q2): при поступлении
+// нового события Pop заметит его в среднем за ~50ms, и busy-loop не разогревается.
+const bboltPopPollInterval = 100 * time.Millisecond
+
 // popResult is the outcome of an opPopAndAdvance claim.
 type popResult struct {
 	event plugin.ThreatEvent
@@ -306,8 +311,7 @@ func (q *BboltQueue) safeSend(ctx context.Context, event plugin.ThreatEvent) err
 // 100ms и повторяет попытку (ticker-паттерн для responsiveness
 // без busy-loop).
 func (q *BboltQueue) Pop(ctx context.Context) (plugin.ThreatEvent, error) {
-	// 100ms poll interval balances responsiveness with CPU usage (per D_Q2).
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(bboltPopPollInterval)
 	defer ticker.Stop()
 
 	for {
