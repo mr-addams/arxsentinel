@@ -6,6 +6,7 @@ on:
     paths-ignore:
       - 'docs/**'
       - 'README*.md'
+      - 'VERSION'
       - '.github/workflows/**'
 
 # contents:write — create tag and GitHub Release.
