@@ -256,7 +256,7 @@ would risk dropping events that the readers were about to consume.
 
 There is exactly one NCS per process. This is by design:
 
-- The executor map (`hubQueues` / `hubRefs`) is package-level state.
+- The executor map (`ncsQueues` / `ncsRefs`) is package-level state.
   Splitting it would force every reader and writer to know which
   instance to talk to, which is exactly the configuration the NCS is
   supposed to remove.

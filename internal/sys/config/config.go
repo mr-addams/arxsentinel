@@ -109,7 +109,7 @@ type InputConfig struct {
 // Migration: output.threat_log / streams[i].threat_log → SinkConfig automatically.
 type SinkConfig struct {
 	Type   string `yaml:"type"`   // YAML: "file" | "stdout". Consumer: cmd/arxsentinel output.NewFileSink / output.NewStdoutSink
-	Name   string `yaml:"name"`   // YAML: named channel for sentinel-thrust sink; used when type="sentinel-threat". Consumer: output.NewSentinelThreatSink
+	Name   string `yaml:"name"`   // YAML: named channel for sentinel-threat sink; used when type="sentinel-threat". Consumer: output.NewSentinelThreatSink
 	Path   string `yaml:"path"`   // YAML: path to output file; required when type=file. Consumer: output.NewFileSink
 	Format string `yaml:"format"` // YAML: "fail2ban" | "json"; default "fail2ban". Consumer: output.FileSink / output.StdoutSink
 	Exec   string `yaml:"exec"`   // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSink

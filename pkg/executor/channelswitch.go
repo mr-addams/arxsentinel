@@ -39,11 +39,11 @@ import (
 const DefaultBufferSize = 1000
 
 var (
-	hubMu     sync.RWMutex
-	hubQueues = map[string]queue.Queue{}
-	// hubRefs считает, сколько sink'ов разделяют одну именованную очередь.
+	ncsMu     sync.RWMutex
+	ncsQueues = map[string]queue.Queue{}
+	// ncsRefs считает, сколько sink'ов разделяют одну именованную очередь.
 	// DetachWriter закрывает очередь только когда последний sink дерегистрируется.
-	hubRefs = map[string]int{}
+	ncsRefs = map[string]int{}
 )
 
 // AttachWriter возвращает MemoryQueue для указанного имени, создавая её при необходимости.
@@ -53,15 +53,15 @@ func AttachWriter(name string, bufferSize int) (queue.Queue, error) {
 	if bufferSize <= 0 {
 		bufferSize = DefaultBufferSize
 	}
-	hubMu.Lock()
-	defer hubMu.Unlock()
-	if q, exists := hubQueues[name]; exists {
-		hubRefs[name]++
+	ncsMu.Lock()
+	defer ncsMu.Unlock()
+	if q, exists := ncsQueues[name]; exists {
+		ncsRefs[name]++
 		return q, nil
 	}
 	q := queue.NewMemoryQueue(bufferSize)
-	hubQueues[name] = q
-	hubRefs[name] = 1
+	ncsQueues[name] = q
+	ncsRefs[name] = 1
 	return q, nil
 }
 
@@ -69,14 +69,14 @@ func AttachWriter(name string, bufferSize int) (queue.Queue, error) {
 // Если имя уже зарегистрировано — существующая очередь переиспользуется (fan-in);
 // переданный q игнорируется, счётчик ссылок инкрементируется.
 func AttachWriterWithQueue(name string, q queue.Queue) error {
-	hubMu.Lock()
-	defer hubMu.Unlock()
-	if _, exists := hubQueues[name]; exists {
-		hubRefs[name]++
+	ncsMu.Lock()
+	defer ncsMu.Unlock()
+	if _, exists := ncsQueues[name]; exists {
+		ncsRefs[name]++
 		return nil
 	}
-	hubQueues[name] = q
-	hubRefs[name] = 1
+	ncsQueues[name] = q
+	ncsRefs[name] = 1
 	return nil
 }
 
@@ -128,9 +128,9 @@ func RegisterSinkFromConfig(name string, cfg *queue.QueueConfig) error {
 // Вызывающий использует Queue.Pop(ctx) для получения событий.
 // Возвращает ошибку, если очередь с таким именем не зарегистрирована.
 func AttachReader(name string) (queue.Queue, error) {
-	hubMu.RLock()
-	defer hubMu.RUnlock()
-	q, exists := hubQueues[name]
+	ncsMu.RLock()
+	defer ncsMu.RUnlock()
+	q, exists := ncsQueues[name]
 	if !exists {
 		return nil, fmt.Errorf("channelswitch: source %q not found", name)
 	}
@@ -140,16 +140,16 @@ func AttachReader(name string) (queue.Queue, error) {
 // DetachWriter декрементирует счётчик ссылок именованной очереди.
 // Очередь закрывается и удаляется только когда последний зарегистрированный sink дерегистрируется.
 func DetachWriter(name string) {
-	hubMu.Lock()
-	defer hubMu.Unlock()
-	if hubRefs[name] > 1 {
-		hubRefs[name]--
+	ncsMu.Lock()
+	defer ncsMu.Unlock()
+	if ncsRefs[name] > 1 {
+		ncsRefs[name]--
 		return
 	}
-	if q, exists := hubQueues[name]; exists {
+	if q, exists := ncsQueues[name]; exists {
 		q.Close()
-		delete(hubQueues, name)
-		delete(hubRefs, name)
+		delete(ncsQueues, name)
+		delete(ncsRefs, name)
 	}
 }
 
