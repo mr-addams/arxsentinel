@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths-ignore:
       - 'docs/**'
-      - 'README.md'
+      - 'README*.md'
       - '.github/workflows/**'
 
 # contents:write — create tag and GitHub Release.
