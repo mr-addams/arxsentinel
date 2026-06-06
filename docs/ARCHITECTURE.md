@@ -121,7 +121,23 @@ Log Entry (file tail / stdin / exec)
     ├─ FileSink: append to threat log
     ├─ StdoutSink: print to stderr
     ├─ ExecSink: pass JSON to subprocess
-    └─ custom plugins (e.g., webhook, syslog)
+    └─ SentinelThreatSink: push to NCS queue
+       │ executor.AttachWriter("ncs://threats")
+       ↓
+    ╔══════════════════════════════════════════╗
+    ║  Named Channel Switch (Work Queue)       ║
+    ║  backend: memory │ bbolt │ redis         ║
+    ╚═══════════════════╤══════════════════════╝
+                        │ executor.AttachReader("ncs://threats")
+                        ↓
+    Executor source: Pop(ctx) loop
+    ├─ Dedup Map check  → skip if IP already acted on
+    ├─ Executor.Execute(ctx, event)
+    │  ├─ Cloudflare:  API call → add IP to IP List
+    │  ├─ MikroTik:    REST API → add to address-list
+    │  └─ nginx:       atomic file write + reload command
+    ├─ Mark in dedup map
+    └─ TTL Scheduler: goroutine → auto-unban after expiry
     ↓
     metrics.RecordThreat(level, detector, ...)
 ```
@@ -188,6 +204,131 @@ When tracker's GC runs (every `state.gc_interval`), it prunes entries where `tim
    - Last step: all shared resources exist
    - Each stream launches TrackerGroup GC and runPipeline goroutines
    - Main loop begins
+
+---
+
+## Event Routing: Direct Channels vs Named Channel Switch
+
+ArxSentinel uses two distinct event routing mechanisms with different semantics,
+performance characteristics, and use-cases. Choosing the wrong one is the single
+most common configuration mistake — see the warning below.
+
+### Two routing mechanisms
+
+```
+Intra-pipeline (Direct Go Channels):
+  Source → entries chan → processLine() → Detectors → Sink.Write()
+  Latency: 1–5 ms · Synchronous · Single process
+
+Inter-pipeline (Named Channel Switch):
+  Pipeline A → sentinel-threat sink → NCS queue → Pipeline B source → Executor
+  Latency: queue-dependent · Async · Cross-process capable
+```
+
+### 1. Direct Go Channels (intra-pipeline routing)
+
+**Used by:** Source, Detector, and Sink plugins within a single pipeline.
+
+**How it works:**
+- Sources push `*plugin.LogEntry` into an `entries chan`
+- Detectors are called synchronously via `Scorer.Evaluate(entry)`
+- Sinks receive `plugin.ThreatEvent` via direct `Sink.Write(ctx, event)` calls
+
+**Properties:**
+- Minimal latency (1–5 ms per event, no serialization)
+- Synchronous processing within a single pipeline goroutine
+- No deduplication, no persistence, no queue
+- Each pipeline is fully isolated — no shared mutable state between pipelines
+
+**When to use:** log parsing, in-process detection, passive logging,
+writing to files / stdout / syslog.
+
+### 2. Named Channel Switch — NCS (inter-pipeline routing)
+
+**Used by:** Executor plugins (Cloudflare, MikroTik, nginx blocklist).
+
+**How it works:**
+- A `sentinel-threat` sink pushes `plugin.ThreatEvent` into a named NCS queue via `executor.AttachWriter(name, bufSize)`
+- An executor source reads the queue via `executor.AttachReader(name)` using the `ncs://<name>` address scheme
+- Three queue backends are supported: `memory` (in-process), `bbolt` (on-disk file), `redis` (cross-process)
+
+**Properties:**
+- Asynchronous, buffered; producers do not block on consumer speed
+- Supports multi-replica deployment (bbolt/redis backends)
+- Queue persistence survives process restarts (bbolt/redis)
+- **Point-to-Point semantics (Work Queue):** each event is delivered to exactly one reader
+
+**When to use:** IP blocking via external APIs, firewall management, any
+stateful enforcement that needs deduplication, TTL expiry, or
+cross-process / multi-replica routing.
+
+> ⚠️ **CRITICAL: NCS is a Work Queue, not Pub/Sub.**
+>
+> Connecting two executors to the same `ncs://threats` channel does
+> **not** broadcast events to both. The NCS distributes events between
+> attached readers in round-robin fashion — each reader sees roughly
+> half the events. If you want two executors to receive every event,
+> declare two separate output channels:
+>
+> ```yaml
+> # ❌ WRONG: round-robin between the two executors
+> streams:
+>   - name: main
+>     outputs:
+>       - type: sentinel-threat
+>         name: threats
+> executors:
+>   - name: cf-ban
+>     type: cloudflare
+>     sources:
+>       - name: threats     # receives ~50% of events
+>   - name: mtk-ban
+>     type: mikrotik
+>     sources:
+>       - name: threats     # receives the other ~50%
+> ```
+>
+> ```yaml
+> # ✅ CORRECT: one dedicated channel per executor
+> streams:
+>   - name: main
+>     outputs:
+>       - type: sentinel-threat
+>         name: cf-threats
+>       - type: sentinel-threat
+>         name: mtk-threats
+> executors:
+>   - name: cf-ban
+>     type: cloudflare
+>     sources:
+>       - name: cf-threats
+>   - name: mtk-ban
+>     type: mikrotik
+>     sources:
+>       - name: mtk-threats
+> ```
+>
+> The same rule applies to any number of executors. The validator
+> (`ValidateExecutorWiring`) catches a writer without a reader at
+> startup, but it cannot catch two readers sharing a channel — that
+> only shows up as missing events in production.
+
+### When to use which mechanism
+
+| Use-case | Mechanism | Reason |
+|---|---|---|
+| Log parsing and enrichment | Direct channels | Zero overhead, synchronous |
+| In-process threat scoring | Direct channels | `Scorer.Evaluate()` is synchronous |
+| Writing to file / stdout / syslog | Direct Sink | No inter-process communication needed |
+| Blocking IPs via external API | NCS + Executor | Stateful, dedup, TTL, queue persistence |
+| Multi-pipeline fan-out | NCS (multiple outputs) | One output per executor, each gets full stream |
+| Multi-replica K8s deployment | NCS + Redis/bbolt | Shared queue across replicas |
+
+### See also
+
+- [`pkg/executor/README.md`](../pkg/executor/README.md) — NCS API reference and startup ordering
+- [`pkg/executor/queue/README.md`](../pkg/executor/queue/README.md) — queue backend selection guide
+- [`docs/executors.md`](executors.md) — executor framework overview
 
 ---
 
