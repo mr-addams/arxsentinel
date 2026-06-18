@@ -57,29 +57,40 @@ func bridgeShared(shared SharedResources) pkgdetector.SharedResources {
 //
 // If pipeCfg.Detectors is set (new pipeline syntax), only the listed detectors are built.
 // Unknown detector names are logged as warnings and skipped (forward compat).
-func buildPipelineDetectors(cfg config.Config, pipeCfg config.PipelineConfig, shared SharedResources) []plugin.Detector {
+//
+// ctx is passed to detector.Build() for factories that need pipeline context
+// (e.g., execplugin.NewDetector receives ctx for subprocess lifecycle).
+func buildPipelineDetectors(ctx context.Context, cfg config.Config, pipeCfg config.PipelineConfig, shared SharedResources) []plugin.Detector {
 	ds := bridgeShared(shared)
 
 	var specs map[string]pkgdetector.DetectorConfig
 	if pipeCfg.Detectors == nil {
-		// Legacy path: build from global cfg.Detectors, respecting all custom parameters.
 		specs = globalDetectorSpecs(cfg)
 	} else {
-		// New syntax path: build exactly the detectors listed in the pipeline config.
 		specs = make(map[string]pkgdetector.DetectorConfig, len(pipeCfg.Detectors))
 		for name, dc := range pipeCfg.Detectors {
 			specs[name] = pkgdetector.DetectorConfig{
 				Enabled: dc.Enabled,
 				Params:  dc.Params,
-				Exec:    dc.Exec, // exec plugin binary path (empty for built-in detectors)
+				Exec:    dc.Exec,
 			}
 		}
 	}
 
+	// Детерминированный порядок: сортируем ключи map перед итерацией.
+	// Без сортировки порядок детекторов в Scorer менялся между запусками,
+	// что затрудняет отладку и нарушает детерминизм тестов.
+	sortedNames := make([]string, 0, len(specs))
+	for name := range specs {
+		sortedNames = append(sortedNames, name)
+	}
+	sort.Strings(sortedNames)
+
 	var detectors []plugin.Detector
-	var names []string
-	for name, spec := range specs {
-		d, err := pkgdetector.Build(name, spec, ds)
+	var active []string
+	for _, name := range sortedNames {
+		spec := specs[name]
+		d, err := pkgdetector.Build(ctx, name, spec, ds)
 		if err != nil {
 			utils.Log("CONFIG", fmt.Sprintf("detector %q: build error: %v (skipped)", name, err), "warn")
 			continue
@@ -88,11 +99,10 @@ func buildPipelineDetectors(cfg config.Config, pipeCfg config.PipelineConfig, sh
 			continue // disabled
 		}
 		detectors = append(detectors, d)
-		names = append(names, d.Name())
+		active = append(active, d.Name())
 	}
-	sort.Strings(names)
 	utils.Log("CONFIG", fmt.Sprintf("detectors: %d active (%s)",
-		len(detectors), strings.Join(names, " ")), "info")
+		len(detectors), strings.Join(active, " ")), "info")
 	return detectors
 }
 

@@ -5,6 +5,7 @@
 package detector_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +41,7 @@ func TestRegistry_Names(t *testing.T) {
 // TestRegistry_Build_Disabled verifies that Build returns (nil, nil) for a disabled detector.
 func TestRegistry_Build_Disabled(t *testing.T) {
 	cfg := detector.DetectorConfig{Enabled: false}
-	d, err := detector.Build("probe", cfg, nil)
+	d, err := detector.Build(context.Background(),"probe", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(disabled) error = %v, want nil", err)
 	}
@@ -52,7 +53,7 @@ func TestRegistry_Build_Disabled(t *testing.T) {
 // TestRegistry_Build_Unknown verifies that Build returns an error for an unregistered name.
 func TestRegistry_Build_Unknown(t *testing.T) {
 	cfg := detector.DetectorConfig{Enabled: true}
-	d, err := detector.Build("nonexistent_detector_xyz", cfg, nil)
+	d, err := detector.Build(context.Background(),"nonexistent_detector_xyz", cfg, nil)
 	if err == nil {
 		t.Fatal("Build(unknown) expected error, got nil")
 	}
@@ -70,7 +71,7 @@ func TestProbeDetector_ViaRegistry(t *testing.T) {
 		Enabled: true,
 		Params:  map[string]interface{}{"score": 25},
 	}
-	d, err := detector.Build("probe", cfg, nil)
+	d, err := detector.Build(context.Background(),"probe", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(probe) error: %v", err)
 	}
@@ -105,7 +106,7 @@ func TestRateDetector_ViaRegistry(t *testing.T) {
 			"score":     25,
 		},
 	}
-	d, err := detector.Build("rate", cfg, nil)
+	d, err := detector.Build(context.Background(),"rate", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(rate) error: %v", err)
 	}
@@ -138,7 +139,7 @@ func TestBruteforceDetector_ViaRegistry(t *testing.T) {
 			"score":           30,
 		},
 	}
-	d, err := detector.Build("bruteforce", cfg, nil)
+	d, err := detector.Build(context.Background(),"bruteforce", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(bruteforce) error: %v", err)
 	}
@@ -164,7 +165,7 @@ func TestBruteforceDetector_ViaRegistry(t *testing.T) {
 // TestUADetector_ViaRegistry verifies scanner and empty UA detection.
 func TestUADetector_ViaRegistry(t *testing.T) {
 	cfg := detector.DetectorConfig{Enabled: true}
-	d, err := detector.Build("ua", cfg, nil)
+	d, err := detector.Build(context.Background(),"ua", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(ua) error: %v", err)
 	}
@@ -201,7 +202,7 @@ func TestBadBotDetector_ViaRegistry(t *testing.T) {
 		Params:  map[string]interface{}{"check_ua": true, "score": 60},
 	}
 	shared := &stubShared{matcher: &stubMatcher{matchUA: "badbotua"}}
-	d, err := detector.Build("badbot", cfg, shared)
+	d, err := detector.Build(context.Background(),"badbot", cfg, shared)
 	if err != nil {
 		t.Fatalf("Build(badbot) error: %v", err)
 	}
@@ -230,7 +231,7 @@ func TestBadBotDetector_ViaRegistry(t *testing.T) {
 // TestBadBotDetector_NilShared verifies graceful degradation when SharedResources is nil.
 func TestBadBotDetector_NilShared(t *testing.T) {
 	cfg := detector.DetectorConfig{Enabled: true}
-	d, err := detector.Build("badbot", cfg, nil)
+	d, err := detector.Build(context.Background(),"badbot", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(badbot, nil shared) error: %v", err)
 	}
@@ -250,7 +251,7 @@ func TestCrawlerDetector_ViaRegistry(t *testing.T) {
 		Enabled: true,
 		Params:  map[string]interface{}{"min_sequential": 3, "score": 20},
 	}
-	d, err := detector.Build("crawler", cfg, nil)
+	d, err := detector.Build(context.Background(),"crawler", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(crawler) error: %v", err)
 	}
@@ -283,7 +284,7 @@ func TestOverflowDetector_ViaRegistry(t *testing.T) {
 			"score":             30,
 		},
 	}
-	d, err := detector.Build("overflow", cfg, nil)
+	d, err := detector.Build(context.Background(),"overflow", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(overflow) error: %v", err)
 	}
@@ -323,7 +324,7 @@ func TestNoAssetDetector_ViaRegistry(t *testing.T) {
 			"score":                 20,
 		},
 	}
-	d, err := detector.Build("noasset", cfg, nil)
+	d, err := detector.Build(context.Background(),"noasset", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(noasset) error: %v", err)
 	}
@@ -365,7 +366,7 @@ func TestRateDetector_DisabledOnZeroWindow(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := detector.DetectorConfig{Enabled: true, Params: tc.params}
-			d, err := detector.Build("rate", cfg, nil)
+			d, err := detector.Build(context.Background(),"rate", cfg, nil)
 			if err != nil {
 				t.Fatalf("Build(rate, %s) error: %v", tc.name, err)
 			}

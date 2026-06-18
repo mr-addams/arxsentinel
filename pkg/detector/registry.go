@@ -23,6 +23,7 @@
 package detector
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -94,7 +95,11 @@ func Register(name string, f Factory) {
 // Returns (nil, nil) when cfg.Enabled == false — the caller must handle nil.
 // Returns error when name is not registered.
 // Returns (nil, error) when the factory itself fails.
-func Build(name string, cfg DetectorConfig, shared SharedResources) (plugin.Detector, error) {
+//
+// ctx is passed through to detector factories that need pipeline context.
+// For the exec fallback path (unknown name + cfg.Exec set), context.Background()
+// is used because exec detectors have independent lifecycle.
+func Build(ctx context.Context, name string, cfg DetectorConfig, shared SharedResources) (plugin.Detector, error) {
 	if !cfg.Enabled {
 		return nil, nil
 	}
@@ -104,8 +109,9 @@ func Build(name string, cfg DetectorConfig, shared SharedResources) (plugin.Dete
 	if !ok {
 		// Exec fallback: if a plugin binary is configured, build an ExecDetector.
 		// Allows arbitrary plugin names without pre-registration in the compiled binary.
+		// Uses Background context — exec detectors manage their own lifecycle.
 		if cfg.Exec != "" {
-			return execplugin.NewDetector(name, cfg.Exec, cfg.Params)
+			return execplugin.NewDetector(name, cfg.Exec, cfg.Params, context.Background())
 		}
 		return nil, fmt.Errorf("pkg/detector: unknown detector %q; registered: %v", name, Names())
 	}

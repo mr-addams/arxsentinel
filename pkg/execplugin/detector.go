@@ -42,13 +42,14 @@ type ExecDetector struct {
 // name is the detector identifier returned by Name().
 // params is passed to the plugin as ARXSENTINEL_PLUGIN_PARAMS environment variable
 // (JSON-encoded). If params is empty or nil, the environment variable is not set.
+// ctx controls the subprocess lifecycle: when ctx is cancelled, the process is killed.
 //
 // Returns an error if the binary is not executable or cannot be started.
 // Called from: pipeline.newDetector.
 //
 // Blocking — NewManagedProcess is called synchronously.
-func NewDetector(name, execPath string, params map[string]interface{}) (*ExecDetector, error) {
-	proc, err := NewManagedProcess(context.Background(), execPath)
+func NewDetector(name, execPath string, params map[string]interface{}, ctx context.Context) (*ExecDetector, error) {
+	proc, err := NewManagedProcess(ctx, execPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to spawn detector plugin %q at %s: %w", name, execPath, err)
 	}

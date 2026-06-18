@@ -327,7 +327,7 @@ func TestBuildPipelineDetectors_ExplicitSubset(t *testing.T) {
 	}
 	t.Cleanup(utils.Close)
 
-	detectors := buildPipelineDetectors(cfg, pipeCfg, SharedResources{})
+	detectors := buildPipelineDetectors(context.Background(), cfg, pipeCfg, SharedResources{})
 
 	if len(detectors) != 2 {
 		t.Fatalf("expected 2 detectors (probe, rate), got %d", len(detectors))
@@ -360,7 +360,7 @@ func TestBuildPipelineDetectors_DisabledSkipped(t *testing.T) {
 	}
 	t.Cleanup(utils.Close)
 
-	detectors := buildPipelineDetectors(cfg, pipeCfg, SharedResources{})
+	detectors := buildPipelineDetectors(context.Background(), cfg, pipeCfg, SharedResources{})
 
 	if len(detectors) != 1 {
 		t.Fatalf("expected 1 detector (probe only), got %d", len(detectors))
@@ -386,7 +386,7 @@ func TestBuildPipelineDetectors_NilFallsBackToGlobal(t *testing.T) {
 	}
 	t.Cleanup(utils.Close)
 
-	detectors := buildPipelineDetectors(cfg, pipeCfg, SharedResources{})
+	detectors := buildPipelineDetectors(context.Background(), cfg, pipeCfg, SharedResources{})
 
 	// All 8 registered detectors should be present.
 	want := pkgdetector.Names() // sorted list of all registered names
@@ -484,7 +484,7 @@ func TestPipeline_BotExemptDetector(t *testing.T) {
 		t.Fatalf("whitelist.NewMatcher: %v", err)
 	}
 
-	detectors := buildPipelineDetectors(cfg, config.PipelineConfig{}, SharedResources{})
+	detectors := buildPipelineDetectors(context.Background(), cfg, config.PipelineConfig{}, SharedResources{})
 	sc := scorer.NewScorer(cfg.Scoring, detectors, nopLog)
 
 	verifier := whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, nopLog)
@@ -555,7 +555,7 @@ func TestPipeline_FakeBotStillCaught(t *testing.T) {
 		t.Fatalf("whitelist.NewMatcher: %v", err)
 	}
 
-	detectors := buildPipelineDetectors(cfg, config.PipelineConfig{}, SharedResources{})
+	detectors := buildPipelineDetectors(context.Background(), cfg, config.PipelineConfig{}, SharedResources{})
 	sc := scorer.NewScorer(cfg.Scoring, detectors, nopLog)
 
 	verifier := whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, nopLog)
