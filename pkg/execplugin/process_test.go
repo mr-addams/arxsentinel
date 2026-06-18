@@ -15,7 +15,17 @@ import (
 func newLongProcess(t *testing.T) *ManagedProcess {
 	t.Helper()
 	cmd := exec.CommandContext(context.Background(), "sh", "-c", "sleep 30")
-	cmd.Stderr = os.Stderr
+	// /dev/null as *os.File: avoids exec.Cmd's copy-goroutine (triggered for
+	// non-*os.File writers). A copy-goroutine blocks cmd.Wait() on EOF, but
+	// orphaned child processes (sleep spawned by sh) keep the write end open
+	// → deadlock. With *os.File(/dev/null), no copy-goroutine is created and
+	// orphans only hold a harmless /dev/null fd.
+	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Skipf("skip: cannot open /dev/null: %v", err)
+	}
+	t.Cleanup(func() { devNull.Close() })
+	cmd.Stderr = devNull
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Skipf("skip: stdin pipe: %v", err)

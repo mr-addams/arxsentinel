@@ -16,6 +16,12 @@
 //     Legacy single-pipeline configs use pipeline="" (empty string label value),
 //     which keeps backward compat with existing Grafana dashboards.
 //
+//     C3 — label cardinality: metrics with dynamic labels (source, sink, reason)
+//     support explicit cleanup via DeleteLabelValues. Callers must call the
+//     cleanup methods when config changes at SIGHUP to prevent unbounded
+//     cardinality growth. The "reason" label in outputDropped is restricted
+//     to a fixed set of known constants (Reason*).
+//
 //   WHAT IS NOT HERE:
 //     - HTTP server for /metrics endpoint (main.go)
 //     - Metric incrementation logic (main.go)
@@ -25,6 +31,7 @@ package metrics
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -33,6 +40,15 @@ import (
 const (
 	LevelThreat = "THREAT"
 	LevelWarn   = "WARN"
+)
+
+// Reason constants for RecordOutputDropped — restricts cardinality of "reason" label (C3).
+const (
+	ReasonBufferFull = "buffer_full" // Buffer full, entry dropped
+	ReasonWriteErr   = "write_err"   // Sink write error
+	ReasonShutdown   = "shutdown"    // Dropped during shutdown drain
+	ReasonStale      = "stale"       // Entry expired before processing
+	ReasonUnknown    = "unknown"     // Catch-all for unexpected reasons
 )
 
 // Metrics holds all Prometheus collectors for ArxSentinel.
@@ -47,6 +63,8 @@ type Metrics struct {
 	inputLines    *prometheus.CounterVec // YAML: — per-source counter. Consumer: pipeline.runSource
 	outputEvents  *prometheus.CounterVec // YAML: — per-sink counter. Consumer: pipeline.runSink
 	outputDropped *prometheus.CounterVec // YAML: — per-sink drop counter. Consumer: pipeline.runSink
+	// Blocklist freshness gauge (062/Task 4.1).
+	blocklistLastRefresh *prometheus.GaugeVec // YAML: — per-list gauge. Consumer: blocklist.fetchAndUpdate
 }
 
 // New creates and registers all metrics with reg.
@@ -76,19 +94,23 @@ func New(reg prometheus.Registerer) *Metrics {
 			Name: "arx_sentinel_suspicious_ips",
 			Help: "Current number of IPs with a non-zero suspicion score.",
 		}, []string{"stream", "pipeline"}),
+		inputLines: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "arxsentinel_input_lines_total",
+			Help: "Total log lines read from sources, by stream, pipeline, source, and source_type.",
+		}, []string{"stream", "pipeline", "source", "source_type"}),
+		outputEvents: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "arxsentinel_output_events_total",
+			Help: "Total threat events written to sinks, by stream, pipeline, sink, and sink_type.",
+		}, []string{"stream", "pipeline", "sink", "sink_type"}),
+		outputDropped: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "arxsentinel_output_dropped_total",
+			Help: "Total threat events dropped at sinks, by stream, pipeline, sink, and reason.",
+		}, []string{"stream", "pipeline", "sink", "reason"}),
+		blocklistLastRefresh: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "arxsentinel_blocklist_last_refresh_timestamp_seconds",
+			Help: "Unix timestamp of last successful blocklist refresh, by list name.",
+		}, []string{"list"}),
 	}
-	m.inputLines = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "arxsentinel_input_lines_total",
-		Help: "Total log lines read from sources, by stream, pipeline, source, and source_type.",
-	}, []string{"stream", "pipeline", "source", "source_type"})
-	m.outputEvents = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "arxsentinel_output_events_total",
-		Help: "Total threat events written to sinks, by stream, pipeline, sink, and sink_type.",
-	}, []string{"stream", "pipeline", "sink", "sink_type"})
-	m.outputDropped = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "arxsentinel_output_dropped_total",
-		Help: "Total threat events dropped at sinks, by stream, pipeline, sink, and reason.",
-	}, []string{"stream", "pipeline", "sink", "reason"})
 	reg.MustRegister(
 		m.linesProcessed,
 		m.threats,
@@ -98,6 +120,7 @@ func New(reg prometheus.Registerer) *Metrics {
 		m.inputLines,
 		m.outputEvents,
 		m.outputDropped,
+		m.blocklistLastRefresh,
 	)
 	return m
 }
@@ -141,10 +164,51 @@ func (m *Metrics) RecordOutputEvent(stream, pipeline, sink, sinkType string) {
 }
 
 // RecordOutputDropped increments the dropped counter (Phase 2: async sinks with internal buffers).
+// reason must be one of the Reason* constants (C3 cardinality control).
 // Called from: pipeline.runSink. Non-blocking.
 func (m *Metrics) RecordOutputDropped(stream, pipeline, sink, reason string) {
 	m.outputDropped.WithLabelValues(stream, pipeline, sink, reason).Inc()
 }
+
+// RecordBlocklistRefresh records the current Unix timestamp for a blocklist refresh (062/Task 4.1).
+// Called from: blocklist.fetchAndUpdate after successful CompileStrings. Non-blocking.
+func (m *Metrics) RecordBlocklistRefresh(listName string) {
+	m.blocklistLastRefresh.WithLabelValues(listName).Set(float64(timeNow().Unix()))
+}
+
+// CleanupSourceLabels removes all label combinations for the given source from inputLines (C3).
+// Called from: SIGHUP handler when a source is removed from config.
+// Non-blocking but may cause subsequent WithLabelValues calls for the removed source to
+// allocate new time series — that is acceptable for SIGHUP-frequency cleanup.
+func (m *Metrics) CleanupSourceLabels(stream, pipeline, source, sourceType string) {
+	m.inputLines.DeleteLabelValues(stream, pipeline, source, sourceType)
+}
+
+// CleanupSinkLabels removes all label combinations for the given sink from outputEvents only (C3).
+// outputDropped has a different label signature (includes "reason") and requires a separate
+// CleanupDroppedLabels call — see that method for details.
+// Called from: SIGHUP handler when a sink is removed from config.
+func (m *Metrics) CleanupSinkLabels(stream, pipeline, sink, sinkType string) {
+	m.outputEvents.DeleteLabelValues(stream, pipeline, sink, sinkType)
+}
+
+// CleanupDroppedLabels removes all label combinations for the given sink+reason from outputDropped (C3).
+func (m *Metrics) CleanupDroppedLabels(stream, pipeline, sink, reason string) {
+	m.outputDropped.DeleteLabelValues(stream, pipeline, sink, reason)
+}
+
+// CleanupBlocklistLabels removes the gauge entry for the given list name (C3).
+// Called from: SIGHUP handler when a list is removed from config.
+func (m *Metrics) CleanupBlocklistLabels(listName string) {
+	m.blocklistLastRefresh.DeleteLabelValues(listName)
+}
+
+// timeNow is overridden in tests.
+//
+//nolint:gochecknoglobals // clock injection for deterministic tests
+var timeNow = time.Now
+
+// ── Package-level default instance ─────────────────────────────────────────────────────
 
 // defPtr is the package-level default instance.
 // Stored via atomic.Pointer so Load/Store are race-free without a mutex.
@@ -216,5 +280,13 @@ func RecordOutputEvent(stream, pipeline, sink, sinkType string) {
 func RecordOutputDropped(stream, pipeline, sink, reason string) {
 	if m := defPtr.Load(); m != nil {
 		m.RecordOutputDropped(stream, pipeline, sink, reason)
+	}
+}
+
+// RecordBlocklistRefresh records the current Unix timestamp for a blocklist refresh on the default instance.
+// Called from: blocklist.fetchAndUpdate after successful CompileStrings. Non-blocking.
+func RecordBlocklistRefresh(listName string) {
+	if m := defPtr.Load(); m != nil {
+		m.RecordBlocklistRefresh(listName)
 	}
 }
