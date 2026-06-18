@@ -142,8 +142,11 @@ func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *p
 	handler = adapters.CloudflareChallengeMiddleware(handler)
 	if cfg.proto == protocolPubSub {
 		// PubSub requires JWT validation — build endpoint URL for audience claim.
+		// bearerAuth above also checks cfg.token if set (smoke-test / compat mode).
+		// Two gates are intentional: bearerAuth catches rogue plain-Bearer traffic early,
+		// PubSubJWTMiddleware handles the OIDC JWT path. Both must pass.
 		endpointURL := cfg.scheme + "://" + cfg.host + ":" + cfg.port + cfg.path
-		handler = adapters.PubSubJWTMiddleware(endpointURL, handler)
+		handler = adapters.PubSubJWTMiddleware(endpointURL, cfg.token, handler)
 	}
 
 	return handler

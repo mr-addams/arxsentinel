@@ -8,6 +8,7 @@ import (
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -56,6 +57,10 @@ type jwtClaims struct {
 var (
 	jwksStore    sync.Map
 	jwksFetchURL = "https://www.googleapis.com/oauth2/v3/certs"
+
+	// jwksHTTPClient is a dedicated HTTP client with a 10s timeout for JWKS fetches.
+	// Prevents hang on network issues (M4).
+	jwksHTTPClient = &nethttp.Client{Timeout: 10 * time.Second}
 )
 
 // getJWKS fetches Google JWKS, returns cached version if still valid.
@@ -70,7 +75,7 @@ func getJWKS() ([]jwkKey, error) {
 		}
 	}
 
-	resp, err := nethttp.Get(jwksFetchURL)
+	resp, err := jwksHTTPClient.Get(jwksFetchURL)
 	if err != nil {
 		return nil, fmt.Errorf("jwks fetch: %w", err)
 	}
@@ -135,17 +140,29 @@ func jwkToPublicKey(jk *jwkKey) (*rsa.PublicKey, error) {
 }
 
 // PubSubJWTMiddleware validates OIDC JWT from GCP Pub/Sub push subscriptions.
-// Checks: Bearer token present, RS256 algorithm, valid signature, audience, email verified.
+// If expectedToken is non-empty, compares the Bearer token via ConstantTimeCompare
+// to prevent timing attacks. Then validates: RS256 algorithm, signature, audience, email.
 // Adds middleware before pubsub handler in buildPushHandler().
 // Returns 401 if any validation fails. Non-blocking.
-func PubSubJWTMiddleware(expectedAud string, next nethttp.Handler) nethttp.Handler {
+func PubSubJWTMiddleware(expectedAud string, expectedToken string, next nethttp.Handler) nethttp.Handler {
 	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		auth := r.Header.Get("Authorization")
-		if len(auth) < 7 || auth[:7] != "Bearer " {
+		// Bounds guard before slicing; actual token comparison uses ConstantTimeCompare below.
+		if len(auth) < 7 {
+			httpError(w, 401)
+			return
+		}
+		if auth[:7] != "Bearer " {
 			httpError(w, 401)
 			return
 		}
 		token := auth[7:]
+
+		// Constant-time comparison of the full token prevents timing leaks (M5).
+		if expectedToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(expectedToken)) != 1 {
+			httpError(w, 401)
+			return
+		}
 
 		parts := splitJWT(token)
 		if len(parts) != 3 {

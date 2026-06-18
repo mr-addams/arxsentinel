@@ -14,6 +14,7 @@
 //   PIPELINE SEMANTICS:
 //     - Process returns (nil, nil) → drop entry (custom whitelist hit)
 //     - Process returns (*LogEntry, nil) → pass through (bot verified or no match)
+//     - Process returns (nil, ctx.Err()) → cancellation honored
 //     - Fake bots pass through so detectors can add FakeBotScore
 
 package whitelist
@@ -68,22 +69,30 @@ func (p *WhitelistProcessor) Manifest() plugin.Manifest {
 //  2. IsWhitelistedUA → drop (nil, nil)
 //  3. MatchBot → Verify over DNS; fake bots pass through, verified bots pass through
 //  4. No match → pass through
-func (p *WhitelistProcessor) Process(entry *plugin.LogEntry) (*plugin.LogEntry, error) {
+//
+// ctx is used for the DNS verification deadline (derived timeout).
+// Respects cancellation: returns (nil, ctx.Err()) when ctx is done.
+func (p *WhitelistProcessor) Process(ctx context.Context, entry *plugin.LogEntry) (*plugin.LogEntry, error) {
+	// ── Respect cancellation ──────────────────────────────────────────────────────────
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// ── Custom whitelist: IP/CIDR ──────────────────────────────────────────────────────
 	if p.matcher.IsWhitelistedIP(entry.RealIP) {
 		return nil, nil
 	}
 
-	// ── Custom whitelist: UA substring ────────────────────────────────────────────────
+	// ── Custom whitelist: UA substring ─────────────────────────────────────────────────
 	if p.matcher.IsWhitelistedUA(entry.UserAgent) {
 		return nil, nil
 	}
 
 	// ── Bot UA match → DNS verification ──────────────────────────────────────────────
 	if _, botCfg, matched := p.matcher.MatchBot(entry.UserAgent); matched {
-		ctx, cancel := context.WithTimeout(context.Background(), p.dnsTimeout)
+		vctx, cancel := context.WithTimeout(ctx, p.dnsTimeout)
 		defer cancel()
-		p.verifier.Verify(ctx, entry.RealIP, botCfg)
+		p.verifier.Verify(vctx, entry.RealIP, botCfg)
 	}
 
 	return entry, nil

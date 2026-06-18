@@ -4,6 +4,7 @@
 package chaincheck
 
 import (
+	"context"
 	"time"
 
 	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
@@ -18,6 +19,8 @@ func init() {
 // factory converts ProcessorConfig to chaincheck.Config and creates the processor.
 // Params expects optional keys: "cloudflare_enabled" (bool), "cloudflare_refresh_interval" (string),
 // "cloudflare_sources" ([]any), "bogon_enabled" (bool).
+// Uses context.Background() for the Cloudflare refresh loop — by design, the Factory
+// signature has no ctx argument. The refresh goroutine lives until process exit.
 func factory(cfg processor.ProcessorConfig) (plugin.Processor, error) {
 	cfEnabled := boolParam(cfg.Params, "cloudflare_enabled", false)
 	bogonEnabled := boolParam(cfg.Params, "bogon_enabled", true)
@@ -40,7 +43,7 @@ func factory(cfg processor.ProcessorConfig) (plugin.Processor, error) {
 		},
 	}
 
-	p := NewChainCheckProcessor(ccfg)
+	p := NewChainCheckProcessor(context.Background(), ccfg)
 	return p, nil
 }
 
@@ -112,4 +115,3 @@ var _ processor.Factory = factory
 
 // Ensure ChainCheckProcessor satisfies plugin.Processor at compile time.
 var _ plugin.Processor = (*ChainCheckProcessor)(nil)
-

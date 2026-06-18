@@ -181,7 +181,7 @@ func TestGCEviction(t *testing.T) {
 	// Add a fresh IP
 	tr.Update(makeEntry("new.ip", "GET", "/", 200))
 
-	deleted, _ := tr.runGC()
+	deleted, _, _ := tr.runGC()
 
 	if deleted != 1 {
 		t.Errorf("GC: expected 1 deleted entry, got %d", deleted)
@@ -205,7 +205,7 @@ func TestGCNoEviction(t *testing.T) {
 	tr.Update(makeEntry("1.1.1.1", "GET", "/", 200))
 	tr.Update(makeEntry("2.2.2.2", "GET", "/", 200))
 
-	deleted, _ := tr.runGC()
+	deleted, _, _ := tr.runGC()
 
 	if deleted != 0 {
 		t.Errorf("GC: expected 0 deletions, got %d", deleted)
