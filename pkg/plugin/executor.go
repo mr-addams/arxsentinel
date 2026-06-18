@@ -38,6 +38,8 @@ type EventSource interface {
 // Executed: successful Execute() calls (event was acted upon).
 // Skipped:  events ignored by the executor (e.g., below min_level, already banned).
 // Errors:   Execute() calls that returned a non-nil error.
+// Swept:    automatically reversed actions (e.g., expired TTL bans removed by sweep).
+//           Only executors with auto-reverse semantics (cloudflare, nginx) populate this.
 //
 // Implementation-specific counters (e.g., CF API retries, dedup hits) belong in
 // the executor's own log output, not here. Stats is for pipeline-level visibility.
@@ -45,6 +47,7 @@ type ExecutorStats struct {
 	Executed int64
 	Skipped  int64
 	Errors   int64
+	Swept    int64
 }
 
 // Executor — public interface for autonomous enforcement actions.

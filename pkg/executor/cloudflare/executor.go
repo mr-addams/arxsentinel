@@ -75,6 +75,7 @@ type CloudflareExecutor struct {
 		executed atomic.Int64
 		skipped  atomic.Int64
 		errors   atomic.Int64
+		swept    atomic.Int64 // M7: отдельный счётчик снятых банов (sweep)
 	}
 
 	pendingMu   sync.Mutex
@@ -185,7 +186,7 @@ func (e *CloudflareExecutor) Run(ctx context.Context, source plugin.EventSource)
 	defer sweepTicker.Stop()
 
 	// Pop is not a channel — feed events into an internal channel for select.
-	events := make(chan plugin.ThreatEvent, 1)
+	events := make(chan plugin.ThreatEvent, 64) // L5: буфер 64 — снижает блокировки Pop при всплесках
 	go func() {
 		defer close(events)
 		for {
@@ -415,7 +416,7 @@ func (e *CloudflareExecutor) sweep(ctx context.Context) {
 		e.pendingMu.Unlock()
 	}
 
-	e.stats.executed.Add(-int64(len(expired)))
+	e.stats.swept.Add(int64(len(expired))) // M7: swept — отдельный счётчик снятых банов
 }
 
 func (e *CloudflareExecutor) Stats() plugin.ExecutorStats {
@@ -423,6 +424,7 @@ func (e *CloudflareExecutor) Stats() plugin.ExecutorStats {
 		Executed: e.stats.executed.Load(),
 		Skipped:  e.stats.skipped.Load(),
 		Errors:   e.stats.errors.Load(),
+		Swept:    e.stats.swept.Load(),
 	}
 }
 
