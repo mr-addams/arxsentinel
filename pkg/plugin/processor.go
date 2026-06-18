@@ -18,6 +18,8 @@
 
 package plugin
 
+import "context"
+
 // Processor enriches or filters a log entry.
 type Processor interface {
 	// Name returns the plugin's human-readable name, used in logs and metrics.
@@ -26,7 +28,9 @@ type Processor interface {
 	// Process enriches or filters a log entry.
 	// Returns (nil, nil) to drop the entry (gate/filter semantics).
 	// Returns an error only on processing failure, not for filter logic.
-	Process(entry *LogEntry) (*LogEntry, error)
+	// The ctx parameter carries the pipeline lifecycle — implementations must
+	// respect ctx.Done() for cancellation and use ctx for derived deadlines.
+	Process(ctx context.Context, entry *LogEntry) (*LogEntry, error)
 
 	// Manifest returns the plugin's identity and data contract.
 	Manifest() Manifest

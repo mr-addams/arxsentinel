@@ -5,7 +5,7 @@
 //
 //   WHAT IS HERE:
 //     ChainCheckProcessor   — plugin.Processor implementation
-//     NewChainCheckProcessor — constructor
+//     NewChainCheckProcessor — constructor (accepts ctx for the background refresh loop)
 //
 //   WHAT IS NOT HERE:
 //     Manifest              — manifest.go
@@ -27,10 +27,11 @@ type ChainCheckProcessor struct {
 }
 
 // NewChainCheckProcessor creates a checker with the given config.
-// Uses context.Background() for the Cloudflare refresh loop lifecycle.
-func NewChainCheckProcessor(cfg chaincheck.Config) *ChainCheckProcessor {
+// The ctx controls the Cloudflare refresh loop lifecycle — when ctx is cancelled
+// the background refresh goroutine is stopped.
+func NewChainCheckProcessor(ctx context.Context, cfg chaincheck.Config) *ChainCheckProcessor {
 	return &ChainCheckProcessor{
-		checker: chaincheck.NewChecker(context.Background(), cfg),
+		checker: chaincheck.NewChecker(ctx, cfg),
 	}
 }
 
@@ -42,7 +43,8 @@ func (p *ChainCheckProcessor) Name() string {
 // Process checks the entry's RealIP (fallback to RemoteAddr) against
 // Cloudflare and bogon ranges. On match, fills entry.ChainIssue.
 // Always returns the entry — this processor never drops entries.
-func (p *ChainCheckProcessor) Process(entry *plugin.LogEntry) (*plugin.LogEntry, error) {
+// ctx is unused: Checker.Check is a pure function with no I/O or goroutines.
+func (p *ChainCheckProcessor) Process(_ context.Context, entry *plugin.LogEntry) (*plugin.LogEntry, error) {
 	ip := entry.RealIP
 	if ip == "" {
 		ip = entry.RemoteAddr
