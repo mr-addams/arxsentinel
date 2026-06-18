@@ -8,6 +8,7 @@ import (
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -56,6 +57,10 @@ type jwtClaims struct {
 var (
 	jwksStore    sync.Map
 	jwksFetchURL = "https://www.googleapis.com/oauth2/v3/certs"
+
+	// jwksHTTPClient is a dedicated HTTP client with a 10s timeout for JWKS fetches.
+	// Prevents hang on network issues (M4).
+	jwksHTTPClient = &nethttp.Client{Timeout: 10 * time.Second}
 )
 
 // getJWKS fetches Google JWKS, returns cached version if still valid.
@@ -70,7 +75,7 @@ func getJWKS() ([]jwkKey, error) {
 		}
 	}
 
-	resp, err := nethttp.Get(jwksFetchURL)
+	resp, err := jwksHTTPClient.Get(jwksFetchURL)
 	if err != nil {
 		return nil, fmt.Errorf("jwks fetch: %w", err)
 	}
@@ -141,7 +146,9 @@ func jwkToPublicKey(jk *jwkKey) (*rsa.PublicKey, error) {
 func PubSubJWTMiddleware(expectedAud string, next nethttp.Handler) nethttp.Handler {
 	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		auth := r.Header.Get("Authorization")
-		if len(auth) < 7 || auth[:7] != "Bearer " {
+		// ConstantTimeCompare on the prefix to avoid timing leak on content comparison (M5).
+		// Length guard is kept as a bounds safety check before slicing.
+		if len(auth) < 7 || subtle.ConstantTimeCompare([]byte(auth[:7]), []byte("Bearer ")) != 1 {
 			httpError(w, 401)
 			return
 		}
