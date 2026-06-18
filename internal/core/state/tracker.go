@@ -391,20 +391,21 @@ func (t *Tracker) RunGC(ctx context.Context, interval time.Duration) {
 			}
 			return
 		case <-ticker.C:
-			deleted, remaining := t.runGC()
+			deleted, remaining, d := t.runGC()
 			if t.logFn != nil && deleted > 0 {
-				t.logFn("GC", fmt.Sprintf("deleted %d inactive IPs, remaining %d", deleted, remaining), "info")
+				t.logFn("GC", fmt.Sprintf("deleted %d inactive IPs, remaining %d (duration=%v)", deleted, remaining, d), "info")
 			}
 		}
 	}
 }
 
 // runGC executes a single garbage collection cycle.
-// Returns (deleted, remaining) under a single write lock.
+// Returns (deleted, remaining, duration) under a single write lock.
 //
 // Called from: RunGC (GC goroutine).
 // Blocking: write lock.
-func (t *Tracker) runGC() (int, int) {
+func (t *Tracker) runGC() (int, int, time.Duration) {
+	start := time.Now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -420,5 +421,5 @@ func (t *Tracker) runGC() (int, int) {
 			deleted++
 		}
 	}
-	return deleted, len(t.states)
+	return deleted, len(t.states), time.Since(start)
 }
