@@ -81,6 +81,7 @@ func (e *MikroTikExecutor) Stats() plugin.ExecutorStats {
 		Executed: e.stats.executed.Load(),
 		Skipped:  e.stats.skipped.Load(),
 		Errors:   e.stats.errors.Load(),
+		Swept:    e.stats.swept.Load(), // monotonic swept counter
 	}
 }
 
@@ -232,18 +233,24 @@ func (e *MikroTikExecutor) flush(ctx context.Context, events []plugin.ThreatEven
 // sweep removes expired bans from RouterOS and the local banned map.
 // Only entries that were added by this executor (sentinel prefix match) are removed.
 // If TTL is zero (permanent ban), no entries are swept.
+//
+// Two-phase cleanup:
+//
+//	Phase 1 — collect expired IDs under lock.
+//	Phase 2 — delete from RouterOS. Only remove from banned map on success.
+//	This prevents the "lost ban" scenario: if API delete fails, the entry stays
+//	in the map and will be retried on the next sweep cycle.
 func (e *MikroTikExecutor) sweep(ctx context.Context) {
 	if e.cfg.TTL == 0 {
 		return
 	}
 
 	e.mu.Lock()
-	expired := make([]string, 0, len(e.banned))
+	expired := make([]expiredEntry, 0, len(e.banned))
 	now := time.Now()
 	for ip, rec := range e.banned {
 		if rec.id != "" && now.Sub(rec.addedAt) > e.cfg.TTL {
-			expired = append(expired, rec.id)
-			delete(e.banned, ip)
+			expired = append(expired, expiredEntry{id: rec.id, ip: ip})
 		}
 	}
 	e.mu.Unlock()
@@ -252,13 +259,28 @@ func (e *MikroTikExecutor) sweep(ctx context.Context) {
 		return
 	}
 
-	for _, id := range expired {
-		if err := e.client.Delete(ctx, id); err != nil {
-			utils.Log("EXECUTOR", fmt.Sprintf("mikrotik: sweep: delete %s: %v", id, err), "error")
+	// Phase 2: delete from RouterOS, collect successful deletions.
+	// Batch-remove from banned map under a single lock to minimise contention.
+	successful := make([]string, 0, len(expired))
+	for _, entry := range expired {
+		if err := e.client.Delete(ctx, entry.id); err != nil {
+			utils.Log("EXECUTOR", fmt.Sprintf("mikrotik: sweep: delete %s: %v", entry.id, err), "error")
 			e.stats.errors.Add(1)
+			// Keep entry in banned map — next sweep will retry.
 			continue
 		}
-		e.stats.executed.Add(-1)
+		successful = append(successful, entry.ip)
+	}
+
+	// Batch cleanup: one lock, N deletes.
+	if len(successful) > 0 {
+		e.mu.Lock()
+		for _, ip := range successful {
+			delete(e.banned, ip)
+		}
+		e.mu.Unlock()
+		// Monotonic swept counter, one Add per batch — matches Cloudflare convention.
+		e.stats.swept.Add(int64(len(successful)))
 	}
 }
 

@@ -23,6 +23,7 @@ type MikroTikExecutor struct {
 		executed atomic.Int64
 		skipped  atomic.Int64
 		errors   atomic.Int64
+		swept    atomic.Int64 // monotonic counter for bans removed by sweep
 	}
 
 	// dedupWin — окно дедупликации поверх banned-map.
@@ -34,6 +35,13 @@ type MikroTikExecutor struct {
 type banRecord struct {
 	id      string
 	addedAt time.Time
+}
+
+// expiredEntry carries a sweep candidate (both RouterOS entry ID and IP address)
+// from the lock-protected collection phase to the API deletion phase.
+type expiredEntry struct {
+	id string
+	ip string
 }
 
 func (e *MikroTikExecutor) Name() string {
