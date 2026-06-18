@@ -38,6 +38,12 @@ import (
 // could force a large one-shot allocation. Lines exceeding this limit are dropped.
 const maxLineSize = 64 * 1024 // 64 KB — well above any real access.log line
 
+// readLineTimeout — максимальное время ожидания одной строки из файла
+// (L2). Если файл — pipe или NFS, ReadString может заблокироваться
+// бесконечно. Таймаут переводит читающую горутину в фоновый режим
+// (данные теряются) и освобождает основной цикл.
+const readLineTimeout = 30 * time.Second
+
 // ========================== TailReader ================================================
 
 // TailReader reads a file in tail -f mode, sending new lines to the lines channel.
@@ -103,6 +109,12 @@ func (t *TailReader) Run(ctx context.Context) {
 		// ctx was cancelled while waiting for the file
 		return
 	}
+	// M5: safety net — закрываем fd при любом нештатном выходе из цикла
+	defer func() {
+		if f != nil {
+			f.Close()
+		}
+	}()
 
 	// Watch the file itself for WRITE/RENAME/REMOVE events.
 	// Not fatal if Add fails — WRITE events will still arrive via directory watch.
@@ -120,6 +132,7 @@ func (t *TailReader) Run(ctx context.Context) {
 			Log("TAIL", "watching stopped", "info")
 			if f != nil {
 				f.Close()
+				f = nil
 			}
 			return
 
@@ -127,6 +140,7 @@ func (t *TailReader) Run(ctx context.Context) {
 			if !ok {
 				if f != nil {
 					f.Close()
+					f = nil
 				}
 				return
 			}
@@ -161,6 +175,7 @@ func (t *TailReader) Run(ctx context.Context) {
 				// Open from the start of the file — these are the first records of the new log.
 				if f != nil {
 					f.Close()
+					f = nil
 				}
 				newF, err := os.Open(t.filePath)
 				if err != nil {
@@ -179,6 +194,7 @@ func (t *TailReader) Run(ctx context.Context) {
 			if !ok {
 				if f != nil {
 					f.Close()
+					f = nil
 				}
 				return
 			}
@@ -245,6 +261,31 @@ func (t *TailReader) handleTruncation(f *os.File, reader *bufio.Reader) bool {
 	return false
 }
 
+// readResult carries the outcome of a single ReadString call.
+type readResult struct {
+	line string
+	err  error
+}
+
+// readLineWithTimeout вызывает reader.ReadString('\n') с таймаутом.
+// Если таймаут сработал, возвращает ("", nil) — строка теряется.
+// При таймауте фоновая горутина продолжает читать и выбрасывает результат;
+// это приемлемо: таймауты редки (pipe/NFS edge cases), и горутина
+// завершается при первой же доставке данных от OS.
+func readLineWithTimeout(reader *bufio.Reader, timeout time.Duration) (string, error) {
+	ch := make(chan readResult, 1)
+	go func() {
+		line, err := reader.ReadString('\n')
+		ch <- readResult{line, err}
+	}()
+	select {
+	case res := <-ch:
+		return res.line, res.err
+	case <-time.After(timeout):
+		return "", nil
+	}
+}
+
 // readAvailableLines reads all available lines up to io.EOF and sends them to the channel.
 // Non-blocking — stops at io.EOF (no more data at this moment).
 // On channel overflow the line is dropped — better to lose a line than to
@@ -253,7 +294,7 @@ func (t *TailReader) handleTruncation(f *os.File, reader *bufio.Reader) bool {
 // Called from: Run (WRITE, CREATE, RENAME event handling). Non-blocking.
 func (t *TailReader) readAvailableLines(reader *bufio.Reader) {
 	for {
-		line, err := reader.ReadString('\n')
+		line, err := readLineWithTimeout(reader, readLineTimeout) // L2: таймаут на ReadString
 		if len(line) > 0 {
 			// Drop anomalously long lines before trimming — an oversized URL
 			// in the log is either corruption or an overflow attack; skip it.
