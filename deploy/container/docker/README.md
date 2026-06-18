@@ -133,6 +133,12 @@ They take priority over the mounted `config.yaml`.
 | `ARXSENTINEL_STATE_GC_INTERVAL` | duration | `60s` | Garbage collection interval |
 | `ARXSENTINEL_STATE_MAX_TRACKED_IPS` | int | `100000` | Max tracked IPs (LRU eviction) |
 
+#### Source (syslog)
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `ARXSENTINEL_SYSLOG_MAX_CONNECTIONS` | int | `1000` | Max concurrent TCP connections for syslog listener (H5) |
+
 #### Detectors
 
 | Variable | Type | Default | Description |

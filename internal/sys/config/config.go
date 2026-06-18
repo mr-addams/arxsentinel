@@ -97,11 +97,12 @@ type InputConfig struct {
 	HTTPPath      string `yaml:"http_path"`      // YAML: http_path — push handler path, default "/". Consumer: pkg/source/http.New
 	Token         string `yaml:"token"`          // YAML: token — optional Bearer token for auth. Consumer: pkg/source/http.New
 	TLSCert       string `yaml:"tls_cert"`       // YAML: tls_cert — path to TLS cert file; required for https://. Consumer: pkg/source/http.New
-	TLSKey        string `yaml:"tls_key"`        // YAML: tls_key — path to TLS key file; required for https://. Consumer: pkg/source/http.New
+	TLSKey        string `yaml:"tls_key"`        // YAML: tls_key — path to TLS private key file; required for https://. Consumer: pkg/source/http.New
 	Protocol      string `yaml:"protocol"`       // YAML: protocol — envelope format: plain|ndjson|cloudflare|firehose|pubsub|loki|otlp|azure|splunk. Consumer: pkg/source/http.New
 	EnvelopeField string `yaml:"envelope_field"` // YAML: envelope_field — field name for ndjson extraction; required when protocol=ndjson. Consumer: pkg/source/http.New
 	PullInterval  string `yaml:"pull_interval"`  // YAML: pull_interval — polling interval for pull mode, e.g. "30s". Consumer: pkg/source/http.New
 	MaxBodyBytes  int    `yaml:"max_body_bytes"` // YAML: max_body_bytes — max request body size, default 10485760. Consumer: pkg/source/http.New
+	MaxConnections int  `yaml:"max_connections"` // YAML: max_connections — max concurrent TCP connections; syslog only, default 1000. Consumer: pkg/source/syslog.New (H5)
 }
 
 // SinkConfig — configuration for a single threat event output.
@@ -543,6 +544,12 @@ func LoadConfig(path string) (Config, error) {
 		return cfg, fmt.Errorf("invalid config %q: %w", path, err)
 	}
 
+	// Предупреждение при высоком max_tracked_ips: каждый IP ведёт к аллокации
+	// entry в трекере + записи в bbolt. >1_000_000 IP может занять >1GB RSS.
+	if cfg.State.MaxTrackedIPs > 1_000_000 {
+		fmt.Fprintf(os.Stderr, "[CONFIG] warning: state.max_tracked_ips=%d exceeds 1,000,000 — memory usage may exceed 1GB RSS\n", cfg.State.MaxTrackedIPs)
+	}
+
 	return cfg, nil
 }
 
@@ -611,6 +618,24 @@ func applyEnvOverrides(cfg *Config) error {
 	}
 	if err := envInt("ARXSENTINEL_STATE_MAX_TRACKED_IPS", &cfg.State.MaxTrackedIPs); err != nil {
 		return err
+	}
+
+	// ── source ────────────────────────────────────────────────────────────────────────
+	// ARXSENTINEL_SYSLOG_MAX_CONNECTIONS — глобальный дефолт для всех syslog inputs.
+	// Применяем ко всем input-ам с type=syslog, у которых max_connections не задан (==0).
+	if v, ok := os.LookupEnv("ARXSENTINEL_SYSLOG_MAX_CONNECTIONS"); ok && v != "" {
+		val, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("env ARXSENTINEL_SYSLOG_MAX_CONNECTIONS: invalid int %q", v)
+		}
+		if val <= 0 {
+			return fmt.Errorf("env ARXSENTINEL_SYSLOG_MAX_CONNECTIONS must be > 0, got %d", val)
+		}
+		for i := range cfg.Inputs {
+			if cfg.Inputs[i].Type == "syslog" && cfg.Inputs[i].MaxConnections <= 0 {
+				cfg.Inputs[i].MaxConnections = val
+			}
+		}
 	}
 
 	// ── detectors.probe ───────────────────────────────────────────────────────────────
@@ -917,11 +942,26 @@ func envCIDRList(key string, dst *[]string) error {
 	return nil
 }
 
+// isIPLike checks if s looks like an IP address (dotted decimal or IPv6).
+// Used for sink name validation (C3) — IP-like names could bypass named channel routing.
+func isIPLike(s string) bool {
+	// Simple heuristic: ends with a digit, colon, or hex char after a dot.
+	return net.ParseIP(s) != nil
+}
+
 // validateConfig checks critical fields after yaml.Unmarshal.
 // Zero thresholds can occur if config.yaml specifies a scoring: section with
 // incomplete fields (yaml.v3 partial merge limitation) — protects against silent misconfiguration.
 func validateConfig(cfg *Config) error {
 	// Top-level executors: unique names required.
+	// Sink names must be static strings (not IP addresses — C3).
+	// IP-like names would bypass named channel routing logic.
+	for _, sink := range cfg.Outputs {
+		if sink.Name != "" && isIPLike(sink.Name) {
+			return fmt.Errorf("outputs: sink name %q looks like an IP address — use a descriptive name", sink.Name)
+		}
+	}
+
 	if len(cfg.Executors) > 0 {
 		seen := make(map[string]struct{}, len(cfg.Executors))
 		for _, ex := range cfg.Executors {
@@ -989,6 +1029,10 @@ func validateConfig(cfg *Config) error {
 		if cfg.Detectors.Rate.Threshold <= 0 {
 			return fmt.Errorf("detectors.rate.threshold must be > 0, got %d",
 				cfg.Detectors.Rate.Threshold)
+		}
+		if time.Duration(cfg.Detectors.Rate.Window) <= 0 {
+			return fmt.Errorf("detectors.rate.window must be > 0, got %v",
+				cfg.Detectors.Rate.Window)
 		}
 		if cfg.Detectors.Rate.Score <= 0 {
 			return fmt.Errorf("detectors.rate.score must be > 0, got %d",

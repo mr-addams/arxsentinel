@@ -851,6 +851,15 @@ arxsentinel_output_dropped_total{stream, pipeline, sink}
   Counter. Events dropped by sink (e.g., write error).
 ```
 
+### Blocklist Freshness
+
+```
+arxsentinel_blocklist_last_refresh_timestamp_seconds{list}
+  Gauge. Unix timestamp of the last successful blocklist refresh per list.
+  Updated after successful CompileStrings() in fetchAndUpdate().
+  list = blocklist name from config (e.g. "tor-exit-nodes").
+```
+
 **Scrape endpoint:** `http://localhost:9999/metrics` (default).
 
 **Authentication (optional):**

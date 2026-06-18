@@ -5,6 +5,7 @@
 package detector_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +41,7 @@ func TestRegistry_Names(t *testing.T) {
 // TestRegistry_Build_Disabled verifies that Build returns (nil, nil) for a disabled detector.
 func TestRegistry_Build_Disabled(t *testing.T) {
 	cfg := detector.DetectorConfig{Enabled: false}
-	d, err := detector.Build("probe", cfg, nil)
+	d, err := detector.Build(context.Background(),"probe", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(disabled) error = %v, want nil", err)
 	}
@@ -52,7 +53,7 @@ func TestRegistry_Build_Disabled(t *testing.T) {
 // TestRegistry_Build_Unknown verifies that Build returns an error for an unregistered name.
 func TestRegistry_Build_Unknown(t *testing.T) {
 	cfg := detector.DetectorConfig{Enabled: true}
-	d, err := detector.Build("nonexistent_detector_xyz", cfg, nil)
+	d, err := detector.Build(context.Background(),"nonexistent_detector_xyz", cfg, nil)
 	if err == nil {
 		t.Fatal("Build(unknown) expected error, got nil")
 	}
@@ -70,7 +71,7 @@ func TestProbeDetector_ViaRegistry(t *testing.T) {
 		Enabled: true,
 		Params:  map[string]interface{}{"score": 25},
 	}
-	d, err := detector.Build("probe", cfg, nil)
+	d, err := detector.Build(context.Background(),"probe", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(probe) error: %v", err)
 	}
@@ -105,7 +106,7 @@ func TestRateDetector_ViaRegistry(t *testing.T) {
 			"score":     25,
 		},
 	}
-	d, err := detector.Build("rate", cfg, nil)
+	d, err := detector.Build(context.Background(),"rate", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(rate) error: %v", err)
 	}
@@ -138,7 +139,7 @@ func TestBruteforceDetector_ViaRegistry(t *testing.T) {
 			"score":           30,
 		},
 	}
-	d, err := detector.Build("bruteforce", cfg, nil)
+	d, err := detector.Build(context.Background(),"bruteforce", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(bruteforce) error: %v", err)
 	}
@@ -164,7 +165,7 @@ func TestBruteforceDetector_ViaRegistry(t *testing.T) {
 // TestUADetector_ViaRegistry verifies scanner and empty UA detection.
 func TestUADetector_ViaRegistry(t *testing.T) {
 	cfg := detector.DetectorConfig{Enabled: true}
-	d, err := detector.Build("ua", cfg, nil)
+	d, err := detector.Build(context.Background(),"ua", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(ua) error: %v", err)
 	}
@@ -201,7 +202,7 @@ func TestBadBotDetector_ViaRegistry(t *testing.T) {
 		Params:  map[string]interface{}{"check_ua": true, "score": 60},
 	}
 	shared := &stubShared{matcher: &stubMatcher{matchUA: "badbotua"}}
-	d, err := detector.Build("badbot", cfg, shared)
+	d, err := detector.Build(context.Background(),"badbot", cfg, shared)
 	if err != nil {
 		t.Fatalf("Build(badbot) error: %v", err)
 	}
@@ -230,7 +231,7 @@ func TestBadBotDetector_ViaRegistry(t *testing.T) {
 // TestBadBotDetector_NilShared verifies graceful degradation when SharedResources is nil.
 func TestBadBotDetector_NilShared(t *testing.T) {
 	cfg := detector.DetectorConfig{Enabled: true}
-	d, err := detector.Build("badbot", cfg, nil)
+	d, err := detector.Build(context.Background(),"badbot", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(badbot, nil shared) error: %v", err)
 	}
@@ -250,7 +251,7 @@ func TestCrawlerDetector_ViaRegistry(t *testing.T) {
 		Enabled: true,
 		Params:  map[string]interface{}{"min_sequential": 3, "score": 20},
 	}
-	d, err := detector.Build("crawler", cfg, nil)
+	d, err := detector.Build(context.Background(),"crawler", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(crawler) error: %v", err)
 	}
@@ -283,7 +284,7 @@ func TestOverflowDetector_ViaRegistry(t *testing.T) {
 			"score":             30,
 		},
 	}
-	d, err := detector.Build("overflow", cfg, nil)
+	d, err := detector.Build(context.Background(),"overflow", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(overflow) error: %v", err)
 	}
@@ -323,7 +324,7 @@ func TestNoAssetDetector_ViaRegistry(t *testing.T) {
 			"score":                 20,
 		},
 	}
-	d, err := detector.Build("noasset", cfg, nil)
+	d, err := detector.Build(context.Background(),"noasset", cfg, nil)
 	if err != nil {
 		t.Fatalf("Build(noasset) error: %v", err)
 	}
@@ -353,32 +354,64 @@ func TestNoAssetDetector_ViaRegistry(t *testing.T) {
 	}
 }
 
-// TestRateDetector_DisabledOnZeroWindow verifies that a disabled rate detector
-// (window=0 or threshold=0) is returned and never fires.
-func TestRateDetector_DisabledOnZeroWindow(t *testing.T) {
+// TestRateDetector_InvalidParams verifies that invalid rate detector params
+// (window=0 or threshold=0) return an error from Build, not a disabled detector.
+func TestRateDetector_InvalidParams(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		params map[string]interface{}
 	}{
 		{"zero_window", map[string]interface{}{"window": "0s", "threshold": 100}},
 		{"zero_threshold", map[string]interface{}{"window": "60s", "threshold": 0}},
+		{"negative_window", map[string]interface{}{"window": "-10s", "threshold": 100}},
+		{"negative_threshold", map[string]interface{}{"window": "60s", "threshold": -1}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := detector.DetectorConfig{Enabled: true, Params: tc.params}
-			d, err := detector.Build("rate", cfg, nil)
-			if err != nil {
-				t.Fatalf("Build(rate, %s) error: %v", tc.name, err)
-			}
-			if d == nil {
-				t.Fatal("Build(rate, disabled) returned nil — want a no-op detector")
-			}
-			// disabledRateDetector must never score even at extreme rates.
-			sv := newStubView(0, 0, nil, 1e9)
-			result := d.Detect(sv, &plugin.LogEntry{})
-			if result.Score != 0 {
-				t.Errorf("disabled rate detector should not score, got %d", result.Score)
+			_, err := detector.Build(context.Background(), "rate", cfg, nil)
+			if err == nil {
+				t.Fatalf("Build(rate, %s) expected error, got nil", tc.name)
 			}
 		})
+	}
+}
+
+// TestRateDetector_ValidParams verifies that a valid rate detector is created and scores correctly.
+func TestRateDetector_ValidParams(t *testing.T) {
+	cfg := detector.DetectorConfig{
+		Enabled: true,
+		Params: map[string]interface{}{
+			"window":    "60s",
+			"threshold": 100,
+			"score":     25,
+		},
+	}
+	d, err := detector.Build(context.Background(), "rate", cfg, nil)
+	if err != nil {
+		t.Fatalf("Build(rate, valid) error: %v", err)
+	}
+	if d == nil {
+		t.Fatal("Build(rate, valid) returned nil")
+	}
+
+	// Below threshold (50 req/s in 60s window = 3000) — no score
+	sv1 := newStubView(0, 0, nil, 50) // ApproxRate=50 < thresholdRPS=100/60≈1.67? No, let me recalculate
+	// thresholdRPS = 100 / 60 ≈ 1.67. rate=50 > 1.67 → should trigger
+	_ = sv1
+
+	// Actually use correct values: thresholdRPS = 100/60 ≈ 1.67
+	// Rate 0.5 req/s → no score
+	svLow := newStubView(0, 0, nil, 0.5)
+	result := d.Detect(svLow, &plugin.LogEntry{})
+	if result.Score != 0 {
+		t.Errorf("low rate should not score, got %d", result.Score)
+	}
+
+	// Rate 100 req/s → score 25
+	svHigh := newStubView(0, 0, nil, 100)
+	result = d.Detect(svHigh, &plugin.LogEntry{})
+	if result.Score != 25 {
+		t.Errorf("high rate should score 25, got %d", result.Score)
 	}
 }
 

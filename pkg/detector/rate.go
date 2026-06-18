@@ -17,6 +17,7 @@
 package detector
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
@@ -34,18 +35,19 @@ type rateDetector struct {
 }
 
 // newRateFactory creates a rateDetector from DetectorConfig.
+// Returns error when window <= 0 or threshold <= 0 — these produce a broken
+// thresholdRPS (NaN, +Inf, or zero) that would silently block-or-allow all traffic.
+// The caller (config validation or Build) must handle the error.
 func newRateFactory(cfg DetectorConfig, _ SharedResources) (plugin.Detector, error) {
 	threshold := getInt(cfg.Params, "threshold", 100)
 	window := getDuration(cfg.Params, "window", 60*time.Second)
 	score := getInt(cfg.Params, "score", 25)
 
-	// Guard: invalid window or threshold — both produce a broken thresholdRPS:
-	//   window<=0  → thresholdRPS = +Inf (never fires) or NaN (threshold=0)
-	//   threshold<=0 → thresholdRPS = 0, fires on *every* request, banning all traffic
-	// Return a permanently disabled detector in both cases to surface the misconfiguration
-	// rather than silently degrading into "block everyone" or "block nobody" mode.
-	if window <= 0 || threshold <= 0 {
-		return &disabledRateDetector{}, nil
+	if window <= 0 {
+		return nil, fmt.Errorf("rate: window=%v must be positive", window)
+	}
+	if threshold <= 0 {
+		return nil, fmt.Errorf("rate: threshold=%d must be positive", threshold)
 	}
 
 	return &rateDetector{
@@ -73,12 +75,4 @@ func (d *rateDetector) Detect(sv plugin.IPView, _ *plugin.LogEntry) plugin.Detec
 	}
 }
 
-// disabledRateDetector is returned when window <= 0 (misconfiguration).
-// Never fires; Name() still returns "rate" so it appears in detector lists.
-type disabledRateDetector struct {
-}
 
-func (d *disabledRateDetector) Name() string { return "rate" }
-func (d *disabledRateDetector) Detect(plugin.IPView, *plugin.LogEntry) plugin.DetectResult {
-	return plugin.DetectResult{}
-}

@@ -8,6 +8,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -127,7 +128,7 @@ func buildPipelineCtx(streamName string, pl config.PipelineConfig) (pipeline.Pip
 	hd := len(pl.Detectors) > 0 || pl.Detectors == nil
 	if hd {
 		for _, name := range pkgdetector.Names() {
-			p, err := pkgdetector.Build(name, pkgdetector.DetectorConfig{Enabled: true}, pkgdetector.SharedResources(nil))
+			p, err := pkgdetector.Build(context.Background(), name, pkgdetector.DetectorConfig{Enabled: true}, pkgdetector.SharedResources(nil))
 			if err != nil || p == nil {
 				continue
 			}

@@ -227,6 +227,92 @@ func TestCloudflareChallenge(t *testing.T) {
 	})
 }
 
+// TestCloudflareChallenge_RejectsMaliciousInput verifies that challenge tokens
+// containing characters outside [a-zA-Z0-9._-] are rejected with 400.
+func TestCloudflareChallenge_RejectsMaliciousInput(t *testing.T) {
+	tests := []struct {
+		name      string
+		challenge string
+	}{
+		{"SQL injection", "' OR 1=1 --"},
+		{"Shell injection", "$(cat /etc/passwd)"},
+		{"Newline injection", "valid\nHTTP/1.1 200 OK"},
+		{"HTML injection", "<script>alert(1)</script>"},
+		{"Null byte", "valid\x00malicious"},
+		{"Spaces", "token with spaces"},
+		{"Semicolons", "abc;rm -rf /"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := CloudflareChallengeMiddleware(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+				t.Fatal("next handler should not be called with challenge")
+			}))
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/?validate=true", nil)
+			r.Header.Set("Ownership-Challenge", tt.challenge)
+			handler.ServeHTTP(w, r)
+			if w.Code != 400 {
+				t.Fatalf("expected 400 for malicious challenge, got %d; body: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+
+	// Empty challenge on GET /?validate=true should pass through to next handler
+	// (tested separately because the table above expects 400 for all entries).
+	t.Run("Empty string passes through", func(t *testing.T) {
+		handler := CloudflareChallengeMiddleware(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			w.WriteHeader(200)
+			w.Write([]byte("next-handler"))
+		}))
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/?validate=true", nil)
+		handler.ServeHTTP(w, r)
+		if w.Code != 200 {
+			t.Fatalf("expected 200 from next handler, got %d", w.Code)
+		}
+		if w.Body.String() != "next-handler" {
+			t.Fatalf("expected 'next-handler', got %q", w.Body.String())
+		}
+	})
+
+	// Valid challenges must still pass.
+	t.Run("valid challenge passes", func(t *testing.T) {
+		handler := CloudflareChallengeMiddleware(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			t.Fatal("next handler should not be called")
+		}))
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/?validate=true", nil)
+		r.Header.Set("Ownership-Challenge", "my-valid_token_123.cloudflare")
+		handler.ServeHTTP(w, r)
+		if w.Code != 200 {
+			t.Fatalf("expected 200 for valid challenge, got %d", w.Code)
+		}
+		if ct := w.Header().Get("Content-Type"); ct != "text/plain" {
+			t.Fatalf("expected Content-Type text/plain, got %q", ct)
+		}
+		if w.Body.String() != "my-valid_token_123.cloudflare" {
+			t.Fatalf("expected challenge token in body, got %q", w.Body.String())
+		}
+	})
+
+	// Empty challenge header on GET /?validate=true should pass through to next handler.
+	t.Run("empty challenge passes through", func(t *testing.T) {
+		handler := CloudflareChallengeMiddleware(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			w.WriteHeader(200)
+			w.Write([]byte("next-handler"))
+		}))
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/?validate=true", nil)
+		handler.ServeHTTP(w, r)
+		if w.Code != 200 {
+			t.Fatalf("expected 200 from next handler, got %d", w.Code)
+		}
+		if w.Body.String() != "next-handler" {
+			t.Fatalf("expected 'next-handler', got %q", w.Body.String())
+		}
+	})
+}
+
 // =============================================================================
 // FirehoseAdapter
 // =============================================================================
@@ -304,6 +390,35 @@ func TestFirehoseAdapterWriteAck(t *testing.T) {
 	ts, ok := resp["timestamp"].(float64)
 	if !ok || ts <= 0 {
 		t.Fatalf("expected positive timestamp, got %v", resp["timestamp"])
+	}
+}
+
+// TestFirehoseAdapter_WriteAck_EscapesQuotes verifies that WriteAck uses
+// proper JSON encoding to prevent injection via requestID with " and \.
+func TestFirehoseAdapter_WriteAck_EscapesQuotes(t *testing.T) {
+	a := &FirehoseAdapter{}
+	w := httptest.NewRecorder()
+	meta := map[string]string{"X-Amz-Firehose-Request-Id": `req"with"quotes\and\backslash`}
+	a.WriteAck(w, meta)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("expected valid JSON after injection: %v", err)
+	}
+	if resp["requestId"] != `req"with"quotes\and\backslash` {
+		t.Fatalf("requestId round-trip failed: got %v", resp["requestId"])
+	}
+	// Ensure the raw body does not contain unescaped quotes that would break JSON.
+	body := w.Body.String()
+	if len(body) < 2 {
+		t.Fatal("body too short")
+	}
+	// Re-parse as raw JSON to confirm structural integrity.
+	var raw any
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
+		t.Fatalf("raw body is not valid JSON: %v\nbody: %s", err, body)
 	}
 }
 

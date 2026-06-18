@@ -5,6 +5,7 @@ package metrics
 
 import (
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -164,5 +165,136 @@ func TestLegacyPipelineEmptyLabel(t *testing.T) {
 
 	if got := testutil.ToFloat64(m.linesProcessed.WithLabelValues("nginx", "")); got != 1 {
 		t.Errorf("linesProcessed{nginx,\"\"} = %v, want 1", got)
+	}
+}
+
+// TestRecordBlocklistRefresh verifies that the blocklist gauge is set correctly (Task 1.6).
+func TestRecordBlocklistRefresh(t *testing.T) {
+	m := newTest(t)
+	now := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
+	timeNow = func() time.Time { return now }
+	defer func() { timeNow = time.Now }()
+
+	m.RecordBlocklistRefresh("bad_ips")
+	m.RecordBlocklistRefresh("bad_ua")
+
+	if got := testutil.ToFloat64(m.blocklistLastRefresh.WithLabelValues("bad_ips")); got != float64(now.Unix()) {
+		t.Errorf("bad_ips timestamp = %v, want %v", got, now.Unix())
+	}
+	if got := testutil.ToFloat64(m.blocklistLastRefresh.WithLabelValues("bad_ua")); got != float64(now.Unix()) {
+		t.Errorf("bad_ua timestamp = %v, want %v", got, now.Unix())
+	}
+}
+
+// TestRecordBlocklistRefreshOverwrite verifies that a second refresh updates the timestamp.
+func TestRecordBlocklistRefreshOverwrite(t *testing.T) {
+	m := newTest(t)
+	timeNow = func() time.Time { return time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC) }
+	t.Cleanup(func() { timeNow = time.Now })
+
+	m.RecordBlocklistRefresh("bad_ips")
+	timeNow = func() time.Time { return time.Date(2026, 6, 18, 13, 0, 0, 0, time.UTC) }
+	m.RecordBlocklistRefresh("bad_ips")
+
+	// Must reflect the later timestamp (gauge overwrites).
+	if got := testutil.ToFloat64(m.blocklistLastRefresh.WithLabelValues("bad_ips")); got != float64(time.Date(2026, 6, 18, 13, 0, 0, 0, time.UTC).Unix()) {
+		t.Errorf("overwritten timestamp = %v, want %v", got, time.Date(2026, 6, 18, 13, 0, 0, 0, time.UTC).Unix())
+	}
+}
+
+// TestCleanupSourceLabels verifies that DeleteLabelValues removes stale source labels (C3).
+func TestCleanupSourceLabels(t *testing.T) {
+	m := newTest(t)
+	m.RecordInputLine("site1", "api", "old_source", "file")
+	m.RecordInputLine("site1", "api", "old_source", "file")
+
+	// Verify counter exists before cleanup.
+	if got := testutil.ToFloat64(m.inputLines.WithLabelValues("site1", "api", "old_source", "file")); got != 2 {
+		t.Fatalf("before cleanup = %v, want 2", got)
+	}
+
+	// Cleanup and verify the time series is removed.
+	m.CleanupSourceLabels("site1", "api", "old_source", "file")
+
+	// After DeleteLabelValues, calling WithLabelValues creates a new series with zero value.
+	if got := testutil.ToFloat64(m.inputLines.WithLabelValues("site1", "api", "old_source", "file")); got != 0 {
+		t.Errorf("after cleanup = %v, want 0 (new zero series)", got)
+	}
+}
+
+// TestCleanupSinkLabels verifies that DeleteLabelValues removes stale sink labels (C3).
+func TestCleanupSinkLabels(t *testing.T) {
+	m := newTest(t)
+	m.RecordOutputEvent("site1", "api", "old_sink", "stdout")
+	m.RecordOutputEvent("site1", "api", "old_sink", "stdout")
+	m.RecordOutputDropped("site1", "api", "old_sink", ReasonBufferFull)
+
+	// Verify counters exist before cleanup.
+	if got := testutil.ToFloat64(m.outputEvents.WithLabelValues("site1", "api", "old_sink", "stdout")); got != 2 {
+		t.Fatalf("outputEvents before cleanup = %v, want 2", got)
+	}
+	if got := testutil.ToFloat64(m.outputDropped.WithLabelValues("site1", "api", "old_sink", ReasonBufferFull)); got != 1 {
+		t.Fatalf("outputDropped before cleanup = %v, want 1", got)
+	}
+
+	m.CleanupSinkLabels("site1", "api", "old_sink", "stdout")
+	m.CleanupDroppedLabels("site1", "api", "old_sink", ReasonBufferFull)
+
+	if got := testutil.ToFloat64(m.outputEvents.WithLabelValues("site1", "api", "old_sink", "stdout")); got != 0 {
+		t.Errorf("outputEvents after cleanup = %v, want 0", got)
+	}
+	if got := testutil.ToFloat64(m.outputDropped.WithLabelValues("site1", "api", "old_sink", ReasonBufferFull)); got != 0 {
+		t.Errorf("outputDropped after cleanup = %v, want 0", got)
+	}
+}
+
+// TestCleanupBlocklistLabels verifies that blocklist gauge entries can be cleaned up (C3).
+func TestCleanupBlocklistLabels(t *testing.T) {
+	m := newTest(t)
+	timeNow = func() time.Time { return time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC) }
+	defer func() { timeNow = time.Now }()
+
+	m.RecordBlocklistRefresh("temp_list")
+
+	if got := testutil.ToFloat64(m.blocklistLastRefresh.WithLabelValues("temp_list")); got == 0 {
+		t.Fatal("before cleanup should be non-zero")
+	}
+
+	m.CleanupBlocklistLabels("temp_list")
+
+	if got := testutil.ToFloat64(m.blocklistLastRefresh.WithLabelValues("temp_list")); got != 0 {
+		t.Errorf("after cleanup = %v, want 0", got)
+	}
+}
+
+// TestReasonConstants verifies that reason constants have the expected values (C3).
+func TestReasonConstants(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"ReasonBufferFull", ReasonBufferFull, "buffer_full"},
+		{"ReasonWriteErr", ReasonWriteErr, "write_err"},
+		{"ReasonShutdown", ReasonShutdown, "shutdown"},
+		{"ReasonStale", ReasonStale, "stale"},
+		{"ReasonUnknown", ReasonUnknown, "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.value != tt.want {
+				t.Errorf("%s = %q, want %q", tt.name, tt.value, tt.want)
+			}
+		})
+	}
+}
+
+// TestLevelConstants verifies level constant values.
+func TestLevelConstants(t *testing.T) {
+	if LevelThreat != "THREAT" {
+		t.Errorf("LevelThreat = %q, want THREAT", LevelThreat)
+	}
+	if LevelWarn != "WARN" {
+		t.Errorf("LevelWarn = %q, want WARN", LevelWarn)
 	}
 }

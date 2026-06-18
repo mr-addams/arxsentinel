@@ -4,6 +4,7 @@
 package execplugin
 
 import (
+	"context"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -33,7 +34,7 @@ func TestExecDetector_Name(t *testing.T) {
 	testdataDir := filepath.Join(filepath.Dir(filename), "testdata")
 	scriptPath := filepath.Join(testdataDir, "detector.sh")
 
-	detector, err := NewDetector("my-detector", scriptPath, nil)
+	detector, err := NewDetector("my-detector", scriptPath, nil, context.Background())
 	if err != nil {
 		t.Fatalf("NewDetector failed: %v", err)
 	}
@@ -50,7 +51,7 @@ func TestExecDetector_Detect(t *testing.T) {
 	testdataDir := filepath.Join(filepath.Dir(filename), "testdata")
 	scriptPath := filepath.Join(testdataDir, "detector.sh")
 
-	detector, err := NewDetector("test-detector", scriptPath, nil)
+	detector, err := NewDetector("test-detector", scriptPath, nil, context.Background())
 	if err != nil {
 		t.Fatalf("NewDetector failed: %v", err)
 	}
@@ -91,7 +92,7 @@ func TestExecDetector_Detect(t *testing.T) {
 
 // TestExecDetector_CrashReturnsError tests that a non-existent binary fails at NewDetector.
 func TestExecDetector_CrashReturnsError(t *testing.T) {
-	_, err := NewDetector("broken", "/nonexistent-binary-xyz-definitely-not-found", nil)
+	_, err := NewDetector("broken", "/nonexistent-binary-xyz-definitely-not-found", nil, context.Background())
 	if err == nil {
 		t.Errorf("NewDetector with nonexistent binary should return error, got nil")
 	}

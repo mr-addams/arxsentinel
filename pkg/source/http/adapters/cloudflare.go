@@ -10,6 +10,28 @@ import (
 	nethttp "net/http"
 )
 
+// isValidChallenge проверяет, что challenge содержит только разрешённые
+// символы: буквы латиницы, цифры, точка, подчёркивание, дефис.
+// Используется в CloudflareChallengeMiddleware (H3) для предотвращения
+// инъекции произвольного содержимого в HTTP-ответ.
+func isValidChallenge(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		switch {
+		case b >= 'a' && b <= 'z':
+		case b >= 'A' && b <= 'Z':
+		case b >= '0' && b <= '9':
+		case b == '.' || b == '_' || b == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // CloudflareAdapter implements Adapter for Cloudflare Logpull API.
 // Expects newline-delimited text, returns records without timestamps.
 // Called from: buildPushHandler() during HTTP request processing.
@@ -42,11 +64,20 @@ func CloudflareChallengeMiddleware(next nethttp.Handler) nethttp.Handler {
 	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		if r.Method == "GET" && r.URL.Query().Get("validate") == "true" {
 			challenge := r.Header.Get("Ownership-Challenge")
-			if challenge != "" {
-				w.WriteHeader(200)
-				w.Write([]byte(challenge))
+			if challenge == "" {
+				next.ServeHTTP(w, r)
 				return
 			}
+			// H3: валидация challenge — только [a-zA-Z0-9._-]+
+			// Предотвращает инъекцию произвольного содержимого в ответ.
+			if !isValidChallenge(challenge) {
+				nethttp.Error(w, "invalid challenge format", 400)
+				return
+			}
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(200)
+			w.Write([]byte(challenge))
+			return
 		}
 		next.ServeHTTP(w, r)
 	})

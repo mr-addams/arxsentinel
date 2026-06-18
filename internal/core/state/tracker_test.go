@@ -337,6 +337,32 @@ func TestRateCounterGapInOneToTwoWindows(t *testing.T) {
 	}
 }
 
+// ========================== Benchmarks =================================================
+
+// BenchmarkTrackerUpdate measures the throughput of Tracker.Update with a single goroutine.
+// Creates a realistic LogEntry and cycles over 1000 distinct IPs to avoid excessive branching
+// and approach real-world usage patterns.
+func BenchmarkTrackerUpdate(b *testing.B) {
+	tr := NewTracker(makeConfig(10000), nil)
+
+	// Pre-generate entries with distinct IPs — realistic load: many unique visitors
+	entries := make([]*parser.LogEntry, 1000)
+	for i := range entries {
+		entries[i] = &parser.LogEntry{
+			RealIP: fmt.Sprintf("10.0.%d.%d", i/256, i%256),
+			Method: "GET",
+			Path:   "/index.html",
+			Status: 200,
+			Time:   time.Now(),
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tr.Update(entries[i%len(entries)])
+	}
+}
+
 // ========================== ScoreAccess tests =========================================
 
 // TestScoreAccess verifies the detector.ScoreAccess implementation via IPState.

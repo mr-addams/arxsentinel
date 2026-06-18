@@ -43,6 +43,7 @@ import (
 	"github.com/rrethy/ahocorasick"
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/mr-addams/arxsentinel/internal/sys/metrics"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 )
 
@@ -390,6 +391,8 @@ func (m *Manager) fetchAndUpdate(ctx context.Context, cfg ListConfig, state *lis
 	}
 	state.setMatcher(matcher)
 	utils.Log("BLOCKLIST", fmt.Sprintf("list %q: automaton rebuilt (%d patterns)", cfg.Name, len(all)), "info")
+	// Record the refresh timestamp for monitoring (062/Task 4.1).
+	metrics.RecordBlocklistRefresh(cfg.Name)
 }
 
 // fetch downloads a URL and returns the body capped at fetchSizeLimit.

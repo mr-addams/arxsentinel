@@ -133,6 +133,12 @@ docker run ... --group-add 993 ghcr.io/mr-addams/arxsentinel:latest
 | `ARXSENTINEL_STATE_GC_INTERVAL` | duration | `60s` | Интервал сборки мусора |
 | `ARXSENTINEL_STATE_MAX_TRACKED_IPS` | int | `100000` | Макс. отслеживаемых IP (LRU вытеснение) |
 
+#### Источник (syslog)
+
+| Переменная | Тип | Дефолт | Описание |
+|---|---|---|---|
+| `ARXSENTINEL_SYSLOG_MAX_CONNECTIONS` | int | `1000` | Макс. одновременных TCP-соединений syslog (H5) |
+
 #### Детекторы
 
 | Переменная | Тип | Дефолт | Описание |

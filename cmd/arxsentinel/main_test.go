@@ -327,7 +327,7 @@ func TestBuildPipelineDetectors_ExplicitSubset(t *testing.T) {
 	}
 	t.Cleanup(utils.Close)
 
-	detectors := buildPipelineDetectors(cfg, pipeCfg, SharedResources{})
+	detectors := buildPipelineDetectors(context.Background(), cfg, pipeCfg, SharedResources{})
 
 	if len(detectors) != 2 {
 		t.Fatalf("expected 2 detectors (probe, rate), got %d", len(detectors))
@@ -360,7 +360,7 @@ func TestBuildPipelineDetectors_DisabledSkipped(t *testing.T) {
 	}
 	t.Cleanup(utils.Close)
 
-	detectors := buildPipelineDetectors(cfg, pipeCfg, SharedResources{})
+	detectors := buildPipelineDetectors(context.Background(), cfg, pipeCfg, SharedResources{})
 
 	if len(detectors) != 1 {
 		t.Fatalf("expected 1 detector (probe only), got %d", len(detectors))
@@ -386,7 +386,7 @@ func TestBuildPipelineDetectors_NilFallsBackToGlobal(t *testing.T) {
 	}
 	t.Cleanup(utils.Close)
 
-	detectors := buildPipelineDetectors(cfg, pipeCfg, SharedResources{})
+	detectors := buildPipelineDetectors(context.Background(), cfg, pipeCfg, SharedResources{})
 
 	// All 8 registered detectors should be present.
 	want := pkgdetector.Names() // sorted list of all registered names
@@ -484,7 +484,7 @@ func TestPipeline_BotExemptDetector(t *testing.T) {
 		t.Fatalf("whitelist.NewMatcher: %v", err)
 	}
 
-	detectors := buildPipelineDetectors(cfg, config.PipelineConfig{}, SharedResources{})
+	detectors := buildPipelineDetectors(context.Background(), cfg, config.PipelineConfig{}, SharedResources{})
 	sc := scorer.NewScorer(cfg.Scoring, detectors, nopLog)
 
 	verifier := whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, nopLog)
@@ -555,7 +555,7 @@ func TestPipeline_FakeBotStillCaught(t *testing.T) {
 		t.Fatalf("whitelist.NewMatcher: %v", err)
 	}
 
-	detectors := buildPipelineDetectors(cfg, config.PipelineConfig{}, SharedResources{})
+	detectors := buildPipelineDetectors(context.Background(), cfg, config.PipelineConfig{}, SharedResources{})
 	sc := scorer.NewScorer(cfg.Scoring, detectors, nopLog)
 
 	verifier := whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, nopLog)
@@ -774,5 +774,67 @@ func TestCollectSentinelSinkNames(t *testing.T) {
 		if _, ok := got[n]; !ok {
 			t.Errorf("missing expected name %q in set: %v", n, got)
 		}
+	}
+}
+
+// BenchmarkProcessLine measures the throughput of processLine with a full pipeline context.
+// Uses a realistic nginx log line and a minimal config with default detectors.
+func BenchmarkProcessLine(b *testing.B) {
+	if err := utils.Init(false, false, "", ""); err != nil {
+		b.Fatalf("utils.Init: %v", err)
+	}
+	defer utils.Close()
+
+	tmp, err := os.CreateTemp(b.TempDir(), "cfg-*.yaml")
+	if err != nil {
+		b.Fatalf("create temp config: %v", err)
+	}
+	_, _ = tmp.WriteString(`
+general:
+  log_file: /dev/null
+  threat_log: /dev/null
+`)
+	_ = tmp.Close()
+
+	cfg, loadErr := config.LoadConfig(tmp.Name())
+	if loadErr != nil {
+		b.Fatalf("config.LoadConfig: %v", loadErr)
+	}
+
+	tracker := state.NewTracker(cfg, func(tag, msg, level string) {})
+	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
+	if err != nil {
+		b.Fatalf("whitelist.NewMatcher: %v", err)
+	}
+
+	var count atomic.Int64
+	var threatCount atomic.Int64
+
+	pipe := &PipelineContext{
+		StreamName:       "test",
+		PipelineName:     "",
+		processedCount:   &count,
+		threatCount:      &threatCount,
+		Tracker:          tracker,
+		Scorer:           scorer.NewScorer(cfg.Scoring, nil, func(tag, msg, level string) {}),
+		Sinks:            []plugin.Sink{},
+		Matcher:          matcher,
+		Verifier:         whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, func(tag, msg, level string) {}),
+		FakeBotScore:     cfg.Whitelist.FakeBotScore,
+		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
+		Shared:           SharedResources{},
+		SourceName:       "file:/var/log/nginx/access.log",
+		SourceType:       "file",
+	}
+
+	rawLine := `203.0.113.1 - - [20/May/2026:10:00:00 +0000] "GET /wp-login.php HTTP/1.1" 200 512 "-" "curl/7.88" "203.0.113.1"`
+	entry, ok := (&parser.CombinedParser{}).Parse(rawLine)
+	if !ok {
+		b.Fatal("test setup: CombinedParser failed to parse the test line")
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		processLine(context.Background(), entry, pipe)
 	}
 }

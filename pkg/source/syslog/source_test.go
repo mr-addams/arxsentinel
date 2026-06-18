@@ -35,7 +35,7 @@ func (stubParser) Parse(line string) (*plugin.LogEntry, bool) {
 func TestSyslogSource_UDP(t *testing.T) {
 	const testPort = "15514"
 	addr := "udp://127.0.0.1:" + testPort
-	src, err := New(addr, stubParser{}, nil)
+	src, err := New(addr, stubParser{}, nil, 0)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -63,7 +63,7 @@ func TestSyslogSource_UDP(t *testing.T) {
 func TestSyslogSource_TCP(t *testing.T) {
 	const testPort = "15515"
 	addr := "tcp://127.0.0.1:" + testPort
-	src, err := New(addr, stubParser{}, nil)
+	src, err := New(addr, stubParser{}, nil, 0)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -91,7 +91,7 @@ func TestSyslogSource_TCP(t *testing.T) {
 func TestSyslogSource_RFC5424(t *testing.T) {
 	const testPort = "15516"
 	addr := "udp://127.0.0.1:" + testPort
-	src, err := New(addr, stubParser{}, nil)
+	src, err := New(addr, stubParser{}, nil, 0)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -119,7 +119,7 @@ func TestSyslogSource_RFC5424(t *testing.T) {
 func TestSyslogSource_MalformedPacket(t *testing.T) {
 	const testPort = "15517"
 	addr := "udp://127.0.0.1:" + testPort
-	src, err := New(addr, stubParser{}, nil)
+	src, err := New(addr, stubParser{}, nil, 0)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -150,7 +150,7 @@ func TestSyslogSource_MalformedPacket(t *testing.T) {
 // not just RemoteAddr (which stubParser would accept even with a broken envelope).
 func TestSyslogSource_RealParser(t *testing.T) {
 	const testPort = "15520"
-	src, err := New("udp://127.0.0.1:"+testPort, &parser.CombinedParser{}, nil)
+	src, err := New("udp://127.0.0.1:"+testPort, &parser.CombinedParser{}, nil, 0)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -194,7 +194,7 @@ func TestSyslogSource_ConcurrentTCP(t *testing.T) {
 		linesPerConn = 20
 	)
 
-	src, err := New("tcp://127.0.0.1:"+testPort, stubParser{}, nil)
+	src, err := New("tcp://127.0.0.1:"+testPort, stubParser{}, nil, 0)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -253,7 +253,7 @@ func TestSyslogSource_UnixSocket(t *testing.T) {
 	os.Remove(sockPath)
 	defer os.Remove(sockPath)
 
-	src, err := New("unixgram://"+sockPath, stubParser{}, nil)
+	src, err := New("unixgram://"+sockPath, stubParser{}, nil, 0)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -282,7 +282,7 @@ func TestSyslogSource_UnixSocket(t *testing.T) {
 // produces a line the real CombinedParser accepts with all fields intact.
 func TestSyslogSource_RFC5424_RealParser(t *testing.T) {
 	const testPort = "15521"
-	src, err := New("udp://127.0.0.1:"+testPort, &parser.CombinedParser{}, nil)
+	src, err := New("udp://127.0.0.1:"+testPort, &parser.CombinedParser{}, nil, 0)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -317,7 +317,7 @@ func TestSyslogSource_RFC5424_RealParser(t *testing.T) {
 // the out channel is full. Ensures the drop path does not block or panic.
 func TestSyslogSource_DropCounter(t *testing.T) {
 	const testPort = "15522"
-	src, err := New("udp://127.0.0.1:"+testPort, stubParser{}, nil)
+	src, err := New("udp://127.0.0.1:"+testPort, stubParser{}, nil, 0)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -382,7 +382,7 @@ func TestParseAddr(t *testing.T) {
 func TestSyslogSource_ContextCancel(t *testing.T) {
 	const testPort = "15518"
 	addr := "udp://127.0.0.1:" + testPort
-	src, err := New(addr, stubParser{}, nil)
+	src, err := New(addr, stubParser{}, nil, 0)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -42,16 +42,23 @@ type SyslogSource struct {
 	linesRead   atomic.Int64 // total messages received
 	parseErrors atomic.Int64 // messages that failed to parse
 	dropped     atomic.Int64 // entries dropped due to full channel buffer
+	maxConns    int           // max simultaneous TCP connections (H5); 0 = unlimited (default 1000 from config)
 }
+
+// defaultMaxConns используется как значение по умолчанию, пока конфигурация
+// не будет подключена через Task 2.6 (ARXSENTINEL_SYSLOG_MAX_CONNECTIONS).
+const defaultMaxConns = 1000
 
 // New creates a SyslogSource. addr is a URI-like string parsed by parseAddr:
 //
 //	"udp://:5514", "tcp://:514", "unix:///var/run/arx.sock",
 //	"unixgram:///var/run/arx.sock"
 //
+// maxConnections limits concurrent TCP connections (0 = defaultMaxConns).
+//
 // Called from: pkg/source registry (init() → Build).
 // Non-blocking — returns immediately with a configured instance or error.
-func New(addr string, parser pkgsource.LineParser, logFn func(string, string, string)) (*SyslogSource, error) {
+func New(addr string, parser pkgsource.LineParser, logFn func(string, string, string), maxConnections int) (*SyslogSource, error) {
 	network, host, err := parseAddr(addr)
 	if err != nil {
 		return nil, fmt.Errorf("syslog source: %w", err)
@@ -59,12 +66,17 @@ func New(addr string, parser pkgsource.LineParser, logFn func(string, string, st
 	if parser == nil {
 		return nil, fmt.Errorf("syslog source %s: parser must not be nil", addr)
 	}
+	maxConns := maxConnections
+	if maxConns <= 0 {
+		maxConns = defaultMaxConns
+	}
 	return &SyslogSource{
-		name:    "syslog:" + addr,
-		network: network,
-		host:    host,
-		parser:  parser,
-		logFn:   logFn,
+		name:      "syslog:" + addr,
+		network:   network,
+		host:      host,
+		parser:    parser,
+		logFn:     logFn,
+		maxConns:  maxConns,
 	}, nil
 }
 
@@ -142,6 +154,11 @@ func (s *SyslogSource) runPacket(ctx context.Context, out chan<- *plugin.LogEntr
 		if err != nil {
 			break
 		}
+		// L3: UDP truncation detection — если дейтаграмма заполнила буфер целиком,
+		// возможно сообщение было обрезано. Логируем предупреждение о возможной потере.
+		if n == len(buf) && s.logFn != nil {
+			s.logFn("SYSLOG", fmt.Sprintf("UDP datagram may be truncated (buffer %d bytes full) on %s", len(buf), s.host), "warning")
+		}
 		s.linesRead.Add(1)
 		line, err := parseMessage(buf[:n])
 		if err != nil {
@@ -176,14 +193,31 @@ func (s *SyslogSource) runStream(ctx context.Context, out chan<- *plugin.LogEntr
 		l.Close()
 	}()
 
+	// H5: semaphore для ограничения одновременных TCP-соединений (maxConns).
+	// Защита от resource exhaustion при лавине подключений.
+	maxConns := s.maxConns
+	if maxConns <= 0 {
+		maxConns = defaultMaxConns
+	}
+	sem := make(chan struct{}, maxConns)
+
 	var wg sync.WaitGroup
+	acceptLoop:
 	for {
 		conn, err := l.Accept()
 		if err != nil {
 			break
 		}
+		// H5: ждём свободный слот семафора, не блокируя Accept.
+		// При контекстной отмене закрываем соединение и выходим.
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			conn.Close()
+			break acceptLoop
+		}
 		wg.Add(1)
-		go s.handleConn(ctx, conn, out, &wg)
+		go s.handleConn(ctx, conn, out, &wg, sem)
 	}
 	wg.Wait()
 	return nil
@@ -191,9 +225,12 @@ func (s *SyslogSource) runStream(ctx context.Context, out chan<- *plugin.LogEntr
 
 // handleConn reads lines from a single TCP/unix connection until EOF or context
 // cancellation.
-func (s *SyslogSource) handleConn(ctx context.Context, conn net.Conn, out chan<- *plugin.LogEntry, wg *sync.WaitGroup) {
+func (s *SyslogSource) handleConn(ctx context.Context, conn net.Conn, out chan<- *plugin.LogEntry, wg *sync.WaitGroup, sem chan struct{}) {
 	defer wg.Done()
 	defer conn.Close()
+	if sem != nil {
+		defer func() { <-sem }()
+	}
 
 	go func() {
 		<-ctx.Done()
@@ -223,11 +260,19 @@ func (s *SyslogSource) handleConn(ctx context.Context, conn net.Conn, out chan<-
 			s.dropped.Add(1)
 		}
 	}
+	// H6: проверяем ошибку сканера после выхода из цикла Scan.
+	// Если сканер упал по причине, отличной от EOF, логируем и считаем parse error.
+	if err := sc.Err(); err != nil {
+		s.parseErrors.Add(1)
+		if s.logFn != nil {
+			s.logFn("SYSLOG", fmt.Sprintf("TCP scanner error on %s: %v", s.host, err), "error")
+		}
+	}
 }
 
 func init() {
 	pkgsource.Register("syslog", func(cfg pkgsource.InputConfig, opts pkgsource.BuildOptions) (plugin.Source, error) {
-		return New(cfg.Addr, opts.Parser, opts.LogFn)
+		return New(cfg.Addr, opts.Parser, opts.LogFn, cfg.MaxConnections)
 	})
 	pkgsource.RegisterManifest("syslog", (&SyslogSource{}).Manifest())
 }

@@ -163,13 +163,16 @@ func (w *Window) Mark(key string) {
 	now := w.nowFn()
 	w.entries[key] = now.Add(w.ttl)
 
-	// Чистим истёкшие. Можно было бы делать это только при превышении
-	// порога размера, но текущая цена O(n) приемлема для типичных
-	// объёмов. Это сохраняет Size() точным без отдельной метрики.
+	// Cleanup: two-phase — collect expired, then delete (C6: avoid delete-during-range).
+	// Go's map iteration is safe for deletion, but two-phase is explicit and clear.
+	var expired []string
 	for k, t := range w.entries {
 		if !t.After(now) {
-			delete(w.entries, k)
+			expired = append(expired, k)
 		}
+	}
+	for _, k := range expired {
+		delete(w.entries, k)
 	}
 }
 
@@ -253,11 +256,14 @@ func (w *Window) MarkBatch(keys []string) {
 		w.entries[k] = deadline
 	}
 
-	// Тот же opportunistic cleanup, что и в Mark — чтобы Size() оставался
-	// точным без отдельного janitor-цикла.
+	// Two-phase cleanup: collect expired, then delete (C6).
+	var expired []string
 	for k, t := range w.entries {
 		if !t.After(now) {
-			delete(w.entries, k)
+			expired = append(expired, k)
 		}
+	}
+	for _, k := range expired {
+		delete(w.entries, k)
 	}
 }

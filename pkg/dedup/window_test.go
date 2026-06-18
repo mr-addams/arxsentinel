@@ -13,6 +13,7 @@
 package dedup
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -441,4 +442,37 @@ func TestWindow_MarkBatchDedupWithinInput(t *testing.T) {
 
 	w.MarkBatch([]string{"1.1.1.1", "1.1.1.1", "1.1.1.1"})
 	assert.Equal(t, 1, w.Size(), "duplicate keys in batch collapse to one entry")
+}
+
+// TestWindow_CleanupAllExpired verifies that Mark and MarkBatch clean up ALL
+// expired entries, leaving Size() == 0 when all keys have expired (C6 regression).
+func TestWindow_CleanupAllExpired(t *testing.T) {
+	clk := newFakeClock()
+	w := NewWindow(10 * time.Minute)
+	setNow(w, clk.Now)
+
+	// Insert 1000 keys using MarkBatch.
+	keys := make([]string, 1000)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("ip-10.0.0.%d", i)
+	}
+	w.MarkBatch(keys)
+	assert.Equal(t, 1000, w.Size())
+
+	// Advance past TTL — all keys expired.
+	clk.Advance(11 * time.Minute)
+
+	// Mark a new key triggers cleanup of all expired.
+	w.Mark("new-key")
+	assert.Equal(t, 1, w.Size(), "all expired keys must be cleaned; only new-key remains")
+
+	// Mark all keys again, then advance, then MarkBatch — all should be cleaned.
+	w.MarkBatch(keys)
+	assert.Equal(t, 1001, w.Size())
+
+	clk.Advance(11 * time.Minute)
+
+	w.MarkBatch([]string{"another-key"})
+	assert.Equal(t, 1, w.Size(), "MarkBatch must also clean all expired")
+	assert.True(t, w.Contains("another-key"))
 }
