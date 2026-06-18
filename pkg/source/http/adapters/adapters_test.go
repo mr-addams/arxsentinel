@@ -307,6 +307,35 @@ func TestFirehoseAdapterWriteAck(t *testing.T) {
 	}
 }
 
+// TestFirehoseAdapter_WriteAck_EscapesQuotes verifies that WriteAck uses
+// proper JSON encoding to prevent injection via requestID with " and \.
+func TestFirehoseAdapter_WriteAck_EscapesQuotes(t *testing.T) {
+	a := &FirehoseAdapter{}
+	w := httptest.NewRecorder()
+	meta := map[string]string{"X-Amz-Firehose-Request-Id": `req"with"quotes\and\backslash`}
+	a.WriteAck(w, meta)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("expected valid JSON after injection: %v", err)
+	}
+	if resp["requestId"] != `req"with"quotes\and\backslash` {
+		t.Fatalf("requestId round-trip failed: got %v", resp["requestId"])
+	}
+	// Ensure the raw body does not contain unescaped quotes that would break JSON.
+	body := w.Body.String()
+	if len(body) < 2 {
+		t.Fatal("body too short")
+	}
+	// Re-parse as raw JSON to confirm structural integrity.
+	var raw any
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
+		t.Fatalf("raw body is not valid JSON: %v\nbody: %s", err, body)
+	}
+}
+
 // =============================================================================
 // PubSubAdapter
 // =============================================================================

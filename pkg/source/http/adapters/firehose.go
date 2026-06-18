@@ -52,5 +52,9 @@ func (a *FirehoseAdapter) WriteAck(w nethttp.ResponseWriter, meta map[string]str
 	ts := time.Now().UnixMilli()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
-	fmt.Fprintf(w, `{"requestId":"%s","timestamp":%d}`, requestID, ts)
+	// Use json.Encode to prevent JSON injection via requestID containing " or \.
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"requestId": requestID,
+		"timestamp": ts,
+	})
 }
