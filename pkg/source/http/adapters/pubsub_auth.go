@@ -140,19 +140,29 @@ func jwkToPublicKey(jk *jwkKey) (*rsa.PublicKey, error) {
 }
 
 // PubSubJWTMiddleware validates OIDC JWT from GCP Pub/Sub push subscriptions.
-// Checks: Bearer token present, RS256 algorithm, valid signature, audience, email verified.
+// If expectedToken is non-empty, compares the Bearer token via ConstantTimeCompare
+// to prevent timing attacks. Then validates: RS256 algorithm, signature, audience, email.
 // Adds middleware before pubsub handler in buildPushHandler().
 // Returns 401 if any validation fails. Non-blocking.
-func PubSubJWTMiddleware(expectedAud string, next nethttp.Handler) nethttp.Handler {
+func PubSubJWTMiddleware(expectedAud string, expectedToken string, next nethttp.Handler) nethttp.Handler {
 	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		auth := r.Header.Get("Authorization")
-		// ConstantTimeCompare on the prefix to avoid timing leak on content comparison (M5).
-		// Length guard is kept as a bounds safety check before slicing.
-		if len(auth) < 7 || subtle.ConstantTimeCompare([]byte(auth[:7]), []byte("Bearer ")) != 1 {
+		// Bounds guard before slicing; actual token comparison uses ConstantTimeCompare below.
+		if len(auth) < 7 {
+			httpError(w, 401)
+			return
+		}
+		if auth[:7] != "Bearer " {
 			httpError(w, 401)
 			return
 		}
 		token := auth[7:]
+
+		// Constant-time comparison of the full token prevents timing leaks (M5).
+		if expectedToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(expectedToken)) != 1 {
+			httpError(w, 401)
+			return
+		}
 
 		parts := splitJWT(token)
 		if len(parts) != 3 {

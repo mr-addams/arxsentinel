@@ -1033,7 +1033,7 @@ func TestPubSubJWTMiddleware(t *testing.T) {
 
 	// helper: create a middleware handler with a recorder
 	testMiddleware := func(token string) *httptest.ResponseRecorder {
-		handler := PubSubJWTMiddleware(expectedAud, nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		handler := PubSubJWTMiddleware(expectedAud, "", nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 			w.WriteHeader(200)
 			w.Write([]byte("ok"))
 		}))
@@ -1127,7 +1127,7 @@ func TestPubSubJWTMiddleware(t *testing.T) {
 	})
 
 	t.Run("empty Authorization header returns 401", func(t *testing.T) {
-		handler := PubSubJWTMiddleware(expectedAud, nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		handler := PubSubJWTMiddleware(expectedAud, "", nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 			w.WriteHeader(200)
 		}))
 		w := httptest.NewRecorder()
@@ -1140,7 +1140,7 @@ func TestPubSubJWTMiddleware(t *testing.T) {
 	})
 
 	t.Run("empty Authorization header variant", func(t *testing.T) {
-		handler := PubSubJWTMiddleware(expectedAud, nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		handler := PubSubJWTMiddleware(expectedAud, "", nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 			w.WriteHeader(200)
 		}))
 		w := httptest.NewRecorder()
@@ -1161,6 +1161,67 @@ func TestPubSubJWTMiddleware(t *testing.T) {
 			"email_verified": true,
 		})
 		w := testMiddleware(token)
+		if w.Code != 401 {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("static token + valid JWT passes through", func(t *testing.T) {
+		now := time.Now().Unix()
+		jwt := buildJWT(privKey, map[string]any{"alg": "RS256", "kid": "test-kid-1"}, map[string]any{
+			"aud":            expectedAud,
+			"exp":            now + 3600,
+			"email":          "user@example.com",
+			"email_verified": true,
+		})
+		// Static expectedToken equals the JWT — both the token gate and JWT validation pass.
+		handler := PubSubJWTMiddleware(expectedAud, jwt, nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			w.WriteHeader(200)
+			w.Write([]byte("ok"))
+		}))
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/", strings.NewReader(`{}`))
+		r.Header.Set("Authorization", "Bearer "+jwt)
+		handler.ServeHTTP(w, r)
+		if w.Code != 200 {
+			t.Fatalf("expected 200, got %d", w.Code)
+		}
+		if w.Body.String() != "ok" {
+			t.Fatalf("expected 'ok', got %q", w.Body.String())
+		}
+	})
+
+	t.Run("wrong static token returns 401 before JWKS fetch", func(t *testing.T) {
+		jwksStore.Delete("jwks")
+		handler := PubSubJWTMiddleware(expectedAud, "s3cret", nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			w.WriteHeader(200)
+		}))
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/", strings.NewReader(`{}`))
+		// Wrong static token — must fail before JWKS fetch (jwksStore is empty)
+		r.Header.Set("Authorization", "Bearer wrong")
+		handler.ServeHTTP(w, r)
+		if w.Code != 401 {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+	})
+
+	t.Run("static token + mismatched aud returns 401", func(t *testing.T) {
+		now := time.Now().Unix()
+		jwt := buildJWT(privKey, map[string]any{"alg": "RS256", "kid": "test-kid-1"}, map[string]any{
+			"aud":            "https://wrong.example.com",
+			"exp":            now + 3600,
+			"email":          "user@example.com",
+			"email_verified": true,
+		})
+		// Static token matches the JWT, but the JWT audience is wrong — fails at JWT validation.
+		handler := PubSubJWTMiddleware(expectedAud, jwt, nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+			w.WriteHeader(200)
+		}))
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/", strings.NewReader(`{}`))
+		r.Header.Set("Authorization", "Bearer "+jwt)
+		handler.ServeHTTP(w, r)
 		if w.Code != 401 {
 			t.Fatalf("expected 401, got %d", w.Code)
 		}
@@ -1194,7 +1255,7 @@ func TestPubSubJWTMiddleware_closesBody(t *testing.T) {
 		"email_verified": true,
 	})
 
-	handler := PubSubJWTMiddleware("https://example.com/sub", nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+	handler := PubSubJWTMiddleware("https://example.com/sub", "", nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		n, _ := io.Copy(io.Discard, r.Body)
 		if n != 2 {
 			t.Errorf("expected 2 body bytes, got %d", n)
