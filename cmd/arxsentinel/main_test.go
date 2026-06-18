@@ -776,3 +776,65 @@ func TestCollectSentinelSinkNames(t *testing.T) {
 		}
 	}
 }
+
+// BenchmarkProcessLine measures the throughput of processLine with a full pipeline context.
+// Uses a realistic nginx log line and a minimal config with default detectors.
+func BenchmarkProcessLine(b *testing.B) {
+	if err := utils.Init(false, false, "", ""); err != nil {
+		b.Fatalf("utils.Init: %v", err)
+	}
+	defer utils.Close()
+
+	tmp, err := os.CreateTemp(b.TempDir(), "cfg-*.yaml")
+	if err != nil {
+		b.Fatalf("create temp config: %v", err)
+	}
+	_, _ = tmp.WriteString(`
+general:
+  log_file: /dev/null
+  threat_log: /dev/null
+`)
+	_ = tmp.Close()
+
+	cfg, loadErr := config.LoadConfig(tmp.Name())
+	if loadErr != nil {
+		b.Fatalf("config.LoadConfig: %v", loadErr)
+	}
+
+	tracker := state.NewTracker(cfg, func(tag, msg, level string) {})
+	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
+	if err != nil {
+		b.Fatalf("whitelist.NewMatcher: %v", err)
+	}
+
+	var count atomic.Int64
+	var threatCount atomic.Int64
+
+	pipe := &PipelineContext{
+		StreamName:       "test",
+		PipelineName:     "",
+		processedCount:   &count,
+		threatCount:      &threatCount,
+		Tracker:          tracker,
+		Scorer:           scorer.NewScorer(cfg.Scoring, nil, func(tag, msg, level string) {}),
+		Sinks:            []plugin.Sink{},
+		Matcher:          matcher,
+		Verifier:         whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, func(tag, msg, level string) {}),
+		FakeBotScore:     cfg.Whitelist.FakeBotScore,
+		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
+		Shared:           SharedResources{},
+		SourceName:       "file:/var/log/nginx/access.log",
+		SourceType:       "file",
+	}
+
+	rawLine := `203.0.113.1 - - [20/May/2026:10:00:00 +0000] "GET /wp-login.php HTTP/1.1" 200 512 "-" "curl/7.88" "203.0.113.1"`
+	entry, ok := (&parser.CombinedParser{}).Parse(rawLine)
+	if !ok {
+		b.Fatal("test setup: CombinedParser failed to parse the test line")
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		processLine(context.Background(), entry, pipe)
+	}
+}

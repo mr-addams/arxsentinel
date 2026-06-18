@@ -257,6 +257,28 @@ func TestApplyDecayZeroScore(t *testing.T) {
 	}
 }
 
+// ========================== Benchmarks =================================================
+
+// BenchmarkScorerEvaluate measures the throughput of Scorer.Evaluate with multiple detectors.
+// Simulates a realistic scoring path: 5 detectors, each contributing score.
+func BenchmarkScorerEvaluate(b *testing.B) {
+	detectors := []detector.Detector{
+		makeDetector("probe", 30, "env_probe"),
+		makeDetector("ua", 25, "curl"),
+		makeDetector("rate", 20, "rate:120rps"),
+		makeDetector("badbot", 15, "fake_bot"),
+		makeDetector("overflow", 10, "long_url"),
+	}
+	sc := makeScorer(detectors...)
+	sv := freshState()
+	entry := makeEntry()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sc.Evaluate(sv, entry, nil)
+	}
+}
+
 // ========================== ExemptSet filter tests ======================================
 
 func TestScorer_ExemptDetectorFilter(t *testing.T) {
