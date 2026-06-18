@@ -121,7 +121,14 @@ func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 
 			entry := logEntryFromJSON(se.Entry)
 			s.linesRead.Add(1)
-			entries <- entry
+			// Non-blocking send: если entries-буфер полон (main loop медленный),
+			// дропаем entry вместо блокировки. Блокировка здесь зависила бы
+			// proc.Recv() → plugin блокировался на stdout write → deadlock всего pipeline.
+			select {
+			case entries <- entry:
+			default:
+				s.dropped.Add(1)
+			}
 		}
 	}()
 
