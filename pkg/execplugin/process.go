@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -41,6 +42,9 @@ type ManagedProcess struct {
 	stdin  io.WriteCloser   // Internal — plugin stdin pipe for sending requests. Consumer: Send, Close
 	stdout *bufio.Scanner    // Internal — plugin stdout scanner for reading responses. Consumer: Recv
 	mu     sync.Mutex        // Internal — protects atomic Send/Recv cycles. Consumer: Lock, Unlock
+
+	waitOnce sync.Once  // Internal — ensures cmd.Wait() is called only once (C1: prevents double-Wait panic)
+	closeMu  sync.Mutex // Internal — serializes Close() calls to prevent ProcessState race
 }
 
 // NewManagedProcess spawns the plugin binary at execPath and wires up stdin/stdout pipes.
@@ -153,20 +157,34 @@ func (p *ManagedProcess) Recv() ([]byte, error) {
 //
 // Blocking — waits up to 3 seconds for process exit.
 func (p *ManagedProcess) Close() error {
+	// closeMu serializes Close() calls to prevent data races on ProcessState
+	// and ensures idempotency. Concurrent Close calls from multiple goroutines
+	// will serialize safely.
+	p.closeMu.Lock()
+	defer p.closeMu.Unlock()
+
 	// Close stdin to signal end-of-input to the plugin
 	if err := p.stdin.Close(); err != nil && err != io.ErrClosedPipe {
 		// Ignore "pipe already closed" errors
 	}
 
-	// If process hasn't already exited, send SIGTERM
-	if p.cmd.ProcessState == nil {
-		_ = p.cmd.Process.Signal(os.Interrupt) // SIGTERM on Unix, CtrlBreak on Windows
+	// If the process has already exited (e.g., this is a repeated Close call),
+	// return immediately without signalling or waiting.
+	if p.cmd.ProcessState != nil {
+		return nil
 	}
 
-	// Wait with timeout
+	// Send SIGTERM (M1: use SIGTERM, not os.Interrupt)
+	_ = p.cmd.Process.Signal(syscall.SIGTERM)
+
+	// Wait with timeout (C1: use waitOnce to prevent double-Wait panic)
 	done := make(chan error, 1)
 	go func() {
-		done <- p.cmd.Wait()
+		p.waitOnce.Do(func() {
+			// Buffer of 1 ensures the goroutine never blocks on send
+			// when the timeout fires before Wait() completes.
+			done <- p.cmd.Wait()
+		})
 	}()
 
 	select {
@@ -178,8 +196,10 @@ func (p *ManagedProcess) Close() error {
 		if p.cmd.Process != nil {
 			_ = p.cmd.Process.Kill()
 		}
-		// Wait for the kill to take effect
-		p.cmd.Wait()
+		// Wait for the kill to take effect (still guarded by waitOnce)
+		p.waitOnce.Do(func() {
+			p.cmd.Wait()
+		})
 		return fmt.Errorf("plugin process did not exit within 3s, killed")
 	}
 }
