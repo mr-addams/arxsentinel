@@ -32,7 +32,10 @@ import (
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
-const defaultSweepInterval = 15 * time.Minute
+const (
+	defaultSweepInterval = 15 * time.Minute
+	maxSweepInterval     = 30 * time.Minute
+)
 
 // fileHeader is prepended to every written list file to warn manual editors.
 const fileHeader = "# managed by arxsentinel — do not edit manually\n"
@@ -264,7 +267,8 @@ func (e *NginxExecutor) flush(ctx context.Context, banned map[string]time.Time) 
 	var sb strings.Builder
 	sb.WriteString(fileHeader)
 	for ip := range banned {
-		sb.WriteString(fmt.Sprintf("%s 1;\n", ip))
+		sb.WriteString(ip)
+		sb.WriteString(" 1;\n")
 	}
 
 	if err := writeFile(e.cfg.ListFile, sb.String()); err != nil {
@@ -323,6 +327,9 @@ func (e *NginxExecutor) Run(ctx context.Context, source plugin.EventSource) erro
 	sweepInterval := e.cfg.TTL / 4
 	if sweepInterval < defaultSweepInterval {
 		sweepInterval = defaultSweepInterval
+	}
+	if sweepInterval > maxSweepInterval {
+		sweepInterval = maxSweepInterval
 	}
 	tickerSweep := time.NewTicker(sweepInterval)
 	defer tickerSweep.Stop()
