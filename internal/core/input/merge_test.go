@@ -5,6 +5,7 @@ package input_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -82,7 +83,7 @@ func TestMerge_SingleSource(t *testing.T) {
 	entries := []*plugin.LogEntry{makeEntry("1.1.1.1"), makeEntry("2.2.2.2")}
 	src := &staticSource{name: "test", entries: entries}
 
-	out := input.Merge(context.Background(), []plugin.Source{src}, 8)
+	out := input.Merge(context.Background(), []plugin.Source{src}, 8, nil)
 
 	var got []*plugin.LogEntry
 	for e := range out {
@@ -104,7 +105,7 @@ func TestMerge_MultipleSources(t *testing.T) {
 	src1 := &staticSource{name: "s1", entries: []*plugin.LogEntry{makeEntry("1.1.1.1"), makeEntry("2.2.2.2")}}
 	src2 := &staticSource{name: "s2", entries: []*plugin.LogEntry{makeEntry("3.3.3.3"), makeEntry("4.4.4.4")}}
 
-	out := input.Merge(context.Background(), []plugin.Source{src1, src2}, 8)
+	out := input.Merge(context.Background(), []plugin.Source{src1, src2}, 8, nil)
 
 	ips := map[string]bool{}
 	for e := range out {
@@ -126,7 +127,7 @@ func TestMerge_ChannelClosedOnCtxCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	src := &blockingSource{entry: makeEntry("1.1.1.1")}
-	out := input.Merge(ctx, []plugin.Source{src}, 8)
+	out := input.Merge(ctx, []plugin.Source{src}, 8, nil)
 
 	// Drain the first entry sent before blocking.
 	select {
@@ -166,7 +167,7 @@ func TestMerge_DropOnFullBuffer(t *testing.T) {
 		makeEntry("4.4.4.4"),
 	}
 	src := &dropSource{entries: entries}
-	out := input.Merge(context.Background(), []plugin.Source{src}, bufSize)
+	out := input.Merge(context.Background(), []plugin.Source{src}, bufSize, nil)
 
 	var got []*plugin.LogEntry
 	for e := range out {
@@ -183,5 +184,85 @@ func TestMerge_DropOnFullBuffer(t *testing.T) {
 		if len(got) > len(entries) {
 			t.Fatalf("got more entries (%d) than sent (%d)", len(got), len(entries))
 		}
+	}
+}
+
+// ── Panic recovery ──────────────────────────────────────────────────────────────────────────
+// C4: source panic must be recovered by Merge, pipeline must not hang.
+
+// panicSource panics in Run() to test recovery.
+type panicSource struct{}
+
+func (s *panicSource) Name() string              { return "panic" }
+func (s *panicSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
+func (s *panicSource) Close() error              { return nil }
+func (s *panicSource) Stats() plugin.SourceStats { return plugin.SourceStats{} }
+func (s *panicSource) Run(_ context.Context, _ chan<- *plugin.LogEntry) error {
+	panic("test panic in source Run")
+}
+
+func TestMerge_PanicRecovery(t *testing.T) {
+	// Source panics in Run(), but Merge should recover and not hang.
+	src := &panicSource{}
+
+	logged := false
+	logFn := func(tag, msg, level string) {
+		if tag == "merge" && level == "error" {
+			logged = true
+		}
+	}
+
+	out := input.Merge(context.Background(), []plugin.Source{src}, 8, logFn)
+
+	// Channel must close (the panicking goroutine recovers and calls wg.Done).
+	select {
+	case _, ok := <-out:
+		if ok {
+			t.Fatal("channel should be closed after panic recovery")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("channel not closed after panic recovery — pipeline hung")
+	}
+
+	if !logged {
+		t.Error("expected logFn to be called with merge/error for panic")
+	}
+}
+
+// recoverySource returns an error from Run() to test error logging.
+type errorReturningSource struct{}
+
+func (s *errorReturningSource) Name() string              { return "error-return" }
+func (s *errorReturningSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
+func (s *errorReturningSource) Close() error              { return nil }
+func (s *errorReturningSource) Stats() plugin.SourceStats { return plugin.SourceStats{} }
+func (s *errorReturningSource) Run(_ context.Context, _ chan<- *plugin.LogEntry) error {
+	return fmt.Errorf("test error from source")
+}
+
+func TestMerge_ErrorLogging(t *testing.T) {
+	src := &errorReturningSource{}
+
+	logged := false
+	logFn := func(tag, msg, level string) {
+		if tag == "merge" && level == "error" {
+			logged = true
+		}
+	}
+
+	out := input.Merge(context.Background(), []plugin.Source{src}, 8, logFn)
+
+	// Channel must close.
+	select {
+	case _, ok := <-out:
+		if ok {
+			t.Fatal("channel should be closed after source error")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("channel not closed after source error — pipeline hung")
+	}
+
+	if !logged {
+		t.Error("expected logFn to be called with merge/error for source error")
 	}
 }

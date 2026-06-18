@@ -678,7 +678,7 @@ func runPipeline(
 
 	// Fan-in всех sources в один entries-канал.
 	// Sources работают в горутинах, запускаемых Merge, и останавливаются при отмене ctx.
-	entries := coreinput.Merge(ctx, sources, bufSize)
+	entries := coreinput.Merge(ctx, sources, bufSize, utils.Log)
 
 	utils.Log("STARTUP", fmt.Sprintf(
 		"%s: pipeline started (sources=%d sinks=%d) | source: %s",

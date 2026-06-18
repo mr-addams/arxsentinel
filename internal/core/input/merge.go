@@ -18,10 +18,16 @@ package input
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
+
+// LogFn is a callback for structured logging from Merge.
+// tag identifies the component, msg is the log message, level is one of
+// "error", "warn", "info", "debug".
+type LogFn func(tag, msg, level string)
 
 // Merge fans-in multiple Sources into a single output channel.
 // Runs each Source in its own goroutine, closes out when all done.
@@ -29,7 +35,7 @@ import (
 //
 // Called from: cmd/arxsentinel.main (pipeline setup).
 // Blocking: waits for all sources to finish before closing the channel.
-func Merge(ctx context.Context, sources []plugin.Source, bufSize int) <-chan *plugin.LogEntry {
+func Merge(ctx context.Context, sources []plugin.Source, bufSize int, logFn LogFn) <-chan *plugin.LogEntry {
 	out := make(chan *plugin.LogEntry, bufSize)
 
 	var wg sync.WaitGroup
@@ -38,9 +44,20 @@ func Merge(ctx context.Context, sources []plugin.Source, bufSize int) <-chan *pl
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// Panic recovery (C4): if a Source panics, recover and log instead of
+			// crashing the entire pipeline.
+			defer func() {
+				if r := recover(); r != nil {
+					if logFn != nil {
+						logFn("merge", fmt.Sprintf("source panic recovered: %v", r), "error")
+					}
+				}
+			}()
 			// Run blocks until ctx is Done or unrecoverable error.
-			// Errors are logged by the Source itself; Merge does not surface them.
-			_ = src.Run(ctx, out)
+			// Log errors that the Source itself did not handle (M2).
+			if err := src.Run(ctx, out); err != nil && logFn != nil {
+				logFn("merge", fmt.Sprintf("source Run error: %v", err), "error")
+			}
 		}()
 	}
 
