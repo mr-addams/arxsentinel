@@ -241,7 +241,7 @@ func (m *Manager) Match(list string, text string) bool {
 		return false
 	}
 
-	return len(matcher.FindAllString(text)) > 0
+	return len(matcher.FindAllByteSlice([]byte(text))) > 0
 }
 
 // MatchResult returns the first matched pattern from the named list, or ("", false) if no match.
@@ -264,7 +264,7 @@ func (m *Manager) MatchResult(list string, text string) (string, bool) {
 		return "", false
 	}
 
-	results := matcher.FindAllString(text)
+	results := matcher.FindAllByteSlice([]byte(text))
 	if len(results) > 0 {
 		return string(results[0].Word), true
 	}
