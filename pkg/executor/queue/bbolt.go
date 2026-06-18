@@ -21,11 +21,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"os"
 	"sync"
 	"time"
 
+	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	"go.etcd.io/bbolt"
 )
@@ -379,11 +378,11 @@ func (q *BboltQueue) claimOnce(ctx context.Context) (plugin.ThreatEvent, bool, e
 		case res := <-resCh:
 			return res.event, res.found, res.err
 		default:
-			// C2: событие потеряно — writeLoop уже выполнил read+delete+advance
-			// внутри db.Update, но claimOnce прерван Close и не дождался
-			// результата. At-least-once требует re-queue, что невозможно без
-			// переписывания bbolt-логики, поэтому лишь логируем для мониторинга.
-			fmt.Fprintf(os.Stderr, "queue/bbolt: event lost during shutdown (claim interrupted by Close)\n")
+			// C2: event lost — writeLoop already executed read+delete+advance inside
+			// db.Update, but claimOnce was interrupted by Close before receiving the
+			// result. Re-queue is not feasible without rewriting bbolt write-loop
+			// (see DECISIONS.md D7); log for monitoring instead.
+			utils.Log("QUEUE", "event lost during shutdown (claim interrupted by Close)", "warning")
 			return plugin.ThreatEvent{}, false, ErrQueueClosed
 		}
 	case res := <-resCh:

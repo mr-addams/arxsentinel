@@ -121,9 +121,10 @@ func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 
 			entry := logEntryFromJSON(se.Entry)
 			s.linesRead.Add(1)
-			// Non-blocking send: если entries-буфер полон (main loop медленный),
-			// дропаем entry вместо блокировки. Блокировка здесь зависила бы
-			// proc.Recv() → plugin блокировался на stdout write → deadlock всего pipeline.
+			// Non-blocking send: if entries buffer is full (slow main loop),
+			// drop entry instead of blocking. Blocking send would stall proc.Recv()
+			// → plugin blocks on stdout write → whole pipeline deadlock.
+			// Monitor drop rate: Stats().Dropped / Stats().LinesRead ratio.
 			select {
 			case entries <- entry:
 			default:
