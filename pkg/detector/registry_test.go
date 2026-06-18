@@ -354,32 +354,64 @@ func TestNoAssetDetector_ViaRegistry(t *testing.T) {
 	}
 }
 
-// TestRateDetector_DisabledOnZeroWindow verifies that a disabled rate detector
-// (window=0 or threshold=0) is returned and never fires.
-func TestRateDetector_DisabledOnZeroWindow(t *testing.T) {
+// TestRateDetector_InvalidParams verifies that invalid rate detector params
+// (window=0 or threshold=0) return an error from Build, not a disabled detector.
+func TestRateDetector_InvalidParams(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		params map[string]interface{}
 	}{
 		{"zero_window", map[string]interface{}{"window": "0s", "threshold": 100}},
 		{"zero_threshold", map[string]interface{}{"window": "60s", "threshold": 0}},
+		{"negative_window", map[string]interface{}{"window": "-10s", "threshold": 100}},
+		{"negative_threshold", map[string]interface{}{"window": "60s", "threshold": -1}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := detector.DetectorConfig{Enabled: true, Params: tc.params}
-			d, err := detector.Build(context.Background(),"rate", cfg, nil)
-			if err != nil {
-				t.Fatalf("Build(rate, %s) error: %v", tc.name, err)
-			}
-			if d == nil {
-				t.Fatal("Build(rate, disabled) returned nil — want a no-op detector")
-			}
-			// disabledRateDetector must never score even at extreme rates.
-			sv := newStubView(0, 0, nil, 1e9)
-			result := d.Detect(sv, &plugin.LogEntry{})
-			if result.Score != 0 {
-				t.Errorf("disabled rate detector should not score, got %d", result.Score)
+			_, err := detector.Build(context.Background(), "rate", cfg, nil)
+			if err == nil {
+				t.Fatalf("Build(rate, %s) expected error, got nil", tc.name)
 			}
 		})
+	}
+}
+
+// TestRateDetector_ValidParams verifies that a valid rate detector is created and scores correctly.
+func TestRateDetector_ValidParams(t *testing.T) {
+	cfg := detector.DetectorConfig{
+		Enabled: true,
+		Params: map[string]interface{}{
+			"window":    "60s",
+			"threshold": 100,
+			"score":     25,
+		},
+	}
+	d, err := detector.Build(context.Background(), "rate", cfg, nil)
+	if err != nil {
+		t.Fatalf("Build(rate, valid) error: %v", err)
+	}
+	if d == nil {
+		t.Fatal("Build(rate, valid) returned nil")
+	}
+
+	// Below threshold (50 req/s in 60s window = 3000) — no score
+	sv1 := newStubView(0, 0, nil, 50) // ApproxRate=50 < thresholdRPS=100/60≈1.67? No, let me recalculate
+	// thresholdRPS = 100 / 60 ≈ 1.67. rate=50 > 1.67 → should trigger
+	_ = sv1
+
+	// Actually use correct values: thresholdRPS = 100/60 ≈ 1.67
+	// Rate 0.5 req/s → no score
+	svLow := newStubView(0, 0, nil, 0.5)
+	result := d.Detect(svLow, &plugin.LogEntry{})
+	if result.Score != 0 {
+		t.Errorf("low rate should not score, got %d", result.Score)
+	}
+
+	// Rate 100 req/s → score 25
+	svHigh := newStubView(0, 0, nil, 100)
+	result = d.Detect(svHigh, &plugin.LogEntry{})
+	if result.Score != 25 {
+		t.Errorf("high rate should score 25, got %d", result.Score)
 	}
 }
 

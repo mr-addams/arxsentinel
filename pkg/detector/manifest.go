@@ -27,17 +27,6 @@ func (d *rateDetector) Manifest() plugin.Manifest {
 	}
 }
 
-func (d *disabledRateDetector) Manifest() plugin.Manifest {
-	return plugin.Manifest{
-		PluginID:      "rate",
-		PluginVersion: "1.0.0",
-		Role:          plugin.RoleDetector,
-		InputType:     plugin.TypeStructured,
-		OutputType:    plugin.TypeStructured,
-		Tags:          []string{"http", "rate-based", "dos"},
-	}
-}
-
 func (d *bruteforceDetector) Manifest() plugin.Manifest {
 	return plugin.Manifest{
 		PluginID:      "bruteforce",
