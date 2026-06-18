@@ -21,6 +21,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -377,6 +379,11 @@ func (q *BboltQueue) claimOnce(ctx context.Context) (plugin.ThreatEvent, bool, e
 		case res := <-resCh:
 			return res.event, res.found, res.err
 		default:
+			// C2: событие потеряно — writeLoop уже выполнил read+delete+advance
+			// внутри db.Update, но claimOnce прерван Close и не дождался
+			// результата. At-least-once требует re-queue, что невозможно без
+			// переписывания bbolt-логики, поэтому лишь логируем для мониторинга.
+			fmt.Fprintf(os.Stderr, "queue/bbolt: event lost during shutdown (claim interrupted by Close)\n")
 			return plugin.ThreatEvent{}, false, ErrQueueClosed
 		}
 	case res := <-resCh:
