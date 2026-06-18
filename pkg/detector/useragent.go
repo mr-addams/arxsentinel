@@ -35,7 +35,8 @@ func init() {
 	Register("ua", newUAFactory)
 }
 
-// Built-in pattern lists. All lowercase — Detect normalizes input to lowercase.
+// Built-in pattern lists. Normalized to lowercase in newUAFactory — Detect
+// already lowercases the input, so patterns must match in lowercase.
 
 // builtinScannerPatterns — active scanning and exploitation tools.
 var builtinScannerPatterns = []string{
@@ -49,18 +50,20 @@ var builtinScannerPatterns = []string{
 }
 
 // builtinGrabberPatterns — content crawlers and downloaders.
-// Wget/ and curl/ with "/" to avoid blocking UAs like "Recursive wget protection".
+// All lowercase — normalized in newUAFactory.
+// wget/ and curl/ with "/" to avoid blocking UAs like "Recursive wget protection".
 var builtinGrabberPatterns = []string{
-	"Wget/", "curl/", "python-requests", "libwww-perl",
-	"scrapy", "HTTrack", "WebCopier",
-	"SiteSnagger", "WebReaper", "Teleport Pro",
+	"wget/", "curl/", "python-requests", "libwww-perl",
+	"scrapy", "httrack", "webcopier",
+	"sitesnagger", "webreaper", "teleport pro",
 }
 
 // builtinAutomationPatterns — HTTP clients and automation frameworks.
+// All lowercase — normalized in newUAFactory.
 var builtinAutomationPatterns = []string{
-	"python-urllib", "aiohttp", "Go-http-client",
-	"Java/", "okhttp", "axios/", "node-fetch",
-	"got (", "superagent", "RestSharp", "HttpClient",
+	"python-urllib", "aiohttp", "go-http-client",
+	"java/", "okhttp", "axios/", "node-fetch",
+	"got (", "superagent", "restsharp", "httpclient",
 }
 
 // uaDetector detects suspicious User-Agent strings.
@@ -75,6 +78,7 @@ type uaDetector struct {
 }
 
 // newUAFactory creates a uaDetector from DetectorConfig.
+// Normalizes all patterns to lowercase once — avoids per-call ToLower on hot path.
 func newUAFactory(cfg DetectorConfig, _ SharedResources) (plugin.Detector, error) {
 	scannerScore := getInt(cfg.Params, "scanner_score", 40)
 	grabberScore := getInt(cfg.Params, "grabber_score", 20)
@@ -85,15 +89,33 @@ func newUAFactory(cfg DetectorConfig, _ SharedResources) (plugin.Detector, error
 	extraGrabbers := getStrings(cfg.Params, "extra_grabber_patterns", nil)
 	extraAutomation := getStrings(cfg.Params, "extra_automation_patterns", nil)
 
+	// Normalize all patterns to lowercase once.
+	scannerPatterns := normalizePatterns(builtinScannerPatterns, extraScanners)
+	grabberPatterns := normalizePatterns(builtinGrabberPatterns, extraGrabbers)
+	automationPatterns := normalizePatterns(builtinAutomationPatterns, extraAutomation)
+
 	return &uaDetector{
-		scannerPatterns:    append(builtinScannerPatterns, extraScanners...),
-		grabberPatterns:    append(builtinGrabberPatterns, extraGrabbers...),
-		automationPatterns: append(builtinAutomationPatterns, extraAutomation...),
+		scannerPatterns:    scannerPatterns,
+		grabberPatterns:    grabberPatterns,
+		automationPatterns: automationPatterns,
 		scannerScore:       scannerScore,
 		grabberScore:       grabberScore,
 		automationScore:    automationScore,
 		emptyUAScore:       emptyUAScore,
 	}, nil
+}
+
+// normalizePatterns merges builtin and extra patterns, lowercasing all of them.
+func normalizePatterns(builtin, extra []string) []string {
+	total := len(builtin) + len(extra)
+	result := make([]string, 0, total)
+	for _, p := range builtin {
+		result = append(result, strings.ToLower(p))
+	}
+	for _, p := range extra {
+		result = append(result, strings.ToLower(p))
+	}
+	return result
 }
 
 // Name returns the detector identifier.
@@ -123,8 +145,9 @@ func (d *uaDetector) Detect(_ plugin.IPView, entry *plugin.LogEntry) plugin.Dete
 	uaLower := strings.ToLower(ua)
 
 	// ── Scanners ──────────────────────────────────────────────────────────────────────
+	// Patterns are pre-normalized to lowercase in newUAFactory.
 	for _, p := range d.scannerPatterns {
-		if strings.Contains(uaLower, strings.ToLower(p)) {
+		if strings.Contains(uaLower, p) {
 			return plugin.DetectResult{
 				Score:  d.scannerScore,
 				Module: "ua",
@@ -135,7 +158,7 @@ func (d *uaDetector) Detect(_ plugin.IPView, entry *plugin.LogEntry) plugin.Dete
 
 	// ── Grabbers ──────────────────────────────────────────────────────────────────────
 	for _, p := range d.grabberPatterns {
-		if strings.Contains(uaLower, strings.ToLower(p)) {
+		if strings.Contains(uaLower, p) {
 			return plugin.DetectResult{
 				Score:  d.grabberScore,
 				Module: "ua",
@@ -146,7 +169,7 @@ func (d *uaDetector) Detect(_ plugin.IPView, entry *plugin.LogEntry) plugin.Dete
 
 	// ── Automation ────────────────────────────────────────────────────────────────────
 	for _, p := range d.automationPatterns {
-		if strings.Contains(uaLower, strings.ToLower(p)) {
+		if strings.Contains(uaLower, p) {
 			return plugin.DetectResult{
 				Score:  d.automationScore,
 				Module: "ua",
