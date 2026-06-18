@@ -79,6 +79,61 @@ severity, description, and proposed resolution.
 
 ---
 
+### [064-AC] ahocorasick contains-wrapper (FindAllString аллокация)
+
+- **Flow:** #064 — Consolidated Review & Hardening
+- **Severity:** low
+- **Area:** `internal/core/blocklist/`
+- **Problem:** Обёртка `Match(s string) bool` вызывает `ac.FindAllString(s)` (из `github.com/rrethy/ahocorasick`), который аллоцирует свежий слайс на каждое совпадение, даже когда нужен только булев ответ «есть хоть одно совпадение». Для каждого запроса на каждом IP это лишняя аллокация.
+- **Resolution:** Если ahocorasick не предоставляет `MatchBool`, заменить на однопроходный поиск с ранним выходом: написать тонкую обёртку, которая использует `FindAllString` с лимитом 1 или перейти на `Contains` из другой библиотеки Aho-Corasick.
+- **Status:** open
+
+---
+
+### [064-RP] RecentPaths cache reuse (backing array)
+
+- **Flow:** #064 — Consolidated Review & Hardening
+- **Severity:** low
+- **Area:** `internal/core/state/` (tracker, IPState)
+- **Problem:** `RecentPaths()` возвращает новый слайс через `append([]string(nil), ...)`. При высокой частоте запросов (десятки тысяч IP/сек) это создаёт избыточное давление на GC. Можно переиспользовать backing array и возвращать `pathCache[:n]`.
+- **Resolution:** Добавить `pool` (sync.Pool) для слайсов RecentPaths или вернуть срез поверх существующего массива с копированием только при одновременном чтении/записи. Требует осторожной синхронизации — см. ring-buf под rwlock.
+- **Status:** open
+
+---
+
+### [064-APIV] PluginAPIVersion в Manifest
+
+- **Flow:** #064 — Consolidated Review & Hardening
+- **Severity:** low
+- **Area:** `pkg/plugin/` (Manifest)
+- **Problem:** `Manifest` содержит `PluginVersion` (версия реализации), но не `APIVersion` (версия контракта plugin/host). При изменении ExecJSON протокола (например, новые поля в ThreatEvent) старый плагин с `PluginVersion="1.0.0"` не может сообщить, что он несовместим. Валидатор не может отличить несовместимость от простого «старый».
+- **Resolution:** Добавить `APIVersion string` в Manifest. Плагины и хост декларируют поддерживаемую версию API. Валидатор (pkg/pipeline) проверяет совместимость при старте.
+- **Status:** open
+
+---
+
+### [064-PW] Processors wiring: appCtx вместо context.Background(), Close на shutdown
+
+- **Flow:** #064 — Consolidated Review & Hardening
+- **Severity:** medium
+- **Area:** `internal/core/whitelist/`, `internal/core/chaincheck/`, `cmd/arxsentinel/pipeline.go`
+- **Problem:** ChainChecker и Verifier в `SharedResources` создаются с `context.Background()`, а не с `appCtx`. При SIGHUP/graceful shutdown эти компоненты не получают сигнал отмены и могут зависнуть на сетевых вызовах (DNS verify, ChainGuard API). Кроме того, у Verifier и ChainChecker нет метода `Close()`, поэтому drain в `runPipeline` не может дождаться их завершения.
+- **Resolution:** Пробросить `appCtx` при создании Verifier и ChainChecker. Добавить интерфейс `io.Closer` или канал `Done()`. В `runPipeline` вызывать `Close()` (или ожидать `Done()`) в фазе drain.
+- **Status:** open
+
+---
+
+### [064-DB] Optional drain budget: runPipeline без общего таймаута
+
+- **Flow:** #064 — Consolidated Review & Hardening
+- **Severity:** low
+- **Area:** `cmd/arxsentinel/pipeline.go` (`runPipeline`)
+- **Problem:** Drain-цикл в `runPipeline` использует `context.Background()` для финальной записи буферов. Если flush зависает (NFS stall, сетевой executor), shutdown блокируется бесконечно — процесс не завершается. Нет общего таймаута на drain.
+- **Resolution:** Рассмотреть ~30s drain контекст, производный от `appCtx`: `drainCtx, cancel := context.WithTimeout(appCtx, 30*time.Second)`. Использовать `drainCtx` для финального flush вместо `context.Background()`. После таймаута логировать предупреждение и завершать процесс.
+- **Status:** open
+
+---
+
 ## Resolved
 
 ### [051-stdin] Unit tests for pkg/source/stdin
