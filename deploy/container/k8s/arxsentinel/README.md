@@ -165,6 +165,12 @@ Source types `exec`, `syslog` (network syslog receiver; `addr: udp://0.0.0.0:551
 | `ARXSENTINEL_STATE_GC_INTERVAL` | duration | `60s` | GC interval |
 | `ARXSENTINEL_STATE_MAX_TRACKED_IPS` | int | `100000` | Max tracked IPs |
 
+#### Source (syslog)
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `ARXSENTINEL_SYSLOG_MAX_CONNECTIONS` | int | `1000` | Max concurrent TCP connections for syslog listener (H5) |
+
 #### Detectors — probe, bruteforce, crawler, no-asset
 
 | Variable | Type | Default | Description |

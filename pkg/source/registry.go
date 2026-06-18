@@ -51,6 +51,7 @@ type InputConfig struct {
 	EnvelopeField string // field name for ndjson envelope extraction
 	PullInterval  string // polling interval for pull mode, e.g. "30s"
 	MaxBodyBytes  int    // max request body size; default 10485760 (10MB)
+	MaxConnections int   // max concurrent TCP connections; syslog only, default 0 = use defaultMaxConns (1000)
 }
 
 // LineParser — read-only view of a log line parser.

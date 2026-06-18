@@ -54,9 +54,11 @@ const defaultMaxConns = 1000
 //	"udp://:5514", "tcp://:514", "unix:///var/run/arx.sock",
 //	"unixgram:///var/run/arx.sock"
 //
+// maxConnections limits concurrent TCP connections (0 = defaultMaxConns).
+//
 // Called from: pkg/source registry (init() → Build).
 // Non-blocking — returns immediately with a configured instance or error.
-func New(addr string, parser pkgsource.LineParser, logFn func(string, string, string)) (*SyslogSource, error) {
+func New(addr string, parser pkgsource.LineParser, logFn func(string, string, string), maxConnections int) (*SyslogSource, error) {
 	network, host, err := parseAddr(addr)
 	if err != nil {
 		return nil, fmt.Errorf("syslog source: %w", err)
@@ -64,12 +66,17 @@ func New(addr string, parser pkgsource.LineParser, logFn func(string, string, st
 	if parser == nil {
 		return nil, fmt.Errorf("syslog source %s: parser must not be nil", addr)
 	}
+	maxConns := maxConnections
+	if maxConns <= 0 {
+		maxConns = defaultMaxConns
+	}
 	return &SyslogSource{
-		name:    "syslog:" + addr,
-		network: network,
-		host:    host,
-		parser:  parser,
-		logFn:   logFn,
+		name:      "syslog:" + addr,
+		network:   network,
+		host:      host,
+		parser:    parser,
+		logFn:     logFn,
+		maxConns:  maxConns,
 	}, nil
 }
 
@@ -265,7 +272,7 @@ func (s *SyslogSource) handleConn(ctx context.Context, conn net.Conn, out chan<-
 
 func init() {
 	pkgsource.Register("syslog", func(cfg pkgsource.InputConfig, opts pkgsource.BuildOptions) (plugin.Source, error) {
-		return New(cfg.Addr, opts.Parser, opts.LogFn)
+		return New(cfg.Addr, opts.Parser, opts.LogFn, cfg.MaxConnections)
 	})
 	pkgsource.RegisterManifest("syslog", (&SyslogSource{}).Manifest())
 }
