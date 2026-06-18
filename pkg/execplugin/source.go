@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
@@ -40,6 +41,7 @@ import (
 		execPath  string // Internal — plugin binary path. Consumer: Run
 		linesRead atomic.Int64 // Internal — lines successfully parsed. Consumer: Stats
 		parseErrs atomic.Int64 // Internal — JSON parse failures. Consumer: Stats
+		dropped   atomic.Int64 // Internal — entries dropped due to full output channel. Consumer: Stats (H2)
 	}
 
 // NewSource creates an ExecSource.
@@ -74,11 +76,16 @@ func (s *ExecSource) Name() string {
 // Blocking — runs until ctx cancellation or plugin error.
 func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
 	// Create the ManagedProcess for this Run() session
-	proc, err := NewManagedProcess(context.Background(), s.execPath)
+	proc, err := NewManagedProcess(ctx, s.execPath)
 	if err != nil {
 		return fmt.Errorf("exec source %q: start plugin: %w", s.execPath, err)
 	}
 	defer proc.Close()
+
+	// Устанавливаем таймаут на чтение строк из stdout плагина (H2, L1).
+	// Если плагин завис и не отправляет данные дольше 30s, Recv() вернёт
+	// timeout error, что приведёт к пересозданию процесса при следующем Run().
+	proc.SetReadTimeout(30 * time.Second)
 
 	// Send start signal
 	startMsg, _ := json.Marshal(StartRequest{V: ProtoVersion, Action: "start"})
@@ -90,7 +97,7 @@ func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 	// Larger buffer to ensure entries are delivered even if main loop is slow.
 	// WHY 256: accommodates burst parsing during initial sync while staying bounded.
 	entries := make(chan *plugin.LogEntry, 256)
-	readErr := make(chan error, 1)
+	readErr := make(chan error, 2)
 
 	// Goroutine reads stdout and sends entries to internal channel
 	go func() {
@@ -146,7 +153,7 @@ func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 
 			default:
 				// out channel is full — drop entry (non-blocking send policy)
-				// Note: dropped counter is not incremented in Phase 1
+				s.dropped.Add(1)
 			}
 
 		case err := <-readErr:
@@ -173,7 +180,7 @@ func (s *ExecSource) Stats() plugin.SourceStats {
 	return plugin.SourceStats{
 		LinesRead:   s.linesRead.Load(),
 		ParseErrors: s.parseErrs.Load(),
-		Dropped:     0, // Phase 1 doesn't track drops
+		Dropped:     s.dropped.Load(),
 	}
 }
 
