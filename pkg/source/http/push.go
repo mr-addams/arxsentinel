@@ -24,8 +24,11 @@ import (
 // Called from: HTTPSource.Run() when mode == "push". Non-blocking.
 func runPush(ctx context.Context, cfg *parsedConfig, handler nethttp.Handler) error {
 	server := &nethttp.Server{
-		Addr:    cfg.host + ":" + cfg.port,
-		Handler: handler,
+		Addr:              cfg.host + ":" + cfg.port,
+		Handler:           handler,
+		ReadTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	if cfg.scheme == "https" {
@@ -64,12 +67,10 @@ func bearerAuth(token string, next nethttp.Handler) nethttp.Handler {
 	}
 	return nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		auth := r.Header.Get("Authorization")
-		if len(auth) < 7 || auth[:7] != "Bearer " {
-			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
-			return
-		}
 		// Constant-time comparison prevents timing attacks on token validation.
-		if subtle.ConstantTimeCompare([]byte(auth[7:]), []byte(token)) != 1 {
+		// Compare the full "Bearer <token>" string including the prefix.
+		expected := "Bearer " + token
+		if subtle.ConstantTimeCompare([]byte(auth), []byte(expected)) != 1 {
 			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
 			return
 		}
