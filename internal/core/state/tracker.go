@@ -391,9 +391,10 @@ func (t *Tracker) RunGC(ctx context.Context, interval time.Duration) {
 			}
 			return
 		case <-ticker.C:
+			startedAt := time.Now().UTC()
 			deleted, remaining, d := t.runGC()
 			if t.logFn != nil && deleted > 0 {
-				t.logFn("GC", fmt.Sprintf("deleted %d inactive IPs, remaining %d (duration=%v)", deleted, remaining, d), "info")
+				t.logFn("GC", fmt.Sprintf("deleted %d inactive IPs, remaining %d (started_at=%s, duration=%v)", deleted, remaining, startedAt.Format(time.RFC3339), d), "info")
 			}
 		}
 	}
