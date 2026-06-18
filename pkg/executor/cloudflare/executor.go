@@ -69,7 +69,7 @@ type CloudflareExecutor struct {
 	listID     string
 	instanceID string
 
-	mu     sync.Mutex
+	mu     sync.RWMutex
 	banned map[string]banRecord
 	stats  struct {
 		executed atomic.Int64
@@ -381,20 +381,41 @@ func (e *CloudflareExecutor) flush(ctx context.Context, events []plugin.ThreatEv
 	e.dedupWin.MarkBatch(markedIPs)
 }
 
+// sweep removes expired bans from Cloudflare and the local banned map.
+// Only entries with a non-empty cfItemID (i.e. synced from CF) are eligible.
+//
+// Two-phase cleanup:
+//
+//	Phase 1 — collect expired entries (cfItemID + IP) under RLock (read-only).
+//	Phase 2 — call RemoveItems API.
+//	Phase 3 — delete from banned map only on success.
+//
+// This prevents the "lost ban" scenario: if the API call fails, the entry
+// stays in the map and will be retried on the next sweep cycle.
 func (e *CloudflareExecutor) sweep(ctx context.Context) {
-	e.mu.Lock()
-	expired := make([]string, 0)
+	type expiredEntry struct {
+		itemID string
+		ip     string
+	}
+
+	e.mu.RLock()
+	expired := make([]expiredEntry, 0, len(e.banned))
 	now := time.Now()
 	for ip, rec := range e.banned {
 		if rec.cfItemID != "" && now.Sub(rec.addedAt) > e.cfg.TTL {
-			expired = append(expired, rec.cfItemID)
-			delete(e.banned, ip)
+			expired = append(expired, expiredEntry{itemID: rec.cfItemID, ip: ip})
 		}
 	}
-	e.mu.Unlock()
+	e.mu.RUnlock()
 
 	if len(expired) == 0 {
 		return
+	}
+
+	// Build the list of cfItemIDs for the API call.
+	itemIDs := make([]string, len(expired))
+	for i, entry := range expired {
+		itemIDs[i] = entry.itemID
 	}
 
 	if !e.waitForPendingOp(ctx) {
@@ -402,7 +423,7 @@ func (e *CloudflareExecutor) sweep(ctx context.Context) {
 	}
 
 	opID, err := e.doWithRetry(ctx, func() (string, error) {
-		return e.client.RemoveItems(ctx, e.listID, expired)
+		return e.client.RemoveItems(ctx, e.listID, itemIDs)
 	})
 	if err != nil {
 		e.stats.errors.Add(int64(len(expired)))
@@ -416,7 +437,14 @@ func (e *CloudflareExecutor) sweep(ctx context.Context) {
 		e.pendingMu.Unlock()
 	}
 
-	e.stats.swept.Add(int64(len(expired))) // M7: swept — отдельный счётчик снятых банов
+	// Phase 3: remove from banned map only on successful API call.
+	e.mu.Lock()
+	for _, entry := range expired {
+		delete(e.banned, entry.ip)
+	}
+	e.mu.Unlock()
+
+	e.stats.swept.Add(int64(len(expired))) // M7: swept — separate counter for removed bans
 }
 
 func (e *CloudflareExecutor) Stats() plugin.ExecutorStats {
@@ -436,17 +464,18 @@ func (e *CloudflareExecutor) meetsMinLevel(level string) bool {
 }
 
 func (e *CloudflareExecutor) isDuplicate(ip string) bool {
-	// Шаг 1: dedup-окно (чистый Contains, без side-effect).
-	// Mark вызывается отдельно из flush() после успешного AddItems —
-	// это flaky-safe семантика: ошибка CF API не отравляет окно.
+	// Step 1: dedup window (pure Contains, no side-effect).
+	// Mark is called separately from flush() after a successful AddItems —
+	// this is flaky-safe: a CF API error does not poison the window.
 	if e.dedupWin.Contains(ip) {
 		return true
 	}
 
-	// Шаг 2: fallback на banned-map для обратной совместимости
-	// (если DedupWindow не сконфигурирован или ещё не отработал).
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	// Step 2: fallback to banned-map for backward compatibility
+	// (when DedupWindow is not configured or has not yet been populated).
+	// RLock is sufficient — isDuplicate is a read-only check.
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	_, exists := e.banned[ip]
 	return exists
 }
