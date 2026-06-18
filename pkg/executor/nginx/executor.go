@@ -97,17 +97,36 @@ func (e *NginxExecutor) Type() string {
 // ++++++++++++++++++++++++++ File I/O helpers ++++++++++++++++++++++++++++++++
 
 // writeFile atomically writes data to path using a .tmp intermediate file.
-// Writes to path + ".tmp", calls Sync(), then renames to path.
-// This prevents nginx from reading a partially written file.
+// Opens the .tmp file, writes data, calls Sync() (H4), then renames to path.
+// Sync() guarantees the data is on disk before the atomic rename — without it,
+// a crash after rename but before sync could leave an empty file for nginx.
 func writeFile(path, data string) error {
 	dir := filepath.Dir(path)
 	tmpPath := path + ".tmp"
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("writeFile: mkdir: %w", err)
 	}
-	if err := os.WriteFile(tmpPath, []byte(data), 0644); err != nil {
+
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("writeFile: create tmp: %w", err)
+	}
+
+	if _, err := f.WriteString(data); err != nil {
+		f.Close()
 		return fmt.Errorf("writeFile: write tmp: %w", err)
 	}
+
+	// H4: fsync перед rename — гарантия, что данные на диске.
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return fmt.Errorf("writeFile: sync tmp: %w", err)
+	}
+
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("writeFile: close tmp: %w", err)
+	}
+
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("writeFile: rename: %w", err)
 	}
@@ -116,6 +135,8 @@ func writeFile(path, data string) error {
 
 // saveState writes the banned map as a JSON file at StateFile (if configured).
 // Format: {"ip": "2026-06-01T12:00:00Z", ...}.
+// M6: timestamps are serialized as RFC3339 UTC; timezone is not preserved —
+// all times are stored and restored as UTC to avoid DST/timezone ambiguity.
 func (e *NginxExecutor) saveState(banned map[string]time.Time) {
 	if e.cfg.StateFile == "" {
 		return
@@ -228,6 +249,14 @@ func (e *NginxExecutor) runReload(ctx context.Context) {
 //
 // With a header line: "# managed by arxsentinel — do not edit manually\n"
 func (e *NginxExecutor) flush(ctx context.Context, banned map[string]time.Time) {
+	// L4: проверка отмены контекста перед началом flush — не начинаем запись
+	// если pipeline уже завершается. Избегаем лишней IO и reload при shutdown.
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
 	if len(banned) == 0 {
 		return
 	}
