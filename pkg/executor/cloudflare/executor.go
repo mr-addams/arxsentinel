@@ -258,7 +258,16 @@ func (e *CloudflareExecutor) waitForPendingOp(ctx context.Context) bool {
 		return true
 	}
 
+	// Use a reusable timer instead of time.After to avoid accumulating
+	// unreclaimed timers in the heap across multiple poll iterations.
+	timer := time.NewTimer(0)
+	if !timer.Stop() {
+		<-timer.C
+	}
+	defer timer.Stop()
+
 	for _, delay := range pollDelays {
+		timer.Reset(delay)
 		select {
 		case <-ctx.Done():
 			// Clear pending state so the next Run() starts clean on restart.
@@ -266,7 +275,7 @@ func (e *CloudflareExecutor) waitForPendingOp(ctx context.Context) bool {
 			e.pendingOpID = ""
 			e.pendingMu.Unlock()
 			return false
-		case <-time.After(delay):
+		case <-timer.C:
 		}
 
 		status, err := e.client.PollBulkOperation(ctx, opID)
