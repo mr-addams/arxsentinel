@@ -326,7 +326,8 @@ project-level documentation for the full input schema.
 |----------|----------|---------|----------|---------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
 | `type`   | `string` | —       | **yes**  | Must be `"syslog"`.                                                                               | `in.Type == "syslog"`.                                                                              |
 | `addr`   | `string` | —       | **yes**  | Listen address. URI format: `"udp://:5514"`, `"tcp://:514"`, `"unix:///path"`, `"unixgram:///path"`. | `parseAddr()`; unknown scheme or empty host fails at startup.                                       |
-| `parser` | `string` | —       | **yes**  | Parser for log lines after envelope stripping: `combined`, `json`, `regex`, or a profile name.    | Not nil — checked in `New()`.                                                                        |
+| `parser`          | `string` | —      | **yes**  | Parser for log lines after envelope stripping: `combined`, `json`, `regex`, or a profile name.    | Not nil — checked in `New()`.                                                                        |
+| `max_connections` | `int`    | `1000` | no       | Maximum simultaneous TCP/Unix stream connections. UDP/unixgram are connectionless and unaffected. | Env: `ARXSENTINEL_SYSLOG_MAX_CONNECTIONS`. Value ≤ 0 defaults to 1000.                              |
 
 ### Validation Rules
 
