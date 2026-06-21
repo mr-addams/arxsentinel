@@ -2,8 +2,8 @@
 //   Tests for ExecutorRegistry: registration, lookup, error handling.
 //
 //   Тесты объявлены в `package executor` (а не `executor_test`) чтобы получить
-//   прямой доступ к singleton-картам `factories`/`manifests` и иметь возможность
-//   снимать регистрацию в t.Cleanup. Без этого на 2-м прогоне `go test -count>1`
+//   доступ к пакетному `unregister()` helper и иметь возможность снимать
+//   регистрацию в t.Cleanup. Без этого на 2-м прогоне `go test -count>1`
 //   в том же бинаре Register() паникует на дубликате (см. дефект [068-1]).
 //   Это test-only изменение package declaration — production-код реестра не трогаем.
 
@@ -16,14 +16,14 @@ import (
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
-// unregisterForTest удаляет name из singleton-реестра. Тестовая обёртка для
-// идемпотентности к `go test -count>1`: на 2-м прогоне имя уже занято.
+// unregisterForTest удаляет name из singleton-реестра.
+// Тестовая обёртка для идемпотентности к `go test -count>1`: на 2-м прогоне
+// имя уже занято. Делегирует в unregister() — пакетный helper, обёрнутый
+// вокруг generic-ядра (Flow 070 / Task 1.1.4). Семантика идентична оригиналу:
+// cleanup глобального singleton между прогонами через Delete().
 func unregisterForTest(names ...string) {
-	mu.Lock()
-	defer mu.Unlock()
 	for _, n := range names {
-		delete(factories, n)
-		delete(manifests, n)
+		unregister(n)
 	}
 }
 

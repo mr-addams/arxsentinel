@@ -14,18 +14,27 @@
 //     Executor implementations — each self-registers via init()
 //
 //   DEPENDENCY RULE:
-//     This package imports only pkg/plugin and pkg/execplugin.
+//     This package imports only pkg/plugin, pkg/pluginregistry and pkg/execplugin.
 //     No import from internal/ — external developers must be able to use this package.
+//
+//   GENERIC CORE (Flow 070 / Task 1.1.4):
+//     Store + mutex + Register/Get/Names/Manifest* are delegated to a singleton
+//     *pluginregistry.Registry[Factory, plugin.Manifest]. The thin Build() wrapper
+//     stays here because its signature is executor-specific — most importantly,
+//     the execplugin fallback (unknown name + cfg.Exec set → execplugin.NewExecutor)
+//     is variadic logic per Decision 2 and lives in the wrapper, NOT in the generic
+//     core. The public API is preserved byte-for-byte: every package-level function
+//     still has the same signature, so plugin init() call-sites
+//     (cloudflare, mikrotik, nginx, sentinel, exec/) compile unchanged.
 
 package executor
 
 import (
 	"fmt"
-	"sort"
-	"sync"
 
 	"github.com/mr-addams/arxsentinel/pkg/execplugin"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arxsentinel/pkg/pluginregistry"
 )
 
 // ExecutorConfig — runtime config for a single executor instance.
@@ -49,22 +58,16 @@ type ExecutorConfig struct {
 // Returns a fully initialised plugin.Executor or an error.
 type Factory func(cfg ExecutorConfig) (plugin.Executor, error)
 
-var (
-	mu        sync.RWMutex
-	factories = map[string]Factory{}
-	manifests = map[string]plugin.Manifest{}
-)
+// defaultReg — package singleton holding all executor factories and manifests.
+// Lives across test runs in a single binary, which is why tests need a way to
+// unregister their injected names (see unregisterForTest in registry_test.go).
+var defaultReg = pluginregistry.NewRegistry[Factory, plugin.Manifest]()
 
 // Register registers a Factory under name.
 // Panics on duplicate registration — duplication is a programmer error caught at startup.
 // Called from init() in each executor implementation file.
 func Register(name string, f Factory) {
-	mu.Lock()
-	defer mu.Unlock()
-	if _, exists := factories[name]; exists {
-		panic(fmt.Sprintf("pkg/executor: duplicate registration for %q", name))
-	}
-	factories[name] = f
+	defaultReg.Register(name, f)
 }
 
 // Build creates an executor by type name using the registered factory.
@@ -74,9 +77,7 @@ func Register(name string, f Factory) {
 // an execplugin.ExecExecutor — this allows arbitrary plugin names without
 // pre-registration in the compiled binary.
 func Build(cfg ExecutorConfig) (plugin.Executor, error) {
-	mu.RLock()
-	f, ok := factories[cfg.Type]
-	mu.RUnlock()
+	f, ok := defaultReg.Get(cfg.Type)
 	if !ok {
 		// Exec fallback: if a plugin binary is configured, build an ExecExecutor.
 		if cfg.Exec != "" {
@@ -88,35 +89,30 @@ func Build(cfg ExecutorConfig) (plugin.Executor, error) {
 }
 
 // RegisterManifest stores a static Manifest under name, parallel to Register.
-// Panics on duplicate registration — duplication is a programmer error caught at startup.
+// Lets the validator read an executor's data contract without constructing it.
 // Called from init() alongside Register in each executor implementation.
 func RegisterManifest(name string, m plugin.Manifest) {
-	mu.Lock()
-	defer mu.Unlock()
-	if _, exists := manifests[name]; exists {
-		panic(fmt.Sprintf("pkg/executor: duplicate manifest registration for %q", name))
-	}
-	manifests[name] = m
+	defaultReg.RegisterManifest(name, m)
 }
 
 // ManifestByName returns the static Manifest registered for name.
 // Safe to call concurrently. No side-effects — does not construct any executor.
 func ManifestByName(name string) (plugin.Manifest, bool) {
-	mu.RLock()
-	defer mu.RUnlock()
-	m, ok := manifests[name]
-	return m, ok
+	return defaultReg.ManifestByName(name)
 }
 
 // Names returns a sorted list of all registered executor type names.
 // Safe to call concurrently.
 func Names() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	names := make([]string, 0, len(factories))
-	for n := range factories {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
+	return defaultReg.Names()
+}
+
+// unregister removes the factory and manifest registered under name.
+// Test-only helper: production code never deletes — Register/RegisterManifest
+// are designed to be called once per name from init(), panicking on duplicates.
+// Counterpart lives here (not in the generic core) because deletion is not
+// part of the registry's public contract; only tests need it for idempotency
+// under `go test -count>1`. Returns silently if name is not registered.
+func unregister(name string) {
+	defaultReg.Delete(name)
 }
