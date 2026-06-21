@@ -129,7 +129,7 @@ jobs:
           # Run unit tests to separate our code regressions from upstream product changes.
           # A passing unit test suite means the Go binary is correct — failures are then
           # almost certainly caused by a product image update breaking our integration.
-          if go test ./... > /tmp/unit-tests.txt 2>&1; then
+          if go test -race -count=1 ./... > /tmp/unit-tests.txt 2>&1; then
             echo "**Unit tests:** ✅ PASS — binary is intact" >> "$summary"
             echo "" >> "$summary"
             echo "> Integration failures are likely caused by upstream product changes." >> "$summary"
