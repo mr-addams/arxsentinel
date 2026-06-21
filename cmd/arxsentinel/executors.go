@@ -125,13 +125,20 @@ func sortedKeys(m map[string]struct{}) []string {
 // Returns an error if any executor cannot be built or any named source cannot be found.
 // On error, the caller should log and continue — executor startup failure is not fatal
 // for the rest of the pipeline (streams still process logs).
+//
+// Flow 073 / Task 1.3.1 — F1 closure: utils.AsLogger() is passed into Build() so
+// the executor factory receives a real bridge instead of logger.Nop. The
+// pre-1.3.1 wiring had no logger argument at this layer; this is the cmd-side
+// counterpart of the registry signature change. EXECUTOR-tag diagnostics
+// (find/create list, sync errors, reload errors, sweep failures) become
+// observable in production output — see integration diff expected: +EXECUTOR log lines.
 func startExecutors(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup) error {
 	for _, ec := range cfg.Executors {
 		ex, err := pkgexecutor.Build(pkgexecutor.ExecutorConfig{
 			Name:   ec.Name,
 			Type:   ec.Type,
 			Config: ec.Config,
-		})
+		}, utils.AsLogger())
 		if err != nil {
 			return fmt.Errorf("executor %q: build: %w", ec.Name, err)
 		}

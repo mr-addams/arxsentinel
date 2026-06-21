@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
@@ -47,12 +47,15 @@ func (s *testEventSource) Pop(ctx context.Context) (plugin.ThreatEvent, error) {
 func newTestExecutor(t *testing.T, cfg map[string]any) *NginxExecutor {
 	t.Helper()
 
-	item := config.ExecutorItem{
+	// Flow 073 / Task 1.3.1: NewNginxExecutor now takes executor.ExecutorConfig
+	// directly (was config.ExecutorItem pre-1.3.1). The wrapper into the
+	// deprecated item shape is gone, mirroring the production register.go.
+	ec := executor.ExecutorConfig{
 		Name:   "test-nginx",
 		Type:   "nginx",
 		Config: cfg,
 	}
-	exec, err := NewNginxExecutor(item, logger.Nop)
+	exec, err := NewNginxExecutor(ec, logger.Nop)
 	if err != nil {
 		t.Fatalf("NewNginxExecutor: %v", err)
 	}

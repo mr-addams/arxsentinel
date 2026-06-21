@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/pkg/dedup"
+	"github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
@@ -29,8 +29,16 @@ const (
 	defaultSweepInterval = 15 * time.Minute
 )
 
-// NewMikroTikExecutor creates a new MikroTik executor from an ExecutorItem config.
-func NewMikroTikExecutor(cfg config.ExecutorItem, log logger.Logger) (plugin.Executor, error) {
+// NewMikroTikExecutor creates a new MikroTik executor from a generic
+// executor.ExecutorConfig (Flow 073 / Task 1.3.1 — was config.ExecutorItem
+// pre-1.3.1). The raw cfg.Config map is forwarded to parseConfig() which
+// validates the implementation-specific block; only cfg.Name is consumed
+// at this layer for the executor identity.
+//
+// `log` is the operational logger injected by the registry factory. The
+// pre-1.3.1 wiring passed logger.Nop here, which silently swallowed
+// EXECUTOR-tag diagnostics — this is the F1 closure point in MikroTik.
+func NewMikroTikExecutor(cfg executor.ExecutorConfig, log logger.Logger) (plugin.Executor, error) {
 	parsed, err := parseConfig(cfg.Config)
 	if err != nil {
 		return nil, fmt.Errorf("mikrotik: new executor: %w", err)

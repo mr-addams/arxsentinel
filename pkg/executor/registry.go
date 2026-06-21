@@ -5,7 +5,7 @@
 //
 //   WHAT IS HERE:
 //     ExecutorConfig   — runtime config passed to Factory
-//     Factory          — constructor signature: (ExecutorConfig) → Executor
+//     Factory          — constructor signature: (ExecutorConfig, Logger) → Executor
 //     Register         — called from init() of each executor file
 //     Build            — instantiate by name; fallback to execplugin when type unknown
 //     Names            — sorted list of registered names
@@ -14,8 +14,9 @@
 //     Executor implementations — each self-registers via init()
 //
 //   DEPENDENCY RULE:
-//     This package imports only pkg/plugin, pkg/pluginregistry and pkg/execplugin.
-//     No import from internal/ — external developers must be able to use this package.
+//     This package imports only pkg/plugin, pkg/pluginregistry, pkg/execplugin
+//     and pkg/logger. No import from internal/ — external developers must be
+//     able to use this package.
 //
 //   GENERIC CORE (Flow 070 / Task 1.1.4):
 //     Store + mutex + Register/Get/Names/Manifest* are delegated to a singleton
@@ -26,6 +27,14 @@
 //     core. The public API is preserved byte-for-byte: every package-level function
 //     still has the same signature, so plugin init() call-sites
 //     (cloudflare, mikrotik, nginx, sentinel, exec/) compile unchanged.
+//
+//   FLOW 073 TASK 1.3.1 — Logger injection (F1 closure):
+//     Factory now accepts a pkg/logger.Logger. Build() forwards its log argument
+//     to the registered factory, so cmd/arxsentinel can inject the real utils
+//     bridge instead of each executor defaulting to logger.Nop. This is the
+//     registry-side half of the executor logger restoration; factory-side and
+//     cmd-side are updated in the same atomic commit (orchestration fix 1,
+//     2026-06-22 — splitting them would leave a red-build intermediate state).
 
 package executor
 
@@ -33,6 +42,7 @@ import (
 	"fmt"
 
 	"github.com/mr-addams/arxsentinel/pkg/execplugin"
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	"github.com/mr-addams/arxsentinel/pkg/pluginregistry"
 )
@@ -55,8 +65,12 @@ type ExecutorConfig struct {
 // Factory — constructor function for a named executor type.
 //
 // Called by Build() when the Type is found in the registry.
-// Returns a fully initialised plugin.Executor or an error.
-type Factory func(cfg ExecutorConfig) (plugin.Executor, error)
+// `log` is the operational logger injected by the caller (cmd/arxsentinel
+// passes utils.AsLogger(); tests may pass logger.Nop). Flow 073 / Task 1.3.1 —
+// this is the F1 closure channel that restores EXECUTOR-tag diagnostics after
+// the registry stopped threading a logger through in pre-1.2 code. Returns a
+// fully initialised plugin.Executor or an error.
+type Factory func(cfg ExecutorConfig, log logger.Logger) (plugin.Executor, error)
 
 // defaultReg — package singleton holding all executor factories and manifests.
 // Lives across test runs in a single binary, which is why tests need a way to
@@ -76,7 +90,14 @@ func Register(name string, f Factory) {
 // When name is not registered but cfg.Exec is non-empty, falls back to building
 // an execplugin.ExecExecutor — this allows arbitrary plugin names without
 // pre-registration in the compiled binary.
-func Build(cfg ExecutorConfig) (plugin.Executor, error) {
+//
+// Flow 073 / Task 1.3.1: log is forwarded into the registered factory so
+// the executor receives a real operational logger instead of falling back to
+// logger.Nop inside the factory. The execplugin fallback path does NOT
+// receive log — execplugin has its own logger contract wired at the
+// execplugin layer (see Task 1.2.7 for executors; execplugin was migrated
+// earlier in Flow 072).
+func Build(cfg ExecutorConfig, log logger.Logger) (plugin.Executor, error) {
 	f, ok := defaultReg.Get(cfg.Type)
 	if !ok {
 		// Exec fallback: if a plugin binary is configured, build an ExecExecutor.
@@ -85,7 +106,7 @@ func Build(cfg ExecutorConfig) (plugin.Executor, error) {
 		}
 		return nil, fmt.Errorf("pkg/executor: unknown executor type %q; registered: %v", cfg.Type, Names())
 	}
-	return f(cfg)
+	return f(cfg, log)
 }
 
 // RegisterManifest stores a static Manifest under name, parallel to Register.

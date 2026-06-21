@@ -22,8 +22,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/pkg/dedup"
+	"github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
@@ -95,7 +95,16 @@ type CloudflareExecutor struct {
 	dedupWin *dedup.Window
 }
 
-func NewCloudflareExecutor(cfg config.ExecutorItem, log logger.Logger) (plugin.Executor, error) {
+// NewCloudflareExecutor creates a CloudflareExecutor from a generic
+// executor.ExecutorConfig (Flow 073 / Task 1.3.1 — was config.ExecutorItem
+// pre-1.3.1). The raw cfg.Config map is forwarded to parseConfig() which
+// validates the implementation-specific block; only cfg.Name is consumed
+// at this layer for the executor identity.
+//
+// `log` is the operational logger injected by the registry factory. The
+// pre-1.3.1 wiring passed logger.Nop here, which silently swallowed
+// EXECUTOR-tag diagnostics — this is the F1 closure point in Cloudflare.
+func NewCloudflareExecutor(cfg executor.ExecutorConfig, log logger.Logger) (plugin.Executor, error) {
 	parsed, err := parseConfig(cfg.Config, log)
 	if err != nil {
 		return nil, fmt.Errorf("cloudflare: new executor: %w", err)

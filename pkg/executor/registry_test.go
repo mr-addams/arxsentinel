@@ -13,6 +13,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -28,7 +29,7 @@ func unregisterForTest(names ...string) {
 }
 
 func TestRegistry_TypedFactory(t *testing.T) {
-	Register("test-typed", func(cfg ExecutorConfig) (plugin.Executor, error) {
+	Register("test-typed", func(cfg ExecutorConfig, _ logger.Logger) (plugin.Executor, error) {
 		return &mockExecutor{name: cfg.Name}, nil
 	})
 	t.Cleanup(func() { unregisterForTest("test-typed") })
@@ -36,7 +37,7 @@ func TestRegistry_TypedFactory(t *testing.T) {
 	exe, err := Build(ExecutorConfig{
 		Name: "my-executor",
 		Type: "test-typed",
-	})
+	}, logger.Nop)
 	if err != nil {
 		t.Fatalf("Build(test-typed) error = %v, want nil", err)
 	}
@@ -52,7 +53,7 @@ func TestRegistry_UnknownType(t *testing.T) {
 	_, err := Build(ExecutorConfig{
 		Name: "unknown",
 		Type: "nonexistent_type_xyz",
-	})
+	}, logger.Nop)
 	if err == nil {
 		t.Fatal("Build(unknown) expected error, got nil")
 	}
@@ -63,7 +64,7 @@ func TestRegistry_ExecFallback(t *testing.T) {
 		Name: "exec-fallback",
 		Type: "unregistered_type",
 		Exec: "../execplugin/testdata/executor.sh",
-	})
+	}, logger.Nop)
 	if err != nil {
 		t.Fatalf("Build(exec-fallback) error = %v, want nil", err)
 	}

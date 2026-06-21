@@ -27,7 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
@@ -67,10 +67,19 @@ type NginxExecutor struct {
 
 // ++++++++++++++++++++++++++ Constructor +++++++++++++++++++++++++++++++++++++
 
-// NewNginxExecutor creates a new NginxExecutor from a config.ExecutorItem.
+// NewNginxExecutor creates a new NginxExecutor from a generic
+// executor.ExecutorConfig (Flow 073 / Task 1.3.1 — was config.ExecutorItem
+// pre-1.3.1). The raw cfg.Config map is forwarded to parseConfig() which
+// validates the implementation-specific block; only cfg.Name is consumed
+// at this layer (used in the WARNING below and as the executor identity).
+//
+// `log` is the operational logger injected by the registry factory. The
+// pre-1.3.1 wiring passed logger.Nop here, which silently swallowed
+// EXECUTOR-tag diagnostics — this is the F1 closure point in Nginx.
+//
 // It parses the config, logs a WARNING if ReloadCmd is empty, and
 // initialises the banned map.
-func NewNginxExecutor(cfg config.ExecutorItem, log logger.Logger) (plugin.Executor, error) {
+func NewNginxExecutor(cfg executor.ExecutorConfig, log logger.Logger) (plugin.Executor, error) {
 	// Inject the operational logger. nil is replaced with logger.Nop so
 	// downstream code (including the WARNING below) never has to nil-check.
 	// See Flow 072 Decision 2.
