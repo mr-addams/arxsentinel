@@ -119,3 +119,13 @@ func Build(name string, cfg ProcessorConfig) (plugin.Processor, error) {
 func Names() []string {
 	return defaultReg.Names()
 }
+
+// unregister removes the factory registered under name.
+// Test-only helper: production code never deletes — Register is designed to be
+// called once per name from init(), panicking on duplicates. Counterpart lives
+// here (not in the generic core) because deletion is not part of the registry's
+// public contract; only tests need it for idempotency under `go test -count>1`.
+// Returns silently if name is not registered.
+func unregister(name string) {
+	defaultReg.Delete(name)
+}
