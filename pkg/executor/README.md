@@ -14,6 +14,49 @@ on at runtime:
 This document focuses on the NCS. The executor registry is documented
 inline (`registry.go`) and in the per-executor packages
 (`pkg/executor/cloudflare/`, `pkg/executor/mikrotik/`, `pkg/executor/nginx/`).
+The end-to-end registry contract — `Factory` type, `Build` entry point,
+and the `Logger` injection channel — is summarised below.
+
+## Executor Registry Contract (Flow 073 / Task 1.3.1)
+
+`registry.go` exposes the minimum API needed to wire a YAML `executors:`
+block into a running executor:
+
+```go
+type Factory func(cfg ExecutorConfig, log logger.Logger) (plugin.Executor, error)
+
+func Build(cfg ExecutorConfig, log logger.Logger) (plugin.Executor, error)
+func Register(name string, f Factory)
+func RegisterManifest(name string, m plugin.Manifest)
+```
+
+Key points:
+
+- `ExecutorConfig` is the generic descriptor the registry hands to each
+  factory — it carries `Name`, `Type`, optional `Exec` path, the raw
+  `Params` map, and the per-executor `Config` map (implementation-specific
+  payload parsed inside each package). It replaces `config.ExecutorItem`
+  on the registry boundary (the legacy `internal/sys/config.ExecutorItem`
+  shape is kept only for YAML migrate compatibility and is not a
+  dependency of `pkg/executor` or any per-executor package).
+- `Build(cfg, log)` looks the factory up by `cfg.Type` and forwards `log`
+  into it. `cmd/arxsentinel/executors.go` calls `pkgexecutor.Build(..., utils.AsLogger())`,
+  so executors receive the real operational logger instead of a
+  hard-coded `logger.Nop`. This is the F1 closure channel for executor
+  logging (Flow 072 deferred Task 1.2.7, formally closed for executors
+  by Flow 073 Task 1.3.1.5).
+- Each per-executor factory (`newCloudflareFactory`, `newMikroTikFactory`,
+  `newNginxFactory`) does the same forwarding — pass `cfg` and `log`
+  straight to its `New*Executor(cfg, log)`. The constructors themselves
+  keep a nil-safe fallback (`if log == nil { log = logger.Nop }`) so
+  tests and direct callers cannot crash on a log call.
+
+The `Exec` fallback path (`cfg.Exec != ""` and `Type` not registered) is
+intentionally **not** a `Factory` call — it builds an `execplugin.ExecExecutor`
+directly. execplugin has its own logger contract wired at the execplugin
+layer (see Task 1.2.7 for executors; execplugin was migrated earlier in
+Flow 072), so the registry does not need to thread `log` through that
+path.
 
 ---
 

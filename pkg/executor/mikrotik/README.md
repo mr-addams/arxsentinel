@@ -245,23 +245,25 @@ metrics endpoint without taking the executor lock.
 ## Constructors
 
 ```go
-func NewMikroTikExecutor(cfg config.ExecutorItem, log logger.Logger) (plugin.Executor, error)
+func NewMikroTikExecutor(cfg executor.ExecutorConfig, log logger.Logger) (plugin.Executor, error)
 ```
 
-`NewMikroTikExecutor` is the public constructor. It accepts a
-`config.ExecutorItem` (the deserialized per-executor block from the YAML
-configuration), decodes the `Config` from the `Config` map, validates
-the required fields, builds the underlying `Client`, and returns a
-fully initialized `*MikroTikExecutor`.
+`NewMikroTikExecutor` is the public constructor. It accepts an
+`executor.ExecutorConfig` (the generic `pkg/executor` descriptor: the
+`Name`/`Type`/`Config` map forwarded by `Build`), decodes the `Config`
+from the inner `Config` map, validates the required fields, builds the
+underlying `Client`, and returns a fully initialized `*MikroTikExecutor`.
 
 `log` is the operational logger used for the `EXECUTOR` tag. If `nil`
 is passed, the constructor replaces it with `pkg/logger.Nop` — the
 executor never crashes on a log call. The registry-based factory
-(`newMikroTikFactory`) always passes `Nop` and expects the calling
-application to inject a real logger via `cmd/arxsentinel` (see Flow 072
-Task 1.2.7). Pre-1.2 callers that relied on the implicit
-`internal/sys/utils.Log` should pass `internal/sys/utils.AsLogger()`
-once that bridge exists.
+(`newMikroTikFactory`) forwards the logger injected by `Build` (Flow 073
+/ Task 1.3.1 — this restores real EXECUTOR-tag diagnostics that were
+silently swallowed by `logger.Nop` before the closure of F1; pre-1.3
+this branch always passed `Nop`, see Flow 072 Task 1.2.7 for the deferred
+context that 1.3.1.5 formally confirms as closed for executors).
+Pre-1.2 callers that relied on the implicit `internal/sys/utils.Log`
+should pass `internal/sys/utils.AsLogger()` once that bridge exists.
 
 Unlike the Cloudflare executor, the HTTP client **is** built here:
 `Client` construction only performs configuration work (TLS config
@@ -283,8 +285,11 @@ func init() {
 ```
 
 `newMikroTikFactory` is the registry factory. It receives a
-stream-level `executor.ExecutorConfig`, wraps it into a
-`config.ExecutorItem`, and delegates to `NewMikroTikExecutor`. The
+stream-level `executor.ExecutorConfig` plus the logger forwarded by
+`Build`, and delegates to `NewMikroTikExecutor(cfg, log)`. Flow 073 /
+Task 1.3.1: the factory no longer wraps `cfg` into a `config.ExecutorItem`
+(deprecated in Phase 1.3) and no longer hard-codes `logger.Nop` —
+`log` is what `cmd/arxsentinel` injects via `utils.AsLogger()`. The
 manifest is registered separately so the agent can introspect plugin
 metadata before instantiating the executor.
 
@@ -393,7 +398,11 @@ Standard library:
 
 Project:
 
-- `internal/sys/config` — `config.ExecutorItem` (per-executor configuration block).
 - `pkg/logger` — `Logger` interface + `Nop` default (injected; replaces pre-1.2 `internal/sys/utils.Log`).
 - `pkg/plugin` — `Executor`, `ThreatEvent`, `EventSource`, `Manifest`, `ExecutorStats`.
-- `pkg/executor` — registry (`Register`, `RegisterManifest`).
+- `pkg/executor` — `ExecutorConfig` generic descriptor + registry (`Register`, `RegisterManifest`).
+
+> Note: as of Flow 073 / Task 1.3.1 this package no longer imports
+> `internal/sys/config`. The legacy `config.ExecutorItem` shape is kept
+> only in `internal/sys/config` for YAML migrate compatibility and will
+> be removed by a later cleanup flow.
