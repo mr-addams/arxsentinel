@@ -643,7 +643,7 @@ func TestPreRegisterExecutorQueues_WiringMismatch(t *testing.T) {
 	cfg := &config.Config{
 		Executors: []config.ExecutorTopConfig{{
 			Name: "cf-ban",
-			Sources: []config.ExecutorSourceRef{{
+			Sources: []queue.ExecutorSourceRef{{
 				Name:  "mismatch-stream",
 				Queue: &queue.QueueConfig{Type: queue.QueueTypeBbolt, Path: t.TempDir() + "/q.db"},
 			}},
@@ -676,7 +676,7 @@ func TestPreRegisterExecutorQueues_WiringMismatch(t *testing.T) {
 	cfgOK := &config.Config{
 		Executors: []config.ExecutorTopConfig{{
 			Name: "cf-ban",
-			Sources: []config.ExecutorSourceRef{{
+			Sources: []queue.ExecutorSourceRef{{
 				Name:  "ok-stream",
 				Queue: &queue.QueueConfig{Type: queue.QueueTypeMemory},
 			}},
@@ -699,7 +699,7 @@ func TestPreRegisterExecutorQueues_WiringMismatch(t *testing.T) {
 	cfgLegacy := &config.Config{
 		Executors: []config.ExecutorTopConfig{{
 			Name: "cf-ban",
-			Sources: []config.ExecutorSourceRef{
+			Sources: []queue.ExecutorSourceRef{
 				{Name: "legacy-stream"}, // Queue == nil
 			},
 		}},
@@ -719,7 +719,7 @@ func TestPreRegisterExecutorQueues_WiringMismatch(t *testing.T) {
 	cfgMixed := &config.Config{
 		Executors: []config.ExecutorTopConfig{{
 			Name: "cf-ban",
-			Sources: []config.ExecutorSourceRef{
+			Sources: []queue.ExecutorSourceRef{
 				{Name: "ok-stream", Queue: &queue.QueueConfig{Type: queue.QueueTypeMemory}},
 				{Name: "orphan-stream", Queue: &queue.QueueConfig{Type: queue.QueueTypeMemory}},
 			},

@@ -37,3 +37,17 @@ func (c QueueConfig) EffectiveKey(name string) string {
 	}
 	return "arxsentinel:queue:" + name
 }
+
+// ExecutorSourceRef — reference to a Named Channel Switch source.
+//
+// Name is the channel name registered by sentinel-threat sink. Queue is an optional
+// per-source queue backend; nil → default MemoryQueue with DefaultBufferSize (legacy
+// behaviour, identical to pre-QueueConfig state).
+//
+// YAML tags match the original form — user configs remain valid without change.
+// Type moved to this package per Flow 073 Task 1.3.2.2 (ADR-002 ownership: Executor
+// source routing is Core, so the type lives alongside QueueConfig).
+type ExecutorSourceRef struct {
+	Name  string       `yaml:"name"`            // YAML: channel name registered by sentinel-threat sink
+	Queue *QueueConfig `yaml:"queue,omitempty"` // YAML: optional per-source queue backend; nil → default MemoryQueue
+}

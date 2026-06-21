@@ -96,7 +96,7 @@ func AttachWriterWithQueue(name string, q queue.Queue) error {
 // падал на misconfiguration (например, неверный path, недоступный Redis).
 // Для memory (и nil cfg) ошибка невозможна — функция всегда возвращает nil.
 // Возврат ошибки существует ради bbolt/redis и будущих backend-типов.
-func RegisterSinkFromConfig(name string, cfg *queue.QueueConfig) error {
+func RegisterSinkFromConfig(name string, cfg *queue.QueueConfig, log logger.Logger) error {
 	// Nil-конфиг → откат на legacy MemoryQueue-путь, чтобы существующее поведение
 	// сохранилось без изменения кода в точке вызова.
 	if cfg == nil {
@@ -109,12 +109,8 @@ func RegisterSinkFromConfig(name string, cfg *queue.QueueConfig) error {
 		_, err := AttachWriter(name, 0)
 		return err
 	case queue.QueueTypeBbolt:
-		// pkg/logger.Nop is used here as an intermediate state — the real bridge
-		// (internal/sys/utils.AsLogger()) is wired in cmd/arxsentinel by Flow 072
-		// Task 1.2.7. Until then the queue silently swallows QUEUE-tag warnings,
-		// which matches the pre-1.2.7 behaviour of pkg/executor (silent by default
-		// except for explicit Log calls in factory code).
-		q, err := queue.NewBboltQueue(cfg.Path, cfg.EffectiveBucket(), logger.Nop)
+		// Bbolt queue: log flows through RegisterSinkFromConfig (Flow 073 Task 1.3.2.3 — F1 closure for bbolt).
+		q, err := queue.NewBboltQueue(cfg.Path, cfg.EffectiveBucket(), log)
 		if err != nil {
 			return fmt.Errorf("channelswitch: bbolt queue for %q (path=%q): %w", name, cfg.Path, err)
 		}

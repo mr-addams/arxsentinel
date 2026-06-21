@@ -72,7 +72,7 @@ func preRegisterExecutorQueues(cfg *config.Config) error {
 			if src.Queue == nil {
 				continue
 			}
-			if err := pkgexecutor.RegisterSinkFromConfig(src.Name, src.Queue); err != nil {
+			if err := pkgexecutor.RegisterSinkFromConfig(src.Name, src.Queue, utils.AsLogger()); err != nil {
 				return fmt.Errorf("executor %q source %q: %w", ec.Name, src.Name, err)
 			}
 		}

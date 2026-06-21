@@ -11,6 +11,7 @@ import (
 
 	"github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -127,7 +128,7 @@ func TestNamedSwitch_GetSourceNotFound(t *testing.T) {
 func TestRegisterSinkFromConfig_NilCfg(t *testing.T) {
 	name := t.Name()
 
-	err := executor.RegisterSinkFromConfig(name, nil)
+	err := executor.RegisterSinkFromConfig(name, nil, logger.Nop)
 	if err != nil {
 		t.Fatalf("RegisterSinkFromConfig(nil) error = %v, want nil", err)
 	}
@@ -163,7 +164,7 @@ func TestRegisterSinkFromConfig_TypeMemory(t *testing.T) {
 	name := t.Name()
 	cfg := &queue.QueueConfig{Type: queue.QueueTypeMemory}
 
-	err := executor.RegisterSinkFromConfig(name, cfg)
+	err := executor.RegisterSinkFromConfig(name, cfg, logger.Nop)
 	if err != nil {
 		t.Fatalf("RegisterSinkFromConfig(memory) error = %v, want nil", err)
 	}
@@ -201,7 +202,7 @@ func TestRegisterSinkFromConfig_TypeBbolt(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "queue.db")
 	cfg := &queue.QueueConfig{Type: queue.QueueTypeBbolt, Path: dbPath}
 
-	err := executor.RegisterSinkFromConfig(name, cfg)
+	err := executor.RegisterSinkFromConfig(name, cfg, logger.Nop)
 	if err != nil {
 		t.Fatalf("RegisterSinkFromConfig(bbolt) error = %v, want nil", err)
 	}
@@ -237,7 +238,7 @@ func TestRegisterSinkFromConfig_TypeRedis_InvalidURL(t *testing.T) {
 		URL:  "not-a-valid-redis-url", // redis.ParseURL ожидает схему redis://
 	}
 
-	err := executor.RegisterSinkFromConfig(name, cfg)
+	err := executor.RegisterSinkFromConfig(name, cfg, logger.Nop)
 	if err == nil {
 		t.Fatal("RegisterSinkFromConfig(redis, bad url) expected error, got nil")
 	}
@@ -262,7 +263,7 @@ func TestRegisterSinkFromConfig_UnknownType(t *testing.T) {
 	name := t.Name()
 	cfg := &queue.QueueConfig{Type: queue.QueueType("kafka")}
 
-	err := executor.RegisterSinkFromConfig(name, cfg)
+	err := executor.RegisterSinkFromConfig(name, cfg, logger.Nop)
 	if err == nil {
 		t.Fatal("RegisterSinkFromConfig(unknown) expected error, got nil")
 	}

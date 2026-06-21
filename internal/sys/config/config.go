@@ -130,33 +130,10 @@ type ExecutorItem struct {
 // New syntax: executors: [{name: my-action, type: cloudflare, sources: [{name: cf-stream}], config: {…}}]
 // Each executor reads ThreatEvents from Named Channel Switch sources listed in Sources.
 type ExecutorTopConfig struct {
-	Name    string              `yaml:"name"`    // YAML: unique name for this executor instance
-	Type    string              `yaml:"type"`    // YAML: executor type registered in pkg/executor
-	Sources []ExecutorSourceRef `yaml:"sources"` // YAML: named channels to read ThreatEvents from
-	Config  map[string]any      `yaml:"config"`  // YAML: executor-specific structured configuration
-}
-
-// ExecutorSourceRef — reference to a Named Channel Switch source.
-//
-// Queue — optional override of the queue backend for this named channel.
-// If nil (omitted from YAML), the default MemoryQueue with DefaultBufferSize
-// is used (legacy behaviour, identical to pre-QueueConfig state).
-//
-// When set, main.go pre-registers the queue with the chosen backend (memory/bbolt/redis)
-// BEFORE stream goroutines start, so the sentinel-threat sink picks it up via
-// Named Channel Switch fan-in (AttachWriter reuses an existing queue by name).
-//
-// YAML example:
-//
-//	sources:
-//	  - name: sentinel-cf
-//	    queue:
-//	      type: bbolt          # memory | bbolt | redis
-//	      path: /var/lib/arxsentinel/cf-queue.db
-//	      bucket: q            # optional, default "arxsentinel"
-type ExecutorSourceRef struct {
-	Name  string             `yaml:"name"`            // YAML: channel name registered by sentinel-threat sink
-	Queue *queue.QueueConfig `yaml:"queue,omitempty"` // YAML: optional per-source queue backend; nil → default MemoryQueue
+	Name    string                    `yaml:"name"`    // YAML: unique name for this executor instance
+	Type    string                    `yaml:"type"`    // YAML: executor type registered in pkg/executor
+	Sources []queue.ExecutorSourceRef `yaml:"sources"` // YAML: named channels to read ThreatEvents from
+	Config  map[string]any            `yaml:"config"`  // YAML: executor-specific structured configuration
 }
 
 // PipelineRuntimeConfig — tuning parameters for the Source→Merge→Pipeline channel.
