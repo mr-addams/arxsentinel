@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -51,7 +52,7 @@ func newTestExecutor(t *testing.T, cfg map[string]any) *NginxExecutor {
 		Type:   "nginx",
 		Config: cfg,
 	}
-	exec, err := NewNginxExecutor(item)
+	exec, err := NewNginxExecutor(item, logger.Nop)
 	if err != nil {
 		t.Fatalf("NewNginxExecutor: %v", err)
 	}

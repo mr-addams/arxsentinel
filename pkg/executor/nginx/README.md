@@ -257,7 +257,7 @@ the log stream for write or reload failures.
 ## Constructor
 
 ```go
-func NewNginxExecutor(cfg config.ExecutorItem) (plugin.Executor, error)
+func NewNginxExecutor(cfg config.ExecutorItem, log logger.Logger) (plugin.Executor, error)
 ```
 
 The constructor runs the full startup sequence and returns a fully
@@ -273,6 +273,15 @@ initialised executor:
 4. Return an `*NginxExecutor` with an empty `banned` map. The map is
    populated by `syncExisting()` once `Run` starts, not by the
    constructor.
+
+`log` is the operational logger used for the `EXECUTOR` tag. If `nil`
+is passed, the constructor replaces it with `pkg/logger.Nop` — the
+executor never crashes on a log call. The registry-based factory
+(`newNginxFactory`) always passes `Nop` and expects the calling
+application to inject a real logger via `cmd/arxsentinel` (see Flow 072
+Task 1.2.7). Pre-1.2 callers that relied on the implicit
+`internal/sys/utils.Log` should pass `internal/sys/utils.AsLogger()`
+once that bridge exists.
 
 The returned value implements the `plugin.Executor` interface and is
 ready to be passed to a stream's `executors[]` list.
@@ -295,7 +304,7 @@ func newNginxFactory(cfg executor.ExecutorConfig) (plugin.Executor, error) {
         Type:   cfg.Type,
         Config: cfg.Config,
     }
-    return NewNginxExecutor(item)
+    return NewNginxExecutor(item, logger.Nop)
 }
 ```
 
@@ -413,7 +422,7 @@ Project:
 
 - `internal/sys/config` — `ExecutorItem` shape passed to the
   constructor.
-- `internal/sys/utils` — `utils.Log` (default logger).
+- `pkg/logger` — `Logger` interface + `Nop` default (injected; replaces pre-1.2 `internal/sys/utils.Log`).
 - `pkg/plugin` — `Executor`, `Manifest`, `ExecutorStats`, `ThreatEvent`,
   `EventSource`.
 - `pkg/executor` — registry (`Register`, `RegisterManifest`,

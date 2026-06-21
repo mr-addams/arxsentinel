@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
-	"github.com/mr-addams/arxsentinel/internal/sys/utils"
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -50,6 +50,11 @@ type NginxExecutor struct {
 	execType string
 	cfg      Config
 
+	// logger is the operational logger injected by the caller. Replaces the
+	// pre-1.2 global utils.Log dependency — see Flow 072 Decision 2. Always
+	// non-nil in practice (constructor replaces nil with logger.Nop).
+	logger logger.Logger
+
 	mu     sync.RWMutex
 	banned map[string]time.Time
 
@@ -65,7 +70,14 @@ type NginxExecutor struct {
 // NewNginxExecutor creates a new NginxExecutor from a config.ExecutorItem.
 // It parses the config, logs a WARNING if ReloadCmd is empty, and
 // initialises the banned map.
-func NewNginxExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
+func NewNginxExecutor(cfg config.ExecutorItem, log logger.Logger) (plugin.Executor, error) {
+	// Inject the operational logger. nil is replaced with logger.Nop so
+	// downstream code (including the WARNING below) never has to nil-check.
+	// See Flow 072 Decision 2.
+	if log == nil {
+		log = logger.Nop
+	}
+
 	parsed, err := parseConfig(cfg.Config)
 	if err != nil {
 		return nil, fmt.Errorf("nginx: new executor: %w", err)
@@ -76,7 +88,7 @@ func NewNginxExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 	}
 
 	if parsed.ReloadCmd == "" {
-		utils.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: reload_cmd is empty — bans are written but nginx will not be reloaded automatically", cfg.Name), "warning")
+		log.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: reload_cmd is empty — bans are written but nginx will not be reloaded automatically", cfg.Name), logger.LevelWarning)
 	}
 
 	return &NginxExecutor{
@@ -84,6 +96,7 @@ func NewNginxExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 		execType: "nginx",
 		cfg:      parsed,
 		banned:   make(map[string]time.Time),
+		logger:   log,
 	}, nil
 }
 
@@ -147,12 +160,12 @@ func (e *NginxExecutor) saveState(banned map[string]time.Time) {
 	data, err := json.Marshal(banned)
 	if err != nil {
 		e.stats.errors.Add(1)
-		utils.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: saveState marshal: %v", e.name, err), "error")
+		e.logger.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: saveState marshal: %v", e.name, err), logger.LevelError)
 		return
 	}
 	if err := writeFile(e.cfg.StateFile, string(data)); err != nil {
 		e.stats.errors.Add(1)
-		utils.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: saveState write: %v", e.name, err), "error")
+		e.logger.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: saveState write: %v", e.name, err), logger.LevelError)
 	}
 }
 
@@ -175,7 +188,7 @@ func (e *NginxExecutor) syncExisting() {
 		data, err := os.ReadFile(e.cfg.StateFile)
 		if err == nil {
 			if err := json.Unmarshal(data, &stateMap); err != nil {
-				utils.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: state file %q is corrupted (invalid JSON) — ignoring, TTL will be calculated from now", e.name, e.cfg.StateFile), "warning")
+				e.logger.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: state file %q is corrupted (invalid JSON) — ignoring, TTL will be calculated from now", e.name, e.cfg.StateFile), logger.LevelWarning)
 				stateMap = make(map[string]time.Time)
 			}
 		}
@@ -212,7 +225,7 @@ func (e *NginxExecutor) syncExisting() {
 		e.banned[ip] = addedAt
 	}
 	if err := scanner.Err(); err != nil {
-		utils.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: syncExisting: read error: %v — banned map may be incomplete", e.name, err), "warning")
+		e.logger.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: syncExisting: read error: %v — banned map may be incomplete", e.name, err), logger.LevelWarning)
 	}
 }
 
@@ -233,11 +246,11 @@ func (e *NginxExecutor) runReload(ctx context.Context) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		e.stats.errors.Add(1)
-		utils.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: reload failed: %v — output: %s", e.name, err, strings.TrimSpace(string(output))), "error")
+		e.logger.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: reload failed: %v — output: %s", e.name, err, strings.TrimSpace(string(output))), logger.LevelError)
 		return
 	}
 	if len(output) > 0 {
-		utils.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: reload output: %s", e.name, strings.TrimSpace(string(output))), "info")
+		e.logger.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: reload output: %s", e.name, strings.TrimSpace(string(output))), logger.LevelInfo)
 	}
 }
 
@@ -273,7 +286,7 @@ func (e *NginxExecutor) flush(ctx context.Context, banned map[string]time.Time) 
 
 	if err := writeFile(e.cfg.ListFile, sb.String()); err != nil {
 		e.stats.errors.Add(1)
-		utils.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: flush write: %v", e.name, err), "error")
+		e.logger.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: flush write: %v", e.name, err), logger.LevelError)
 		return
 	}
 

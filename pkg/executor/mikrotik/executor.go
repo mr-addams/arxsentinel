@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
-	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	"github.com/mr-addams/arxsentinel/pkg/dedup"
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -30,10 +30,16 @@ const (
 )
 
 // NewMikroTikExecutor creates a new MikroTik executor from an ExecutorItem config.
-func NewMikroTikExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
+func NewMikroTikExecutor(cfg config.ExecutorItem, log logger.Logger) (plugin.Executor, error) {
 	parsed, err := parseConfig(cfg.Config)
 	if err != nil {
 		return nil, fmt.Errorf("mikrotik: new executor: %w", err)
+	}
+
+	// Inject the operational logger. nil is replaced with logger.Nop so
+	// downstream code never has to nil-check. See Flow 072 Decision 2.
+	if log == nil {
+		log = logger.Nop
 	}
 
 	client := NewHTTPClient(parsed.Host, parsed.Port, parsed.Username, parsed.Password, parsed.TLSVerify, parsed.CAFile, parsed.UseTLS)
@@ -44,6 +50,7 @@ func NewMikroTikExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 		client:   client,
 		banned:   make(map[string]banRecord),
 		dedupWin: dedup.NewWindow(parsed.DedupWindow),
+		logger:   log,
 	}
 
 	return exec, nil
@@ -94,7 +101,7 @@ func (e *MikroTikExecutor) Run(ctx context.Context, source plugin.EventSource) e
 	// Non-fatal: a transient RouterOS outage at startup must not crash the daemon —
 	// the ban list is rebuilt as events arrive and on the next sweep.
 	if err := e.syncExisting(ctx); err != nil {
-		utils.Log("EXECUTOR", fmt.Sprintf("mikrotik: initial sync failed: %v", err), "warning")
+		e.logger.Log("EXECUTOR", fmt.Sprintf("mikrotik: initial sync failed: %v", err), logger.LevelWarning)
 	}
 	buffer := make([]plugin.ThreatEvent, 0, e.cfg.BatchSize)
 	flushInterval := e.cfg.FlushInterval
@@ -205,7 +212,7 @@ func (e *MikroTikExecutor) flush(ctx context.Context, events []plugin.ThreatEven
 			Comment: comment,
 		})
 		if err != nil {
-			utils.Log("EXECUTOR", fmt.Sprintf("mikrotik: flush: add %s: %v", ev.IP, err), "error")
+			e.logger.Log("EXECUTOR", fmt.Sprintf("mikrotik: flush: add %s: %v", ev.IP, err), logger.LevelError)
 			e.stats.errors.Add(1)
 			// Не помечаем IP в dedup-окне при ошибке — иначе flaky RouterOS
 			// приведёт к тому, что IP будет заблокирован в окне на TTL,
@@ -264,7 +271,7 @@ func (e *MikroTikExecutor) sweep(ctx context.Context) {
 	successful := make([]string, 0, len(expired))
 	for _, entry := range expired {
 		if err := e.client.Delete(ctx, entry.id); err != nil {
-			utils.Log("EXECUTOR", fmt.Sprintf("mikrotik: sweep: delete %s: %v", entry.id, err), "error")
+			e.logger.Log("EXECUTOR", fmt.Sprintf("mikrotik: sweep: delete %s: %v", entry.id, err), logger.LevelError)
 			e.stats.errors.Add(1)
 			// Keep entry in banned map — next sweep will retry.
 			continue

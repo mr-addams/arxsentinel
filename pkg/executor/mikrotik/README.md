@@ -245,7 +245,7 @@ metrics endpoint without taking the executor lock.
 ## Constructors
 
 ```go
-func NewMikroTikExecutor(cfg config.ExecutorItem) (plugin.Executor, error)
+func NewMikroTikExecutor(cfg config.ExecutorItem, log logger.Logger) (plugin.Executor, error)
 ```
 
 `NewMikroTikExecutor` is the public constructor. It accepts a
@@ -253,6 +253,15 @@ func NewMikroTikExecutor(cfg config.ExecutorItem) (plugin.Executor, error)
 configuration), decodes the `Config` from the `Config` map, validates
 the required fields, builds the underlying `Client`, and returns a
 fully initialized `*MikroTikExecutor`.
+
+`log` is the operational logger used for the `EXECUTOR` tag. If `nil`
+is passed, the constructor replaces it with `pkg/logger.Nop` — the
+executor never crashes on a log call. The registry-based factory
+(`newMikroTikFactory`) always passes `Nop` and expects the calling
+application to inject a real logger via `cmd/arxsentinel` (see Flow 072
+Task 1.2.7). Pre-1.2 callers that relied on the implicit
+`internal/sys/utils.Log` should pass `internal/sys/utils.AsLogger()`
+once that bridge exists.
 
 Unlike the Cloudflare executor, the HTTP client **is** built here:
 `Client` construction only performs configuration work (TLS config
@@ -385,6 +394,6 @@ Standard library:
 Project:
 
 - `internal/sys/config` — `config.ExecutorItem` (per-executor configuration block).
-- `internal/sys/utils` — `utils.Log` (default logger).
+- `pkg/logger` — `Logger` interface + `Nop` default (injected; replaces pre-1.2 `internal/sys/utils.Log`).
 - `pkg/plugin` — `Executor`, `ThreatEvent`, `EventSource`, `Manifest`, `ExecutorStats`.
 - `pkg/executor` — registry (`Register`, `RegisterManifest`).

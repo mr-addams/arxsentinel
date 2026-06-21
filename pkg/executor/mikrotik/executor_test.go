@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/executor"
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -40,6 +41,7 @@ func testMikroTik(t *testing.T, handler http.HandlerFunc, ttl time.Duration, min
 			httpClient: ts.Client(),
 		},
 		banned: make(map[string]banRecord),
+		logger: logger.Nop,
 	}
 	return ts, exec
 }
