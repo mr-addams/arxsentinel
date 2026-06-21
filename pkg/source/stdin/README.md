@@ -183,7 +183,9 @@ constructor lets callers pass an arbitrary `io.Reader` (typically a
 process standard input.
 
 Both constructors accept a nil-safe `logFn`. When `nil`, the source
-falls back to `utils.Log`.
+becomes silent (`nil → no-op` per the
+`pkg/source.registry.BuildOptions.LogFn` contract; previously `nil →
+utils.Log` — see Flow 072 Task 1.2.5).
 
 ---
 
@@ -262,6 +264,9 @@ Project:
 
 - `internal/core/parser` — `parser.Parser` with
   `Parse(line) → (*plugin.LogEntry, bool)`.
-- `internal/sys/utils` — `utils.Log` (default logger).
 - `pkg/plugin` — `Source`, `Manifest`, `SourceStats`, `LogEntry`.
 - `pkg/source` — registry (`Register`, `RegisterManifest`).
+
+Note: `internal/sys/utils` is no longer imported by this package as of
+Flow 072 Task 1.2.5 — the legacy `utils.Log` fallback was replaced with
+a local no-op per the `pkg/source.registry.BuildOptions.LogFn` contract.

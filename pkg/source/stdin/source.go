@@ -9,6 +9,10 @@
 //   WHAT IS NOT HERE:
 //     - File input (pkg/source/file/)
 //     - Parsing logic (internal/core/parser/)
+//
+//   NOTE: pkg/source/stdin no longer imports internal/sys/utils as of
+//   Flow 072 Task 1.2.5 — the legacy utils.Log fallback was replaced by
+//   a local no-op per the pkg/source.registry.BuildOptions.LogFn contract.
 
 package stdin
 
@@ -21,10 +25,17 @@ import (
 	"sync/atomic"
 
 	"github.com/mr-addams/arxsentinel/internal/core/parser"
-	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 )
+
+// nopLogFn is a no-op logFn implementation per the
+// pkg/source.registry.BuildOptions.LogFn contract: nil → no-op.
+// Replaces the legacy implicit fallback to internal/sys/utils.Log
+// (Flow 072 Task 1.2.5). The BuildOptions.LogFn type itself stays
+// `func(tag, msg, level string)` until Phase 1.4 — see
+// .opencode/flows/072/DECISIONS.md Decision 7.
+func nopLogFn(tag, msg, level string) {}
 
 // stdinScanBufSize — scanner buffer for stdin lines.
 // Matches maxLineSize in TailReader — both must handle the same maximum line length.
@@ -41,7 +52,7 @@ const defaultLinesBufSize = 1000
 type StdinSource struct {
 	name string
 	parser parser.Parser // parses raw log lines into *plugin.LogEntry
-	logFn func(tag, msg, level string) // nil-safe; defaults to utils.Log
+	logFn func(tag, msg, level string) // nil-safe; no-op when nil
 	r     io.Reader       // injectable for tests; os.Stdin in production
 
 	linesRead   atomic.Int64 // total lines read from stdin
@@ -50,7 +61,7 @@ type StdinSource struct {
 }
 
 // NewStdinSource creates a StdinSource reading from os.Stdin.
-// logFn — log function; pass nil to use utils.Log.
+// logFn — log function; pass nil for no-op logging.
 func NewStdinSource(p parser.Parser, logFn func(tag, msg, level string)) *StdinSource {
 	return NewStdinSourceWithReader(os.Stdin, p, logFn)
 }
@@ -60,7 +71,7 @@ func NewStdinSource(p parser.Parser, logFn func(tag, msg, level string)) *StdinS
 func NewStdinSourceWithReader(r io.Reader, p parser.Parser, logFn func(tag, msg, level string)) *StdinSource {
 	lf := logFn
 	if lf == nil {
-		lf = utils.Log
+		lf = nopLogFn
 	}
 	return &StdinSource{
 		name:    "stdin",

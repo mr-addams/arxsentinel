@@ -79,8 +79,8 @@ documentation for the full input schema.
 
 `retryInterval` and `logFn` are not user-facing configuration fields —
 they are supplied by the build layer through `BuildOptions` and inherit
-safe defaults (`5s` and `utils.Log` respectively) when the caller leaves
-them zero/nil.
+safe defaults (`5s` and a no-op logger respectively) when the caller
+leaves them zero/nil.
 
 ### Validation Rules
 
@@ -92,7 +92,9 @@ them zero/nil.
   time. A nil parser fails with
   `"file source %s: parser must not be nil"`.
 - `retryInterval`, when zero or negative, defaults to `5s`.
-- `logFn`, when nil, defaults to `utils.Log`.
+- `logFn`, when nil, defaults to a no-op (`nil → no-op` per the
+  `pkg/source.registry.BuildOptions.LogFn` contract; previously `nil →
+  utils.Log` — see Flow 072 Task 1.2.5).
 
 ---
 
@@ -201,7 +203,7 @@ A single constructor is exposed:
 // path — absolute path to the log file (e.g. "/var/log/nginx/access.log").
 // p — parser.Parser for log lines; must not be nil.
 // retryInterval — delay between retry attempts on file errors; 0 defaults to 5s.
-// logFn — structured logger; nil defaults to utils.Log.
+// logFn — structured logger; nil is no-op (was utils.Log before Flow 072 Task 1.2.5).
 func NewFileSource(path string, p parser.Parser, retryInterval time.Duration, logFn func(tag, msg, level string)) (*FileSource, error)
 ```
 
@@ -211,7 +213,8 @@ The constructor validates:
 - `p` (parser) must not be nil — nil returns
   `"file source %s: parser must not be nil"`.
 - `retryInterval` — zero or negative values default to `5 * time.Second`.
-- `logFn` — nil values default to `utils.Log`.
+- `logFn` — nil is replaced with a local no-op per the
+  `pkg/source.registry.BuildOptions.LogFn` contract.
 
 The constructor is non-blocking and returns immediately with a fully
 configured instance or an error.
@@ -385,8 +388,11 @@ Project:
 
 - `internal/core/parser` — `parser.Parser` with
   `Parse(line) → (*plugin.LogEntry, bool)`.
-- `internal/sys/utils` — `utils.TailReader` (file follow with inotify),
-  `utils.Log` (default logger).
+- `internal/sys/utils` — `utils.TailReader` (file follow with inotify).
+  The legacy `utils.Log` default fallback was removed in Flow 072
+  Task 1.2.5; the source is now nil-safe with a local no-op. This
+  package is still imported for `TailReader` only — removing it is
+  the subject of Phase 1.3 (Tail Abstraction).
 - `pkg/plugin` — `Source`, `Manifest`, `SourceStats`, `LogEntry`.
 - `pkg/source` — registry (`Register`, `RegisterManifest`, `InputConfig`,
   `BuildOptions`).

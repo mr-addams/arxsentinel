@@ -10,6 +10,10 @@
 //   WHAT IS NOT HERE:
 //     manifest.go — PluginID, Role, DataType declarations
 //     internal/sys/utils/tail.go — platform-specific file tailing (inotify/FSEvents)
+//
+//   NOTE: pkg/source/file still imports internal/sys/utils for utils.NewTailReader
+//   (Run(), line below). Removing this import is deferred to Phase 1.3 (Tail
+//   Abstraction) — see Flow 072 DECISIONS.md Scope.
 
 package file
 
@@ -20,10 +24,22 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/internal/core/parser"
+	// TODO(Phase 1.3 — Tail Abstraction): pkg/source/file still imports
+	// internal/sys/utils for utils.NewTailReader (see Run()). Dropping this
+	// import is the subject of a separate flow (Phase 1.3). Flow 072 only
+	// removes the utils.Log fallback; it does not touch this import.
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 )
+
+// nopLogFn is a no-op logFn implementation per the
+// pkg/source.registry.BuildOptions.LogFn contract: nil → no-op.
+// Replaces the legacy implicit fallback to internal/sys/utils.Log
+// (Flow 072 Task 1.2.5). The BuildOptions.LogFn type itself stays
+// `func(tag, msg, level string)` until Phase 1.4 — see
+// .opencode/flows/072/DECISIONS.md Decision 7.
+func nopLogFn(tag, msg, level string) {}
 
 // defaultLinesBufSize is the channel buffer between tail goroutine and parser.
 // Non-blocking send with drop policy: if buffer is full, entries are dropped
@@ -58,7 +74,7 @@ func NewFileSource(path string, p parser.Parser, retryInterval time.Duration, lo
 	}
 	lf := logFn
 	if lf == nil {
-		lf = utils.Log
+		lf = nopLogFn
 	}
 	return &FileSource{
 		name:          "file:" + path,
