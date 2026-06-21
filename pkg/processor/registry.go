@@ -14,17 +14,36 @@
 //     Processor implementations — each self-registers via init()
 //
 //   DEPENDENCY RULE:
-//     This package imports only pkg/plugin and stdlib.
+//     This package imports only pkg/plugin, pkg/pluginregistry and stdlib.
 //     No import from internal/ — external developers must be able to use this package.
+//
+//   GENERIC CORE (Flow 070 / Task 1.1.6):
+//   Store + mutex + Register/Get/Names are delegated to a singleton
+//   *pluginregistry.Registry[Factory, struct{}]. The thin Build() wrapper stays here
+//   because its signature is processor-specific — the variadic aspect per Decision 2
+//   lives in the wrapper, NOT in the generic core:
+//     1. **nil-return on disabled** — when cfg.Enabled == false, Build returns
+//        (nil, nil) without consulting the factory store. This short-circuit
+//        must happen BEFORE the registry lookup; processors that have no
+//        constructor still get a clean "off" path. The wrapper owns this logic.
+//   Unlike detector/executor, processor has no execplugin fallback and no
+//   SharedResources DI — those branches are absent here by design, not by
+//   omission. See DECISIONS.md Flow 070 / 1.1.1 — processor (and detector)
+//   parameterise M as struct{} because they expose no registry-level manifest
+//   API (the Manifest comes from the plugin.Processor instance, not the
+//   registry).
+//
+//   The public API is preserved byte-for-byte: every package-level function
+//   still has the same signature, so plugin init() call-sites (whitelist,
+//   chaincheck) compile unchanged.
 
 package processor
 
 import (
 	"fmt"
-	"sort"
-	"sync"
 
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arxsentinel/pkg/pluginregistry"
 )
 
 // ProcessorConfig — runtime config for a single processor instance.
@@ -44,21 +63,24 @@ type ProcessorConfig struct {
 // should return an error for invalid params.
 type Factory func(cfg ProcessorConfig) (plugin.Processor, error)
 
-var (
-	mu        sync.RWMutex
-	factories = map[string]Factory{}
-)
+// defaultReg — package singleton holding all processor factories.
+// Lives across test runs in a single binary; processor-registered init() calls
+// are stable under `go test -count>1` because each plugin name registers
+// exactly once per process and Register panics on duplicates, so no
+// test-only reset helper is needed (no registry-level tests exist either).
+//
+// M is parameterised as struct{}: the processor registry does not expose a
+// registry-level manifest API (manifests are returned by the plugin.Processor
+// instance via the Manifest() method, not by the registry), so the
+// manifest-store half of the generic core stays empty. See DECISIONS.md
+// Flow 070 / 1.1.1 — detector and processor use struct{} as the opaque M.
+var defaultReg = pluginregistry.NewRegistry[Factory, struct{}]()
 
 // Register registers a Factory under name.
 // Panics on duplicate registration — duplication is a programmer error caught at startup.
 // Called from init() in each processor file.
 func Register(name string, f Factory) {
-	mu.Lock()
-	defer mu.Unlock()
-	if _, exists := factories[name]; exists {
-		panic(fmt.Sprintf("pkg/processor: duplicate registration for %q", name))
-	}
-	factories[name] = f
+	defaultReg.Register(name, f)
 }
 
 // Build creates a processor by name using the registered factory.
@@ -66,13 +88,26 @@ func Register(name string, f Factory) {
 // Returns (nil, nil) when cfg.Enabled == false — the caller must handle nil.
 // Returns error when name is not registered.
 // Returns (nil, error) when the factory itself fails.
+//
+// Behaviour preserved byte-for-byte from the pre-migration implementation:
+//   1. nil-return (nil, nil) on cfg.Enabled == false — short-circuits BEFORE
+//      the registry lookup so disabled processors cost zero store lookups.
+//      This order is part of the contract: callers rely on the silent (nil, nil)
+//      even for names that are not registered, as long as Enabled is false.
+//   2. Registry lookup; error on unknown name with the same message format.
+//   3. Factory invocation with cfg — no DI, no execplugin fallback (those
+//      concerns do not exist for processor in this codebase).
 func Build(name string, cfg ProcessorConfig) (plugin.Processor, error) {
+	// Aspect (nil-return on disabled): short-circuit before consulting the
+	// store. This must stay BEFORE the registry lookup — otherwise a
+	// non-existent processor that is also disabled would surface
+	// "unknown processor" instead of the silent (nil, nil) contract callers
+	// rely on.
 	if !cfg.Enabled {
 		return nil, nil
 	}
-	mu.RLock()
-	f, ok := factories[name]
-	mu.RUnlock()
+
+	f, ok := defaultReg.Get(name)
 	if !ok {
 		return nil, fmt.Errorf("pkg/processor: unknown processor %q; registered: %v", name, Names())
 	}
@@ -82,12 +117,5 @@ func Build(name string, cfg ProcessorConfig) (plugin.Processor, error) {
 // Names returns a sorted list of all registered processor names.
 // Safe to call concurrently.
 func Names() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	names := make([]string, 0, len(factories))
-	for n := range factories {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
+	return defaultReg.Names()
 }
