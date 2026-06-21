@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -24,7 +25,7 @@ func testEvent(ip string) plugin.ThreatEvent {
 func newTestBbolt(t *testing.T) *BboltQueue {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "queue.db")
-	q, err := NewBboltQueue(path, "q")
+	q, err := NewBboltQueue(path, "q", logger.Nop)
 	if err != nil {
 		t.Fatalf("NewBboltQueue: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestBboltQueue_PopCancelled(t *testing.T) {
 func TestBboltQueue_Persistence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "persist.db")
 
-	q1, err := NewBboltQueue(path, "q")
+	q1, err := NewBboltQueue(path, "q", logger.Nop)
 	if err != nil {
 		t.Fatalf("NewBboltQueue: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestBboltQueue_Persistence(t *testing.T) {
 	}
 	q1.Close()
 
-	q2, err := NewBboltQueue(path, "q")
+	q2, err := NewBboltQueue(path, "q", logger.Nop)
 	if err != nil {
 		t.Fatalf("NewBboltQueue (reopen): %v", err)
 	}
@@ -180,7 +181,7 @@ func TestBboltQueue_Close(t *testing.T) {
 
 func TestBboltQueue_ConcurrentCloseAndPush(t *testing.T) {
 	dir := t.TempDir()
-	q, err := NewBboltQueue(filepath.Join(dir, "test.db"), "q")
+	q, err := NewBboltQueue(filepath.Join(dir, "test.db"), "q", logger.Nop)
 	if err != nil {
 		t.Fatal(err)
 	}

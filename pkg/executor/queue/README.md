@@ -86,9 +86,18 @@ restart.
 
 ## Bbolt Queue
 
-`NewBboltQueue(path, bucket string) (*BboltQueue, error)` — events
-persisted in a single bbolt file. Survives process restarts; one file
+`NewBboltQueue(path, bucket string, log logger.Logger) (*BboltQueue, error)` —
+events persisted in a single bbolt file. Survives process restarts; one file
 per executor (or per NCS channel name).
+
+`log` is the operational logger used for the `QUEUE` tag (one call site in
+`Pop` — the "event lost during shutdown" warning). If `nil` is passed, the
+constructor replaces it with `pkg/logger.Nop` — the queue never crashes on a
+log call. The queue package is not registry-registered; callers
+(`pkg/executor/channelswitch.go` for production, tests for unit) instantiate
+it directly. The real bridge from `internal/sys/utils.Log` is wired in
+`cmd/arxsentinel` in Flow 072 Task 1.2.7; until then production callers pass
+`logger.Nop` and `QUEUE`-tag warnings are silent in production output.
 
 - **Capacity:** unbounded on disk. Memory is the constraint — Len()
   is `seq - read`, where both are uint64 counters stored in the

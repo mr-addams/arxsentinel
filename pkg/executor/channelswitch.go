@@ -32,6 +32,7 @@ import (
 	"sync"
 
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -108,7 +109,12 @@ func RegisterSinkFromConfig(name string, cfg *queue.QueueConfig) error {
 		_, err := AttachWriter(name, 0)
 		return err
 	case queue.QueueTypeBbolt:
-		q, err := queue.NewBboltQueue(cfg.Path, cfg.EffectiveBucket())
+		// pkg/logger.Nop is used here as an intermediate state — the real bridge
+		// (internal/sys/utils.AsLogger()) is wired in cmd/arxsentinel by Flow 072
+		// Task 1.2.7. Until then the queue silently swallows QUEUE-tag warnings,
+		// which matches the pre-1.2.7 behaviour of pkg/executor (silent by default
+		// except for explicit Log calls in factory code).
+		q, err := queue.NewBboltQueue(cfg.Path, cfg.EffectiveBucket(), logger.Nop)
 		if err != nil {
 			return fmt.Errorf("channelswitch: bbolt queue for %q (path=%q): %w", name, cfg.Path, err)
 		}

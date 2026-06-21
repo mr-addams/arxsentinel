@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/sys/utils"
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	"go.etcd.io/bbolt"
 )
@@ -79,12 +79,21 @@ type BboltQueue struct {
 	done   chan struct{}
 	once   sync.Once
 	wg     sync.WaitGroup
+
+	// logger is the operational logger injected by the caller. Replaces the
+	// pre-1.2 global utils.Log dependency — see Flow 072 Decision 2. Always
+	// non-nil in practice (constructor replaces nil with logger.Nop).
+	logger logger.Logger
 }
 
 // NewBboltQueue opens or creates a bbolt database at path and initialises
 // the queue bucket. If the bucket already exists, its seq and read counters
 // are preserved. Returns an error if the database cannot be opened.
-func NewBboltQueue(path string, bucket string) (*BboltQueue, error) {
+//
+// log is the operational logger used for QUEUE-tag diagnostics. If nil is
+// passed, the constructor replaces it with logger.Nop — the queue never
+// crashes on a log call (Flow 072 Decision 2).
+func NewBboltQueue(path string, bucket string, log logger.Logger) (*BboltQueue, error) {
 	db, err := bbolt.Open(path, 0600, nil)
 	if err != nil {
 		return nil, err
@@ -117,6 +126,12 @@ func NewBboltQueue(path string, bucket string) (*BboltQueue, error) {
 		return nil, err
 	}
 
+	// Inject the operational logger. nil is replaced with logger.Nop so
+	// downstream call sites never need to nil-check. See Flow 072 Decision 2.
+	if log == nil {
+		log = logger.Nop
+	}
+
 	q := &BboltQueue{
 		db:     db,
 		bucket: bname,
@@ -124,6 +139,7 @@ func NewBboltQueue(path string, bucket string) (*BboltQueue, error) {
 		// Buffer of 64 covers typical threat batch sizes without excessive memory use.
 		writes: make(chan writeOp, 64),
 		done:   make(chan struct{}),
+		logger: log,
 	}
 
 	q.wg.Add(1)
@@ -305,12 +321,11 @@ func (q *BboltQueue) safeSend(ctx context.Context, event plugin.ThreatEvent) err
 // Pop dequeues the next ThreatEvent. It blocks until an event is available,
 // the context is cancelled, or the queue is closed.
 //
-// Реализация: атомарный claim через writeLoop. Pop отправляет
-// opPopAndAdvance в writes, writeLoop делает read+delete+advance
-// в ОДНОЙ db.Update — это гарантирует, что конкурентные Pop'еры
-// не получают одно и то же событие. Если очередь пуста, Pop ждёт
-// 100ms и повторяет попытку (ticker-паттерн для responsiveness
-// без busy-loop).
+// Implementation: atomic claim via writeLoop. Pop sends opPopAndAdvance
+// to writes; writeLoop does read+delete+advance in ONE db.Update — this
+// guarantees concurrent Poppers never receive the same event. When the
+// queue is empty, Pop waits 100ms and retries (ticker pattern for
+// responsiveness without a busy-loop).
 func (q *BboltQueue) Pop(ctx context.Context) (plugin.ThreatEvent, error) {
 	ticker := time.NewTicker(bboltPopPollInterval)
 	defer ticker.Stop()
@@ -382,7 +397,7 @@ func (q *BboltQueue) claimOnce(ctx context.Context) (plugin.ThreatEvent, bool, e
 			// db.Update, but claimOnce was interrupted by Close before receiving the
 			// result. Re-queue is not feasible without rewriting bbolt write-loop
 			// (see DECISIONS.md D7); log for monitoring instead.
-			utils.Log("QUEUE", "event lost during shutdown (claim interrupted by Close)", "warning")
+			q.logger.Log("QUEUE", "event lost during shutdown (claim interrupted by Close)", logger.LevelWarning)
 			return plugin.ThreatEvent{}, false, ErrQueueClosed
 		}
 	case res := <-resCh:
@@ -417,8 +432,8 @@ func (q *BboltQueue) Len() int {
 		return nil
 	})
 	if err != nil {
-		// -1 сигнализирует ошибку — не путать с 0 (пустая очередь).
-		// Caller проверяет < 0 для обнаружения corruption/I/O-ошибки.
+		// -1 signals an error — do not confuse with 0 (empty queue).
+		// The caller checks < 0 to detect corruption / I/O error.
 		return -1
 	}
 

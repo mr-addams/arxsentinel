@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	"go.etcd.io/bbolt"
 )
@@ -56,7 +57,7 @@ func TestBboltIntegration_PersistenceAcrossManyReopens(t *testing.T) {
 
 	expected := make([]string, 0, cycles*eventsPerCycle)
 	for c := 0; c < cycles; c++ {
-		q, err := NewBboltQueue(path, "q")
+		q, err := NewBboltQueue(path, "q", logger.Nop)
 		if err != nil {
 			t.Fatalf("cycle %d: open: %v", c, err)
 		}
@@ -73,7 +74,7 @@ func TestBboltIntegration_PersistenceAcrossManyReopens(t *testing.T) {
 	}
 
 	// Финальная сессия: читаем все события и проверяем FIFO порядок.
-	q, err := NewBboltQueue(path, "q")
+	q, err := NewBboltQueue(path, "q", logger.Nop)
 	if err != nil {
 		t.Fatalf("final open: %v", err)
 	}
@@ -274,7 +275,7 @@ func TestBboltIntegration_CorruptedBucketDetected(t *testing.T) {
 
 	// Создаём нормальную очередь и пушим одно событие — это создаёт
 	// корректные счётчики seq/read в бакете.
-	q, err := NewBboltQueue(path, "q")
+	q, err := NewBboltQueue(path, "q", logger.Nop)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -291,7 +292,7 @@ func TestBboltIntegration_CorruptedBucketDetected(t *testing.T) {
 
 	// Reopen — open проходит (bbolt не валидирует формат значений),
 	// но Push и Len должны устоять: Len возвращает 0, Push возвращает ErrQueueCorrupted.
-	q2, err := NewBboltQueue(path, "q")
+	q2, err := NewBboltQueue(path, "q", logger.Nop)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
