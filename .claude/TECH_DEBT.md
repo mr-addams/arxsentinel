@@ -21,6 +21,20 @@ severity, description, and proposed resolution.
 
 ## Open
 
+### [068-1] Тесты реестров не идемпотентны к `go test -count>1`
+- **Flow:** #068 — Baseline & Dependency Map (Phase 0.2/0.3)
+- **Severity:** low
+- **Area:** `pkg/executor`, `pkg/sink`, `pkg/source` (registry-тесты), `pkg/source/http/adapters`
+- **Problem:** при `go test -count=3 ./...` пакеты падают с `panic: duplicate registration`
+  (executor/sink/source) и PubSub JWT → 401 (http/adapters). Причина — тесты регистрируют
+  плагины в глобальный singleton-реестр без cleanup/reset между прогонами; на 2-м прогоне
+  в том же бинаре — дубликат. С `-count=1` всё зелёное (`go test -race -count=1 ./...` →
+  30 ok, 0 FAIL, 0 DATA RACE). Код реестра исправен — дефект только в тестах.
+- **Resolution:** добавить `t.Cleanup`/reset глобального реестра между прогонами (или
+  изолированный экземпляр реестра в тестах вместо singleton). Естественно чинить в Phase 1.1
+  при переводе реестров на generic `Registry[T,CFG]` — заодно сделать тесты идемпотентными.
+- **Status:** open long-term (чинить в Phase 1.1)
+
 ### [030-1] Alert Sinks with dedup/rate limit (Telegram, Slack, PagerDuty, Zapier)
 
 - **Flow:** #030 — Universal I/O Phase 2

@@ -79,3 +79,9 @@ precommit-scan-*.md
 
 # Временные брифы для opencode-агентов (gofer, coder, architect)
 .tmp/
+
+# Внутренний стратегический документ (не для публичного репо)
+PLATFORM_ROADMAP.md
+
+# Внутренние ADR (архитектурные решения трансформации — не для публичного репо)
+docs/architecture/adr/
