@@ -1018,6 +1018,13 @@ func TestPubSubJWTMiddleware(t *testing.T) {
 	}
 	pubKey := &privKey.PublicKey
 
+	// Инвалидируем JWKS-кеш перед запуском: на 2-м прогоне `go test -count>1`
+	// в том же бинаре кеш содержит ключи от предыдущего прогона с ДРУГИМ модулем
+	// RSA — верификация подписи провалится → 401. t.Cleanup снимает за собой тоже.
+	// Доступ к unexported jwksStore возможен потому что тесты в `package adapters`.
+	jwksStore.Delete("jwks")
+	t.Cleanup(func() { jwksStore.Delete("jwks") })
+
 	// JWKS test server
 	jwksServer := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		resp := jwksResponse{Keys: []jwkKey{jwkFromPubKey("test-kid-1", pubKey)}}
@@ -1229,7 +1236,10 @@ func TestPubSubJWTMiddleware(t *testing.T) {
 }
 
 func TestPubSubJWTMiddleware_closesBody(t *testing.T) {
+	// Снимаем кеш JWKS — иначе на 2-м прогоне `go test -count>1` будет
+	// использован ключ из предыдущего прогона и верификация провалится.
 	jwksStore.Delete("jwks")
+	t.Cleanup(func() { jwksStore.Delete("jwks") })
 
 	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

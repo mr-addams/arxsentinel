@@ -52,19 +52,32 @@ func (m *mockParser) Parse(line string) (*plugin.LogEntry, bool) {
 	}, true
 }
 
+// ── Test helpers ───────────────────────────────────────────────────────────────────────
+
+// unregisterForTest удаляет name из singleton-реестра.
+// Тестовая обёртка для идемпотентности к `go test -count>1`: production Register()
+// паникует на дубликате, а на 2-м прогоне в том же бинаре имя уже занято.
+// t.Cleanup гарантирует удаление после теста даже при panic внутри.
+// Доступ к unexported `factories`/`manifests` возможен потому что тесты — `package source`.
+func unregisterForTest(names ...string) {
+	mu.Lock()
+	defer mu.Unlock()
+	for _, n := range names {
+		delete(factories, n)
+		delete(manifests, n)
+	}
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────────────────
 
 func TestRegistry_Register(t *testing.T) {
-	// Fresh registry for this test.
-	// In real code, Registry would be instantiated per test to avoid pollution.
-	// For now, we use global and rely on unique names per test.
-
 	testName := "test-register-source-" + t.Name()
 	factory := func(cfg InputConfig, opts BuildOptions) (plugin.Source, error) {
 		return &mockSource{name: cfg.Type}, nil
 	}
 
 	Register(testName, factory)
+	t.Cleanup(func() { unregisterForTest(testName) })
 
 	// Verify the factory was registered by building with it.
 	cfg := InputConfig{Type: "file", Path: "/tmp/test.log"}
@@ -119,6 +132,7 @@ func TestRegistry_Names(t *testing.T) {
 	for _, name := range names {
 		Register(name, factory)
 	}
+	t.Cleanup(func() { unregisterForTest(names...) })
 
 	// Call Names() and verify all registered names are present and sorted.
 	allNames := Names()
@@ -145,6 +159,7 @@ func TestRegistry_Register_Duplicate(t *testing.T) {
 	}
 
 	Register(duplicateName, factory)
+	t.Cleanup(func() { unregisterForTest(duplicateName) })
 
 	// Attempting to register the same name again should panic.
 	defer func() {

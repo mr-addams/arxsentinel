@@ -1,22 +1,39 @@
 // ========================== pkg/executor — registry_test.go ==============
 //   Tests for ExecutorRegistry: registration, lookup, error handling.
+//
+//   Тесты объявлены в `package executor` (а не `executor_test`) чтобы получить
+//   прямой доступ к singleton-картам `factories`/`manifests` и иметь возможность
+//   снимать регистрацию в t.Cleanup. Без этого на 2-м прогоне `go test -count>1`
+//   в том же бинаре Register() паникует на дубликате (см. дефект [068-1]).
+//   Это test-only изменение package declaration — production-код реестра не трогаем.
 
-package executor_test
+package executor
 
 import (
 	"context"
 	"testing"
 
-	"github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
+// unregisterForTest удаляет name из singleton-реестра. Тестовая обёртка для
+// идемпотентности к `go test -count>1`: на 2-м прогоне имя уже занято.
+func unregisterForTest(names ...string) {
+	mu.Lock()
+	defer mu.Unlock()
+	for _, n := range names {
+		delete(factories, n)
+		delete(manifests, n)
+	}
+}
+
 func TestRegistry_TypedFactory(t *testing.T) {
-	executor.Register("test-typed", func(cfg executor.ExecutorConfig) (plugin.Executor, error) {
+	Register("test-typed", func(cfg ExecutorConfig) (plugin.Executor, error) {
 		return &mockExecutor{name: cfg.Name}, nil
 	})
+	t.Cleanup(func() { unregisterForTest("test-typed") })
 
-	exe, err := executor.Build(executor.ExecutorConfig{
+	exe, err := Build(ExecutorConfig{
 		Name: "my-executor",
 		Type: "test-typed",
 	})
@@ -32,7 +49,7 @@ func TestRegistry_TypedFactory(t *testing.T) {
 }
 
 func TestRegistry_UnknownType(t *testing.T) {
-	_, err := executor.Build(executor.ExecutorConfig{
+	_, err := Build(ExecutorConfig{
 		Name: "unknown",
 		Type: "nonexistent_type_xyz",
 	})
@@ -42,7 +59,7 @@ func TestRegistry_UnknownType(t *testing.T) {
 }
 
 func TestRegistry_ExecFallback(t *testing.T) {
-	exe, err := executor.Build(executor.ExecutorConfig{
+	exe, err := Build(ExecutorConfig{
 		Name: "exec-fallback",
 		Type: "unregistered_type",
 		Exec: "../execplugin/testdata/executor.sh",

@@ -33,7 +33,7 @@ severity, description, and proposed resolution.
 - **Resolution:** добавить `t.Cleanup`/reset глобального реестра между прогонами (или
   изолированный экземпляр реестра в тестах вместо singleton). Естественно чинить в Phase 1.1
   при переводе реестров на generic `Registry[T,CFG]` — заодно сделать тесты идемпотентными.
-- **Status:** open long-term (чинить в Phase 1.1)
+- **Status:** resolved (Flow #070 — Task 1.1.0)
 
 ### [030-1] Alert Sinks with dedup/rate limit (Telegram, Slack, PagerDuty, Zapier)
 
