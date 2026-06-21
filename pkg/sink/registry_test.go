@@ -40,16 +40,15 @@ func (m *mockSink) Stats() plugin.SinkStats {
 // ── Test helpers ───────────────────────────────────────────────────────────────────────
 
 // unregisterForTest удаляет name из singleton-реестра.
-// Тестовая обёртка — обходной путь для идемпотентности к `go test -count>1`:
-// production Register() паникует на дубликате, а на 2-м прогоне в том же бинаре
-// имя уже занято. t.Cleanup гарантирует удаление после теста даже при panic внутри.
-// Доступ к unexported `factories`/`manifests` возможен потому что тесты — `package sink`.
+// Тестовая обёртка для идемпотентности к `go test -count>1`: production Register()
+// паникует на дубликате, а на 2-м прогоне в том же бинаре имя уже занято.
+// t.Cleanup гарантирует удаление после теста даже при panic внутри.
+// Делегирует в unregister() — пакетный хелпер, обёрнутый вокруг generic-ядра
+// (Flow 070 / Task 1.1.3). Семантика идентична оригиналу: cleanup глобального
+// singleton между прогонами.
 func unregisterForTest(names ...string) {
-	mu.Lock()
-	defer mu.Unlock()
 	for _, n := range names {
-		delete(factories, n)
-		delete(manifests, n)
+		unregister(n)
 	}
 }
 
