@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# pre-push — behavioral lock: runs the integration suite before a push reaches the remote.
+#
+# Install: bash scripts/install-hooks.sh
+#
+# Why a dedicated pre-push hook (Flow #071, Decision 1):
+#   integration (tests/integration/run.sh) takes ~3 min — too slow for per-commit
+#   backstop, but must run BEFORE the local work enters the shared remote. This hook
+#   enforces that behavioral lock locally, complementing per-task acceptance gate
+#   (agent runs integration manually) and CI (integration.yml on PR→dev).
+
+set -euo pipefail
+
+# Resolve the repo root via git so the hook works from any working dir.
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+echo "[pre-push] running integration tests (tests/integration/run.sh)..."
+bash "$REPO_ROOT/tests/integration/run.sh"
+
+echo "[pre-push] OK"
