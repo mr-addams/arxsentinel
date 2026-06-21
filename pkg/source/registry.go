@@ -17,18 +17,26 @@
 //     main.go bridging — if needed, main.go converts config.InputConfig → InputConfig
 //
 //   DEPENDENCY RULE:
-//     This package imports only pkg/plugin and stdlib.
+//     This package imports only pkg/plugin, pkg/pluginregistry and stdlib.
 //     No import from internal/ — external developers must be able to use this package.
+//
+//   GENERIC CORE (Flow 070 / Task 1.1.2):
+//     Store + mutex + Register/Get/Names/Manifest* are delegated to a singleton
+//     *pluginregistry.Registry[Factory, plugin.Manifest]. The thin Build() wrapper
+//     stays here because its signature is source-specific (no ctx, no DI, no
+//     fallback) — this is the "variadic logic stays in wrappers" rule from
+//     Decision 2. The public API is preserved byte-for-byte: every package-level
+//     function still has the same signature, so plugin init() call-sites
+//     (file.go, stdin.go, http.go, syslog.go, exec/, sentinel/) compile unchanged.
 
 package source
 
 import (
 	"fmt"
-	"sort"
-	"sync"
 	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arxsentinel/pkg/pluginregistry"
 )
 
 // InputConfig — runtime config for a single source instance.
@@ -83,22 +91,16 @@ type BuildOptions struct {
 // Returns an error if the config is invalid or initialization fails.
 type Factory func(cfg InputConfig, opts BuildOptions) (plugin.Source, error)
 
-var (
-	mu        sync.RWMutex
-	factories = map[string]Factory{}
-	manifests = map[string]plugin.Manifest{}
-)
+// defaultReg — package singleton holding all source factories and manifests.
+// Lives across test runs in a single binary, which is why tests need a way to
+// unregister their injected names (see unregisterForTest in registry_test.go).
+var defaultReg = pluginregistry.NewRegistry[Factory, plugin.Manifest]()
 
 // Register registers a Factory under name.
 // Panics on duplicate registration — duplication is a programmer error caught at startup.
 // Called from init() in each source file.
 func Register(name string, f Factory) {
-	mu.Lock()
-	defer mu.Unlock()
-	if _, exists := factories[name]; exists {
-		panic(fmt.Sprintf("pkg/source: duplicate registration for %q", name))
-	}
-	factories[name] = f
+	defaultReg.Register(name, f)
 }
 
 // RegisterManifest stores a static Manifest under name, parallel to Register.
@@ -106,30 +108,20 @@ func Register(name string, f Factory) {
 // (file/exec sources require a path and parser that are unavailable at validation time).
 // Called from init() alongside Register in each source implementation.
 func RegisterManifest(name string, m plugin.Manifest) {
-	mu.Lock()
-	defer mu.Unlock()
-	if _, exists := manifests[name]; exists {
-		panic(fmt.Sprintf("pkg/source: duplicate manifest registration for %q", name))
-	}
-	manifests[name] = m
+	defaultReg.RegisterManifest(name, m)
 }
 
 // ManifestByName returns the static Manifest registered for name.
 // Safe to call concurrently. No side-effects — does not construct any source.
 func ManifestByName(name string) (plugin.Manifest, bool) {
-	mu.RLock()
-	defer mu.RUnlock()
-	m, ok := manifests[name]
-	return m, ok
+	return defaultReg.ManifestByName(name)
 }
 
 // Build creates a source by name using the registered factory.
 //
 // Returns error when name is not registered or the factory fails.
 func Build(name string, cfg InputConfig, opts BuildOptions) (plugin.Source, error) {
-	mu.RLock()
-	f, ok := factories[name]
-	mu.RUnlock()
+	f, ok := defaultReg.Get(name)
 	if !ok {
 		return nil, fmt.Errorf("pkg/source: unknown source %q; registered: %v", name, Names())
 	}
@@ -139,12 +131,15 @@ func Build(name string, cfg InputConfig, opts BuildOptions) (plugin.Source, erro
 // Names returns a sorted list of all registered source names.
 // Safe to call concurrently.
 func Names() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	names := make([]string, 0, len(factories))
-	for n := range factories {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
+	return defaultReg.Names()
+}
+
+// unregister removes the factory and manifest registered under name.
+// Test-only helper: production code never deletes — Register/RegisterManifest
+// are designed to be called once per name from init(), panicking on duplicates.
+// Counterpart lives here (not in the generic core) because deletion is not
+// part of the registry's public contract; only tests need it for idempotency
+// under `go test -count>1`. Returns silently if name is not registered.
+func unregister(name string) {
+	defaultReg.Delete(name)
 }

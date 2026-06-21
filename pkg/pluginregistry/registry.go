@@ -100,3 +100,16 @@ func (r *Registry[F, M]) ManifestByName(name string) (M, bool) {
 	m, ok := r.manifests[name]
 	return m, ok
 }
+
+// Delete removes the factory and manifest registered under name.
+// Counterpart to Register/RegisterManifest: production code typically
+// registers once and never deletes (init-time wiring), but tests need
+// cleanup between runs under `go test -count>1`, and hot-reload paths
+// in future hosts can rely on the same primitive. Silent no-op if name
+// is not registered.
+func (r *Registry[F, M]) Delete(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.factories, name)
+	delete(r.manifests, name)
+}
