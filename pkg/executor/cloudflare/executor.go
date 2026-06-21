@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
-	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	"github.com/mr-addams/arxsentinel/pkg/dedup"
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -69,6 +69,11 @@ type CloudflareExecutor struct {
 	listID     string
 	instanceID string
 
+	// logger is the operational logger injected by the caller. Replaces the
+	// pre-1.2 global utils.Log dependency — see Flow 072 Decision 2. Always
+	// non-nil in practice (constructor replaces nil with logger.Nop).
+	logger logger.Logger
+
 	mu     sync.RWMutex
 	banned map[string]banRecord
 	stats  struct {
@@ -90,14 +95,20 @@ type CloudflareExecutor struct {
 	dedupWin *dedup.Window
 }
 
-func NewCloudflareExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
-	parsed, err := parseConfig(cfg.Config)
+func NewCloudflareExecutor(cfg config.ExecutorItem, log logger.Logger) (plugin.Executor, error) {
+	parsed, err := parseConfig(cfg.Config, log)
 	if err != nil {
 		return nil, fmt.Errorf("cloudflare: new executor: %w", err)
 	}
 
 	if parsed.TTL <= 0 {
 		return nil, fmt.Errorf("cloudflare: new executor: TTL must be positive, got %v", parsed.TTL)
+	}
+
+	// Inject the operational logger. nil is replaced with logger.Nop so
+	// downstream code never has to nil-check. See Flow 072 Decision 2.
+	if log == nil {
+		log = logger.Nop
 	}
 
 	var client CFClient
@@ -115,6 +126,7 @@ func NewCloudflareExecutor(cfg config.ExecutorItem) (plugin.Executor, error) {
 		banned:     make(map[string]banRecord),
 		instanceID: LoadInstanceID(&parsed),
 		dedupWin:   dedup.NewWindow(parsed.DedupWindow),
+		logger:     log,
 	}
 
 	return exec, nil
@@ -165,12 +177,12 @@ func (e *CloudflareExecutor) Run(ctx context.Context, source plugin.EventSource)
 	listID, err := e.client.FindOrCreateList(startupCtx, e.cfg.ListName)
 	if err != nil {
 		startupCancel()
-		utils.Log("EXECUTOR", fmt.Sprintf("cloudflare: find/create list failed: %v", err), "error")
+		e.logger.Log("EXECUTOR", fmt.Sprintf("cloudflare: find/create list failed: %v", err), logger.LevelError)
 		return fmt.Errorf("cloudflare: run: find/create list: %w", err)
 	}
 	e.listID = listID // must be set before syncExisting/flush/sweep use it
 	if err := e.syncExisting(startupCtx); err != nil {
-		utils.Log("EXECUTOR", fmt.Sprintf("cloudflare: initial sync failed: %v", err), "warning")
+		e.logger.Log("EXECUTOR", fmt.Sprintf("cloudflare: initial sync failed: %v", err), logger.LevelWarning)
 	}
 	startupCancel()
 
@@ -297,7 +309,7 @@ func (e *CloudflareExecutor) waitForPendingOp(ctx context.Context) bool {
 		}
 	}
 
-	utils.Log("EXECUTOR", fmt.Sprintf("executor %s: bulk op %s timed out after polling (6 attempts, ~31.5s) - clearing to proceed", e.name, opID), "warning")
+	e.logger.Log("EXECUTOR", fmt.Sprintf("executor %s: bulk op %s timed out after polling (6 attempts, ~31.5s) - clearing to proceed", e.name, opID), logger.LevelWarning)
 	e.pendingMu.Lock()
 	e.pendingOpID = ""
 	e.pendingMu.Unlock()

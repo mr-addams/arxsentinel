@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	// ── Group 2: internal ──
-	"github.com/mr-addams/arxsentinel/internal/sys/utils"
+	// ── Group 2: project ──
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 )
 
 // ========================== Config ==========================
@@ -96,7 +96,14 @@ func DefaultConfig() Config {
 //	   because encoding/json cannot convert a string to Duration
 //	3. Marshals remaining fields to JSON and unmarshals into Config
 //	4. Validates required fields (APIToken, AccountID)
-func parseConfig(raw map[string]interface{}) (Config, error) {
+func parseConfig(raw map[string]interface{}, log logger.Logger) (Config, error) {
+	// nil-logger guard mirrors Decision 2: the constructor still works when a
+	// caller passes nil — we use the no-op default rather than touching the
+	// pre-1.2 utils.Log global.
+	if log == nil {
+		log = logger.Nop
+	}
+
 	// ---- Default values ----
 	cfg := Config{
 		ListName:      "arxsentinel_blocklist",
@@ -175,7 +182,7 @@ func parseConfig(raw map[string]interface{}) (Config, error) {
 		}, cfg.CommentExtra)
 		if len(cfg.CommentExtra) > 50 {
 			// Log warning so operators notice their comment_extra was silently truncated.
-			utils.Log("CONFIG", fmt.Sprintf("cloudflare: comment_extra truncated from %d to 50 chars", len(cfg.CommentExtra)), "warning")
+			log.Log("CONFIG", fmt.Sprintf("cloudflare: comment_extra truncated from %d to 50 chars", len(cfg.CommentExtra)), logger.LevelWarning)
 			cfg.CommentExtra = cfg.CommentExtra[:50]
 		}
 	}

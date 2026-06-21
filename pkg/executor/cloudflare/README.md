@@ -226,13 +226,21 @@ metrics endpoint without taking the executor lock.
 ## Constructors
 
 ```go
-func NewCloudflareExecutor(cfg config.ExecutorItem) (plugin.Executor, error)
+func NewCloudflareExecutor(cfg config.ExecutorItem, log logger.Logger) (plugin.Executor, error)
 ```
 
 `NewCloudflareExecutor` is the public constructor. It accepts a
 `config.ExecutorItem` (the deserialized per-executor block from the YAML
 configuration), decodes the `Config` from the `Config` map, validates the
 required fields, and returns a fully initialized `*CloudflareExecutor`.
+
+`log` is the operational logger used for `EXECUTOR`/`CONFIG` tags. If `nil`
+is passed, the constructor replaces it with `pkg/logger.Nop` — the executor
+never crashes on a log call. The registry-based factory (`newCloudflareFactory`)
+always passes `Nop` and expects the calling application to inject a real
+logger via `cmd/arxsentinel` (see Flow 072 Task 1.2.7). Pre-1.2 callers that
+relied on the implicit `internal/sys/utils.Log` should pass
+`internal/sys/utils.AsLogger()` once that bridge exists.
 
 The HTTP client is **not** constructed here — it is built lazily inside
 `Run` so that constructor failures are limited to configuration errors
@@ -349,6 +357,6 @@ Standard library:
 Project:
 
 - `internal/sys/config` — `config.ExecutorItem` (per-executor configuration block).
-- `internal/sys/utils` — `utils.Log` (default logger).
+- `pkg/logger` — `Logger` interface + `Nop` default (injected; replaces pre-1.2 `internal/sys/utils.Log`).
 - `pkg/plugin` — `Executor`, `ThreatEvent`, `EventSource`, `Manifest`, `ExecutorStats`.
 - `pkg/executor` — registry (`Register`, `RegisterManifest`).

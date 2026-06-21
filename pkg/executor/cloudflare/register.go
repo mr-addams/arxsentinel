@@ -8,6 +8,7 @@ package cloudflare
 import (
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/pkg/executor"
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -30,5 +31,8 @@ func newCloudflareFactory(cfg executor.ExecutorConfig) (plugin.Executor, error) 
 		Type:   cfg.Type,
 		Config: cfg.Config,
 	}
-	return NewCloudflareExecutor(item)
+	// Registry factory does not yet receive a logger from the caller (the
+	// Build() signature stays unchanged per Flow 072 Decision 7). pkg/logger.Nop
+	// is used here; cmd/arxsentinel will inject the real bridge in Task 1.2.7.
+	return NewCloudflareExecutor(item, logger.Nop)
 }
