@@ -34,6 +34,8 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+
+	"github.com/mr-addams/arxsentinel/pkg/logger"
 )
 
 // ========================== Global state ===============================================
@@ -412,3 +414,39 @@ func OpenThreatLog(path string) (*os.File, error) {
 	}
 	return f, nil
 }
+
+// ========================== Logger Bridge (Flow 072 Task 1.2.6) ==========================
+//
+// Adapter exposing utils.Log via the pkg/logger.Logger interface.
+// Point of contact between internal/sys/utils (colored operational logging) and pkg/
+// packages that only know the abstract interface. Used by cmd/arxsentinel to inject a
+// real logger into pkg-factories (executors, source registry, etc.).
+//
+// Boundary note (ADR-002): internal/ importing pkg/ is the allowed direction.
+// The reverse (pkg/ importing internal/) is what Flow 072 removes; this bridge does
+// not violate that — pkg/ never learns about utils.Log.
+//
+// TODO(Phase 1.4): when BuildOptions.LogFn migrates to BuildOptions.Logger
+// (pkg/source registry refactor), this bridge becomes the single source of truth
+// bridging the two layers; for Phase 1.2 it serves the executor/source factories only.
+
+// utilsBridge — adapter implementing pkg/logger.Logger by delegating to the package-level
+// Log function. Zero-value instance is safe — state lives in the package-level Log
+// (file descriptors, mutexes, color state).
+type utilsBridge struct{}
+
+// Log delegates to the package-level Log(tag, msg, level) — formats/colors/file-write
+// are handled by Log itself. The bridge is a thin pass-through: arguments are forwarded
+// verbatim, no transformation, no truncation.
+func (utilsBridge) Log(tag, msg, level string) { Log(tag, msg, level) }
+
+// AsLogger returns a pkg/logger.Logger backed by utils.Log. The returned value is safe
+// for concurrent use (Log itself is goroutine-safe via logMu + RWMutex on file swap).
+// Use from cmd/arxsentinel to inject into pkg-factory calls:
+//
+//	exec := cloudflare.NewCloudflareExecutor(cfg, utils.AsLogger())
+//	src := source.Build("file", cfg, source.BuildOptions{LogFn: <adapter>})
+//
+// (source.Build still uses LogFn func(...) not Logger, see Decision 7; cmd wraps
+// utils.AsLogger() into a 3-line closure to satisfy BuildOptions.LogFn.)
+func AsLogger() logger.Logger { return utilsBridge{} }
