@@ -64,10 +64,10 @@ type ProcessorConfig struct {
 type Factory func(cfg ProcessorConfig) (plugin.Processor, error)
 
 // defaultReg — package singleton holding all processor factories.
-// Lives across test runs in a single binary; processor-registered init() calls
-// are stable under `go test -count>1` because each plugin name registers
-// exactly once per process and Register panics on duplicates, so no
-// test-only reset helper is needed (no registry-level tests exist either).
+// Lives across test runs in a single binary; init()-registered plugin names are
+// stable because each registers exactly once per process and Register panics on
+// duplicates. Registry-level tests (registry_test.go) reset the singleton between
+// runs via the test-only unregister() helper to stay idempotent under `go test -count>1`.
 //
 // M is parameterised as struct{}: the processor registry does not expose a
 // registry-level manifest API (manifests are returned by the plugin.Processor
