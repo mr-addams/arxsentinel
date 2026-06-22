@@ -3,6 +3,14 @@
 name: minimal
 description: "Minimal arxsentinel build — syslog/stdin sources and stdout sink for log aggregation."
 plugins:
+  executors:
+    - name: cloudflare
+      module: arxsentinel
+  detectors:
+    - name: probe
+    - name: rate
+    - name: bruteforce
+    - name: overflow
   sources:
     - name: syslog
       module: arx-core
