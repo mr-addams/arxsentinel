@@ -1,0 +1,37 @@
+# Profile: full — all 12 blank-import transports (default build).
+# Profiles tree-shake source/sink/executor/processor transports only.
+# Detectors (8 plugins in pkg/detector) and cloudflare-executor are always-linked
+# (named-imports in validate.go/builders.go/cleanup.go) — out of profile scope.
+# sink/file is named-import in pipeline.go — always-linked, not in profile.
+# See DECISIONS.md Flow 075 Decisions 11-14 for full rationale.
+name: full
+description: "Full arxsentinel build — all 12 blank-import transports (default)."
+plugins:
+  executors:
+    - name: mikrotik
+      module: arxsentinel
+    - name: nginx
+      module: arxsentinel
+  processors:
+    - name: processor
+      module: arx-core
+  sinks:
+    - name: exec
+      module: arx-core
+    - name: sentinel-threat
+      module: arxsentinel
+    - name: stdout
+      module: arx-core
+  sources:
+    - name: exec
+      module: arx-core
+    - name: file
+      module: arx-core
+    - name: http
+      module: arx-core
+    - name: sentinel
+      module: arxsentinel
+    - name: stdin
+      module: arx-core
+    - name: syslog
+      module: arx-core

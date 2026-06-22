@@ -1,0 +1,15 @@
+# Profile: iot — edge remediation device.
+# syslog input, exec sink for local remediation actions, stdout for visibility.
+name: iot
+description: "IoT edge build — syslog/file sources and exec/stdout sinks for local remediation."
+plugins:
+  sources:
+    - name: syslog
+      module: arx-core
+    - name: file
+      module: arx-core
+  sinks:
+    - name: exec
+      module: arx-core
+    - name: stdout
+      module: arx-core
