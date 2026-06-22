@@ -47,7 +47,7 @@ That contract keeps `pkg/` independent of `internal/`.
 ## Usage
 
 ```go
-import "github.com/mr-addams/arxsentinel/pkg/logger"
+import "github.com/mr-addams/arx-core/pkg/logger"
 
 if log == nil { log = logger.Nop }
 log.Log("EXECUTOR", "starting", logger.LevelInfo)
