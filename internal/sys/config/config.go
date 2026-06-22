@@ -33,7 +33,7 @@ import (
 
 	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
 	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
-	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
+	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	"github.com/mr-addams/arx-core/pkg/parser"
 )
 

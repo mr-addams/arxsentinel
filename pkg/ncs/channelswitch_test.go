@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
+	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	"github.com/mr-addams/arx-core/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/ncs"
 	"github.com/mr-addams/arx-core/pkg/plugin"
