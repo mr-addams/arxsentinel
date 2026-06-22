@@ -167,9 +167,16 @@ pkg_relative_dir() {
       fi
       ;;
     sources|sinks|executors|detectors)
+      # Probe order matches Flow 080 split-phases (Phase 1+: wholesale Core,
+      # Phase 3+: split product plugins). Both arxsentinel/pkg/<kind>plugins/
+      # (the path written by playbooks) and pkg/<kind>plugins/ (the actual
+      # filesystem location after Phase 3 — module-name collision forced
+      # dropping the redundant `arxsentinel/` prefix) are valid; the first
+      # existing path wins.
       candidates=(
         "arx-core/pkg/${kdir}/$suffix"
         "arxsentinel/pkg/${kdir}plugins/$suffix"
+        "pkg/${kdir}plugins/$suffix"
         "pkg/${kdir}/$suffix"
       )
       ;;

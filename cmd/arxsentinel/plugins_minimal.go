@@ -10,7 +10,7 @@
 package main
 
 import (
-	_ "github.com/mr-addams/arxsentinel/pkg/executor/cloudflare"
+	_ "github.com/mr-addams/arxsentinel/pkg/executorplugins/cloudflare"
 
 	// Plugin detectors (tree-shakeable side-effect registration, Flow 076)
 	_ "github.com/mr-addams/arxsentinel/pkg/detector/bruteforce"

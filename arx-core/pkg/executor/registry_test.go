@@ -63,9 +63,10 @@ func TestRegistry_ExecFallback(t *testing.T) {
 	exe, err := Build(ExecutorConfig{
 		Name: "exec-fallback",
 		Type: "unregistered_type",
-		// execplugin перенесён в arx-core/pkg/execplugin (Flow 079 W4.2);
-		// путь к testdata идёт через корень репо относительно pkg/executor.
-		Exec: "../../arx-core/pkg/execplugin/testdata/executor.sh",
+		// execplugin перенесён в arx-core/pkg/execplugin (Flow 079 W4.2).
+		// После Phase 3 registry переехал в arx-core/pkg/executor — путь
+		// относительно текущей директории пакета: ../execplugin/testdata/.
+		Exec: "../execplugin/testdata/executor.sh",
 	}, logger.Nop)
 	if err != nil {
 		t.Fatalf("Build(exec-fallback) error = %v, want nil", err)

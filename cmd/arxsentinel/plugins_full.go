@@ -20,9 +20,9 @@
 package main
 
 import (
-	_ "github.com/mr-addams/arxsentinel/pkg/executor/cloudflare"
-	_ "github.com/mr-addams/arxsentinel/pkg/executor/mikrotik"
-	_ "github.com/mr-addams/arxsentinel/pkg/executor/nginx"
+	_ "github.com/mr-addams/arxsentinel/pkg/executorplugins/cloudflare"
+	_ "github.com/mr-addams/arxsentinel/pkg/executorplugins/mikrotik"
+	_ "github.com/mr-addams/arxsentinel/pkg/executorplugins/nginx"
 	_ "github.com/mr-addams/arxsentinel/pkg/processor"
 
 	// Plugin detectors (tree-shakeable side-effect registration, Flow 076)
