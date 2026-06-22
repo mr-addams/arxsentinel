@@ -4,7 +4,7 @@
 
 package rate
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
 func (d *rateDetector) Manifest() plugin.Manifest {
 	return plugin.Manifest{

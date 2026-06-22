@@ -4,7 +4,7 @@
 
 package file
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
 // Manifest returns the file source's plugin metadata.
 func (s *FileSource) Manifest() plugin.Manifest {

@@ -4,7 +4,7 @@
 
 package stdout
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
 func (s *StdoutSink) Manifest() plugin.Manifest {
 	return plugin.Manifest{

@@ -9,7 +9,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // dummyFactory returns a no-op detector; used only for temporary registration.

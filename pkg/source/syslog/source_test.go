@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/parser"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -4,7 +4,7 @@
 
 package cloudflare
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
 func (e *CloudflareExecutor) Manifest() plugin.Manifest {
 	return plugin.Manifest{

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/detector"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // TestProbeDetector_ViaRegistry builds a probe detector and verifies it matches

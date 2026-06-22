@@ -19,7 +19,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // ErrQueueFull is returned by Push when the queue buffer is at capacity.

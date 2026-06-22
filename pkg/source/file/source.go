@@ -29,7 +29,7 @@ import (
 	// import is the subject of a separate flow (Phase 1.3). Flow 072 only
 	// removes the utils.Log fallback; it does not touch this import.
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 )
 

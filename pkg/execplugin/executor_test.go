@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // TestExecExecutor_Name tests that Name() returns the executor's registered name.

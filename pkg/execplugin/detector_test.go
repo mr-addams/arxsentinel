@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // mockIPView is a test double implementing plugin.IPView.

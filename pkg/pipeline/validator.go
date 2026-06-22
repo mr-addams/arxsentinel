@@ -11,7 +11,7 @@ package pipeline
 import (
 	"sort"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // SemanticError describes a type mismatch between two adjacent pipeline steps.

@@ -35,7 +35,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/mr-addams/arx-core/pkg/pluginregistry"
 )
 

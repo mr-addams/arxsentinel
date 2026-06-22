@@ -14,7 +14,7 @@
 
 package format
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
 // Formatter — minimal interface for ThreatEvent serialization.
 // Single method on purpose: keeping the interface narrow makes it cheap to

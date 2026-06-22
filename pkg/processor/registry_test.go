@@ -18,7 +18,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // unregisterForTest deletes every supplied name from the singleton registry.

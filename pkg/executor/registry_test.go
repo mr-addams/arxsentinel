@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/mr-addams/arx-core/pkg/logger"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // unregisterForTest удаляет name из singleton-реестра.

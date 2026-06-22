@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/detector"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // TestOverflowDetector_ViaRegistry verifies URL length and WAF bypass detection.

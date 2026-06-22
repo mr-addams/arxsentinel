@@ -3,7 +3,7 @@
 
 package noasset
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
 func (d *noAssetDetector) Manifest() plugin.Manifest {
 	return plugin.Manifest{

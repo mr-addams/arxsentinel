@@ -4,7 +4,7 @@
 
 package stdin
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
 // Manifest returns the stdin source's plugin metadata.
 func (s *StdinSource) Manifest() plugin.Manifest {

@@ -7,7 +7,7 @@
 
 package chaincheck
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
 // Manifest returns the processor's identity and data contract.
 func (p *ChainCheckProcessor) Manifest() plugin.Manifest {

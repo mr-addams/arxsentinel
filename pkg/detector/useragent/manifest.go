@@ -3,7 +3,7 @@
 
 package useragent
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
 // Manifest returns the plugin metadata for the useragent detector.
 // Required by Manifestable; called from cmd/arxsentinel/validate.go when validating

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/logger"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 func testEvent(ip string) plugin.ThreatEvent {

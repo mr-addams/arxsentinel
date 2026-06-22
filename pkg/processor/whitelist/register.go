@@ -15,7 +15,7 @@ import (
 
 	corewhitelist "github.com/mr-addams/arxsentinel/internal/core/whitelist"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/mr-addams/arxsentinel/pkg/processor"
 )
 

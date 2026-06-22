@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/detector"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // TestBruteforceDetector_ViaRegistry verifies triggering on a high 404 ratio.

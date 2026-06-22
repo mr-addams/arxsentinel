@@ -17,7 +17,7 @@ import (
 	"context"
 
 	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // ChainCheckProcessor enriches LogEntry with chain integrity findings.

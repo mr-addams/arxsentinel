@@ -10,7 +10,7 @@ import (
 
 	detector "github.com/mr-addams/arxsentinel/pkg/detector"
 	_ "github.com/mr-addams/arxsentinel/pkg/detector/crawler"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // TestCrawlerDetector_ViaRegistry verifies sequential numeric path detection.

@@ -29,7 +29,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // FormatFailban formats a ThreatEvent as a Fail2Ban-compatible log line.

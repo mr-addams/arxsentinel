@@ -20,7 +20,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
 	ncs "github.com/mr-addams/arxsentinel/pkg/ncs"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // preRegisterExecutorQueues pre-registers each executor source that has a queue:

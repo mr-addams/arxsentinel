@@ -13,7 +13,7 @@ import (
 	_ "github.com/mr-addams/arxsentinel/pkg/detector/useragent"
 
 	detector "github.com/mr-addams/arxsentinel/pkg/detector"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // TestUADetector_ExtraPatternNormalization verifies that extra patterns with

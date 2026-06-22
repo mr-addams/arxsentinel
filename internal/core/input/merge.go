@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // LogFn is a callback for structured logging from Merge.

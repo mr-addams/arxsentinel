@@ -12,7 +12,7 @@ import (
 	_ "github.com/mr-addams/arxsentinel/pkg/detector/badbot"
 
 	detector "github.com/mr-addams/arxsentinel/pkg/detector"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // TestBadBotDetector_ViaRegistry verifies matching with a mock Matcher.

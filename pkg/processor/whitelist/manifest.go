@@ -4,7 +4,7 @@
 
 package whitelist
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
 // Manifest is the plugin identity and data contract for the whitelist processor.
 var Manifest = plugin.Manifest{

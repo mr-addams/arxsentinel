@@ -9,7 +9,7 @@ import (
 	"fmt"
 
 	"github.com/mr-addams/arxsentinel/pkg/execplugin"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 )
 

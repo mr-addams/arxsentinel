@@ -42,7 +42,7 @@ import (
 
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
 	"github.com/mr-addams/arxsentinel/pkg/ncs"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // addrScheme — префикс, выделяющий NCS-адрес из cfg.Addr.

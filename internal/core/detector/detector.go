@@ -21,7 +21,7 @@ package detector
 import (
 	"time"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // IPView is a type alias for plugin.IPView.

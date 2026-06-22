@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/detector"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // TestNoAssetDetector_ViaRegistry verifies detection of page-only traffic.

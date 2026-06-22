@@ -20,7 +20,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // MemoryQueue implements Queue using a bounded buffered channel. Safe for concurrent use.

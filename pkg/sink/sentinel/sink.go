@@ -14,7 +14,7 @@ import (
 
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
 	"github.com/mr-addams/arxsentinel/pkg/ncs"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // SentinelThreatSink enqueues threat events for the Sentinel Hub executor.

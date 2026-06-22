@@ -18,7 +18,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // ExecDetector implements plugin.Detector by communicating with an external

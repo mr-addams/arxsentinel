@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // ExecSink implements plugin.Sink by communicating with an external

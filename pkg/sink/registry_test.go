@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // ── Mock Sink for testing ──────────────────────────────────────────────────────────────

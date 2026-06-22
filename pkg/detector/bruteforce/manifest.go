@@ -3,7 +3,7 @@
 
 package bruteforce
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
 // Manifest describes the detector's interface contract and role in the pipeline.
 func (d *bruteforceDetector) Manifest() plugin.Manifest {

@@ -3,7 +3,7 @@
 
 package crawler
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
 func (d *crawlerDetector) Manifest() plugin.Manifest {
 	return plugin.Manifest{

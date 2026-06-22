@@ -26,7 +26,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // RedisQueue implements Queue backed by a Redis list (LPUSH / BRPOP).

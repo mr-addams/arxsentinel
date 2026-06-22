@@ -7,7 +7,7 @@ package file
 import (
 	"context"
 
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 )
 
