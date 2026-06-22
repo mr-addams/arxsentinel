@@ -49,22 +49,43 @@ type profileSchema struct {
 	} `yaml:"plugins"`
 }
 
+// nameToPkgSuffix overrides the package-suffix (directory name) for plugin names
+// that don't match the sub-package directory. Keyed by `kind/name` so the same
+// name in different kinds is unambiguous. Currently only the sentinel sink
+// differs: its Register name is "sentinel-threat" but the package lives in
+// pkg/sink/sentinel (Decision 15 / Decision 16, Flow 075). The Register name is
+// kept verbatim in profile YAML; this map only affects the derived import path.
+var nameToPkgSuffix = map[string]string{
+	"sinks/sentinel-threat": "sentinel",
+}
+
+// pkgSuffix resolves the package-suffix (directory name) for a given (kind,
+// name). Override map wins; default is the plugin name itself.
+func pkgSuffix(kind, name string) string {
+	if s, ok := nameToPkgSuffix[kind+"/"+name]; ok {
+		return s
+	}
+	return name
+}
+
 // kindPath maps a plugin kind to its pkg/ sub-tree. `processors` is special-cased:
 // the registry package `processor` lives directly under pkg/, while sub-packages
-// (future) would live under pkg/processor/<name>.
+// (future) would live under pkg/processor/<name>. For sinks (and any kind) the
+// pkgSuffix override is consulted first so register-name ≠ directory cases are
+// reconciled (Decision 15).
 func kindPath(kind, name string) string {
 	switch kind {
 	case "processors":
 		if name == "processor" {
 			return moduleRoot + "/pkg/processor"
 		}
-		return moduleRoot + "/pkg/processor/" + name
+		return moduleRoot + "/pkg/processor/" + pkgSuffix(kind, name)
 	case "sources":
-		return moduleRoot + "/pkg/source/" + name
+		return moduleRoot + "/pkg/source/" + pkgSuffix(kind, name)
 	case "sinks":
-		return moduleRoot + "/pkg/sink/" + name
+		return moduleRoot + "/pkg/sink/" + pkgSuffix(kind, name)
 	case "executors":
-		return moduleRoot + "/pkg/executor/" + name
+		return moduleRoot + "/pkg/executor/" + pkgSuffix(kind, name)
 	}
 	return ""
 }

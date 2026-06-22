@@ -1,0 +1,38 @@
+# ===================== cookbook/profiles/iot.yaml =====================================
+#
+#   Reference config for the `iot` build profile.
+#   Covers three plugin names from profiles/iot.yaml to exercise invariant (c):
+#     - source/syslog (type: syslog)
+#     - sink/exec     (type: exec)    — edge remediation: invoke a local script
+#     - sink/stdout   (type: stdout)  — operational visibility on the console
+#
+#   Not a deployable user config — cookbook/profiles/ exists only as the
+#   static reference set for scripts/check-build-profiles.sh invariant (c).
+#   For ready-to-use recipes see cookbook/<scenario>/.
+#
+# =======================================================================================
+
+# ── Streams ───────────────────────────────────────────────────────────────────────────
+#
+# Stream "main": syslog source → two sinks (exec + stdout).
+# exec sink forwards ThreatEvents as JSON to a local remediation script on stdin;
+# stdout sink mirrors the same events to the console for the operator.
+streams:
+  - name: main
+    inputs:
+      - type: syslog
+        addr: udp://0.0.0.0:5514
+        parser: combined
+    outputs:
+      - type: exec
+        exec: /usr/local/lib/arxsentinel/plugins/iot-remediate.sh
+        format: json
+      - type: stdout
+        format: json
+
+# ── Scoring (minimal valid set) ────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: "300s"
+  decay: "linear"
