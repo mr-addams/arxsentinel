@@ -23,7 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/pkg/parser"
+	"github.com/mr-addams/arx-core/pkg/parser"
 	// TODO(Phase 1.3 — Tail Abstraction): pkg/source/file still imports
 	// internal/sys/utils for utils.NewTailReader (see Run()). Dropping this
 	// import is the subject of a separate flow (Phase 1.3). Flow 072 only

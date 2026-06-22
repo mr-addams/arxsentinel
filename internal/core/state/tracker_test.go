@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
-	"github.com/mr-addams/arxsentinel/pkg/parser"
+	"github.com/mr-addams/arx-core/pkg/parser"
 )
 
 // ========================== Helper functions ===================================

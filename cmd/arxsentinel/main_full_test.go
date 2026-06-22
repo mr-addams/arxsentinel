@@ -14,7 +14,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
-	"github.com/mr-addams/arxsentinel/pkg/parser"
+	"github.com/mr-addams/arx-core/pkg/parser"
 )
 
 // TestBuildPipelineDetectors_ExplicitSubset verifies that when pipeCfg.Detectors is non-nil,

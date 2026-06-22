@@ -34,7 +34,7 @@ import (
 
 	"github.com/mr-addams/arxsentinel/internal/core/detector"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
-	"github.com/mr-addams/arxsentinel/pkg/parser"
+	"github.com/mr-addams/arx-core/pkg/parser"
 )
 
 // ========================== Scorer ====================================================
