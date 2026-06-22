@@ -12,19 +12,20 @@
 //     window     string — sliding window duration, e.g. "60s" (default: "60s")
 //     score      int    — threat score on trigger (default: 25)
 //
-//   Registered as "rate" via init().
+//   Registered as "rate" via init() in sub-package rate.
 
-package detector
+package rate
 
 import (
 	"fmt"
 	"time"
 
+	detector "github.com/mr-addams/arxsentinel/pkg/detector"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 func init() {
-	Register("rate", newRateFactory)
+	detector.Register("rate", newRateFactory)
 }
 
 // rateDetector detects anomalous request rate over a sliding window.
@@ -38,10 +39,10 @@ type rateDetector struct {
 // Returns error when window <= 0 or threshold <= 0 — these produce a broken
 // thresholdRPS (NaN, +Inf, or zero) that would silently block-or-allow all traffic.
 // The caller (config validation or Build) must handle the error.
-func newRateFactory(cfg DetectorConfig, _ SharedResources) (plugin.Detector, error) {
-	threshold := getInt(cfg.Params, "threshold", 100)
-	window := getDuration(cfg.Params, "window", 60*time.Second)
-	score := getInt(cfg.Params, "score", 25)
+func newRateFactory(cfg detector.DetectorConfig, _ detector.SharedResources) (plugin.Detector, error) {
+	threshold := detector.GetInt(cfg, "threshold", 100)
+	window := detector.GetDuration(cfg, "window", 60*time.Second)
+	score := detector.GetInt(cfg, "score", 25)
 
 	if window <= 0 {
 		return nil, fmt.Errorf("rate: window=%v must be positive", window)
@@ -74,5 +75,3 @@ func (d *rateDetector) Detect(sv plugin.IPView, _ *plugin.LogEntry) plugin.Detec
 		Reason: "rate:threshold_exceeded",
 	}
 }
-
-
