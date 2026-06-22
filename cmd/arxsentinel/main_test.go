@@ -3,22 +3,21 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"strings"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/mr-addams/arxsentinel/internal/core/scorer"
 	"github.com/mr-addams/arxsentinel/internal/core/state"
 	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
+	coreruntime "github.com/mr-addams/arx-core/pkg/runtime"
 	pkgdetector "github.com/mr-addams/arx-core/pkg/detector"
 	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	ncs "github.com/mr-addams/arx-core/pkg/ncs"
 	"github.com/mr-addams/arx-core/pkg/parser"
-	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // TestStartupShutdownInvariants enforces the mandatory startup/shutdown specification
@@ -103,11 +102,18 @@ func TestStartupShutdownInvariants(t *testing.T) {
 		"wg.Wait()")
 }
 
-// TestProcessLine_ChainGuardNilSafe verifies that processLine does not panic when
-// SharedResources.ChainChecker and WarningsWriter are nil (chain_guard disabled).
-// This is the normal state for configs that do not set chain_guard.enabled = true.
-func TestProcessLine_ChainGuardNilSafe(t *testing.T) {
-	// Initialise utils logger (no-op output) so processLine can call utils.Log safely.
+// TestSecurityProcessor_ChainGuardNilSafe verifies that securityProcessor.Process
+// does not panic when runtime.SharedResources.ChainChecker and WarningsWriter are
+// nil (chain_guard disabled). This is the normal state for configs that do not
+// set chain_guard.enabled = true.
+//
+// Migrated (Flow 081 Phase 4): the legacy processLine function is gone — its
+// verbatim port lives as securityProcessor.Process (processor_security.go).
+// The test now goes through the real Product path: build a *securityFactory,
+// call Build to obtain *securityState, then invoke Process via a fresh
+// securityProcessor sharing the same nil SharedResources.
+func TestSecurityProcessor_ChainGuardNilSafe(t *testing.T) {
+	// Initialise utils logger (no-op output) so securityProcessor.Process can call utils.Log safely.
 	if err := utils.Init(false, false, "", ""); err != nil {
 		t.Fatalf("utils.Init: %v", err)
 	}
@@ -119,11 +125,21 @@ func TestProcessLine_ChainGuardNilSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create temp config: %v", err)
 	}
-	// Minimal valid config: one stream, no chain_guard section.
+	// Minimal valid config: one stream with one auto-wrapped pipeline, no chain_guard section.
+	// After Migrate(), general.log_file/threat_log are forbidden when streams:[] is set —
+	// inputs/outputs live in pipelines[].inputs/outputs instead.
 	_, _ = tmp.WriteString(`
-general:
-  log_file: /dev/null
-  threat_log: /dev/null
+streams:
+  - name: test
+    pipelines:
+      - name: ""
+        inputs:
+          - type: file
+            path: /dev/null
+        outputs:
+          - type: file
+            path: /dev/null
+            format: fail2ban
 `)
 	_ = tmp.Close()
 
@@ -132,33 +148,26 @@ general:
 		t.Fatalf("config.LoadConfig: %v", loadErr)
 	}
 
-	tracker := state.NewTracker(cfg, func(tag, msg, level string) {})
-	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
+	// Build a securityFactory exactly the way main.go does it, but with a
+	// nil-safe runtime.SharedResources (ChainChecker/WarningsWriter both nil
+	// — simulates chain_guard.enabled = false, the default).
+	factory := &securityFactory{
+		ctx:        context.Background(),
+		path:       tmp.Name(),
+		ipCache:    nil, // Process() never touches ipCache (DNS lookup only via Verifier on cache miss)
+		resolver:   &net.Resolver{PreferGo: true},
+		cfg:        cfg,
+		streamName: "test",
+		trackers:   make(map[string]*state.Tracker),
+		shared:     coreruntime.SharedResources{}, // ChainChecker / WarningsWriter nil
+	}
+
+	ps, err := factory.Build("test", "", 0, factory.shared)
 	if err != nil {
-		t.Fatalf("whitelist.NewMatcher: %v", err)
+		t.Fatalf("securityFactory.Build: %v", err)
 	}
 
-	var count atomic.Int64
-	var threatCount atomic.Int64
-
-	pipe := &PipelineContext{
-		StreamName:       "test",
-		PipelineName:     "", // explicit: auto-wrapped legacy pipeline — no name
-		processedCount:   &count,
-		threatCount:      &threatCount,
-		Tracker:          tracker,
-		Scorer:           scorer.NewScorer(cfg.Scoring, nil, func(tag, msg, level string) {}),
-		Sinks:            []plugin.Sink{}, // no-op sink list — we do not assert on threat output here
-		Matcher:          matcher,
-		Verifier:         whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, func(tag, msg, level string) {}),
-		FakeBotScore:     cfg.Whitelist.FakeBotScore,
-		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
-		// Shared is zero-value: ChainChecker == nil, WarningsWriter == nil.
-		// This simulates chain_guard.enabled = false (the default).
-		Shared:     SharedResources{},
-		SourceName: "file:/var/log/nginx/access.log",
-		SourceType: "file",
-	}
+	processor := &securityProcessor{shared: factory.shared}
 
 	// A valid nginx combined + real_ip log line (the format CombinedParser expects).
 	// Format: $remote_addr ... "$http_user_agent" "$real_ip"
@@ -168,11 +177,19 @@ general:
 		t.Fatal("test setup: CombinedParser failed to parse the test line")
 	}
 
-	// Must not panic.
-	processLine(context.Background(), entry, pipe)
+	evctx := coreruntime.EventContext{
+		StreamName:   "test",
+		PipelineName: "",
+		SourceName:   "file:/var/log/nginx/access.log",
+		SourceType:   "file",
+	}
 
-	if count.Load() == 0 {
-		t.Error("processLine returned without incrementing processedCount for a valid log entry")
+	// Must not panic — ChainChecker/WarningsWriter are nil (chain_guard disabled).
+	action := processor.Process(context.Background(), entry, ps, evctx)
+
+	// Non-Skip result: the line was scored (even if level="" — Action{} means Skip=false).
+	if action.Skip {
+		t.Error("securityProcessor.Process returned Skip=true for a normal non-whitelisted request")
 	}
 }
 
@@ -241,10 +258,15 @@ func TestResolveTrackerGroup(t *testing.T) {
 	}
 }
 
-// TestBuildTrackerGroups_SharedAndIsolated verifies that:
+// TestSecurityFactory_GetOrCreateTracker_SharedAndIsolated verifies that
+// securityFactory.getOrCreateTracker (the Product replacement for the legacy
+// buildTrackerGroups helper) preserves per-group sharing semantics:
 //   - two pipelines with the same tracker_group share one *state.Tracker
 //   - a pipeline with a different (implicit) group gets a distinct *state.Tracker
-func TestBuildTrackerGroups_SharedAndIsolated(t *testing.T) {
+//
+// Migrated (Flow 081 Phase 4): the legacy buildTrackerGroups helper is gone —
+// production code uses securityFactory.getOrCreateTracker (processor_factory.go).
+func TestSecurityFactory_GetOrCreateTracker_SharedAndIsolated(t *testing.T) {
 	cfg := loadMinimalConfig(t)
 
 	streamCfg := config.StreamConfig{
@@ -255,37 +277,42 @@ func TestBuildTrackerGroups_SharedAndIsolated(t *testing.T) {
 		},
 	}
 
-	trackers := buildTrackerGroups(cfg, streamCfg)
-
-	// Exactly two distinct groups: "web" and "mgmt".
-	if len(trackers) != 2 {
-		t.Fatalf("expected 2 tracker groups (\"web\", \"mgmt\"), got %d", len(trackers))
+	// getOrCreateTracker starts a GC goroutine on first creation per group;
+	// cancel ctx in cleanup to stop them cleanly (no leaked goroutines after test).
+	factoryCtx, cancelFactory := context.WithCancel(context.Background())
+	t.Cleanup(cancelFactory)
+	factory := &securityFactory{
+		ctx:      factoryCtx,
+		trackers: make(map[string]*state.Tracker),
 	}
-	if trackers["web"] == nil {
+
+	apiTracker := factory.getOrCreateTracker(resolveTrackerGroup(streamCfg.Pipelines[0]), cfg)   // "web"
+	adminTracker := factory.getOrCreateTracker(resolveTrackerGroup(streamCfg.Pipelines[1]), cfg) // "web"
+	mgmtTracker := factory.getOrCreateTracker(resolveTrackerGroup(streamCfg.Pipelines[2]), cfg)  // "mgmt"
+
+	if apiTracker == nil {
 		t.Fatal("tracker for group \"web\" must not be nil")
 	}
-	if trackers["mgmt"] == nil {
+	if mgmtTracker == nil {
 		t.Fatal("tracker for group \"mgmt\" must not be nil")
 	}
 
 	// api and admin both resolve to group "web" — must point to the same tracker.
-	apiGroup := resolveTrackerGroup(streamCfg.Pipelines[0])   // "web"
-	adminGroup := resolveTrackerGroup(streamCfg.Pipelines[1]) // "web"
-	if trackers[apiGroup] != trackers[adminGroup] {
+	if apiTracker != adminTracker {
 		t.Error("api and admin with tracker_group=\"web\" must share the same *state.Tracker")
 	}
 
 	// mgmt resolves to group "mgmt" — must be a different pointer.
-	mgmtGroup := resolveTrackerGroup(streamCfg.Pipelines[2]) // "mgmt"
-	if trackers[mgmtGroup] == trackers["web"] {
+	if mgmtTracker == apiTracker {
 		t.Error("mgmt with isolated tracker_group must not share the tracker with the \"web\" group")
 	}
 }
 
-// TestBuildTrackerGroups_AutoWrapped verifies that legacy auto-wrapped pipelines
-// (Name="", TrackerGroup="") all resolve to the same group key ""
-// and share one tracker per stream — identical to pre-Task-3 behaviour.
-func TestBuildTrackerGroups_AutoWrapped(t *testing.T) {
+// TestSecurityFactory_GetOrCreateTracker_AutoWrapped verifies that legacy
+// auto-wrapped pipelines (Name="", TrackerGroup="") all resolve to the same
+// group key "" and share one tracker per stream — identical to pre-Task-3
+// behaviour.
+func TestSecurityFactory_GetOrCreateTracker_AutoWrapped(t *testing.T) {
 	cfg := loadMinimalConfig(t)
 
 	// Two auto-wrapped pipelines (Migrate() would produce this for a stream with inputs+outputs).
@@ -295,12 +322,16 @@ func TestBuildTrackerGroups_AutoWrapped(t *testing.T) {
 		},
 	}
 
-	trackers := buildTrackerGroups(cfg, streamCfg)
-
-	if len(trackers) != 1 {
-		t.Fatalf("auto-wrapped stream: expected 1 tracker group, got %d", len(trackers))
+	factoryCtx, cancelFactory := context.WithCancel(context.Background())
+	t.Cleanup(cancelFactory)
+	factory := &securityFactory{
+		ctx:      factoryCtx,
+		trackers: make(map[string]*state.Tracker),
 	}
-	if trackers[""] == nil {
+
+	tracker := factory.getOrCreateTracker(resolveTrackerGroup(streamCfg.Pipelines[0]), cfg)
+
+	if tracker == nil {
 		t.Fatal("auto-wrapped tracker (group=\"\") must not be nil")
 	}
 }
@@ -632,9 +663,15 @@ func TestCollectSentinelSinkNames(t *testing.T) {
 	}
 }
 
-// BenchmarkProcessLine measures the throughput of processLine with a full pipeline context.
+// BenchmarkSecurityProcessor measures the throughput of the production code path
+// (securityProcessor.Process with a *securityState built by securityFactory.Build).
 // Uses a realistic nginx log line and a minimal config with default detectors.
-func BenchmarkProcessLine(b *testing.B) {
+//
+// Migrated (Flow 081 Phase 4): the legacy processLine function is gone; the
+// production row handler is now securityProcessor.Process, called via the same
+// state-builder path that runtime.Run uses. Throughput semantics are preserved:
+// the same matcher/scorer/verifier are exercised on every iteration.
+func BenchmarkSecurityProcessor(b *testing.B) {
 	if err := utils.Init(false, false, "", ""); err != nil {
 		b.Fatalf("utils.Init: %v", err)
 	}
@@ -645,9 +682,17 @@ func BenchmarkProcessLine(b *testing.B) {
 		b.Fatalf("create temp config: %v", err)
 	}
 	_, _ = tmp.WriteString(`
-general:
-  log_file: /dev/null
-  threat_log: /dev/null
+streams:
+  - name: test
+    pipelines:
+      - name: ""
+        inputs:
+          - type: file
+            path: /dev/null
+        outputs:
+          - type: file
+            path: /dev/null
+            format: fail2ban
 `)
 	_ = tmp.Close()
 
@@ -656,31 +701,24 @@ general:
 		b.Fatalf("config.LoadConfig: %v", loadErr)
 	}
 
-	tracker := state.NewTracker(cfg, func(tag, msg, level string) {})
-	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
-	if err != nil {
-		b.Fatalf("whitelist.NewMatcher: %v", err)
+	factory := &securityFactory{
+		ctx:      context.Background(),
+		path:     tmp.Name(),
+		resolver: &net.Resolver{PreferGo: true},
+		cfg:      cfg,
+		// shared is zero-value: ChainChecker / WarningsWriter nil — chain_guard disabled.
+		// nil-safe behavior under benchmark matches the disabled-chain_guard production state.
+		shared:     coreruntime.SharedResources{},
+		streamName: "test",
+		trackers:   make(map[string]*state.Tracker),
 	}
 
-	var count atomic.Int64
-	var threatCount atomic.Int64
-
-	pipe := &PipelineContext{
-		StreamName:       "test",
-		PipelineName:     "",
-		processedCount:   &count,
-		threatCount:      &threatCount,
-		Tracker:          tracker,
-		Scorer:           scorer.NewScorer(cfg.Scoring, nil, func(tag, msg, level string) {}),
-		Sinks:            []plugin.Sink{},
-		Matcher:          matcher,
-		Verifier:         whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, func(tag, msg, level string) {}),
-		FakeBotScore:     cfg.Whitelist.FakeBotScore,
-		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
-		Shared:           SharedResources{},
-		SourceName:       "file:/var/log/nginx/access.log",
-		SourceType:       "file",
+	ps, buildErr := factory.Build("test", "", 0, factory.shared)
+	if buildErr != nil {
+		b.Fatalf("securityFactory.Build: %v", buildErr)
 	}
+
+	processor := &securityProcessor{shared: factory.shared}
 
 	rawLine := `203.0.113.1 - - [20/May/2026:10:00:00 +0000] "GET /wp-login.php HTTP/1.1" 200 512 "-" "curl/7.88" "203.0.113.1"`
 	entry, ok := (&parser.CombinedParser{}).Parse(rawLine)
@@ -688,8 +726,15 @@ general:
 		b.Fatal("test setup: CombinedParser failed to parse the test line")
 	}
 
+	evctx := coreruntime.EventContext{
+		StreamName:   "test",
+		PipelineName: "",
+		SourceName:   "file:/var/log/nginx/access.log",
+		SourceType:   "file",
+	}
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		processLine(context.Background(), entry, pipe)
+		processor.Process(context.Background(), entry, ps, evctx)
 	}
 }

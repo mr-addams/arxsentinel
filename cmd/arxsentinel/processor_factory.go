@@ -20,8 +20,8 @@
 //   СВЯЗЬ С DECISIONS.md:
 //     - TrackerGroup: Pipeline.TrackerGroup → resolveTrackerGroup; shared внутри
 //       фабрики через trackers map[string]*state.Tracker (mutex guarded).
-//     - GC: один раз на tracker (а не на pipeline) — оригинальная семантика
-//       runStream (pipeline.go:144-146).
+//     - GC: один раз на tracker (а не на pipeline) — оригинальная семантика,
+//       см. securityFactory.getOrCreateTracker.
 //     - Sources/Sinks НЕ строятся здесь — это делает runtime_adapter.go и
 //       передаёт в engine через StreamSpec.Pipelines[i].Sinks/Sources.
 
@@ -104,7 +104,7 @@ func (f *securityFactory) Process(
 // ── Build — построить per-pipeline ProcessorState ++++++++++++++++++++++++++++++++++++++++
 
 // Build — построить per-pipeline ProcessorState.
-// Вызывается engine.runPipeline ОДИН раз на старте pipeline.
+// Вызывается arx-core/pkg/runtime engine.runPipeline ОДИН раз на старте pipeline.
 // Внутри:
 //  1. Резолвим pipeCfg по stream/pipe/idx (snapshot cfg под cfgMu).
 //  2. Matcher, Verifier, Scorer + detectors (через buildPipelineDetectors).
@@ -166,7 +166,8 @@ func (f *securityFactory) Build(
 // атомарно подменяет. Tracker и Verifier переживают reload (общий по группе;
 // их state (ban list, DNS cache) должен пережить reload).
 //
-// Шаги аналогичны исходному runPipeline (pipeline.go:293–344).
+// Шаги аналогичны исходному reload-блоку в runPipeline, перенесённому в
+// arx-core/pkg/runtime (engine.runPipeline, case <-reloadCh).
 func (f *securityFactory) Reload(
 	old coreruntime.ProcessorState,
 	ctx context.Context,
@@ -241,7 +242,7 @@ func (f *securityFactory) getOrCreateTracker(group string, cfg config.Config) *s
 	}
 	t := state.NewTracker(cfg, utils.Log)
 	f.trackers[group] = t
-	// GC — ОДИН раз на tracker (pipeline.go:144-146). f.ctx — appCtx,
+	// GC — ОДИН раз на tracker (DECISIONS.md Flow 081). f.ctx — appCtx,
 	// отмена при SIGTERM/SIGINT останавливает GC.
 	go t.RunGC(f.ctx, time.Duration(cfg.State.GCInterval))
 	return t

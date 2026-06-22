@@ -25,6 +25,14 @@ import (
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	pkgsink "github.com/mr-addams/arx-core/pkg/sink"
 	pkgsource "github.com/mr-addams/arx-core/pkg/source"
+
+	// Blank-import built-in sink plugins so their init() registers them with
+	// the global sink registry before buildSinks() looks them up by name
+	// (e.g. cfg.outputs[].type == "file"). Previously these imports lived in
+	// pipeline.go (Flow 081 Phase 3); pipeline.go no longer carries plugin
+	// concerns post-Phase-4, so the registration stays here next to its only
+	// consumer.
+	_ "github.com/mr-addams/arx-core/pkg/sink/file"
 )
 
 // detectorShared адаптирует main.go's SharedResources к pkgdetector.SharedResources.
@@ -48,7 +56,8 @@ func bridgeShared(shared SharedResources) pkgdetector.SharedResources {
 }
 
 // buildPipelineDetectors constructs the detector list for a pipeline.
-// Called from: runPipeline.
+// Called from: securityFactory.Build, securityFactory.Reload (production),
+// unit tests (TestBuildPipelineDetectors_NilFallsBackToGlobal).
 // Non-blocking.
 //
 // If pipeCfg.Detectors is nil (auto-wrapped legacy pipeline), all registered detectors
@@ -191,7 +200,7 @@ func buildParserForInput(cfg config.Config, input config.InputConfig) (parser.Pa
 }
 
 // buildSources constructs the Source list from an explicit inputs slice.
-// Called from: runPipeline.
+// Called from: runtime_adapter.adaptConfigToStreams.
 // Non-blocking.
 func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Source, error) {
 	if len(inputs) == 0 {
@@ -233,7 +242,7 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 }
 
 // buildSinks constructs the Sink list from an explicit outputs slice.
-// Called from: runPipeline.
+// Called from: runtime_adapter.adaptConfigToStreams.
 // Non-blocking.
 func buildSinks(ctx context.Context, outputs []config.SinkConfig) ([]plugin.Sink, error) {
 	if len(outputs) == 0 {
