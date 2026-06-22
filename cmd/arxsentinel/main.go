@@ -60,18 +60,6 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/metrics"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
-	_ "github.com/mr-addams/arxsentinel/pkg/executor/mikrotik"
-	_ "github.com/mr-addams/arxsentinel/pkg/executor/nginx"
-	_ "github.com/mr-addams/arxsentinel/pkg/processor"
-	_ "github.com/mr-addams/arxsentinel/pkg/sink/exec"
-	_ "github.com/mr-addams/arxsentinel/pkg/sink/sentinel"
-	_ "github.com/mr-addams/arxsentinel/pkg/sink/stdout"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/exec"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/file"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/http"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/sentinel"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/stdin"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/syslog"
 )
 
 // version инжектируется goreleaser через ldflags (-X main.version={{.Version}}).
