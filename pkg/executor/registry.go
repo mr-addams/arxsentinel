@@ -44,7 +44,7 @@ import (
 	"github.com/mr-addams/arxsentinel/pkg/execplugin"
 	"github.com/mr-addams/arx-core/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
-	"github.com/mr-addams/arxsentinel/pkg/pluginregistry"
+	"github.com/mr-addams/arx-core/pkg/pluginregistry"
 )
 
 // ExecutorConfig — runtime config for a single executor instance.

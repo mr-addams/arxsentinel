@@ -36,7 +36,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
-	"github.com/mr-addams/arxsentinel/pkg/pluginregistry"
+	"github.com/mr-addams/arx-core/pkg/pluginregistry"
 )
 
 // InputConfig — runtime config for a single source instance.

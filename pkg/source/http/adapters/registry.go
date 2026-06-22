@@ -27,7 +27,7 @@ import (
 	"fmt"
 
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
-	"github.com/mr-addams/arxsentinel/pkg/pluginregistry"
+	"github.com/mr-addams/arx-core/pkg/pluginregistry"
 )
 
 // AdapterConfig — minimal runtime context passed to an adapter factory.

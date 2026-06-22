@@ -43,7 +43,7 @@ import (
 	"fmt"
 
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
-	"github.com/mr-addams/arxsentinel/pkg/pluginregistry"
+	"github.com/mr-addams/arx-core/pkg/pluginregistry"
 )
 
 // ProcessorConfig — runtime config for a single processor instance.

@@ -19,7 +19,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/mr-addams/arxsentinel/pkg/pluginregistry"
+	"github.com/mr-addams/arx-core/pkg/pluginregistry"
 )
 
 // ---------------------------------------------------------------------------

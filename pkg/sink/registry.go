@@ -34,7 +34,7 @@ import (
 	"fmt"
 
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
-	"github.com/mr-addams/arxsentinel/pkg/pluginregistry"
+	"github.com/mr-addams/arx-core/pkg/pluginregistry"
 )
 
 // SinkConfig — runtime config for a single sink instance.
