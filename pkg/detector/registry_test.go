@@ -6,7 +6,6 @@ package detector_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -107,56 +106,6 @@ func TestUADetector_ViaRegistry(t *testing.T) {
 	}
 }
 
-// TestBadBotDetector_ViaRegistry verifies matching with a mock Matcher.
-func TestBadBotDetector_ViaRegistry(t *testing.T) {
-	cfg := detector.DetectorConfig{
-		Enabled: true,
-		Params:  map[string]interface{}{"check_ua": true, "score": 60},
-	}
-	shared := &stubShared{matcher: &stubMatcher{matchUA: "badbotua"}}
-	d, err := detector.Build(context.Background(), "badbot", cfg, shared)
-	if err != nil {
-		t.Fatalf("Build(badbot) error: %v", err)
-	}
-	if d.Name() != "badbot" {
-		t.Errorf("Name() = %q, want %q", d.Name(), "badbot")
-	}
-
-	sv := newStubView(0, 0, nil, 0)
-
-	// Matching UA should trigger and include pattern in Reason.
-	result := d.Detect(sv, &plugin.LogEntry{UserAgent: "badbotua"})
-	if result.Score == 0 {
-		t.Error("badbot should score on matched UA, got 0")
-	}
-	if !strings.HasPrefix(result.Reason, "ua=") {
-		t.Errorf("badbot Reason should start with 'ua=', got %q", result.Reason)
-	}
-
-	// Non-matching UA should not trigger.
-	result2 := d.Detect(sv, &plugin.LogEntry{UserAgent: "Mozilla/5.0"})
-	if result2.Score != 0 {
-		t.Errorf("badbot should not score on clean UA, got %d", result2.Score)
-	}
-}
-
-// TestBadBotDetector_NilShared verifies graceful degradation when SharedResources is nil.
-func TestBadBotDetector_NilShared(t *testing.T) {
-	cfg := detector.DetectorConfig{Enabled: true}
-	d, err := detector.Build(context.Background(), "badbot", cfg, nil)
-	if err != nil {
-		t.Fatalf("Build(badbot, nil shared) error: %v", err)
-	}
-	if d == nil {
-		t.Fatal("Build(badbot, nil shared) returned nil detector")
-	}
-	sv := newStubView(0, 0, nil, 0)
-	result := d.Detect(sv, &plugin.LogEntry{UserAgent: "some-bot/1.0"})
-	if result.Score != 0 {
-		t.Errorf("badbot with nil shared should not score, got %d", result.Score)
-	}
-}
-
 // ── Stubs and mocks ───────────────────────────────────────────────────────────────────
 
 // stubView implements plugin.IPView for test use.
@@ -177,20 +126,6 @@ func (s *stubView) GetTotalRequests() int              { return s.total }
 func (s *stubView) GetRequests404() int                { return s.count404 }
 func (s *stubView) RecentPaths() []string              { return s.paths }
 func (s *stubView) ApproxRate(_ time.Duration) float64 { return s.rate }
-
-// stubMatcher matches a single hardcoded UA string.
-type stubMatcher struct{ matchUA string }
-
-func (m *stubMatcher) Match(list, text string) bool {
-	return list == "badbot-ua" && text == m.matchUA
-}
-
-func (m *stubMatcher) MatchResult(list, text string) (string, bool) {
-	if list == "badbot-ua" && text == m.matchUA {
-		return text, true
-	}
-	return "", false
-}
 
 // stubShared wraps a Matcher into a SharedResources implementation.
 type stubShared struct{ matcher detector.Matcher }

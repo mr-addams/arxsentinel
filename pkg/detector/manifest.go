@@ -16,13 +16,3 @@ func (d *uaDetector) Manifest() plugin.Manifest {
 	}
 }
 
-func (d *badBotDetector) Manifest() plugin.Manifest {
-	return plugin.Manifest{
-		PluginID:      "badbot",
-		PluginVersion: "1.0.0",
-		Role:          plugin.RoleDetector,
-		InputType:     plugin.TypeStructured,
-		OutputType:    plugin.TypeStructured,
-		Tags:          []string{"http", "blocklist-based", "bad-bot"},
-	}
-}

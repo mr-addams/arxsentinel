@@ -19,6 +19,7 @@ plugins:
     - name: noasset
     - name: overflow
     - name: crawler
+    - name: badbot
   processors:
     - name: processor
       module: arx-core

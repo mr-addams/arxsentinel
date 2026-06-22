@@ -29,22 +29,23 @@
 //
 //   Registered as "badbot" via init().
 
-package detector
+package badbot
 
 import (
 	"strings"
 
+	detector "github.com/mr-addams/arxsentinel/pkg/detector"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 func init() {
-	Register("badbot", newBadBotFactory)
+	detector.Register("badbot", newBadBotFactory)
 }
 
 // badBotDetector matches incoming log entries against a blocklist Matcher.
 // Thread-safe: Detect() only calls Matcher.Match() which is itself thread-safe.
 type badBotDetector struct {
-	mgr           Matcher
+	mgr           detector.Matcher
 	score         int
 	checkUA       bool
 	checkReferrer bool
@@ -55,8 +56,8 @@ type badBotDetector struct {
 // If shared is nil or shared.Blocklist() returns nil, the detector is created
 // with a noopMatcher — it starts up cleanly and becomes active once the blocklist
 // is configured and a Matcher is provided.
-func newBadBotFactory(cfg DetectorConfig, shared SharedResources) (plugin.Detector, error) {
-	var mgr Matcher = noopMatcher{}
+func newBadBotFactory(cfg detector.DetectorConfig, shared detector.SharedResources) (plugin.Detector, error) {
+	var mgr detector.Matcher = noopMatcher{}
 	if shared != nil {
 		if bl := shared.Blocklist(); bl != nil {
 			mgr = bl
@@ -65,9 +66,9 @@ func newBadBotFactory(cfg DetectorConfig, shared SharedResources) (plugin.Detect
 
 	return &badBotDetector{
 		mgr:           mgr,
-		score:         getInt(cfg.Params, "score", 60),
-		checkUA:       getBool(cfg.Params, "check_ua", true),
-		checkReferrer: getBool(cfg.Params, "check_referrer", false),
+		score:         detector.GetInt(cfg, "score", 60),
+		checkUA:       detector.GetBool(cfg, "check_ua", true),
+		checkReferrer: detector.GetBool(cfg, "check_referrer", false),
 	}, nil
 }
 
@@ -109,3 +110,12 @@ func (d *badBotDetector) Detect(_ plugin.IPView, entry *plugin.LogEntry) plugin.
 
 	return plugin.DetectResult{}
 }
+
+// noopMatcher is a Matcher that never matches.
+// Used when SharedResources is nil or returns a nil Blocklist —
+// the detector remains functional but cannot match any blocklist entry.
+type noopMatcher struct{}
+
+func (noopMatcher) Match(string, string) bool { return false }
+
+func (noopMatcher) MatchResult(string, string) (string, bool) { return "", false }

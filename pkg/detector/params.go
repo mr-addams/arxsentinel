@@ -161,12 +161,3 @@ func GetStrings(cfg DetectorConfig, key string, defaultVal []string) []string {
 func getStrings(m map[string]interface{}, key string, def []string) []string {
 	return GetStrings(DetectorConfig{Params: m}, key, def)
 }
-
-// noopMatcher is a Matcher that never matches.
-// Used when SharedResources is nil or returns a nil Blocklist —
-// the detector remains functional but cannot match any blocklist entry.
-type noopMatcher struct{}
-
-func (noopMatcher) Match(string, string) bool { return false }
-
-func (noopMatcher) MatchResult(string, string) (string, bool) { return "", false }
