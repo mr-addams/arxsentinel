@@ -7,13 +7,12 @@
 //   provide a profile-specific subset instead.
 //
 //   WHAT IS HERE:
-//     - 13 blank imports matching profiles/full.yaml (Decision 11, Flow 075).
+//     - 14 blank imports matching profiles/full.yaml (Decision 11, Flow 075).
 //     - Order is alphabetical by import path for deterministic diff.
 //
 //   WHAT IS NOT HERE:
 //     - pkg/detector — named-import in validate.go/builders.go (always-linked, Decision 12).
 //     - pkg/sink/file — named-import in pipeline.go (always-linked, not a profile transport).
-//     - pkg/processor/{chaincheck,whitelist} — not imported anywhere (Decision 14, known issue).
 //
 //   See: docs/architecture/adr/003-build-modularity.md, ADR-002 (module mapping).
 
@@ -23,7 +22,8 @@ import (
 	_ "github.com/mr-addams/arxsentinel/pkg/executorplugins/cloudflare"
 	_ "github.com/mr-addams/arxsentinel/pkg/executorplugins/mikrotik"
 	_ "github.com/mr-addams/arxsentinel/pkg/executorplugins/nginx"
-	_ "github.com/mr-addams/arxsentinel/pkg/processor"
+	_ "github.com/mr-addams/arxsentinel/pkg/processorplugins/chaincheck"
+	_ "github.com/mr-addams/arxsentinel/pkg/processorplugins/whitelist"
 
 	// Plugin detectors (tree-shakeable side-effect registration, Flow 076)
 	_ "github.com/mr-addams/arxsentinel/pkg/detector/badbot"

@@ -26,8 +26,10 @@ plugins:
     - name: badbot
     - name: ua
   processors:
-    - name: processor
-      module: arx-core
+    - name: chaincheck
+      module: arxsentinel
+    - name: whitelist
+      module: arxsentinel
   sinks:
     - name: exec
       module: arx-core

@@ -162,6 +162,7 @@ pkg_relative_dir() {
         candidates=(
           "arx-core/pkg/${kdir}/$suffix"
           "arxsentinel/pkg/${kdir}plugins/$suffix"
+          "pkg/${kdir}plugins/$suffix"
           "pkg/${kdir}/$suffix"
         )
       fi
