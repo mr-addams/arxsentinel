@@ -5,17 +5,6 @@ package detector
 
 import "github.com/mr-addams/arxsentinel/pkg/plugin"
 
-func (d *crawlerDetector) Manifest() plugin.Manifest {
-	return plugin.Manifest{
-		PluginID:      "crawler",
-		PluginVersion: "1.0.0",
-		Role:          plugin.RoleDetector,
-		InputType:     plugin.TypeStructured,
-		OutputType:    plugin.TypeStructured,
-		Tags:          []string{"http", "path-based", "sequential"},
-	}
-}
-
 func (d *uaDetector) Manifest() plugin.Manifest {
 	return plugin.Manifest{
 		PluginID:      "useragent",

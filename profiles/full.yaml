@@ -18,6 +18,7 @@ plugins:
     - name: bruteforce
     - name: noasset
     - name: overflow
+    - name: crawler
   processors:
     - name: processor
       module: arx-core

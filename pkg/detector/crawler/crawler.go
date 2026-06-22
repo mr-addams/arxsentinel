@@ -23,7 +23,7 @@
 //
 //   Registered as "crawler" via init().
 
-package detector
+package crawler
 
 import (
 	"fmt"
@@ -32,10 +32,12 @@ import (
 	"strconv"
 
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
+
+	detector "github.com/mr-addams/arxsentinel/pkg/detector"
 )
 
 func init() {
-	Register("crawler", newCrawlerFactory)
+	detector.Register("crawler", newCrawlerFactory)
 }
 
 // numericSuffixRE extracts (prefix, digits) from a URL path whose last segment is a pure number.
@@ -57,10 +59,10 @@ type crawlerDetector struct {
 }
 
 // newCrawlerFactory creates a crawlerDetector from DetectorConfig.
-func newCrawlerFactory(cfg DetectorConfig, _ SharedResources) (plugin.Detector, error) {
+func newCrawlerFactory(cfg detector.DetectorConfig, _ detector.SharedResources) (plugin.Detector, error) {
 	return &crawlerDetector{
-		minSequential: getInt(cfg.Params, "min_sequential", 5),
-		score:         getInt(cfg.Params, "score", 20),
+		minSequential: detector.GetInt(cfg, "min_sequential", 5),
+		score:         detector.GetInt(cfg, "score", 20),
 	}, nil
 }
 
