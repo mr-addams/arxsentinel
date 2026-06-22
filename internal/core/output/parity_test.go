@@ -14,7 +14,7 @@ import (
 
 	"github.com/mr-addams/arxsentinel/internal/core/output"
 	"github.com/mr-addams/arx-core/pkg/plugin"
-	"github.com/mr-addams/arxsentinel/pkg/sink/format"
+	"github.com/mr-addams/arx-core/pkg/sink/format"
 )
 
 func TestFormatFailban_IdenticalToFormatThreatLine(t *testing.T) {

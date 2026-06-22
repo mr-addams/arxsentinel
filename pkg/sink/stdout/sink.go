@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 
 	"github.com/mr-addams/arx-core/pkg/plugin"
-	"github.com/mr-addams/arxsentinel/pkg/sink/format"
+	"github.com/mr-addams/arx-core/pkg/sink/format"
 )
 
 // StdoutSink writes threat events to stdout in the configured output format.
