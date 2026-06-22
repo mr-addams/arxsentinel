@@ -296,6 +296,9 @@ sudo ./scripts/install.sh
 sudo systemctl enable --now arxsentinel
 ```
 
+For minimal / IoT edge / custom builds, see [Build Profiles](docs/developer/build-profiles.md)
+(`go build -tags "arx_tag minimal" ./...` etc.).
+
 ### Docker
 
 Distroless image (~12 MB), runs as non-root uid 65532, exposes Prometheus metrics on `:9117`.

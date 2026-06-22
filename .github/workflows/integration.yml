@@ -228,3 +228,57 @@ jobs:
             /tmp/arxsentinel validate --config "$f" || { echo "INVALID: $f"; exit 1; }
           done
           echo "all configs valid"
+
+  # ────────────────────── Build profiles (Flow 075, ADR-003) ───────────────────
+  # Static verifier runs once for all profiles; build/test jobs depend on it
+  # so profile builds are skipped entirely if the verifier fails. The full
+  # profile is already covered by `queue-backends`/`integration`/`validate-cookbook`
+  # (default build, no tags) — not duplicated here.
+
+  build-profiles-verify:
+    name: Build profiles static verifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Run check-build-profiles.sh
+        run: bash scripts/check-build-profiles.sh
+
+  build-minimal:
+    name: Build & test (minimal profile)
+    needs: [build-profiles-verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build (minimal)
+        run: go build -tags "arx_tag minimal" ./...
+      - name: Test (minimal)
+        run: go test -tags "arx_tag minimal" ./... -timeout 120s
+
+  build-iot:
+    name: Build & test (iot profile)
+    needs: [build-profiles-verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build (iot)
+        run: go build -tags "arx_tag iot" ./...
+      - name: Test (iot)
+        run: go test -tags "arx_tag iot" ./... -timeout 120s
