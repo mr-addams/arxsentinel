@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mr-addams/arxsentinel/pkg/logger"
+	"github.com/mr-addams/arx-core/pkg/logger"
 )
 
 // ========================== Test AsLogger bridge (Flow 072 Task 1.2.6) ===================

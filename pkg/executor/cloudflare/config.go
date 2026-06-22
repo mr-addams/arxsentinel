@@ -18,7 +18,7 @@ import (
 	"time"
 
 	// ── Group 2: project ──
-	"github.com/mr-addams/arxsentinel/pkg/logger"
+	"github.com/mr-addams/arx-core/pkg/logger"
 )
 
 // ========================== Config ==========================

@@ -35,7 +35,7 @@ import (
 
 	"github.com/fatih/color"
 
-	"github.com/mr-addams/arxsentinel/pkg/logger"
+	"github.com/mr-addams/arx-core/pkg/logger"
 )
 
 // ========================== Global state ===============================================
