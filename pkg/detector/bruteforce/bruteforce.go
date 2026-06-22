@@ -18,16 +18,17 @@
 //
 //   Registered as "bruteforce" via init().
 
-package detector
+package bruteforce
 
 import (
 	"fmt"
 
+	detector "github.com/mr-addams/arxsentinel/pkg/detector"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 func init() {
-	Register("bruteforce", newBruteforceFactory)
+	detector.Register("bruteforce", newBruteforceFactory)
 }
 
 // bruteforceDetector detects anomalous 404 ratio.
@@ -38,11 +39,11 @@ type bruteforceDetector struct {
 }
 
 // newBruteforceFactory creates a bruteforceDetector from DetectorConfig.
-func newBruteforceFactory(cfg DetectorConfig, _ SharedResources) (plugin.Detector, error) {
+func newBruteforceFactory(cfg detector.DetectorConfig, _ detector.SharedResources) (plugin.Detector, error) {
 	return &bruteforceDetector{
-		minRequests:    getInt(cfg.Params, "min_requests", 10),
-		ratioThreshold: getFloat64(cfg.Params, "ratio_threshold", 0.6),
-		score:          getInt(cfg.Params, "score", 30),
+		minRequests:    detector.GetInt(cfg, "min_requests", 10),
+		ratioThreshold: detector.GetFloat64(cfg, "ratio_threshold", 0.6),
+		score:          detector.GetInt(cfg, "score", 30),
 	}, nil
 }
 

@@ -15,6 +15,7 @@ plugins:
   detectors:
     - name: probe
     - name: rate
+    - name: bruteforce
   processors:
     - name: processor
       module: arx-core

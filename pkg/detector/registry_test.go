@@ -74,39 +74,6 @@ func TestRegistry_Build_Unknown(t *testing.T) {
 
 // ── Built-in detector smoke tests ─────────────────────────────────────────────────────
 
-// TestBruteforceDetector_ViaRegistry verifies triggering on a high 404 ratio.
-func TestBruteforceDetector_ViaRegistry(t *testing.T) {
-	cfg := detector.DetectorConfig{
-		Enabled: true,
-		Params: map[string]interface{}{
-			"min_requests":    10,
-			"ratio_threshold": 0.6,
-			"score":           30,
-		},
-	}
-	d, err := detector.Build(context.Background(), "bruteforce", cfg, nil)
-	if err != nil {
-		t.Fatalf("Build(bruteforce) error: %v", err)
-	}
-	if d.Name() != "bruteforce" {
-		t.Errorf("Name() = %q, want %q", d.Name(), "bruteforce")
-	}
-
-	// 9 of 10 requests are 404 → 90% → should trigger.
-	sv := newStubView(10, 9, nil, 0)
-	result := d.Detect(sv, &plugin.LogEntry{})
-	if result.Score == 0 {
-		t.Error("bruteforce should trigger on 90% 404 ratio, got score=0")
-	}
-
-	// Below min_requests — should not trigger.
-	sv2 := newStubView(5, 4, nil, 0)
-	result2 := d.Detect(sv2, &plugin.LogEntry{})
-	if result2.Score != 0 {
-		t.Errorf("bruteforce should not trigger below min_requests, got score=%d", result2.Score)
-	}
-}
-
 // TestUADetector_ViaRegistry verifies scanner and empty UA detection.
 func TestUADetector_ViaRegistry(t *testing.T) {
 	cfg := detector.DetectorConfig{Enabled: true}

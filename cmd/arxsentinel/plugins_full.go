@@ -26,6 +26,7 @@ import (
 	_ "github.com/mr-addams/arxsentinel/pkg/processor"
 
 	// Plugin detectors (tree-shakeable side-effect registration, Flow 076)
+	_ "github.com/mr-addams/arxsentinel/pkg/detector/bruteforce"
 	_ "github.com/mr-addams/arxsentinel/pkg/detector/probe"
 	_ "github.com/mr-addams/arxsentinel/pkg/detector/rate"
 
