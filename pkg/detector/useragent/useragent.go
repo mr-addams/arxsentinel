@@ -23,16 +23,17 @@
 //
 //   Registered as "ua" via init().
 
-package detector
+package useragent
 
 import (
 	"strings"
 
+	detector "github.com/mr-addams/arxsentinel/pkg/detector"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 func init() {
-	Register("ua", newUAFactory)
+	detector.Register("ua", newUAFactory)
 }
 
 // Built-in pattern lists. Normalized to lowercase in newUAFactory — Detect
@@ -79,15 +80,15 @@ type uaDetector struct {
 
 // newUAFactory creates a uaDetector from DetectorConfig.
 // Normalizes all patterns to lowercase once — avoids per-call ToLower on hot path.
-func newUAFactory(cfg DetectorConfig, _ SharedResources) (plugin.Detector, error) {
-	scannerScore := getInt(cfg.Params, "scanner_score", 40)
-	grabberScore := getInt(cfg.Params, "grabber_score", 20)
-	automationScore := getInt(cfg.Params, "automation_score", 15)
-	emptyUAScore := getInt(cfg.Params, "empty_ua_score", 30)
+func newUAFactory(cfg detector.DetectorConfig, _ detector.SharedResources) (plugin.Detector, error) {
+	scannerScore := detector.GetInt(cfg, "scanner_score", 40)
+	grabberScore := detector.GetInt(cfg, "grabber_score", 20)
+	automationScore := detector.GetInt(cfg, "automation_score", 15)
+	emptyUAScore := detector.GetInt(cfg, "empty_ua_score", 30)
 
-	extraScanners := getStrings(cfg.Params, "extra_scanner_patterns", nil)
-	extraGrabbers := getStrings(cfg.Params, "extra_grabber_patterns", nil)
-	extraAutomation := getStrings(cfg.Params, "extra_automation_patterns", nil)
+	extraScanners := detector.GetStrings(cfg, "extra_scanner_patterns", nil)
+	extraGrabbers := detector.GetStrings(cfg, "extra_grabber_patterns", nil)
+	extraAutomation := detector.GetStrings(cfg, "extra_automation_patterns", nil)
 
 	// Normalize all patterns to lowercase once.
 	scannerPatterns := normalizePatterns(builtinScannerPatterns, extraScanners)

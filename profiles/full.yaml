@@ -20,6 +20,7 @@ plugins:
     - name: overflow
     - name: crawler
     - name: badbot
+    - name: ua
   processors:
     - name: processor
       module: arx-core

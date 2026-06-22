@@ -2,14 +2,17 @@
 //   Tests for UA detector: built-in patterns, extra pattern normalization,
 //   case-insensitive matching via pre-normalization.
 
-package detector_test
+package useragent_test
 
 import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/mr-addams/arxsentinel/pkg/detector"
+	_ "github.com/mr-addams/arxsentinel/pkg/detector/useragent"
+
+	detector "github.com/mr-addams/arxsentinel/pkg/detector"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -43,7 +46,7 @@ func TestUADetector_ExtraPatternNormalization(t *testing.T) {
 			{"MyGrabber/1.0", "mygrabber"},
 			{"GoClient/1.0", "goclient"},
 			{"CustomScanner/1.0", "customscanner"},
-			{"MYBOT/2.0", "mybot"},           // all-upper UA is also lowered before matching
+			{"MYBOT/2.0", "mybot"},         // all-upper UA is also lowered before matching
 			{"MYGRABBER/2.0", "mygrabber"}, // all-upper grabber → lowered → matches
 		}
 		for _, tc := range cases {
@@ -131,8 +134,8 @@ func TestUADetector_BuiltinPatterns(t *testing.T) {
 		want bool
 	}{
 		{"nuclei/3.0", true},
-		{"NUCLEI/3.0", true},  // all-upper UA → lowered → matches
-		{"Nuclei/3.0", true},  // mixed-case UA → lowered → matches
+		{"NUCLEI/3.0", true}, // all-upper UA → lowered → matches
+		{"Nuclei/3.0", true}, // mixed-case UA → lowered → matches
 		{"Mozilla/5.0", false},
 	}
 	for _, tc := range cases {
@@ -145,3 +148,21 @@ func TestUADetector_BuiltinPatterns(t *testing.T) {
 		}
 	}
 }
+
+// stubView implements plugin.IPView for test use.
+type stubView struct {
+	total    int
+	count404 int
+	paths    []string
+	rate     float64
+}
+
+func newStubView(total, count404 int, paths []string, rate float64) plugin.IPView {
+	return &stubView{total: total, count404: count404, paths: paths, rate: rate}
+}
+
+func (s *stubView) GetIP() string                      { return "1.2.3.4" }
+func (s *stubView) GetTotalRequests() int              { return s.total }
+func (s *stubView) GetRequests404() int                { return s.count404 }
+func (s *stubView) RecentPaths() []string              { return s.paths }
+func (s *stubView) ApproxRate(_ time.Duration) float64 { return s.rate }

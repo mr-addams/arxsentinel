@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/pkg/detector"
+	_ "github.com/mr-addams/arxsentinel/pkg/detector/useragent"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
