@@ -44,7 +44,8 @@ import (
 //
 // Name используется в логах и метриках (axis pipeline_name).
 // Idx — позиция pipeline в StreamSpec.Pipelines (0..len-1), пробрасывается
-//       в EventContext.PipelineIdx. Дублируем для удобства итерации без zip.
+//
+//	в EventContext.PipelineIdx. Дублируем для удобства итерации без zip.
 type PipelineSpec struct {
 	Name    string
 	Idx     int
@@ -58,19 +59,27 @@ type PipelineSpec struct {
 //
 // Name — стабильный идентификатор стрима, используется в логах и метриках.
 // TrackerGroup — имя группы tracker'а для tracker-pool'а (Phase 2: scoring pool).
-//               Передаётся Product'ом, runtime не интерпретирует.
-// BufferSize — размер каналов между ступенями пайплайна (chan *LogEntry).
-//              Маленькие значения → back-pressure; большие → память. См. architect-081-impl.
-// ShutdownTimeout — максимальное время graceful shutdown всех горутин стрима.
-// Pipelines — список пайплайнов, которые стартуют параллельно как часть стрима.
 //
-// Все эти поля — runtime-примитивы (по аналогии с http.Server{Addr, ReadTimeout}),
-// а не продуктовый конфиг. Product читает YAML и СТРОИТ StreamSpec из примитивов
-// (см. DECISIONS.md).
+//	Передаётся Product'ом, runtime не интерпретирует.
+//
+// BufferSize — размер каналов между ступенями пайплайна (chan *LogEntry).
+//
+//	           Маленькие значения → back-pressure; большие → память. См. architect-081-impl.
+//	ShutdownTimeout — максимальное время graceful shutdown всех горутин стрима.
+//	StatsInterval  — период (time.Duration) для periodic stats log + gauge update;
+//	                 0 → дефолт 30s внутри engine.Run. Добавлено в Phase 2
+//	                 (engine.go нужен интервал для stats-горутины — это часть
+//	                 generic runtime-контракта, не security-домен Product'а).
+//	Pipelines — список пайплайнов, которые стартуют параллельно как часть стрима.
+//
+//	Все эти поля — runtime-примитивы (по аналогии с http.Server{Addr, ReadTimeout}),
+//	а не продуктовый конфиг. Product читает YAML и СТРОИТ StreamSpec из примитивов
+//	(см. DECISIONS.md).
 type StreamSpec struct {
 	Name            string
 	TrackerGroup    string
 	BufferSize      int
 	ShutdownTimeout time.Duration
+	StatsInterval   time.Duration
 	Pipelines       []PipelineSpec
 }
