@@ -38,12 +38,6 @@ func GetInt(cfg DetectorConfig, key string, defaultVal int) int {
 	return defaultVal
 }
 
-// getInt is a transition alias for GetInt using a params map directly.
-// Deprecated: kept for compatibility with existing detector factories.
-func getInt(m map[string]interface{}, key string, def int) int {
-	return GetInt(DetectorConfig{Params: m}, key, def)
-}
-
 // GetFloat64 extracts a float64 value from DetectorConfig.Params.
 // Handles float64 and integer types for YAML values like `0.6` or `1`.
 // Called from: each detector factory and external sub-packages. Non-blocking.
@@ -64,12 +58,6 @@ func GetFloat64(cfg DetectorConfig, key string, defaultVal float64) float64 {
 	return defaultVal
 }
 
-// getFloat64 is a transition alias for GetFloat64 using a params map directly.
-// Deprecated: kept for compatibility with existing detector factories.
-func getFloat64(m map[string]interface{}, key string, def float64) float64 {
-	return GetFloat64(DetectorConfig{Params: m}, key, def)
-}
-
 // GetBool extracts a bool value from DetectorConfig.Params.
 // Called from: each detector factory and external sub-packages. Non-blocking.
 func GetBool(cfg DetectorConfig, key string, defaultVal bool) bool {
@@ -82,12 +70,6 @@ func GetBool(cfg DetectorConfig, key string, defaultVal bool) bool {
 		return b
 	}
 	return defaultVal
-}
-
-// getBool is a transition alias for GetBool using a params map directly.
-// Deprecated: kept for compatibility with existing detector factories.
-func getBool(m map[string]interface{}, key string, def bool) bool {
-	return GetBool(DetectorConfig{Params: m}, key, def)
 }
 
 // GetDuration extracts a time.Duration from DetectorConfig.Params.
@@ -121,12 +103,6 @@ func GetDuration(cfg DetectorConfig, key string, defaultVal time.Duration) time.
 	return defaultVal
 }
 
-// getDuration is a transition alias for GetDuration using a params map directly.
-// Deprecated: kept for compatibility with existing detector factories.
-func getDuration(m map[string]interface{}, key string, def time.Duration) time.Duration {
-	return GetDuration(DetectorConfig{Params: m}, key, def)
-}
-
 // GetStrings extracts a []string from DetectorConfig.Params.
 //
 // Accepted forms:
@@ -154,10 +130,4 @@ func GetStrings(cfg DetectorConfig, key string, defaultVal []string) []string {
 		return ss
 	}
 	return defaultVal
-}
-
-// getStrings is a transition alias for GetStrings using a params map directly.
-// Deprecated: kept for compatibility with existing detector factories.
-func getStrings(m map[string]interface{}, key string, def []string) []string {
-	return GetStrings(DetectorConfig{Params: m}, key, def)
 }
