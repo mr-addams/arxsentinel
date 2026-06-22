@@ -16,6 +16,7 @@ plugins:
     - name: probe
     - name: rate
     - name: bruteforce
+    - name: overflow
   processors:
     - name: processor
       module: arx-core

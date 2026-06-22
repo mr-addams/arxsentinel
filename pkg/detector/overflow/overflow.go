@@ -19,17 +19,18 @@
 //
 //   Registered as "overflow" via init().
 
-package detector
+package overflow
 
 import (
 	"fmt"
 	"strings"
 
+	detector "github.com/mr-addams/arxsentinel/pkg/detector"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 func init() {
-	Register("overflow", newOverflowFactory)
+	detector.Register("overflow", newOverflowFactory)
 }
 
 // defaultSuspiciousParams is the built-in list of WAF bypass keywords.
@@ -45,10 +46,10 @@ type overflowDetector struct {
 }
 
 // newOverflowFactory creates an overflowDetector from DetectorConfig.
-func newOverflowFactory(cfg DetectorConfig, _ SharedResources) (plugin.Detector, error) {
-	maxURLLength := getInt(cfg.Params, "max_url_length", 2048)
-	rawParams := getStrings(cfg.Params, "suspicious_params", defaultSuspiciousParams)
-	score := getInt(cfg.Params, "score", 30)
+func newOverflowFactory(cfg detector.DetectorConfig, _ detector.SharedResources) (plugin.Detector, error) {
+	maxURLLength := detector.GetInt(cfg, "max_url_length", 2048)
+	rawParams := detector.GetStrings(cfg, "suspicious_params", defaultSuspiciousParams)
+	score := detector.GetInt(cfg, "score", 30)
 
 	// Normalize to lowercase once — hot path only needs ToLower(URL).
 	params := make([]string, len(rawParams))

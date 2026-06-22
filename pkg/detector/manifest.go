@@ -48,14 +48,3 @@ func (d *badBotDetector) Manifest() plugin.Manifest {
 		Tags:          []string{"http", "blocklist-based", "bad-bot"},
 	}
 }
-
-func (d *overflowDetector) Manifest() plugin.Manifest {
-	return plugin.Manifest{
-		PluginID:      "overflow",
-		PluginVersion: "1.0.0",
-		Role:          plugin.RoleDetector,
-		InputType:     plugin.TypeStructured,
-		OutputType:    plugin.TypeStructured,
-		Tags:          []string{"http", "payload-based", "overflow"},
-	}
-}
