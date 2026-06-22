@@ -12,6 +12,14 @@ import (
 	nethttp "net/http"
 )
 
+// init registers the loki factory with the open adapter registry.
+// Called from: package init order during program startup. Non-blocking.
+func init() {
+	Register("loki", func(cfg AdapterConfig) (Adapter, error) {
+		return &LokiAdapter{}, nil
+	})
+}
+
 // LokiAdapter implements Adapter for Grafana Loki push API.
 // Expects JSON: {"streams":[{"stream":{"label":"val"},"values":[["ts","line"]]}]}
 // Called from: buildPushHandler() during HTTP request processing.

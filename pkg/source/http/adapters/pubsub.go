@@ -12,6 +12,14 @@ import (
 	nethttp "net/http"
 )
 
+// init registers the pubsub factory with the open adapter registry.
+// Called from: package init order during program startup. Non-blocking.
+func init() {
+	Register("pubsub", func(cfg AdapterConfig) (Adapter, error) {
+		return &PubSubAdapter{}, nil
+	})
+}
+
 // PubSubAdapter implements Adapter for GCP Pub/Sub push subscriptions.
 // Expects JSON: {"message":{"data":"base64url...","messageId":"..."}}
 // Called from: buildPushHandler() during HTTP request processing.

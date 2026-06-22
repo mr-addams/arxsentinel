@@ -98,7 +98,7 @@ func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *p
 		}
 
 		// Reject protobuf for Loki/OTLP — we only handle JSON.
-		if cfg.proto == protocolLoki || cfg.proto == protocolOTLP {
+		if cfg.proto == "loki" || cfg.proto == "otlp" {
 			if r.Header.Get("Content-Type") == "application/x-protobuf" {
 				nethttp.Error(w, "unsupported content type: application/x-protobuf", 415)
 				return
@@ -140,7 +140,7 @@ func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *p
 
 	handler := bearerAuth(cfg.token, h)
 	handler = adapters.CloudflareChallengeMiddleware(handler)
-	if cfg.proto == protocolPubSub {
+	if cfg.proto == "pubsub" {
 		// PubSub requires JWT validation — build endpoint URL for audience claim.
 		// bearerAuth above also checks cfg.token if set (smoke-test / compat mode).
 		// Two gates are intentional: bearerAuth catches rogue plain-Bearer traffic early,

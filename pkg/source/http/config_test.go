@@ -26,7 +26,7 @@ func TestParseHTTPConfig(t *testing.T) {
 				host:         "0.0.0.0",
 				port:         "8080",
 				path:         "/",
-				proto:        protocolPlain,
+				proto:        "plain",
 				pullInterval: 30 * time.Second,
 				maxBodyBytes: 10 * 1024 * 1024,
 			},
@@ -45,7 +45,7 @@ func TestParseHTTPConfig(t *testing.T) {
 				host:         "0.0.0.0",
 				port:         "443",
 				path:         "/",
-				proto:        protocolPlain,
+				proto:        "plain",
 				tlsCert:      "c",
 				tlsKey:       "k",
 				pullInterval: 30 * time.Second,
@@ -64,7 +64,7 @@ func TestParseHTTPConfig(t *testing.T) {
 				host:         "0.0.0.0",
 				port:         "8080",
 				path:         "/ingest",
-				proto:        protocolPlain,
+				proto:        "plain",
 				pullInterval: 30 * time.Second,
 				maxBodyBytes: 10 * 1024 * 1024,
 			},
@@ -83,7 +83,7 @@ func TestParseHTTPConfig(t *testing.T) {
 				host:         "remote",
 				port:         "9000",
 				path:         "/logs",
-				proto:        protocolPlain,
+				proto:        "plain",
 				pullInterval: 60 * time.Second,
 				maxBodyBytes: 10 * 1024 * 1024,
 			},
@@ -131,7 +131,7 @@ func TestParseHTTPConfig(t *testing.T) {
 				host:         "0.0.0.0",
 				port:         "8080",
 				path:         "/",
-				proto:        protocolPlain,
+				proto:        "plain",
 				pullInterval: 30 * time.Second,
 				maxBodyBytes: 10 * 1024 * 1024,
 			},
@@ -148,7 +148,7 @@ func TestParseHTTPConfig(t *testing.T) {
 				host:         "0.0.0.0",
 				port:         "8080",
 				path:         "/",
-				proto:        protocolPlain,
+				proto:        "plain",
 				pullInterval: 30 * time.Second,
 				maxBodyBytes: 10 * 1024 * 1024,
 			},
@@ -166,7 +166,7 @@ func TestParseHTTPConfig(t *testing.T) {
 				host:         "remote",
 				port:         "9000",
 				path:         "/logs",
-				proto:        protocolPlain,
+				proto:        "plain",
 				pullInterval: 30 * time.Second,
 				maxBodyBytes: 10 * 1024 * 1024,
 			},
@@ -201,7 +201,7 @@ func TestParseHTTPConfig(t *testing.T) {
 				t.Errorf("path = %q, want %q", got.path, tt.want.path)
 			}
 			if got.proto != tt.want.proto {
-				t.Errorf("proto = %d, want %d", got.proto, tt.want.proto)
+				t.Errorf("proto = %q, want %q", got.proto, tt.want.proto)
 			}
 			if got.token != tt.want.token {
 				t.Errorf("token = %q, want %q", got.token, tt.want.token)

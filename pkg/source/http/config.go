@@ -11,22 +11,7 @@ import (
 	"time"
 
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
-)
-
-// protocol represents supported HTTP log ingestion protocols.
-// Used in parsedConfig.proto field to route to appropriate adapter.
-type protocol int
-
-const (
-	protocolPlain      protocol = iota // plain: raw newline-delimited logs
-	protocolNDJSON                     // ndjson: newline-delimited JSON with optional envelope field
-	protocolCloudflare                 // cloudflare: Cloudflare Logpull format
-	protocolFirehose                   // firehose: AWS Kinesis Firehose format
-	protocolPubSub                     // pubsub: GCP Pub/Sub push format
-	protocolLoki                       // loki: Grafana Loki push API format
-	protocolOTLP                       // otlp: OpenTelemetry Protocol format
-	protocolAzure                      // azure: Azure Monitor Data Collector API format
-	protocolSplunk                     // splunk: Splunk HTTP Event Collector format
+	"github.com/mr-addams/arxsentinel/pkg/source/http/adapters"
 )
 
 // parsedConfig holds validated runtime configuration for HTTP source.
@@ -37,13 +22,13 @@ type parsedConfig struct {
 	host          string        // YAML: host from addr/url — target hostname. Consumer: runPush/runPull
 	port          string        // YAML: port from addr/url — target port. Consumer: runPush/runPull
 	path          string        // YAML: path from addr/url — HTTP endpoint path. Consumer: runPush/runPull
-	proto         protocol      // YAML: protocol — log format to parse. Consumer: buildAdapter
+	proto         string        // YAML: protocol — log format to parse. Consumer: Run() (adapter dispatch + push.go predicates)
 	token         string        // YAML: token — bearer/token auth for push endpoints. Consumer: buildPushHandler
 	envelopeField string        // YAML: envelope_field — JSON field for envelope in ndjson. Consumer: GenericAdapter
 	tlsCert       string        // YAML: tls_cert — TLS certificate path. Consumer: runPush (TLS server)
 	tlsKey        string        // YAML: tls_key — TLS private key path. Consumer: runPush (TLS server)
 	pullInterval  time.Duration // YAML: pull_interval — polling interval for pull mode. Default: 30s. Consumer: runPull
-	maxBodyBytes  int64        // YAML: max_body_bytes — max request body size. Default: 10MB. Consumer: runPush
+	maxBodyBytes  int64         // YAML: max_body_bytes — max request body size. Default: 10MB. Consumer: runPush
 }
 
 // parseHTTPConfig converts pkgsource.InputConfig to parsedConfig.
@@ -140,32 +125,17 @@ func parseHTTPConfig(cfg pkgsource.InputConfig) (*parsedConfig, error) {
 	}, nil
 }
 
-// parseProtocol converts protocol string to protocol enum.
-// Returns error if protocol string is unknown or empty.
+// parseProtocol validates that the protocol string is registered with the open
+// adapter registry and returns it unchanged. The set of accepted protocols is
+// the set of self-registered adapters (see pkg/source/http/adapters/registry.go).
+// Returns error if protocol string is empty or unknown.
 // Called from: parseHTTPConfig() during configuration parsing.
-func parseProtocol(s string) (protocol, error) {
-	switch s {
-	case "plain":
-		return protocolPlain, nil
-	case "ndjson":
-		return protocolNDJSON, nil
-	case "cloudflare":
-		return protocolCloudflare, nil
-	case "firehose":
-		return protocolFirehose, nil
-	case "pubsub":
-		return protocolPubSub, nil
-	case "loki":
-		return protocolLoki, nil
-	case "otlp":
-		return protocolOTLP, nil
-	case "azure":
-		return protocolAzure, nil
-	case "splunk":
-		return protocolSplunk, nil
-	case "":
-		return 0, fmt.Errorf("http source: protocol is required")
-	default:
-		return 0, fmt.Errorf("http source: unknown protocol %q", s)
+func parseProtocol(s string) (string, error) {
+	if s == "" {
+		return "", fmt.Errorf("http source: protocol is required")
 	}
+	if !adapters.Has(s) {
+		return "", fmt.Errorf("http source: unknown protocol %q; registered: %v", s, adapters.Names())
+	}
+	return s, nil
 }

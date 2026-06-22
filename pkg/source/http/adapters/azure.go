@@ -11,6 +11,14 @@ import (
 	nethttp "net/http"
 )
 
+// init registers the azure factory with the open adapter registry.
+// Called from: package init order during program startup. Non-blocking.
+func init() {
+	Register("azure", func(cfg AdapterConfig) (Adapter, error) {
+		return &AzureAdapter{}, nil
+	})
+}
+
 // AzureAdapter implements Adapter for Azure Monitor Data Collector API.
 // Expects JSON array payload: [{"time":"RFC3339","msg":"..."}, ...]
 // Called from: buildPushHandler() during HTTP request processing.

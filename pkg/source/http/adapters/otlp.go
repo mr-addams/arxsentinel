@@ -13,6 +13,14 @@ import (
 	nethttp "net/http"
 )
 
+// init registers the otlp factory with the open adapter registry.
+// Called from: package init order during program startup. Non-blocking.
+func init() {
+	Register("otlp", func(cfg AdapterConfig) (Adapter, error) {
+		return &OTLPAdapter{}, nil
+	})
+}
+
 // OTLPAdapter implements Adapter for OpenTelemetry Protocol (logs).
 // Expects JSON format (not protobuf) with ResourceLogs structure.
 // Called from: buildPushHandler() during HTTP request processing.

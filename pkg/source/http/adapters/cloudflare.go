@@ -10,6 +10,14 @@ import (
 	nethttp "net/http"
 )
 
+// init registers the cloudflare factory with the open adapter registry.
+// Called from: package init order during program startup. Non-blocking.
+func init() {
+	Register("cloudflare", func(cfg AdapterConfig) (Adapter, error) {
+		return &CloudflareAdapter{}, nil
+	})
+}
+
 // isValidChallenge проверяет, что challenge содержит только разрешённые
 // символы: буквы латиницы, цифры, точка, подчёркивание, дефис.
 // Используется в CloudflareChallengeMiddleware (H3) для предотвращения

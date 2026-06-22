@@ -13,6 +13,14 @@ import (
 	nethttp "net/http"
 )
 
+// init registers the splunk factory with the open adapter registry.
+// Called from: package init order during program startup. Non-blocking.
+func init() {
+	Register("splunk", func(cfg AdapterConfig) (Adapter, error) {
+		return &SplunkAdapter{}, nil
+	})
+}
+
 // SplunkAdapter implements Adapter for Splunk HTTP Event Collector.
 // Expects newline-delimited JSON: {"time":123.456,"event":"log line"}
 // Called from: buildPushHandler() during HTTP request processing.

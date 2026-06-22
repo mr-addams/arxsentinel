@@ -11,10 +11,21 @@ import (
 	nethttp "net/http"
 )
 
+// init registers the plain and ndjson factories with the open adapter registry.
+// Called from: package init order during program startup. Non-blocking.
+func init() {
+	Register("plain", func(cfg AdapterConfig) (Adapter, error) {
+		return New("", false), nil
+	})
+	Register("ndjson", func(cfg AdapterConfig) (Adapter, error) {
+		return New(cfg.EnvelopeField, true), nil
+	})
+}
+
 // GenericAdapter implements Adapter for plain and NDJSON HTTP formats.
 // field: JSON key to extract from each NDJSON object (empty = whole line).
 // isNDJSON: true for newline-delimited JSON, false for plain text.
-// Called from: buildPushHandler() for protocolPlain and protocolNDJSON.
+// Called from: buildPushHandler() for the "plain" and "ndjson" protocols.
 type GenericAdapter struct {
 	field    string // YAML: envelope_field — JSON key to extract. Consumer: Decode()
 	isNDJSON bool   // YAML: ndjson mode flag. Consumer: Decode()

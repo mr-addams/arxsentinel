@@ -82,38 +82,14 @@ func (s *HTTPSource) Manifest() plugin.Manifest {
 	}
 }
 
-// buildAdapter creates the appropriate adapter for the protocol.
-// Factory function — no side effects, no external state. Non-blocking.
-func buildAdapter(proto protocol, cfg *parsedConfig) adapters.Adapter {
-	switch proto {
-	case protocolPlain:
-		return adapters.New("", false)
-	case protocolNDJSON:
-		return adapters.New(cfg.envelopeField, true)
-	case protocolCloudflare:
-		return &adapters.CloudflareAdapter{}
-	case protocolFirehose:
-		return &adapters.FirehoseAdapter{}
-	case protocolPubSub:
-		return &adapters.PubSubAdapter{}
-	case protocolLoki:
-		return &adapters.LokiAdapter{}
-	case protocolOTLP:
-		return &adapters.OTLPAdapter{}
-	case protocolAzure:
-		return &adapters.AzureAdapter{}
-	case protocolSplunk:
-		return &adapters.SplunkAdapter{}
-	default:
-		panic("http source: unknown protocol")
-	}
-}
-
 // Run starts the HTTP source — either push (webhook) or pull (polling).
 // Routes to runPush or runPull based on mode configuration.
 // Called from: plugin exec loop. Non-blocking.
 func (s *HTTPSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
-	adapter := buildAdapter(s.cfg.proto, s.cfg)
+	adapter, err := adapters.Build(s.cfg.proto, adapters.AdapterConfig{EnvelopeField: s.cfg.envelopeField})
+	if err != nil {
+		return err
+	}
 	if s.cfg.mode == "pull" {
 		return runPull(ctx, s.cfg, adapter, out, s.par, s.logFn, &s.counters)
 	}

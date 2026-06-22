@@ -16,22 +16,23 @@ cloud and observability protocols.
 
 ```
 pkg/source/http/
-├── source.go          # Plugin registration, Run() entry point, buildAdapter factory
+├── source.go          # Plugin registration, Run() entry point, adapters.Build dispatch
 ├── config.go          # Configuration parsing and validation
 ├── push.go            # Push-mode HTTP server, middleware chain
 ├── pull.go            # Pull-mode polling client
 ├── envelope.go        # Body reading, gzip decompression, timestamp normalization
 └── adapters/
     ├── adapter.go         # Adapter interface, EnvelopeRecord
-    ├── generic.go         # plain, ndjson
-    ├── cloudflare.go      # cloudflare + ownership challenge middleware
-    ├── firehose.go        # AWS Kinesis Firehose
-    ├── pubsub.go          # GCP Pub/Sub push
+    ├── registry.go        # open adapter registry (Register/Build/Names/Has)
+    ├── generic.go         # plain, ndjson (self-registered)
+    ├── cloudflare.go      # cloudflare + ownership challenge middleware (self-registered)
+    ├── firehose.go        # AWS Kinesis Firehose (self-registered)
+    ├── pubsub.go          # GCP Pub/Sub push (self-registered)
     ├── pubsub_auth.go     # Pub/Sub OIDC JWT validation
-    ├── loki.go            # Grafana Loki push API
-    ├── otlp.go            # OpenTelemetry HTTP logs
-    ├── azure.go           # Azure Monitor Data Collector
-    ├── splunk.go          # Splunk HEC
+    ├── loki.go            # Grafana Loki push API (self-registered)
+    ├── otlp.go            # OpenTelemetry HTTP logs (self-registered)
+    ├── azure.go           # Azure Monitor Data Collector (self-registered)
+    ├── splunk.go          # Splunk HEC (self-registered)
     └── helpers.go         # normalizeTimestamp, copyMap
 ```
 
@@ -668,15 +669,11 @@ inputs:
 
 ## Extending
 
-Adding a new protocol adapter involves six localized steps. The pattern
+Adding a new protocol adapter involves four localized steps. The pattern
 is intentionally small so that new formats can be added without touching
 the request pipeline.
 
-1. **Add the protocol constant** to `config.go` inside the `protocol`
-   iota block, and extend `parseProtocol` with the matching string. The
-   new constant must be wired up in the switch statement, otherwise
-   `parseHTTPConfig` will return an "unknown protocol" error at startup.
-2. **Implement the `Adapter` interface** in a new file under `adapters/`:
+1. **Implement the `Adapter` interface** in a new file under `adapters/`:
 
    ```go
    type MyAdapter struct{}
@@ -690,17 +687,30 @@ the request pipeline.
    }
    ```
 
-3. **Register the adapter** by adding a `case` to the `buildAdapter`
-   switch in `source.go`. The new branch returns an instance of the
-   adapter. Without this step, `Run()` panics on the unknown protocol.
-4. **(Optional) Add custom middleware** in `push.go` if the new protocol
+2. **Self-register the adapter** by adding an `init()` to the same file
+   that calls `adapters.Register("myproto", ...)`:
+
+   ```go
+   func init() {
+       Register("myproto", func(cfg AdapterConfig) (Adapter, error) {
+           return &MyAdapter{}, nil
+       })
+   }
+   ```
+
+   Registration is the open registry's only entry point — no switch in
+   `source.go`, no iota in `config.go`. If the new protocol needs
+   per-protocol context (such as `EnvelopeField` for NDJSON), add a
+   field to `AdapterConfig`; the registry passes it through to every
+   factory.
+3. **(Optional) Add custom middleware** in `push.go` if the new protocol
    requires special authentication or handshake logic. Wire the
    middleware into the chain in `buildPushHandler`.
-5. **Cover it with tests** by adding scenarios to
+4. **Cover it with tests** by adding scenarios to
    `adapters/adapters_test.go` — at minimum, a happy-path decode and
    an ACK check. If the protocol is sensitive (auth, signed payloads),
    also extend `source_test.go` with a push-mode integration test.
-6. **Document it** by adding a subsection under
+5. **Document it** by adding a subsection under
    [Protocols and Adapters](#protocols-and-adapters) and a new
    quick-start example.
 

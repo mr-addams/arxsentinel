@@ -13,6 +13,14 @@ import (
 	nethttp "net/http"
 )
 
+// init registers the firehose factory with the open adapter registry.
+// Called from: package init order during program startup. Non-blocking.
+func init() {
+	Register("firehose", func(cfg AdapterConfig) (Adapter, error) {
+		return &FirehoseAdapter{}, nil
+	})
+}
+
 // FirehoseAdapter implements Adapter for AWS Kinesis Firehose.
 // Expects JSON: {"records":[{"data":"base64..."}]}
 // Called from: buildPushHandler() during HTTP request processing.
