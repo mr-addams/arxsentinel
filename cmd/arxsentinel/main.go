@@ -61,7 +61,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/metrics"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
-	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
+	ncs "github.com/mr-addams/arxsentinel/pkg/ncs"
 )
 
 // version инжектируется goreleaser через ldflags (-X main.version={{.Version}}).
@@ -423,7 +423,7 @@ func main() {
 	// DetachWriter все NCS-источники, чтобы executor Run()-циклы вышли по закрытому каналу.
 	for _, ec := range cfg.Executors {
 		for _, src := range ec.Sources {
-			pkgexecutor.DetachWriter(src.Name)
+			ncs.DetachWriter(src.Name)
 		}
 	}
 	execWg.Wait()

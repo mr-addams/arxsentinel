@@ -40,8 +40,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
+	"github.com/mr-addams/arxsentinel/pkg/ncs"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -80,7 +80,7 @@ func New(addr string, logFn func(tag, msg, level string)) (*SentinelSource, erro
 	if err != nil {
 		return nil, fmt.Errorf("sentinel source: %w", err)
 	}
-	q, err := executor.AttachReader(name)
+	q, err := ncs.AttachReader(name)
 	if err != nil {
 		return nil, fmt.Errorf("sentinel source %q: %w", name, err)
 	}

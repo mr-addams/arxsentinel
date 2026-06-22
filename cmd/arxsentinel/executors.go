@@ -19,6 +19,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
+	ncs "github.com/mr-addams/arxsentinel/pkg/ncs"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -72,7 +73,7 @@ func preRegisterExecutorQueues(cfg *config.Config) error {
 			if src.Queue == nil {
 				continue
 			}
-			if err := pkgexecutor.RegisterSinkFromConfig(src.Name, src.Queue, utils.AsLogger()); err != nil {
+			if err := ncs.RegisterSinkFromConfig(src.Name, src.Queue, utils.AsLogger()); err != nil {
 				return fmt.Errorf("executor %q source %q: %w", ec.Name, src.Name, err)
 			}
 		}
@@ -144,7 +145,7 @@ func startExecutors(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup)
 		}
 
 		for _, src := range ec.Sources {
-			q, err := pkgexecutor.AttachReader(src.Name)
+			q, err := ncs.AttachReader(src.Name)
 			if err != nil {
 				return fmt.Errorf("executor %q: source %q: %w", ec.Name, src.Name, err)
 			}

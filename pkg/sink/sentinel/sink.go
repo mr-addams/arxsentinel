@@ -12,8 +12,8 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
+	"github.com/mr-addams/arxsentinel/pkg/ncs"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
@@ -36,7 +36,7 @@ func NewSentinelThreatSink(name string, bufferSize int) (*SentinelThreatSink, er
 	if name == "" {
 		return nil, fmt.Errorf("sentinel-threat sink: name is required")
 	}
-	q, err := executor.AttachWriter(name, bufferSize)
+	q, err := ncs.AttachWriter(name, bufferSize)
 	if err != nil {
 		return nil, fmt.Errorf("sentinel-threat sink %q: %w", name, err)
 	}
@@ -72,7 +72,7 @@ func (s *SentinelThreatSink) Write(ctx context.Context, event plugin.ThreatEvent
 // Called from: pipeline/executor.go during shutdown.
 // The Sentinel Hub executor drains the queue asynchronously after unregister.
 func (s *SentinelThreatSink) Close() error {
-	executor.DetachWriter(s.name)
+	ncs.DetachWriter(s.name)
 	return nil
 }
 

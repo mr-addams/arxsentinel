@@ -15,8 +15,8 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
-	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
+	ncs "github.com/mr-addams/arxsentinel/pkg/ncs"
 	"github.com/mr-addams/arxsentinel/pkg/parser"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
@@ -490,7 +490,7 @@ func TestPreRegisterExecutorQueues_WiringMismatch(t *testing.T) {
 	cleanupNames := []string{"mismatch-stream", "ok-stream", "orphan-stream", "legacy-stream"}
 	t.Cleanup(func() {
 		for _, n := range cleanupNames {
-			pkgexecutor.DetachWriter(n)
+			ncs.DetachWriter(n)
 		}
 	})
 

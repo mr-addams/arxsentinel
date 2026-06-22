@@ -1,7 +1,7 @@
-// ========================== pkg/executor — channelswitch_test.go ===============
-//   Tests for NamedSwitch: named executor registration, lookup, lifecycle.
+// ========================== pkg/ncs — channelswitch_test.go ===============
+//   Tests for NamedSwitch: named queue registration, lookup, lifecycle.
 
-package executor_test
+package ncs_test
 
 import (
 	"context"
@@ -9,20 +9,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
 	"github.com/mr-addams/arxsentinel/pkg/logger"
+	"github.com/mr-addams/arxsentinel/pkg/ncs"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 func TestNamedSwitch_SendReceive(t *testing.T) {
 	ctx := context.Background()
-	q, err := executor.AttachWriter("test-sr", 10)
+	q, err := ncs.AttachWriter("test-sr", 10)
 	if err != nil {
 		t.Fatalf("AttachWriter error = %v, want nil", err)
 	}
 
-	src, err := executor.AttachReader("test-sr")
+	src, err := ncs.AttachReader("test-sr")
 	if err != nil {
 		t.Fatalf("AttachReader error = %v, want nil", err)
 	}
@@ -43,18 +43,18 @@ func TestNamedSwitch_SendReceive(t *testing.T) {
 		t.Errorf("received Level = %q, want %q", got.Level, event.Level)
 	}
 
-	executor.DetachWriter("test-sr")
+	ncs.DetachWriter("test-sr")
 }
 
 func TestNamedSwitch_DuplicateName(t *testing.T) {
 	ctx := context.Background()
 
 	// Fan-in: two streams register the same name and get the same queue.
-	q1, err := executor.AttachWriter("test-dup", 5)
+	q1, err := ncs.AttachWriter("test-dup", 5)
 	if err != nil {
 		t.Fatalf("first AttachWriter error = %v, want nil", err)
 	}
-	q2, err := executor.AttachWriter("test-dup", 5)
+	q2, err := ncs.AttachWriter("test-dup", 5)
 	if err != nil {
 		t.Fatalf("second AttachWriter error = %v, want nil", err)
 	}
@@ -63,7 +63,7 @@ func TestNamedSwitch_DuplicateName(t *testing.T) {
 	}
 
 	// Both push through different handles; consumer sees all events.
-	src, _ := executor.AttachReader("test-dup")
+	src, _ := ncs.AttachReader("test-dup")
 	_ = q1.Push(ctx, plugin.ThreatEvent{IP: "1.1.1.1", Level: "THREAT"})
 	_ = q2.Push(ctx, plugin.ThreatEvent{IP: "2.2.2.2", Level: "THREAT"})
 
@@ -75,34 +75,34 @@ func TestNamedSwitch_DuplicateName(t *testing.T) {
 	}
 
 	// Ref count: first DetachWriter keeps queue alive.
-	executor.DetachWriter("test-dup") // ref: 2 → 1, queue must stay open
-	if _, err := executor.AttachReader("test-dup"); err != nil {
+	ncs.DetachWriter("test-dup") // ref: 2 → 1, queue must stay open
+	if _, err := ncs.AttachReader("test-dup"); err != nil {
 		t.Error("queue should still be open after first DetachWriter")
 	}
-	executor.DetachWriter("test-dup") // ref: 1 → 0, queue closed
-	if _, err := executor.AttachReader("test-dup"); err == nil {
+	ncs.DetachWriter("test-dup") // ref: 1 → 0, queue closed
+	if _, err := ncs.AttachReader("test-dup"); err == nil {
 		t.Error("queue should be gone after last DetachWriter")
 	}
 }
 
 func TestNamedSwitch_Unregister(t *testing.T) {
 	ctx := context.Background()
-	q, err := executor.AttachWriter("test-unreg", 3)
+	q, err := ncs.AttachWriter("test-unreg", 3)
 	if err != nil {
 		t.Fatalf("AttachWriter error = %v, want nil", err)
 	}
 
-	src, err := executor.AttachReader("test-unreg")
+	src, err := ncs.AttachReader("test-unreg")
 	if err != nil {
 		t.Fatalf("AttachReader error = %v, want nil", err)
 	}
 
 	_ = q.Push(ctx, plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"})
-	executor.DetachWriter("test-unreg")
+	ncs.DetachWriter("test-unreg")
 
-	// После DetachWriter queue закрыта, но в канале ещё есть буферизованное событие.
-	// Первый Pop дренирует буфер (err=nil, возвращает событие).
-	// Второй Pop должен вернуть ErrQueueClosed — канал пуст и закрыт.
+	// After DetachWriter the queue is closed, but a buffered event may still be in the channel.
+	// The first Pop drains the buffer (err=nil, returns the event).
+	// The second Pop must return ErrQueueClosed — the channel is empty and closed.
 	_, _ = src.Pop(ctx)
 	_, err = src.Pop(ctx)
 	if err == nil {
@@ -111,30 +111,30 @@ func TestNamedSwitch_Unregister(t *testing.T) {
 }
 
 func TestNamedSwitch_GetSourceNotFound(t *testing.T) {
-	_, err := executor.AttachReader("nonexistent")
+	_, err := ncs.AttachReader("nonexistent")
 	if err == nil {
 		t.Fatal("AttachReader(nonexistent) expected error, got nil")
 	}
 }
 
-// --------------------- RegisterSinkFromConfig: таблица веток ---------------------
+// --------------------- RegisterSinkFromConfig: branch table ---------------------
 //
-// Каждый тест использует уникальное имя очереди (t.Name()), чтобы не пересекаться
-// с глобальным singleton'ом NamedChannelSwitch при параллельном запуске.
-// После каждого теста DetachWriter обязателен — иначе queue утечёт в NCS-карту.
+// Each test uses a unique queue name (t.Name()) to avoid clashes with the
+// global NamedChannelSwitch singleton under parallel execution.
+// DetachWriter is mandatory after every test — otherwise the queue leaks into the NCS map.
 
-// TestRegisterSinkFromConfig_NilCfg — cfg == nil → дефолтный MemoryQueue,
-// функция ведёт себя идентично AttachWriter(name, 0).
+// TestRegisterSinkFromConfig_NilCfg — cfg == nil → default MemoryQueue,
+// function behaves identically to AttachWriter(name, 0).
 func TestRegisterSinkFromConfig_NilCfg(t *testing.T) {
 	name := t.Name()
 
-	err := executor.RegisterSinkFromConfig(name, nil, logger.Nop)
+	err := ncs.RegisterSinkFromConfig(name, nil, logger.Nop)
 	if err != nil {
 		t.Fatalf("RegisterSinkFromConfig(nil) error = %v, want nil", err)
 	}
 
-	// Queue зарегистрирована, AttachReader обязан её найти.
-	src, err := executor.AttachReader(name)
+	// Queue is registered; AttachReader must find it.
+	src, err := ncs.AttachReader(name)
 	if err != nil {
 		t.Fatalf("AttachReader(%q) error = %v, want nil", name, err)
 	}
@@ -142,7 +142,7 @@ func TestRegisterSinkFromConfig_NilCfg(t *testing.T) {
 		t.Fatal("AttachReader returned nil queue")
 	}
 
-	// Очередь рабочая: Push → Pop возвращает то же событие.
+	// The queue is functional: Push → Pop returns the same event.
 	ctx := context.Background()
 	evt := plugin.ThreatEvent{IP: "10.0.0.1", Level: "THREAT"}
 	if err := src.Push(ctx, evt); err != nil {
@@ -156,20 +156,20 @@ func TestRegisterSinkFromConfig_NilCfg(t *testing.T) {
 		t.Errorf("Pop IP = %q, want %q", got.IP, evt.IP)
 	}
 
-	executor.DetachWriter(name)
+	ncs.DetachWriter(name)
 }
 
-// TestRegisterSinkFromConfig_TypeMemory — явный type=memory → MemoryQueue.
+// TestRegisterSinkFromConfig_TypeMemory — explicit type=memory → MemoryQueue.
 func TestRegisterSinkFromConfig_TypeMemory(t *testing.T) {
 	name := t.Name()
 	cfg := &queue.QueueConfig{Type: queue.QueueTypeMemory}
 
-	err := executor.RegisterSinkFromConfig(name, cfg, logger.Nop)
+	err := ncs.RegisterSinkFromConfig(name, cfg, logger.Nop)
 	if err != nil {
 		t.Fatalf("RegisterSinkFromConfig(memory) error = %v, want nil", err)
 	}
 
-	src, err := executor.AttachReader(name)
+	src, err := ncs.AttachReader(name)
 	if err != nil {
 		t.Fatalf("AttachReader(%q) error = %v, want nil", name, err)
 	}
@@ -177,8 +177,8 @@ func TestRegisterSinkFromConfig_TypeMemory(t *testing.T) {
 		t.Fatal("AttachReader returned nil queue")
 	}
 
-	// Доп. проверка: подтверждаем, что зарегистрирована именно in-memory очередь —
-	// Push → Pop в том же процессе без сериализации.
+	// Extra check: confirm that the registered queue is the in-memory variant —
+	// Push → Pop in the same process, without any serialization.
 	ctx := context.Background()
 	evt := plugin.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"}
 	if err := src.Push(ctx, evt); err != nil {
@@ -192,23 +192,23 @@ func TestRegisterSinkFromConfig_TypeMemory(t *testing.T) {
 		t.Errorf("Pop IP = %q, want %q", got.IP, evt.IP)
 	}
 
-	executor.DetachWriter(name)
+	ncs.DetachWriter(name)
 }
 
-// TestRegisterSinkFromConfig_TypeBbolt — type=bbolt с валидным path → BboltQueue
-// регистрируется без ошибки. Используем t.TempDir() для авто-очистки.
+// TestRegisterSinkFromConfig_TypeBbolt — type=bbolt with a valid path → BboltQueue
+// is registered without error. We use t.TempDir() for automatic cleanup.
 func TestRegisterSinkFromConfig_TypeBbolt(t *testing.T) {
 	name := t.Name()
 	dbPath := filepath.Join(t.TempDir(), "queue.db")
 	cfg := &queue.QueueConfig{Type: queue.QueueTypeBbolt, Path: dbPath}
 
-	err := executor.RegisterSinkFromConfig(name, cfg, logger.Nop)
+	err := ncs.RegisterSinkFromConfig(name, cfg, logger.Nop)
 	if err != nil {
 		t.Fatalf("RegisterSinkFromConfig(bbolt) error = %v, want nil", err)
 	}
 
-	// BboltQueue зарегистрирован в NCS, AttachReader находит её.
-	src, err := executor.AttachReader(name)
+	// BboltQueue is registered in NCS; AttachReader finds it.
+	src, err := ncs.AttachReader(name)
 	if err != nil {
 		t.Fatalf("AttachReader(%q) error = %v, want nil", name, err)
 	}
@@ -216,33 +216,33 @@ func TestRegisterSinkFromConfig_TypeBbolt(t *testing.T) {
 		t.Fatal("AttachReader returned nil queue")
 	}
 
-	// ВАЖНО: BboltQueue.DetachWriter закроет её ДО того, как BboltQueue обработает
-	// background-writeLoop. После Close повторный Push вернёт ErrQueueClosed —
-	// это и проверяем ниже, чтобы убедиться, что в NCS лежит именно BboltQueue.
+	// IMPORTANT: BboltQueue.DetachWriter will close it BEFORE BboltQueue finishes
+	// the background writeLoop. After Close, a subsequent Push returns ErrQueueClosed —
+	// that is what we assert below to confirm the NCS entry is actually a BboltQueue.
 	ctx := context.Background()
 	evt := plugin.ThreatEvent{IP: "10.0.0.3", Level: "THREAT"}
 	if err := src.Push(ctx, evt); err != nil {
 		t.Fatalf("Push error = %v, want nil", err)
 	}
 
-	executor.DetachWriter(name)
+	ncs.DetachWriter(name)
 }
 
-// TestRegisterSinkFromConfig_TypeRedis_InvalidURL — type=redis с невалидным URL
-// → NewRedisQueue возвращает ошибку (redis.ParseURL не справляется),
-// RegisterSinkFromConfig пробрасывает её дальше, в NCS ничего не попадает.
+// TestRegisterSinkFromConfig_TypeRedis_InvalidURL — type=redis with an invalid URL
+// → NewRedisQueue returns an error (redis.ParseURL cannot parse it),
+// RegisterSinkFromConfig propagates it; nothing is stored in NCS.
 func TestRegisterSinkFromConfig_TypeRedis_InvalidURL(t *testing.T) {
 	name := t.Name()
 	cfg := &queue.QueueConfig{
 		Type: queue.QueueTypeRedis,
-		URL:  "not-a-valid-redis-url", // redis.ParseURL ожидает схему redis://
+		URL:  "not-a-valid-redis-url", // redis.ParseURL expects the redis:// scheme
 	}
 
-	err := executor.RegisterSinkFromConfig(name, cfg, logger.Nop)
+	err := ncs.RegisterSinkFromConfig(name, cfg, logger.Nop)
 	if err == nil {
 		t.Fatal("RegisterSinkFromConfig(redis, bad url) expected error, got nil")
 	}
-	// Сообщение обязано содержать имя sink'а для диагностики в логах.
+	// The error message must include the sink name for log diagnostics.
 	if !strings.Contains(err.Error(), name) {
 		t.Errorf("error %q should mention sink name %q", err.Error(), name)
 	}
@@ -250,20 +250,20 @@ func TestRegisterSinkFromConfig_TypeRedis_InvalidURL(t *testing.T) {
 		t.Errorf("error %q should mention redis backend", err.Error())
 	}
 
-	// В NCS ничего не зарегистрировано — AttachReader обязан вернуть ошибку.
-	_, err = executor.AttachReader(name)
+	// Nothing is registered in NCS — AttachReader must return an error.
+	_, err = ncs.AttachReader(name)
 	if err == nil {
 		t.Fatal("AttachReader after failed register expected error, got nil")
 	}
 }
 
-// TestRegisterSinkFromConfig_UnknownType — type с неподдерживаемым значением
-// → возврат ошибки, NCS остаётся чистым.
+// TestRegisterSinkFromConfig_UnknownType — type with an unsupported value
+// → returns an error; NCS stays empty.
 func TestRegisterSinkFromConfig_UnknownType(t *testing.T) {
 	name := t.Name()
 	cfg := &queue.QueueConfig{Type: queue.QueueType("kafka")}
 
-	err := executor.RegisterSinkFromConfig(name, cfg, logger.Nop)
+	err := ncs.RegisterSinkFromConfig(name, cfg, logger.Nop)
 	if err == nil {
 		t.Fatal("RegisterSinkFromConfig(unknown) expected error, got nil")
 	}
@@ -274,8 +274,8 @@ func TestRegisterSinkFromConfig_UnknownType(t *testing.T) {
 		t.Errorf("error %q should mention sink name %q", err.Error(), name)
 	}
 
-	// NCS не должен содержать ничего под этим именем.
-	_, err = executor.AttachReader(name)
+	// NCS must not contain anything under this name.
+	_, err = ncs.AttachReader(name)
 	if err == nil {
 		t.Fatal("AttachReader after unknown-type error expected error, got nil")
 	}
