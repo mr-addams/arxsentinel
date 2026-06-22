@@ -18,32 +18,40 @@ import (
 	"time"
 )
 
-// getInt extracts an int value from a params map.
+// GetInt extracts an int value from DetectorConfig.Params.
 // Handles int, int64, and float64 (yaml sometimes produces float64 for whole numbers).
-// Called from: each detector factory. Non-blocking.
+// Called from: each detector factory and external sub-packages. Non-blocking.
+func GetInt(cfg DetectorConfig, key string, defaultVal int) int {
+	m := cfg.Params
+	v, ok := m[key]
+	if !ok {
+		return defaultVal
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	}
+	return defaultVal
+}
+
+// getInt is a transition alias for GetInt using a params map directly.
+// Deprecated: kept for compatibility with existing detector factories.
 func getInt(m map[string]interface{}, key string, def int) int {
-	v, ok := m[key]
-	if !ok {
-		return def
-	}
-	switch val := v.(type) {
-	case int:
-		return val
-	case int64:
-		return int(val)
-	case float64:
-		return int(val)
-	}
-	return def
+	return GetInt(DetectorConfig{Params: m}, key, def)
 }
 
-// getFloat64 extracts a float64 value from a params map.
+// GetFloat64 extracts a float64 value from DetectorConfig.Params.
 // Handles float64 and integer types for YAML values like `0.6` or `1`.
-// Called from: each detector factory. Non-blocking.
-func getFloat64(m map[string]interface{}, key string, def float64) float64 {
+// Called from: each detector factory and external sub-packages. Non-blocking.
+func GetFloat64(cfg DetectorConfig, key string, defaultVal float64) float64 {
+	m := cfg.Params
 	v, ok := m[key]
 	if !ok {
-		return def
+		return defaultVal
 	}
 	switch val := v.(type) {
 	case float64:
@@ -53,40 +61,54 @@ func getFloat64(m map[string]interface{}, key string, def float64) float64 {
 	case int64:
 		return float64(val)
 	}
-	return def
+	return defaultVal
 }
 
-// getBool extracts a bool value from a params map.
-// Called from: each detector factory. Non-blocking.
-func getBool(m map[string]interface{}, key string, def bool) bool {
+// getFloat64 is a transition alias for GetFloat64 using a params map directly.
+// Deprecated: kept for compatibility with existing detector factories.
+func getFloat64(m map[string]interface{}, key string, def float64) float64 {
+	return GetFloat64(DetectorConfig{Params: m}, key, def)
+}
+
+// GetBool extracts a bool value from DetectorConfig.Params.
+// Called from: each detector factory and external sub-packages. Non-blocking.
+func GetBool(cfg DetectorConfig, key string, defaultVal bool) bool {
+	m := cfg.Params
 	v, ok := m[key]
 	if !ok {
-		return def
+		return defaultVal
 	}
 	if b, ok := v.(bool); ok {
 		return b
 	}
-	return def
+	return defaultVal
 }
 
-// getDuration extracts a time.Duration from a params map.
+// getBool is a transition alias for GetBool using a params map directly.
+// Deprecated: kept for compatibility with existing detector factories.
+func getBool(m map[string]interface{}, key string, def bool) bool {
+	return GetBool(DetectorConfig{Params: m}, key, def)
+}
+
+// GetDuration extracts a time.Duration from DetectorConfig.Params.
 //
 // Accepted forms:
 //   - string: "30s", "1m", "500ms" — parsed via time.ParseDuration
 //   - int / int64 / float64: nanoseconds — used directly as time.Duration
 //
-// Returns def on missing key, unknown type, or parse error.
-// Called from: each detector factory. Non-blocking.
-func getDuration(m map[string]interface{}, key string, def time.Duration) time.Duration {
+// Returns defaultVal on missing key, unknown type, or parse error.
+// Called from: each detector factory and external sub-packages. Non-blocking.
+func GetDuration(cfg DetectorConfig, key string, defaultVal time.Duration) time.Duration {
+	m := cfg.Params
 	v, ok := m[key]
 	if !ok {
-		return def
+		return defaultVal
 	}
 	switch val := v.(type) {
 	case string:
 		dur, err := time.ParseDuration(val)
 		if err != nil {
-			return def
+			return defaultVal
 		}
 		return dur
 	case int:
@@ -96,21 +118,28 @@ func getDuration(m map[string]interface{}, key string, def time.Duration) time.D
 	case float64:
 		return time.Duration(int64(val))
 	}
-	return def
+	return defaultVal
 }
 
-// getStrings extracts a []string from a params map.
+// getDuration is a transition alias for GetDuration using a params map directly.
+// Deprecated: kept for compatibility with existing detector factories.
+func getDuration(m map[string]interface{}, key string, def time.Duration) time.Duration {
+	return GetDuration(DetectorConfig{Params: m}, key, def)
+}
+
+// GetStrings extracts a []string from DetectorConfig.Params.
 //
 // Accepted forms:
 //   - []string: returned as-is
 //   - []interface{}: each element cast to string; non-string items are skipped
 //
-// Returns def on missing key or wrong type.
-// Called from: each detector factory. Non-blocking.
-func getStrings(m map[string]interface{}, key string, def []string) []string {
+// Returns defaultVal on missing key or wrong type.
+// Called from: each detector factory and external sub-packages. Non-blocking.
+func GetStrings(cfg DetectorConfig, key string, defaultVal []string) []string {
+	m := cfg.Params
 	v, ok := m[key]
 	if !ok {
-		return def
+		return defaultVal
 	}
 	switch val := v.(type) {
 	case []string:
@@ -124,7 +153,13 @@ func getStrings(m map[string]interface{}, key string, def []string) []string {
 		}
 		return ss
 	}
-	return def
+	return defaultVal
+}
+
+// getStrings is a transition alias for GetStrings using a params map directly.
+// Deprecated: kept for compatibility with existing detector factories.
+func getStrings(m map[string]interface{}, key string, def []string) []string {
+	return GetStrings(DetectorConfig{Params: m}, key, def)
 }
 
 // noopMatcher is a Matcher that never matches.
@@ -135,4 +170,3 @@ type noopMatcher struct{}
 func (noopMatcher) Match(string, string) bool { return false }
 
 func (noopMatcher) MatchResult(string, string) (string, bool) { return "", false }
-
