@@ -10,6 +10,12 @@
 package main
 
 import (
+	_ "github.com/mr-addams/arxsentinel/pkg/executor/cloudflare"
+
+	// Plugin detectors (tree-shakeable side-effect registration, Flow 076)
+	_ "github.com/mr-addams/arxsentinel/pkg/detector/overflow"
+	_ "github.com/mr-addams/arxsentinel/pkg/detector/probe"
+
 	_ "github.com/mr-addams/arxsentinel/pkg/sink/exec"
 	_ "github.com/mr-addams/arxsentinel/pkg/sink/stdout"
 	_ "github.com/mr-addams/arxsentinel/pkg/source/file"

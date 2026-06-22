@@ -3,6 +3,12 @@
 name: iot
 description: "IoT edge build — syslog/file sources and exec/stdout sinks for local remediation."
 plugins:
+  executors:
+    - name: cloudflare
+      module: arxsentinel
+  detectors:
+    - name: probe
+    - name: overflow
   sources:
     - name: syslog
       module: arx-core
