@@ -1,13 +1,17 @@
-// ========================== Module output/format ========================================
-//   ThreatEvent formatting: Fail2Ban line and JSON envelope.
+// ========================== pkg/sink/format =============================================
+//   ThreatEvent formatting: Fail2Ban line, JSON envelope, sentinel-threat line.
 //
 //   WHAT IS HERE:
-//     - FormatFailban — formats ThreatEvent as a Fail2Ban-compatible line
-//     - FormatJSON    — formats ThreatEvent as a JSON envelope
+//     - FormatFailban       — formats ThreatEvent as a Fail2Ban-compatible line
+//     - FormatJSON          — formats ThreatEvent as a JSON envelope
+//     - FormatSentinelThreat — formats ThreatEvent as sentinel-threat transport line
+//     - Formatter interface  — minimal serializer surface (Decision 5 in DECISIONS.md)
 //
 //   WHAT IS NOT HERE:
 //     - FileSink, StdoutSink (file.go, stdout.go)
-//     - ThreatLogger backward-compat wrapper (logger.go)
+//     - ThreatLogger / WarningsWriter — Product-side, stateful file-handling,
+//       live in internal/core/output (logger.go, warnings.go). ADR-002 constraint:
+//       warnings.go imports internal/core/chaincheck, so the package cannot move.
 //
 //   FAIL2BAN FORMAT (byte-compatible with FormatThreatLine in logger.go):
 //     2026-04-05T14:33:12Z THREAT 1.2.3.4 score=85 modules=probe,rate reason="..."
@@ -17,7 +21,7 @@
 //      "source_type":"file","ip":"1.2.3.4","score":85,"modules":["probe"],
 //      "reason":"...","raw_line":"..."(omit when empty)}
 
-package output
+package format
 
 import (
 	"encoding/json"

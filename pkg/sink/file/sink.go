@@ -13,8 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/mr-addams/arxsentinel/internal/core/output"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arxsentinel/pkg/sink/format"
 )
 
 // FileSink writes threat events to a file in the configured output format.
@@ -105,14 +105,14 @@ func (s *FileSink) Write(ctx context.Context, event plugin.ThreatEvent) error {
 	var line []byte
 	switch s.format {
 	case "json":
-		b, err := output.FormatJSON(event)
+		b, err := format.FormatJSON(event)
 		if err != nil {
 			s.errors.Add(1)
 			return fmt.Errorf("file sink %s: json marshal: %w", s.path, err)
 		}
 		line = append(b, '\n')
 	case "sentinel-threat":
-		b, err := output.FormatSentinelThreat(event, "")
+		b, err := format.FormatSentinelThreat(event, "")
 		if err != nil {
 			s.errors.Add(1)
 			return fmt.Errorf("file sink %s: sentinel-threat marshal: %w", s.path, err)
@@ -120,7 +120,7 @@ func (s *FileSink) Write(ctx context.Context, event plugin.ThreatEvent) error {
 		line = append(b, '\n')
 	default:
 		// "fail2ban" — default format.
-		line = []byte(output.FormatFailban(event) + "\n")
+		line = []byte(format.FormatFailban(event) + "\n")
 	}
 
 	// Serialize access to the shared file handle.

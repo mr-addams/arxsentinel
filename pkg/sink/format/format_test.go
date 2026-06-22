@@ -1,7 +1,13 @@
-// ========================== internal/core/output — format_test.go =========
-//   Tests for OutputFormat: JSON, CSV, text formatting.
+// ========================== pkg/sink/format — format_test.go ============================
+//   Tests for ThreatEvent serialization: Fail2Ban line, JSON envelope, sentinel-threat.
+//
+//   Note: FormatFailban produces output byte-identical to FormatThreatLine in
+//   internal/core/output (logger.go). Fail2Ban filters must continue to match
+//   after the pipeline migration — the parity guard test lives in
+//   internal/core/output/parity_test.go (ADR-002: internal->pkg is allowed,
+//   pkg->internal is forbidden even in tests).
 
-package output_test
+package format_test
 
 import (
 	"encoding/json"
@@ -9,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/output"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arxsentinel/pkg/sink/format"
 )
 
 var (
@@ -29,7 +35,7 @@ var (
 )
 
 func TestFormatFailban(t *testing.T) {
-	got := output.FormatFailban(testEvent)
+	got := format.FormatFailban(testEvent)
 
 	// Must match the format produced by FormatThreatLine (logger.go) —
 	// verified byte-by-byte so Fail2Ban filter regex is never silently broken.
@@ -39,26 +45,11 @@ func TestFormatFailban(t *testing.T) {
 	}
 }
 
-func TestFormatFailban_IdenticalToFormatThreatLine(t *testing.T) {
-	// Guard: FormatFailban must produce the same output as the legacy FormatThreatLine
-	// so Fail2Ban filters continue to work after the pipeline migration in Task 5.
-	failban := output.FormatFailban(testEvent)
-	legacy := output.FormatThreatLine(testEvent.IP, testEvent.Score, testEvent.Level, testEvent.Modules, testEvent.Reason)
-
-	// Timestamps differ because FormatThreatLine uses time.Now() while FormatFailban
-	// uses e.Timestamp. Compare everything after the timestamp prefix.
-	failbanSuffix := strings.SplitN(failban, " ", 2)[1]
-	legacySuffix := strings.SplitN(legacy, " ", 2)[1]
-	if failbanSuffix != legacySuffix {
-		t.Errorf("format mismatch with FormatThreatLine:\nfailban suffix: %q\nlegacy suffix:  %q", failbanSuffix, legacySuffix)
-	}
-}
-
 func TestFormatJSON_AllFields(t *testing.T) {
 	e := testEvent
 	e.RawLine = "raw log line"
 
-	b, err := output.FormatJSON(e)
+	b, err := format.FormatJSON(e)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +97,7 @@ func TestFormatJSON_AllFields(t *testing.T) {
 
 func TestFormatJSON_NoRawLine(t *testing.T) {
 	// RawLine == "" — the field must be absent from the JSON output (omitempty).
-	b, err := output.FormatJSON(testEvent)
+	b, err := format.FormatJSON(testEvent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +119,7 @@ func TestFormatSentinelThreat(t *testing.T) {
 	e := testEvent
 	e.RawLine = "" // sentinel-threat format never includes raw_line
 
-	b, err := output.FormatSentinelThreat(e, "frontend")
+	b, err := format.FormatSentinelThreat(e, "frontend")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +163,7 @@ func TestFormatSentinelThreat(t *testing.T) {
 }
 
 func TestFormatJSON_TimestampRFC3339(t *testing.T) {
-	b, err := output.FormatJSON(testEvent)
+	b, err := format.FormatJSON(testEvent)
 	if err != nil {
 		t.Fatal(err)
 	}

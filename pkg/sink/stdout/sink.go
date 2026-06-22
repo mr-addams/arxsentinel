@@ -12,8 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/mr-addams/arxsentinel/internal/core/output"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arxsentinel/pkg/sink/format"
 )
 
 // StdoutSink writes threat events to stdout in the configured output format.
@@ -87,14 +87,14 @@ func (s *StdoutSink) Write(ctx context.Context, event plugin.ThreatEvent) error 
 	var line []byte
 	switch s.format {
 	case "json":
-		b, err := output.FormatJSON(event)
+		b, err := format.FormatJSON(event)
 		if err != nil {
 			s.errors.Add(1)
 			return fmt.Errorf("stdout sink: json marshal: %w", err)
 		}
 		line = append(b, '\n')
 	case "sentinel-threat":
-		b, err := output.FormatSentinelThreat(event, "")
+		b, err := format.FormatSentinelThreat(event, "")
 		if err != nil {
 			s.errors.Add(1)
 			return fmt.Errorf("stdout sink: sentinel-threat marshal: %w", err)
@@ -102,7 +102,7 @@ func (s *StdoutSink) Write(ctx context.Context, event plugin.ThreatEvent) error 
 		line = append(b, '\n')
 	default:
 		// "fail2ban" — default format.
-		line = []byte(output.FormatFailban(event) + "\n")
+		line = []byte(format.FormatFailban(event) + "\n")
 	}
 
 	s.mu.Lock()
