@@ -12,6 +12,8 @@ plugins:
       module: arxsentinel
     - name: nginx
       module: arxsentinel
+  detectors:
+    - name: probe
   processors:
     - name: processor
       module: arx-core

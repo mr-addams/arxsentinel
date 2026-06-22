@@ -24,6 +24,10 @@ import (
 	_ "github.com/mr-addams/arxsentinel/pkg/executor/mikrotik"
 	_ "github.com/mr-addams/arxsentinel/pkg/executor/nginx"
 	_ "github.com/mr-addams/arxsentinel/pkg/processor"
+
+	// Plugin detectors (tree-shakeable side-effect registration, Flow 076)
+	_ "github.com/mr-addams/arxsentinel/pkg/detector/probe"
+
 	_ "github.com/mr-addams/arxsentinel/pkg/sink/exec"
 	_ "github.com/mr-addams/arxsentinel/pkg/sink/sentinel"
 	_ "github.com/mr-addams/arxsentinel/pkg/sink/stdout"
