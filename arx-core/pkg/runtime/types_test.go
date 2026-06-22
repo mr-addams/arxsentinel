@@ -133,9 +133,9 @@ type stateWithVersion struct {
 }
 
 // TestProcessorStateRoundtrip проверяет что:
-//   1) factory.Build возвращает opaque state;
-//   2) factory.Reload возвращает НОВЫЙ state (не мутирует старый);
-//   3) Product может сохранить любое значение как ProcessorState.
+//  1. factory.Build возвращает opaque state;
+//  2. factory.Reload возвращает НОВЫЙ state (не мутирует старый);
+//  3. Product может сохранить любое значение как ProcessorState.
 func TestProcessorStateRoundtrip(t *testing.T) {
 	t.Parallel()
 
@@ -197,11 +197,11 @@ func TestProcessorStateRoundtrip(t *testing.T) {
 // TestMetricsCallbacksNilSafe проверяет контракт nil-safety: если Product
 // не зарегистрировал callback, Core-runtime ОБЯЗАН проверять `cb != nil`
 // перед вызовом. Здесь мы напрямую проверяем что:
-//   1) nil-структура MetricsCallbacks{} — все поля nil;
-//   2) попытка вызвать любой callback как метод на nil-структуре НЕ проверяется
-//      контрактом — это ответственность call-site (Core-runtime).
-//   3) Если call-site проверяет `if cb != nil && cb.Field != nil`, то вызов
-//      пустой структуры ничего не делает и не паникует.
+//  1. nil-структура MetricsCallbacks{} — все поля nil;
+//  2. попытка вызвать любой callback как метод на nil-структуре НЕ проверяется
+//     контрактом — это ответственность call-site (Core-runtime).
+//  3. Если call-site проверяет `if cb != nil && cb.Field != nil`, то вызов
+//     пустой структуры ничего не делает и не паникует.
 //
 // Этот тест документирует контракт: сам факт, что все поля — func-типы
 // с zero-value = nil — это и есть nil-safety гарантия для call-site.

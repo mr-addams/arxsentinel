@@ -54,14 +54,16 @@ import (
 	"syscall"
 	"time"
 
+	ncs "github.com/mr-addams/arx-core/pkg/ncs"
+	coreruntime "github.com/mr-addams/arx-core/pkg/runtime"
 	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
 	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 	"github.com/mr-addams/arxsentinel/internal/core/output"
+	"github.com/mr-addams/arxsentinel/internal/core/state"
 	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/metrics"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
-	ncs "github.com/mr-addams/arx-core/pkg/ncs"
 )
 
 // version инжектируется goreleaser через ldflags (-X main.version={{.Version}}).
@@ -390,12 +392,68 @@ func main() {
 	// ── Запуск executor-горутин (top-level автономные, Flow #042) ───────────────────────
 	// Executors собираются из cfg.Executors и подключаются к Named Channel Switch sources,
 	// регистрируемым sentinel-threat sink'ами внутри stream-pipeline (T5).
-	// ── Запуск стримов ────────────────────────────────────────────────────────────────
+	// ── Запуск стримов (Flow 081 Phase 3: runtime.Run + securityFactory) ───────────────
+
+	// MetricsCallbacks — адаптер из runtime-callback'ов в product metrics.* функции.
+	// Engine зовёт:
+	//   - RecordLine(s, p, src, st) на КАЖДОЙ строке ДО Process (даже при Skip) →
+	//     здесь = RecordLine + RecordInputLine (как в старом processLine).
+	//   - RecordOutputEvent(s, p, sinkName) — sinkType вычисляется из имени
+	//     через sinkTypeFromName (как в старом processLine).
+	//   - UpdateGauges — прямой проброс.
+	metricsCb := &coreruntime.MetricsCallbacks{
+		RecordLine: func(s, p, src, st string) {
+			metrics.RecordLine(s, p)
+			metrics.RecordInputLine(s, p, src, st)
+		},
+		RecordThreat:      metrics.RecordThreat,
+		RecordDetectorHit: metrics.RecordDetectorHit,
+		RecordOutputEvent: func(s, p, sinkName string) {
+			metrics.RecordOutputEvent(s, p, sinkName, sinkTypeFromName(sinkName))
+		},
+		UpdateGauges: func(s, p string, tracked, suspicious int64) {
+			metrics.UpdateGauges(s, p, int(tracked), int(suspicious))
+		},
+	}
+
+	// runtime.SharedResources — opaque контейнер, который engine пробрасывает
+	// в factory.Build. Здесь мы кладём те же singleton'ы, что и в локальный
+	// shared (нужен buildPipelineDetectors → bridgeShared).
+	runtimeShared := coreruntime.SharedResources{
+		BlocklistManager: shared.BlocklistManager,
+		ChainChecker:     shared.ChainChecker,
+		WarningsWriter:   shared.WarningsWriter,
+		MetricsCallbacks: metricsCb,
+	}
+
+	streamSpecs, streamReloadChs, err := adaptConfigToStreams(ctx, cfg)
+	if err != nil {
+		utils.Log("STARTUP", "stream adaptation error: "+err.Error(), "error")
+		os.Exit(1)
+	}
+	// SIGHUP-fanout: подменяем раннее-созданные reloadChs на те, что соответствуют
+	// StreamSpec.Pipelines (те же индексы — main.go строит reloadChs в порядке cfg.Streams).
+	reloadChs = streamReloadChs
 
 	var wg sync.WaitGroup
-	for i, streamCfg := range cfg.Streams {
+	for i, spec := range streamSpecs {
+		factory := &securityFactory{
+			ctx:        ctx,
+			path:       path,
+			ipCache:    ipCache,
+			resolver:   resolver,
+			cfg:        cfg,
+			streamName: cfg.Streams[i].Name,
+			trackers:   make(map[string]*state.Tracker),
+			shared:     runtimeShared,
+		}
 		wg.Add(1)
-		go runStream(ctx, path, cfg, streamCfg, ipCache, resolver, reloadChs[i], &wg, shared)
+		go func(spec coreruntime.StreamSpec, factory *securityFactory, reloadCh <-chan struct{}) {
+			defer wg.Done()
+			if err := coreruntime.Run(ctx, spec, factory, runtimeShared, reloadCh, utils.Log); err != nil {
+				utils.Log("ERROR", fmt.Sprintf("stream %q: runtime.Run error: %v", spec.Name, err), "error")
+			}
+		}(spec, factory, reloadChs[i])
 	}
 
 	// Запускаем executors ПОСЛЕ stream-горутин, чтобы sentinel-threat sink'и успели

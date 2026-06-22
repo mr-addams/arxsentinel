@@ -33,6 +33,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -276,8 +277,12 @@ func dispatchEntry(
 		return
 	}
 
-	// Событие: пишем в каждый sink, считаем eventCount.
-	eventCount.Add(1)
+	// Событие: пишем в каждый sink, считаем eventCount только на THREAT-уровне.
+	// Исходный processLine считал угрозой только "THREAT"; "WARN" не инкрементил.
+	// Engine не имеет знания о семантике level — использует ThreatEvent.Level из плагина.
+	if action.ThreatEvent.Level == "THREAT" {
+		eventCount.Add(1)
+	}
 	if cb := shared.MetricsCallbacks; cb != nil && cb.RecordThreat != nil {
 		cb.RecordThreat(evctx.StreamName, evctx.PipelineName, action.ThreatEvent.Level)
 	}
@@ -288,7 +293,7 @@ func dispatchEntry(
 			continue
 		}
 		if cb := shared.MetricsCallbacks; cb != nil && cb.RecordOutputEvent != nil {
-			cb.RecordOutputEvent(evctx.StreamName, evctx.PipelineName, sink.Name(), sinkTypeOf(sink))
+			cb.RecordOutputEvent(evctx.StreamName, evctx.PipelineName, sink.Name())
 		}
 	}
 }
@@ -351,31 +356,21 @@ func logTag(streamName, pipelineName string) string {
 
 // sourceMetadata извлекает (name, type) из первого source в списке.
 //
-// Phase 2: sourceType остаётся пустым. Plugin-контракт в arx-core/pkg/plugin.Source
-// имеет Manifest() (возвращает Manifest со списком зависимостей), но НЕ экспонирует
-// "type" как отдельное поле. Чтобы не затаскивать в runtime знание о префиксах
-// имён ("file:", "stdin:"), sourceType остаётся "" — Product может переопределить
-// в своих Process-импл, если ему нужен тип для ThreatEvent-метаданных.
+// Type определяется префиксом имени source.Name(): "file:" → "file", иначе → "stdin".
+// Это контракт-нейтральное правило, известное arx-core/pkg/source (имя с "file:" —
+// стандартное именование file-source-plugin), поэтому engine может его применить,
+// не залезая в security/domain-домен.
 //
 // Длина списка > 0 уже проверена вызывающим кодом.
 func sourceMetadata(sources []plugin.Source) (name, sourceType string) {
 	if len(sources) == 0 {
 		return "", ""
 	}
-	return sources[0].Name(), ""
-}
-
-// sinkTypeOf извлекает тип sink через type-assert к Reloader-aware интерфейсу.
-//
-// На момент Phase 2 в arx-core/pkg/plugin нет метода Type() / Kind() —
-// sink-контракт минимален. Чтобы RecordOutputEvent был осмысленным, Product
-// может в Phase 3 расширить Sink интерфейс дополнительным методом.
-// Пока возвращаем пустую строку — это nil-safe.
-func sinkTypeOf(sink plugin.Sink) string {
-	// Phase 2: нет type-метода на Sink. Возвращаем пустую строку — metrics callbacks
-	// всё равно получат "" для sinkType до тех пор, пока контракт Sink не расширится.
-	_ = sink
-	return ""
+	name = sources[0].Name()
+	if strings.HasPrefix(name, "file:") {
+		return name, "file"
+	}
+	return name, "stdin"
 }
 
 // ++++++++++++++++++++++++++ Defaults & no-op fallback +++++++++++++++++++++++++++++++++++++

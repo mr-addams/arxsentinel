@@ -103,12 +103,13 @@ type LineProcessor interface {
 //
 // Build вызывается Core-runtime ОДИН раз при старте pipeline.
 //   - Внутри Build Product обычно:
-//       1) Резолвит detectors/trackers по имени (через PluginRegistry).
-//       2) Открывает нужные ресурсы (blocklist, chain-check и т.п. — НЕ в runtime).
-//       3) Возвращает opaque state, который будет жить до Reload.
+//     1) Резолвит detectors/trackers по имени (через PluginRegistry).
+//     2) Открывает нужные ресурсы (blocklist, chain-check и т.п. — НЕ в runtime).
+//     3) Возвращает opaque state, который будет жить до Reload.
 //
 // Reload вызывается по сигналу (SIGHUP, ConfigMap reload в k8s) —
-//   возвращает НОВЫЙ state, Core-runtime атомарно подменит старый.
+//
+//	возвращает НОВЫЙ state, Core-runtime атомарно подменит старый.
 //
 // Оба метода обязаны быть thread-safe (могут вызываться из разных горутин при
 // одновременном Reload нескольких pipeline'ов).
@@ -173,13 +174,16 @@ type SharedResources struct {
 //
 // Правила вызова (для Core-runtime, реализация — Phase 2):
 //   - ПЕРЕД каждым вызовом ОБЯЗАНА быть проверка:
-//         if cb != nil && cb.<Field> != nil { cb.<Field>(...) }
+//     if cb != nil && cb.<Field> != nil { cb.<Field>(...) }
 //   - То есть Core-runtime никогда не падает, если Product не зарегистрировал
 //     конкретный callback — это nil-safe контракт.
 //
 // Сигнатура Record* функций:
 //   - streamName, pipelineName — обязательные axis-метки.
-//   - sourceName, sourceType, sinkName, sinkType — заполняются, когда известны.
+//   - sourceName, sourceType — заполняются, когда известны (RecordLine / RecordInputLine).
+//   - sinkName — для RecordOutputEvent; Product-реализация callback'а сама
+//     вычисляет sinkType из имени (например "file:" → "file"), чтобы не тащить
+//     эту эвристику в generic runtime.
 //   - level ∈ {"WARN","THREAT"} для RecordThreat; moduleName для RecordDetectorHit.
 //   - trackedIPs / suspicious — gauge-значения для UpdateGauges.
 //
@@ -190,6 +194,6 @@ type MetricsCallbacks struct {
 	RecordThreat      func(streamName, pipelineName, level string)
 	RecordInputLine   func(streamName, pipelineName, sourceName, sourceType string)
 	RecordDetectorHit func(streamName, pipelineName, moduleName string)
-	RecordOutputEvent func(streamName, pipelineName, sinkName, sinkType string)
+	RecordOutputEvent func(streamName, pipelineName, sinkName string)
 	UpdateGauges      func(streamName, pipelineName string, trackedIPs, suspicious int64)
 }
