@@ -11,7 +11,7 @@ require (
 	github.com/rrethy/ahocorasick v1.0.0
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
-	go.etcd.io/bbolt v1.4.3
+	go.etcd.io/bbolt v1.5.0
 	golang.org/x/crypto v0.52.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -60,7 +60,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
-	github.com/redis/go-redis/v9 v9.20.0 // indirect
+	github.com/redis/go-redis/v9 v9.20.1 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.3 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect

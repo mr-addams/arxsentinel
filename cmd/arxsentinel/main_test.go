@@ -16,7 +16,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
 	"github.com/mr-addams/arx-core/pkg/executor/queue"
-	ncs "github.com/mr-addams/arxsentinel/pkg/ncs"
+	ncs "github.com/mr-addams/arx-core/pkg/ncs"
 	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
