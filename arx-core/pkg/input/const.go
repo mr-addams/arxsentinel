@@ -1,4 +1,4 @@
-// ========================== internal/core/input/const.go =========================================
+// ========================== arx-core/pkg/input/const.go =========================================
 //   Package-level constants for the input subsystem.
 //
 //   What is here:

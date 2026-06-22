@@ -1,4 +1,4 @@
-// ========================== internal/core/input — merge_test.go ============
+// ========================== arx-core/pkg/input — merge_test.go ============
 //   Tests for Merge: multi-source input merging, priority, deduplication.
 
 package input_test
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/input"
+	"github.com/mr-addams/arx-core/pkg/input"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 

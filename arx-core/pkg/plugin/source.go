@@ -5,8 +5,8 @@
 //     - Source — interface any input implementation must satisfy
 //
 //   WHAT IS NOT HERE:
-//     - FileSource, StdinSource (internal/core/input/)
-//     - Merge fan-in (internal/core/input/merge.go)
+//     - FileSource, StdinSource (arx-core/pkg/input/)
+//     - Merge fan-in (arx-core/pkg/input/merge.go)
 //
 //   DEPENDENCY RULE:
 //     pkg/plugin → stdlib only.

@@ -57,7 +57,7 @@ import (
 
 	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
 	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
-	coreinput "github.com/mr-addams/arxsentinel/internal/core/input"
+	coreinput "github.com/mr-addams/arx-core/pkg/input"
 	"github.com/mr-addams/arxsentinel/internal/core/output"
 	"github.com/mr-addams/arxsentinel/internal/core/scorer"
 	"github.com/mr-addams/arxsentinel/internal/core/state"

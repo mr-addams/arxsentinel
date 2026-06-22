@@ -1,4 +1,4 @@
-// ========================== Module input/merge ==========================================
+// ========================== Module pkg/input/merge ==========================================
 //   Fan-in merger: runs multiple Sources concurrently and multiplexes their
 //   output into a single bounded channel consumed by the pipeline.
 //
@@ -33,7 +33,7 @@ type LogFn func(tag, msg, level string)
 // Runs each Source in its own goroutine, closes out when all done.
 // Non-blocking — drops newest entry if buffer is full.
 //
-// Called from: cmd/arxsentinel.main (pipeline setup).
+//   Called from: arx-core/pkg/runtime (engine.go), cmd/arxsentinel/pipeline.go.
 // Blocking: waits for all sources to finish before closing the channel.
 func Merge(ctx context.Context, sources []plugin.Source, bufSize int, logFn LogFn) <-chan *plugin.LogEntry {
 	out := make(chan *plugin.LogEntry, bufSize)
