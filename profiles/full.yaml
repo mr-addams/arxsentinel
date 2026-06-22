@@ -16,6 +16,7 @@ plugins:
     - name: probe
     - name: rate
     - name: bruteforce
+    - name: noasset
     - name: overflow
   processors:
     - name: processor

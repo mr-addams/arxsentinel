@@ -16,17 +16,6 @@ func (d *crawlerDetector) Manifest() plugin.Manifest {
 	}
 }
 
-func (d *noAssetDetector) Manifest() plugin.Manifest {
-	return plugin.Manifest{
-		PluginID:      "noasset",
-		PluginVersion: "1.0.0",
-		Role:          plugin.RoleDetector,
-		InputType:     plugin.TypeStructured,
-		OutputType:    plugin.TypeStructured,
-		Tags:          []string{"http", "path-based", "no-asset"},
-	}
-}
-
 func (d *uaDetector) Manifest() plugin.Manifest {
 	return plugin.Manifest{
 		PluginID:      "useragent",

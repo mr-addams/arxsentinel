@@ -20,18 +20,19 @@
 //
 //   Registered as "noasset" via init().
 
-package detector
+package noasset
 
 import (
 	"fmt"
 	"path"
 	"strings"
 
+	detector "github.com/mr-addams/arxsentinel/pkg/detector"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 func init() {
-	Register("noasset", newNoAssetFactory)
+	detector.Register("noasset", newNoAssetFactory)
 }
 
 // defaultAssetExtensions is the built-in list of static resource extensions.
@@ -49,11 +50,11 @@ type noAssetDetector struct {
 }
 
 // newNoAssetFactory creates a noAssetDetector from DetectorConfig.
-func newNoAssetFactory(cfg DetectorConfig, _ SharedResources) (plugin.Detector, error) {
-	minPageRequests := getInt(cfg.Params, "min_page_requests", 3)
-	assetRatioThreshold := getFloat64(cfg.Params, "asset_ratio_threshold", 0.1)
-	score := getInt(cfg.Params, "score", 20)
-	exts := getStrings(cfg.Params, "asset_extensions", defaultAssetExtensions)
+func newNoAssetFactory(cfg detector.DetectorConfig, _ detector.SharedResources) (plugin.Detector, error) {
+	minPageRequests := detector.GetInt(cfg, "min_page_requests", 3)
+	assetRatioThreshold := detector.GetFloat64(cfg, "asset_ratio_threshold", 0.1)
+	score := detector.GetInt(cfg, "score", 20)
+	exts := detector.GetStrings(cfg, "asset_extensions", defaultAssetExtensions)
 
 	// Build set once — O(1) lookup on the hot path instead of O(n) over slice.
 	extSet := make(map[string]struct{}, len(exts))
