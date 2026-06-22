@@ -26,14 +26,14 @@ import (
 	_ "github.com/mr-addams/arxsentinel/pkg/processorplugins/whitelist"
 
 	// Plugin detectors (tree-shakeable side-effect registration, Flow 076)
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/badbot"
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/bruteforce"
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/crawler"
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/noasset"
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/overflow"
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/probe"
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/rate"
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/useragent" // registry name: "ua"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/badbot"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/bruteforce"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/crawler"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/noasset"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/overflow"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/probe"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/rate"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/useragent" // registry name: "ua"
 
 	_ "github.com/mr-addams/arx-core/pkg/sink/exec"
 	_ "github.com/mr-addams/arx-core/pkg/sink/sentinel"

@@ -20,7 +20,7 @@ import (
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
-	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
+	pkgdetector "github.com/mr-addams/arx-core/pkg/detector"
 	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	pkgsink "github.com/mr-addams/arx-core/pkg/sink"

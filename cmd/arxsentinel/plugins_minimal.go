@@ -13,10 +13,10 @@ import (
 	_ "github.com/mr-addams/arxsentinel/pkg/executorplugins/cloudflare"
 
 	// Plugin detectors (tree-shakeable side-effect registration, Flow 076)
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/bruteforce"
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/overflow"
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/probe"
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/rate"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/bruteforce"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/overflow"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/probe"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/rate"
 
 	_ "github.com/mr-addams/arx-core/pkg/sink/stdout"
 	_ "github.com/mr-addams/arx-core/pkg/source/stdin"

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/badbot"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/badbot"
 
-	detector "github.com/mr-addams/arxsentinel/pkg/detector"
+	detector "github.com/mr-addams/arx-core/pkg/detector"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 

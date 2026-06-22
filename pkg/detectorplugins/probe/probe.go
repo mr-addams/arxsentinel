@@ -19,7 +19,7 @@ package probe
 import (
 	"strings"
 
-	"github.com/mr-addams/arxsentinel/pkg/detector"
+	"github.com/mr-addams/arx-core/pkg/detector"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 

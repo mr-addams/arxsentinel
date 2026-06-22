@@ -34,7 +34,7 @@ package badbot
 import (
 	"strings"
 
-	detector "github.com/mr-addams/arxsentinel/pkg/detector"
+	detector "github.com/mr-addams/arx-core/pkg/detector"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 

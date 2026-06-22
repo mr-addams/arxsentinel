@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	detector "github.com/mr-addams/arxsentinel/pkg/detector"
-	_ "github.com/mr-addams/arxsentinel/pkg/detector/crawler"
+	detector "github.com/mr-addams/arx-core/pkg/detector"
+	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/crawler"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 

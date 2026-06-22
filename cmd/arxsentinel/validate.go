@@ -13,7 +13,7 @@ import (
 	"os"
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
-	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
+	pkgdetector "github.com/mr-addams/arx-core/pkg/detector"
 	pkgexecutor "github.com/mr-addams/arx-core/pkg/executor"
 	"github.com/mr-addams/arx-core/pkg/pipeline"
 	"github.com/mr-addams/arx-core/pkg/plugin"
