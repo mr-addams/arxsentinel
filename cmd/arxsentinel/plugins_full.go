@@ -7,11 +7,10 @@
 //   provide a profile-specific subset instead.
 //
 //   WHAT IS HERE:
-//     - 12 blank imports matching profiles/full.yaml (Decision 11, Flow 075).
+//     - 13 blank imports matching profiles/full.yaml (Decision 11, Flow 075).
 //     - Order is alphabetical by import path for deterministic diff.
 //
 //   WHAT IS NOT HERE:
-//     - pkg/executor/cloudflare — named-import in cleanup.go (always-linked, Decision 13).
 //     - pkg/detector — named-import in validate.go/builders.go (always-linked, Decision 12).
 //     - pkg/sink/file — named-import in pipeline.go (always-linked, not a profile transport).
 //     - pkg/processor/{chaincheck,whitelist} — not imported anywhere (Decision 14, known issue).
@@ -21,6 +20,7 @@
 package main
 
 import (
+	_ "github.com/mr-addams/arxsentinel/pkg/executor/cloudflare"
 	_ "github.com/mr-addams/arxsentinel/pkg/executor/mikrotik"
 	_ "github.com/mr-addams/arxsentinel/pkg/executor/nginx"
 	_ "github.com/mr-addams/arxsentinel/pkg/processor"
