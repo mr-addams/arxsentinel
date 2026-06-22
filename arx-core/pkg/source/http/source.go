@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 
 	"github.com/mr-addams/arx-core/pkg/plugin"
-	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
-	"github.com/mr-addams/arxsentinel/pkg/source/http/adapters"
+	pkgsource "github.com/mr-addams/arx-core/pkg/source"
+	"github.com/mr-addams/arx-core/pkg/source/http/adapters"
 )
 
 // sourceCounters holds runtime statistics for the HTTP source.

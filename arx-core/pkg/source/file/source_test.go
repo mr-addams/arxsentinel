@@ -11,7 +11,7 @@ import (
 
 	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
-	"github.com/mr-addams/arxsentinel/pkg/source/file"
+	"github.com/mr-addams/arx-core/pkg/source/file"
 )
 
 const validLine = `1.2.3.4 - - [02/Apr/2026:00:26:49 +0000] "GET / HTTP/1.1" 200 512 "-" "Mozilla/5.0" "1.2.3.4"` + "\n"

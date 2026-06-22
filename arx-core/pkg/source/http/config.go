@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
-	"github.com/mr-addams/arxsentinel/pkg/source/http/adapters"
+	pkgsource "github.com/mr-addams/arx-core/pkg/source"
+	"github.com/mr-addams/arx-core/pkg/source/http/adapters"
 )
 
 // parsedConfig holds validated runtime configuration for HTTP source.

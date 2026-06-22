@@ -17,7 +17,7 @@ import (
 
 	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	"github.com/mr-addams/arx-core/pkg/plugin"
-	"github.com/mr-addams/arxsentinel/pkg/source/sentinel"
+	"github.com/mr-addams/arx-core/pkg/source/sentinel"
 )
 
 // validThreat — стандартный ThreatEvent с заполненным IP и Reason.

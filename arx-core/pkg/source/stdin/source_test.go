@@ -14,7 +14,7 @@ import (
 
 	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
-	"github.com/mr-addams/arxsentinel/pkg/source/stdin"
+	"github.com/mr-addams/arx-core/pkg/source/stdin"
 )
 
 // validLine is a standard combined-format nginx log line.

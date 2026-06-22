@@ -18,7 +18,7 @@ import (
 	"github.com/mr-addams/arx-core/pkg/pipeline"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
-	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
+	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 )
 
 // runValidateSubcommand handles "arxsentinel validate [--config=path]".

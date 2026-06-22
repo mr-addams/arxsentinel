@@ -27,7 +27,7 @@ import (
 	"sync/atomic"
 
 	"github.com/mr-addams/arx-core/pkg/plugin"
-	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
+	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 )
 
 // SyslogSource listens for syslog messages over network transports and delivers

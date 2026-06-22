@@ -19,6 +19,6 @@ import (
 	_ "github.com/mr-addams/arxsentinel/pkg/detector/rate"
 
 	_ "github.com/mr-addams/arxsentinel/pkg/sink/stdout"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/stdin"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/syslog"
+	_ "github.com/mr-addams/arx-core/pkg/source/stdin"
+	_ "github.com/mr-addams/arx-core/pkg/source/syslog"
 )

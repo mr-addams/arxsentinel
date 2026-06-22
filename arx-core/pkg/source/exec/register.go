@@ -9,7 +9,7 @@ import (
 
 	"github.com/mr-addams/arx-core/pkg/execplugin"
 	"github.com/mr-addams/arx-core/pkg/plugin"
-	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
+	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 )
 
 func init() {

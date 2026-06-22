@@ -26,7 +26,7 @@ import (
 	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/mr-addams/arx-core/pkg/tail"
-	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
+	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 )
 
 // nopLogFn is a no-op logFn implementation per the

@@ -6,7 +6,7 @@ package sentinel
 
 import (
 	"github.com/mr-addams/arx-core/pkg/plugin"
-	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
+	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 )
 
 // init регистрирует "sentinel" source в глобальном registry.
