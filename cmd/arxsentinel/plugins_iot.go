@@ -16,8 +16,8 @@ import (
 	_ "github.com/mr-addams/arxsentinel/pkg/detector/overflow"
 	_ "github.com/mr-addams/arxsentinel/pkg/detector/probe"
 
-	_ "github.com/mr-addams/arxsentinel/pkg/sink/exec"
-	_ "github.com/mr-addams/arxsentinel/pkg/sink/stdout"
+	_ "github.com/mr-addams/arx-core/pkg/sink/exec"
+	_ "github.com/mr-addams/arx-core/pkg/sink/stdout"
 	_ "github.com/mr-addams/arx-core/pkg/source/file"
 	_ "github.com/mr-addams/arx-core/pkg/source/syslog"
 )

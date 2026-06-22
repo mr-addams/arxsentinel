@@ -17,7 +17,7 @@ import (
 	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arx-core/pkg/pipeline"
 	"github.com/mr-addams/arx-core/pkg/plugin"
-	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
+	pkgsink "github.com/mr-addams/arx-core/pkg/sink"
 	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 )
 

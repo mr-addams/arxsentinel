@@ -10,7 +10,7 @@ import (
 
 	"github.com/mr-addams/arx-core/pkg/execplugin"
 	"github.com/mr-addams/arx-core/pkg/plugin"
-	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
+	pkgsink "github.com/mr-addams/arx-core/pkg/sink"
 )
 
 func init() {

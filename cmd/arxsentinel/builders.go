@@ -23,7 +23,7 @@ import (
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
 	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
-	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
+	pkgsink "github.com/mr-addams/arx-core/pkg/sink"
 	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 )
 
