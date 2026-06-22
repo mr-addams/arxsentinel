@@ -18,10 +18,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
+	"github.com/mr-addams/arxsentinel/pkg/parser"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	pkgsink "github.com/mr-addams/arxsentinel/pkg/sink"
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"

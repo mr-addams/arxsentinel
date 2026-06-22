@@ -16,13 +16,11 @@ package parser
 import (
 	"testing"
 	"time"
-
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 // defaultFields returns the standard nginx JSON field mapping used in tests.
-func defaultFields() config.JSONFieldsConfig {
-	return config.JSONFieldsConfig{
+func defaultFields() JSONFieldsConfig {
+	return JSONFieldsConfig{
 		RemoteAddr: "remote_addr",
 		Time:       "time_iso8601",
 		Request:    "request",
@@ -96,7 +94,7 @@ func TestJSONParse_NumericFields(t *testing.T) {
 // ========================== Custom field names ========================================
 
 func TestJSONParse_CustomFields(t *testing.T) {
-	fields := config.JSONFieldsConfig{
+	fields := JSONFieldsConfig{
 		RemoteAddr: "client",
 		Time:       "ts",
 		Request:    "req",

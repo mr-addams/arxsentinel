@@ -34,6 +34,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
 	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
+	"github.com/mr-addams/arxsentinel/pkg/parser"
 )
 
 // ========================== Duration helper type =======================================
@@ -224,19 +225,12 @@ type ParserConfig struct {
 	JSONFields   JSONFieldsConfig `yaml:"json_fields"`   // YAML: parser.json_fields — field name mapping for JSON log format. Consumer: JSONParser
 }
 
-// JSONFieldsConfig maps LogEntry fields to the actual JSON key names in the nginx log.
-// Allows users to customize nginx log_format json without changing sentinel config structure.
-// All fields default to standard nginx variable names.
-type JSONFieldsConfig struct {
-	RemoteAddr string `yaml:"remote_addr"` // default "remote_addr"
-	Time       string `yaml:"time"`        // default "time_iso8601"
-	Request    string `yaml:"request"`     // default "request" — "METHOD /uri PROTO" string
-	Status     string `yaml:"status"`      // default "status"
-	BytesSent  string `yaml:"bytes_sent"`  // default "bytes_sent"
-	Referer    string `yaml:"referer"`     // default "http_referer"
-	UserAgent  string `yaml:"user_agent"`  // default "http_user_agent"
-	RealIP     string `yaml:"real_ip"`     // default "real_ip"
-}
+// JSONFieldsConfig — alias to pkg/parser.JSONFieldsConfig.
+// Decision 9 (DECISIONS.md, Flow 074): DTO relocated to pkg/parser so json.go can move
+// to Core (pkg/) without internal/ dependencies. internal→pkg import is allowed by ADR-002.
+// Composite literals (JSONFieldsConfig{...}) and field declarations remain valid —
+// Go spec: alias types are interchangeable.
+type JSONFieldsConfig = parser.JSONFieldsConfig
 
 // ++++++++++++++++++++++++++ Section: scoring +++++++++++++++++++++++++++++++++++++++++++
 

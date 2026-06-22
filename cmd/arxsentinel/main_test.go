@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/core/scorer"
 	"github.com/mr-addams/arxsentinel/internal/core/state"
 	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
@@ -19,6 +18,7 @@ import (
 	pkgdetector "github.com/mr-addams/arxsentinel/pkg/detector"
 	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
 	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
+	"github.com/mr-addams/arxsentinel/pkg/parser"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 

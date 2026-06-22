@@ -25,8 +25,6 @@ import (
 	"encoding/json"
 	"strconv"
 	"time"
-
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 // iso8601Layouts — nginx $time_iso8601 format variants tried in order.
@@ -45,14 +43,14 @@ var iso8601Layouts = []string{
 // YAML: parser.json — JSON field mapping for nginx JSON log_format.
 // Consumer: parser.NewJSONParser, pipeline (profiles.go).
 type JSONParser struct {
-	fields config.JSONFieldsConfig // YAML: parser.json — field key mapping. Consumer: Parse.
+	fields JSONFieldsConfig // YAML: parser.json — field key mapping. Consumer: Parse.
 }
 
 // NewJSONParser creates a JSONParser using the provided field mapping.
 //
-// Called from: parser (profiles.go), config loader (internal/sys/config).
+// Called from: parser (profiles.go), config loader (internal/sys/config via alias).
 // Non-blocking.
-func NewJSONParser(fields config.JSONFieldsConfig) *JSONParser {
+func NewJSONParser(fields JSONFieldsConfig) *JSONParser {
 	return &JSONParser{fields: fields}
 }
 

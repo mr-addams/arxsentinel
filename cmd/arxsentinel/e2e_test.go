@@ -21,11 +21,11 @@ import (
 	"testing"
 
 	"github.com/mr-addams/arxsentinel/internal/core/output"
-	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/core/scorer"
 	"github.com/mr-addams/arxsentinel/internal/core/state"
 	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/pkg/parser"
 )
 
 // e2eMaxLineBytes — scanner buffer limit matching tail.go:maxLineSize.

@@ -36,8 +36,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/pkg/parser"
 )
 
 // pathBufSize — depth of the path ring buffer per IP.

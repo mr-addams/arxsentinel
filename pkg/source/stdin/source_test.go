@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/parser"
+	"github.com/mr-addams/arxsentinel/pkg/parser"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 	"github.com/mr-addams/arxsentinel/pkg/source/stdin"
 )
