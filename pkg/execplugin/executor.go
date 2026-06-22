@@ -30,20 +30,20 @@ import (
 // sequentially (one at a time).
 //
 // If the plugin crashes or stdout closes unexpectedly, Run() returns an error
-	// and increments the Errors counter.
-	// ExecExecutor holds a persistent ManagedProcess — recreated only on Close+reopen.
-	type ExecExecutor struct {
-		name     string              // YAML: executors[i].name — executor identifier. Consumer: Name, executePlugin
-		execType string              // YAML: — executor type, always "exec". Consumer: Type
-		proc     *ManagedProcess    // Internal — plugin subprocess. Consumer: executePlugin
-		mu       sync.Mutex         // Internal — serializes request/response. Consumer: executePlugin
-		executed atomic.Int64       // Internal — successful executions. Consumer: Stats
-		errors   atomic.Int64       // Internal — failures. Consumer: Stats
-	}
+// and increments the Errors counter.
+// ExecExecutor holds a persistent ManagedProcess — recreated only on Close+reopen.
+type ExecExecutor struct {
+	name     string          // YAML: executors[i].name — executor identifier. Consumer: Name, executePlugin
+	execType string          // YAML: — executor type, always "exec". Consumer: Type
+	proc     *ManagedProcess // Internal — plugin subprocess. Consumer: executePlugin
+	mu       sync.Mutex      // Internal — serializes request/response. Consumer: executePlugin
+	executed atomic.Int64    // Internal — successful executions. Consumer: Stats
+	errors   atomic.Int64    // Internal — failures. Consumer: Stats
+}
 
 // NewExecutor spawns the plugin binary at execPath and returns an ExecExecutor.
-	// The subprocess is started immediately and kept alive for all Run() calls.
-	// Called from: pipeline.newExecutor. Blocking — NewManagedProcess is called synchronously.
+// The subprocess is started immediately and kept alive for all Run() calls.
+// Called from: pipeline.newExecutor. Blocking — NewManagedProcess is called synchronously.
 func NewExecutor(name, execPath string, params map[string]interface{}) (*ExecExecutor, error) {
 	proc, err := NewManagedProcess(context.Background(), execPath)
 	if err != nil {

@@ -243,8 +243,8 @@ func TestHTTPSourceBodyLimit(t *testing.T) {
 	port := freePort(t)
 
 	src, err := New(pkgsource.InputConfig{
-		Addr:        "http://127.0.0.1:" + port,
-		Protocol:    "plain",
+		Addr:         "http://127.0.0.1:" + port,
+		Protocol:     "plain",
 		MaxBodyBytes: 100,
 	}, &testParser{parseFn: testEntry}, nil)
 	if err != nil {

@@ -39,7 +39,8 @@ type EventSource interface {
 // Skipped:  events ignored by the executor (e.g., below min_level, already banned).
 // Errors:   Execute() calls that returned a non-nil error.
 // Swept:    automatically reversed actions (e.g., expired TTL bans removed by sweep).
-//           Only executors with auto-reverse semantics (cloudflare, nginx) populate this.
+//
+//	Only executors with auto-reverse semantics (cloudflare, nginx) populate this.
 //
 // Implementation-specific counters (e.g., CF API retries, dedup hits) belong in
 // the executor's own log output, not here. Stats is for pipeline-level visibility.

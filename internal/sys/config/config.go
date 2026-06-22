@@ -88,22 +88,22 @@ type Config struct {
 // New syntax: inputs: [{type: file, path: /var/log/nginx/access.log, parser: combined}]
 // Migration: general.log_file / streams[i].log_file → InputConfig automatically.
 type InputConfig struct {
-	Type          string `yaml:"type"`           // YAML: "file" | "stdin". Consumer: cmd/arxsentinel input.NewFileSource / input.NewStdinSource
-	Path          string `yaml:"path"`           // YAML: path to log file; required when type=file. Consumer: input.NewFileSource
-	Parser        string `yaml:"parser"`         // YAML: "combined" | "json" | "regex" | profile-name; default inherited from parser.log_format. Consumer: main.go buildParser
-	Exec          string `yaml:"exec"`           // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSource
-	Addr          string `yaml:"addr"`           // YAML: addr — network address for type=syslog: "udp://:5514", "tcp://:514", "unix:///var/run/arx.sock". Consumer: pkg/source/syslog.New
-	Mode          string `yaml:"mode"`           // YAML: mode — "push" (listen) or "pull" (poll), default "push". Consumer: pkg/source/http.New
-	URL           string `yaml:"url"`            // YAML: url — target URL for pull mode. Consumer: pkg/source/http.New
-	HTTPPath      string `yaml:"http_path"`      // YAML: http_path — push handler path, default "/". Consumer: pkg/source/http.New
-	Token         string `yaml:"token"`          // YAML: token — optional Bearer token for auth. Consumer: pkg/source/http.New
-	TLSCert       string `yaml:"tls_cert"`       // YAML: tls_cert — path to TLS cert file; required for https://. Consumer: pkg/source/http.New
-	TLSKey        string `yaml:"tls_key"`        // YAML: tls_key — path to TLS private key file; required for https://. Consumer: pkg/source/http.New
-	Protocol      string `yaml:"protocol"`       // YAML: protocol — envelope format: plain|ndjson|cloudflare|firehose|pubsub|loki|otlp|azure|splunk. Consumer: pkg/source/http.New
-	EnvelopeField string `yaml:"envelope_field"` // YAML: envelope_field — field name for ndjson extraction; required when protocol=ndjson. Consumer: pkg/source/http.New
-	PullInterval  string `yaml:"pull_interval"`  // YAML: pull_interval — polling interval for pull mode, e.g. "30s". Consumer: pkg/source/http.New
-	MaxBodyBytes  int    `yaml:"max_body_bytes"` // YAML: max_body_bytes — max request body size, default 10485760. Consumer: pkg/source/http.New
-	MaxConnections int  `yaml:"max_connections"` // YAML: max_connections — max concurrent TCP connections; syslog only, default 1000. Consumer: pkg/source/syslog.New (H5)
+	Type           string `yaml:"type"`            // YAML: "file" | "stdin". Consumer: cmd/arxsentinel input.NewFileSource / input.NewStdinSource
+	Path           string `yaml:"path"`            // YAML: path to log file; required when type=file. Consumer: input.NewFileSource
+	Parser         string `yaml:"parser"`          // YAML: "combined" | "json" | "regex" | profile-name; default inherited from parser.log_format. Consumer: main.go buildParser
+	Exec           string `yaml:"exec"`            // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSource
+	Addr           string `yaml:"addr"`            // YAML: addr — network address for type=syslog: "udp://:5514", "tcp://:514", "unix:///var/run/arx.sock". Consumer: pkg/source/syslog.New
+	Mode           string `yaml:"mode"`            // YAML: mode — "push" (listen) or "pull" (poll), default "push". Consumer: pkg/source/http.New
+	URL            string `yaml:"url"`             // YAML: url — target URL for pull mode. Consumer: pkg/source/http.New
+	HTTPPath       string `yaml:"http_path"`       // YAML: http_path — push handler path, default "/". Consumer: pkg/source/http.New
+	Token          string `yaml:"token"`           // YAML: token — optional Bearer token for auth. Consumer: pkg/source/http.New
+	TLSCert        string `yaml:"tls_cert"`        // YAML: tls_cert — path to TLS cert file; required for https://. Consumer: pkg/source/http.New
+	TLSKey         string `yaml:"tls_key"`         // YAML: tls_key — path to TLS private key file; required for https://. Consumer: pkg/source/http.New
+	Protocol       string `yaml:"protocol"`        // YAML: protocol — envelope format: plain|ndjson|cloudflare|firehose|pubsub|loki|otlp|azure|splunk. Consumer: pkg/source/http.New
+	EnvelopeField  string `yaml:"envelope_field"`  // YAML: envelope_field — field name for ndjson extraction; required when protocol=ndjson. Consumer: pkg/source/http.New
+	PullInterval   string `yaml:"pull_interval"`   // YAML: pull_interval — polling interval for pull mode, e.g. "30s". Consumer: pkg/source/http.New
+	MaxBodyBytes   int    `yaml:"max_body_bytes"`  // YAML: max_body_bytes — max request body size, default 10485760. Consumer: pkg/source/http.New
+	MaxConnections int    `yaml:"max_connections"` // YAML: max_connections — max concurrent TCP connections; syslog only, default 1000. Consumer: pkg/source/syslog.New (H5)
 }
 
 // SinkConfig — configuration for a single threat event output.

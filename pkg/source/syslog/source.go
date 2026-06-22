@@ -34,15 +34,15 @@ import (
 // parsed LogEntry values to the pipeline.
 type SyslogSource struct {
 	name    string
-	network string   // "udp", "tcp", "unixgram", "unix"
-	host    string   // ":5514" or "/var/run/arx.sock"
+	network string               // "udp", "tcp", "unixgram", "unix"
+	host    string               // ":5514" or "/var/run/arx.sock"
 	parser  pkgsource.LineParser // parses extracted log line into *plugin.LogEntry
 	logFn   func(tag, msg, level string)
 
 	linesRead   atomic.Int64 // total messages received
 	parseErrors atomic.Int64 // messages that failed to parse
 	dropped     atomic.Int64 // entries dropped due to full channel buffer
-	maxConns    int           // max simultaneous TCP connections (H5); 0 = unlimited (default 1000 from config)
+	maxConns    int          // max simultaneous TCP connections (H5); 0 = unlimited (default 1000 from config)
 }
 
 // defaultMaxConns используется как значение по умолчанию, пока конфигурация
@@ -71,12 +71,12 @@ func New(addr string, parser pkgsource.LineParser, logFn func(string, string, st
 		maxConns = defaultMaxConns
 	}
 	return &SyslogSource{
-		name:      "syslog:" + addr,
-		network:   network,
-		host:      host,
-		parser:    parser,
-		logFn:     logFn,
-		maxConns:  maxConns,
+		name:     "syslog:" + addr,
+		network:  network,
+		host:     host,
+		parser:   parser,
+		logFn:    logFn,
+		maxConns: maxConns,
 	}, nil
 }
 
@@ -202,7 +202,7 @@ func (s *SyslogSource) runStream(ctx context.Context, out chan<- *plugin.LogEntr
 	sem := make(chan struct{}, maxConns)
 
 	var wg sync.WaitGroup
-	acceptLoop:
+acceptLoop:
 	for {
 		conn, err := l.Accept()
 		if err != nil {

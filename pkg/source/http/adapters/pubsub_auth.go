@@ -22,8 +22,8 @@ import (
 
 // jwksCache caches Google JWKS with TTL to avoid repeated fetches.
 type jwksCache struct {
-	keys   []jwkKey    // YAML: RSA public keys from Google JWKS endpoint
-	expiry time.Time   // YAML: cache expiry (1 hour TTL)
+	keys   []jwkKey  // YAML: RSA public keys from Google JWKS endpoint
+	expiry time.Time // YAML: cache expiry (1 hour TTL)
 }
 
 // jwkKey represents an RSA public key from Google JWKS.

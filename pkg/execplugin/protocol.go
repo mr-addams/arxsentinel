@@ -40,7 +40,7 @@ type LogEntryJSON struct {
 	RawURI     string `json:"raw_uri"`     // YAML: — full URI before parsing. Consumer: protocol.logEntryToJSON
 	Path       string `json:"path"`        // YAML: — URL path component. Consumer: protocol.logEntryToJSON
 	Query      string `json:"query"`       // YAML: — URL query string. Consumer: protocol.logEntryToJSON
-	Protocol   string `json:"protocol"`     // YAML: — HTTP protocol version. Consumer: protocol.logEntryToJSON
+	Protocol   string `json:"protocol"`    // YAML: — HTTP protocol version. Consumer: protocol.logEntryToJSON
 	Status     int    `json:"status"`      // YAML: — HTTP response status code. Consumer: protocol.logEntryToJSON
 	BytesSent  int64  `json:"bytes_sent"`  // YAML: — bytes sent to client. Consumer: protocol.logEntryToJSON
 	Referer    string `json:"referer"`     // YAML: — HTTP Referer header. Consumer: protocol.logEntryToJSON
@@ -63,15 +63,15 @@ type IPViewJSON struct {
 // Includes all fields needed to route the event to external systems.
 // Consumer: protocol.go (WriteRequest.event, ExecuteRequest.event).
 type ThreatEventJSON struct {
-	Timestamp  string   `json:"timestamp"`   // YAML: — RFC3339 event timestamp. Consumer: protocol.threatEventToJSON
-	Level      string   `json:"level"`       // YAML: — threat level (WARN/THREAT). Consumer: protocol.threatEventToJSON
-	Stream     string   `json:"stream"`      // YAML: — stream name. Consumer: protocol.threatEventToJSON
-	Source     string   `json:"source"`      // YAML: — source path. Consumer: protocol.threatEventToJSON
-	SourceType string   `json:"source_type"` // YAML: — source type (file, etc.). Consumer: protocol.threatEventToJSON
-	IP         string   `json:"ip"`          // YAML: — client IP address. Consumer: protocol.threatEventToJSON
-	Score      int      `json:"score"`        // YAML: — accumulated threat score. Consumer: protocol.threatEventToJSON
-	Modules    []string `json:"modules"`     // YAML: — triggered detector names. Consumer: protocol.threatEventToJSON
-	Reason     string   `json:"reason"`      // YAML: — human-readable reason. Consumer: protocol.threatEventToJSON
+	Timestamp  string   `json:"timestamp"`          // YAML: — RFC3339 event timestamp. Consumer: protocol.threatEventToJSON
+	Level      string   `json:"level"`              // YAML: — threat level (WARN/THREAT). Consumer: protocol.threatEventToJSON
+	Stream     string   `json:"stream"`             // YAML: — stream name. Consumer: protocol.threatEventToJSON
+	Source     string   `json:"source"`             // YAML: — source path. Consumer: protocol.threatEventToJSON
+	SourceType string   `json:"source_type"`        // YAML: — source type (file, etc.). Consumer: protocol.threatEventToJSON
+	IP         string   `json:"ip"`                 // YAML: — client IP address. Consumer: protocol.threatEventToJSON
+	Score      int      `json:"score"`              // YAML: — accumulated threat score. Consumer: protocol.threatEventToJSON
+	Modules    []string `json:"modules"`            // YAML: — triggered detector names. Consumer: protocol.threatEventToJSON
+	Reason     string   `json:"reason"`             // YAML: — human-readable reason. Consumer: protocol.threatEventToJSON
 	RawLine    string   `json:"raw_line,omitempty"` // YAML: — original log line (omit if empty). Consumer: protocol.threatEventToJSON
 }
 

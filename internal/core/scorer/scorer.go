@@ -44,10 +44,10 @@ import (
 // YAML: scorer.* — score thresholds and observation window.
 // Consumer: pipeline (main.go Evaluate call).
 type Scorer struct {
-	alertThreshold int                   // YAML: scorer.alert_threshold, default 50 — threshold for WARN level. Consumer: levelFor.
-	banThreshold   int                   // YAML: scorer.ban_threshold, default 80 — threshold for THREAT level. Consumer: levelFor.
-	window         time.Duration         // YAML: scorer.observation_window, default 5m — decay window. Consumer: Evaluate, applyDecay.
-	detectors      []detector.Detector   // YAML: detectors.* — active detector list. Consumer: Evaluate.
+	alertThreshold int                 // YAML: scorer.alert_threshold, default 50 — threshold for WARN level. Consumer: levelFor.
+	banThreshold   int                 // YAML: scorer.ban_threshold, default 80 — threshold for THREAT level. Consumer: levelFor.
+	window         time.Duration       // YAML: scorer.observation_window, default 5m — decay window. Consumer: Evaluate, applyDecay.
+	detectors      []detector.Detector // YAML: detectors.* — active detector list. Consumer: Evaluate.
 
 	logFn func(tag, msg, level string) // Internal — debug logger injected from main.go. Consumer: Evaluate.
 }
@@ -71,16 +71,17 @@ func NewScorer(cfg config.ScoringConfig, detectors []detector.Detector, logFn fu
 // Evaluate runs all detectors, updates the accumulated IP score with decay applied,
 // and returns the threat level.
 //
-//   Parameters:
-//     sv        — IP state (implements detector.ScoreAccess; typically *state.IPState)
-//     entry     — current log line
-//     exemptSet — detector names to skip (nil or empty = all detectors run)
+//	Parameters:
+//	  sv        — IP state (implements detector.ScoreAccess; typically *state.IPState)
+//	  entry     — current log line
+//	  exemptSet — detector names to skip (nil or empty = all detectors run)
 //
 // Returns:
-//   level   — "" / "WARN" / "THREAT"
-//   score   — final score after decay + new detector contributions
-//   modules — list of triggered detectors (only Score > 0)
-//   reason  — string "module1:reason1,module2:reason2"
+//
+//	level   — "" / "WARN" / "THREAT"
+//	score   — final score after decay + new detector contributions
+//	modules — list of triggered detectors (only Score > 0)
+//	reason  — string "module1:reason1,module2:reason2"
 //
 // Called from the main pipeline for each log line after Tracker.Update.
 // Non-blocking — all operations are synchronous in a single goroutine.

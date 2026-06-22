@@ -24,10 +24,11 @@ import "time"
 // Implemented by *state.IPState (duck typing — no explicit declaration required).
 //
 // Purpose of each method:
-//   GetTotalRequests → rate, bruteforce (404 ratio), noasset
-//   GetRequests404   → bruteforce (404 ratio threshold)
-//   RecentPaths      → probe (sensitive path patterns), crawler (sequential traversal)
-//   ApproxRate       → rate anomaly (requests/sec over window)
+//
+//	GetTotalRequests → rate, bruteforce (404 ratio), noasset
+//	GetRequests404   → bruteforce (404 ratio threshold)
+//	RecentPaths      → probe (sensitive path patterns), crawler (sequential traversal)
+//	ApproxRate       → rate anomaly (requests/sec over window)
 type IPView interface {
 	GetIP() string
 	GetTotalRequests() int

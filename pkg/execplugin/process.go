@@ -36,15 +36,16 @@ import (
 //   - cmd.Start() is called in NewManagedProcess — the process is immediately running
 //   - Send() and Recv() MUST be called with lock held — no internal locking
 //   - Close() should be called during shutdown to clean up resources
+//
 // Consumer: detector.go, sink.go, executor.go, source.go.
 type ManagedProcess struct {
-	cmd    *exec.Cmd         // Internal — spawned plugin subprocess. Consumer: Lock, Send, Recv, Close
-	stdin  io.WriteCloser   // Internal — plugin stdin pipe for sending requests. Consumer: Send, Close
-	stdout *bufio.Scanner    // Internal — plugin stdout scanner for reading responses. Consumer: Recv
-	mu     sync.Mutex        // Internal — protects atomic Send/Recv cycles. Consumer: Lock, Unlock
+	cmd    *exec.Cmd      // Internal — spawned plugin subprocess. Consumer: Lock, Send, Recv, Close
+	stdin  io.WriteCloser // Internal — plugin stdin pipe for sending requests. Consumer: Send, Close
+	stdout *bufio.Scanner // Internal — plugin stdout scanner for reading responses. Consumer: Recv
+	mu     sync.Mutex     // Internal — protects atomic Send/Recv cycles. Consumer: Lock, Unlock
 
-	waitOnce    sync.Once   // Internal — ensures cmd.Wait() is called only once (C1: prevents double-Wait panic)
-	closeMu     sync.Mutex // Internal — serializes Close() calls to prevent ProcessState race
+	waitOnce    sync.Once     // Internal — ensures cmd.Wait() is called only once (C1: prevents double-Wait panic)
+	closeMu     sync.Mutex    // Internal — serializes Close() calls to prevent ProcessState race
 	readTimeout time.Duration // Internal — timeout for Recv() reads (L1: non-zero = deadline enforced)
 }
 

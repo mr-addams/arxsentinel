@@ -45,7 +45,8 @@ const apacheCLFPattern = `^(?P<remote_addr>\S+) \S+ (?P<remote_user>\S+) \[(?P<t
 // Parsed via haproxyTimeLayout fallback in RegexParser — all detectors including rate work.
 //
 // Format after time: frontend~ backend/server timers status bytes req_cookie resp_cookie
-//                    term_state actconn queue "request" ["user-agent"]
+//
+//	term_state actconn queue "request" ["user-agent"]
 const haproxyHTTPPattern = `^(?P<remote_addr>[^:]+):\d+ \[(?P<time>[^\]]+)\] \S+ \S+ \S+ (?P<status>\d+) (?P<bytes_sent>\d+) \S+ \S+ \S+ \S+ \S+ "(?P<request>[^"]*)"(?: "(?P<http_user_agent>[^"]*)")?`
 
 // Profiles maps built-in profile names to parser factory functions.

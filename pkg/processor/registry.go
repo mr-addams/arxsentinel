@@ -90,13 +90,13 @@ func Register(name string, f Factory) {
 // Returns (nil, error) when the factory itself fails.
 //
 // Behaviour preserved byte-for-byte from the pre-migration implementation:
-//   1. nil-return (nil, nil) on cfg.Enabled == false — short-circuits BEFORE
-//      the registry lookup so disabled processors cost zero store lookups.
-//      This order is part of the contract: callers rely on the silent (nil, nil)
-//      even for names that are not registered, as long as Enabled is false.
-//   2. Registry lookup; error on unknown name with the same message format.
-//   3. Factory invocation with cfg — no DI, no execplugin fallback (those
-//      concerns do not exist for processor in this codebase).
+//  1. nil-return (nil, nil) on cfg.Enabled == false — short-circuits BEFORE
+//     the registry lookup so disabled processors cost zero store lookups.
+//     This order is part of the contract: callers rely on the silent (nil, nil)
+//     even for names that are not registered, as long as Enabled is false.
+//  2. Registry lookup; error on unknown name with the same message format.
+//  3. Factory invocation with cfg — no DI, no execplugin fallback (those
+//     concerns do not exist for processor in this codebase).
 func Build(name string, cfg ProcessorConfig) (plugin.Processor, error) {
 	// Aspect (nil-return on disabled): short-circuit before consulting the
 	// store. This must stay BEFORE the registry lookup — otherwise a

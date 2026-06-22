@@ -50,11 +50,11 @@ type logRecord struct {
 
 // otlpBody represents OTLP AnyValue — supports string, bytes, int, double, bool.
 type otlpBody struct {
-	StringValue string  `json:"stringValue"` // YAML: plain string log line
-	BytesValue  string `json:"bytesValue"`  // YAML: base64-encoded string
-	IntValue    *int64 `json:"intValue,omitempty"`
+	StringValue string   `json:"stringValue"` // YAML: plain string log line
+	BytesValue  string   `json:"bytesValue"`  // YAML: base64-encoded string
+	IntValue    *int64   `json:"intValue,omitempty"`
 	DoubleValue *float64 `json:"doubleValue,omitempty"`
-	BoolValue   *bool  `json:"boolValue,omitempty"`
+	BoolValue   *bool    `json:"boolValue,omitempty"`
 }
 
 // otlpAttr represents OTLP attribute key-value pair.
@@ -65,10 +65,10 @@ type otlpAttr struct {
 
 // otlpAnyValue represents OTLP AnyValue — supports all primitive types.
 type otlpAnyValue struct {
-	StringValue string  `json:"stringValue"`
-	IntValue    *int64  `json:"intValue,omitempty"`
+	StringValue string   `json:"stringValue"`
+	IntValue    *int64   `json:"intValue,omitempty"`
 	DoubleValue *float64 `json:"doubleValue,omitempty"`
-	BoolValue   *bool   `json:"boolValue,omitempty"`
+	BoolValue   *bool    `json:"boolValue,omitempty"`
 }
 
 // Decode parses OTLP JSON, extracts log records with timestamps and attributes.

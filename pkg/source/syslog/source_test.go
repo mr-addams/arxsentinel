@@ -189,8 +189,8 @@ func TestSyslogSource_RealParser(t *testing.T) {
 // Run with -race to detect data races in handleConn / atomic counters.
 func TestSyslogSource_ConcurrentTCP(t *testing.T) {
 	const (
-		testPort    = "15519"
-		connections = 10
+		testPort     = "15519"
+		connections  = 10
 		linesPerConn = 20
 	)
 

@@ -52,15 +52,17 @@ const readLineTimeout = 30 * time.Second
 //   - copytruncate: file is truncated in place, position moves past the new EOF
 //
 // Lifecycle of the variable f inside Run:
-	//   opened at EOF  → reads WRITE events  → closed on RENAME
-	//   nil            → waiting for new file after rotation (f == nil is normal)
-	//   reopened       → after CREATE of the new file
-	// Internal — tracks current file descriptor. Consumer: Run
-	type TailReader struct {
-		filePath      string              // YAML: inputs[i].path — path to the log file. Consumer: Run
-		lines         chan string         // YAML: — buffered channel for read lines. Consumer: pipeline.runSource
-		retryInterval time.Duration       // YAML: general.tail_retry_interval, default 1s — retry interval when file is unavailable. Consumer: waitForFile
-	}
+//
+//	opened at EOF  → reads WRITE events  → closed on RENAME
+//	nil            → waiting for new file after rotation (f == nil is normal)
+//	reopened       → after CREATE of the new file
+//
+// Internal — tracks current file descriptor. Consumer: Run
+type TailReader struct {
+	filePath      string        // YAML: inputs[i].path — path to the log file. Consumer: Run
+	lines         chan string   // YAML: — buffered channel for read lines. Consumer: pipeline.runSource
+	retryInterval time.Duration // YAML: general.tail_retry_interval, default 1s — retry interval when file is unavailable. Consumer: waitForFile
+}
 
 // NewTailReader creates a TailReader.
 // lines — buffered channel for read lines (size: cfg.General.LinesBufSize).

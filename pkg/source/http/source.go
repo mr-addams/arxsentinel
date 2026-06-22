@@ -25,11 +25,11 @@ type sourceCounters struct {
 // HTTPSource implements plugin.Source for HTTP log ingestion.
 // Manages both push (webhook) and pull (polling) HTTP server modes.
 type HTTPSource struct {
-	name     string                          // YAML: name — human-readable source name. Consumer: /metrics
-	cfg      *parsedConfig                   // YAML: addr, protocol, mode — runtime config. Consumer: runPush/runPull
-	par      pkgsource.LineParser            // YAML: parser — parses raw log lines. Consumer: runPush/runPull
-	logFn    func(string, string, string)   // YAML: logFn — structured logger function. Consumer: runPush/runPull
-	counters sourceCounters                  // YAML: counters — runtime statistics. Consumer: Stats()
+	name     string                       // YAML: name — human-readable source name. Consumer: /metrics
+	cfg      *parsedConfig                // YAML: addr, protocol, mode — runtime config. Consumer: runPush/runPull
+	par      pkgsource.LineParser         // YAML: parser — parses raw log lines. Consumer: runPush/runPull
+	logFn    func(string, string, string) // YAML: logFn — structured logger function. Consumer: runPush/runPull
+	counters sourceCounters               // YAML: counters — runtime statistics. Consumer: Stats()
 }
 
 // New creates a new HTTPSource from configuration.
@@ -44,9 +44,9 @@ func New(cfg pkgsource.InputConfig, par pkgsource.LineParser, logFn func(string,
 		return nil, err
 	}
 	return &HTTPSource{
-		name: "http",
-		cfg:  parsed,
-		par:  par,
+		name:  "http",
+		cfg:   parsed,
+		par:   par,
 		logFn: logFn,
 	}, nil
 }

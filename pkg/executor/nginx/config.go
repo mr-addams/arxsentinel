@@ -68,7 +68,7 @@ func DefaultConfig() Config {
 type threatLevel int
 
 const (
-	levelInfo   threatLevel = iota
+	levelInfo threatLevel = iota
 	levelWarn
 	levelThreat
 )

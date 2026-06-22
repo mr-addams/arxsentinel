@@ -38,7 +38,7 @@ func unregisterForTest(names ...string) {
 // covered by the existing per-processor smoke tests in chaincheck/ and whitelist/.
 type stubProcessor struct{}
 
-func (s *stubProcessor) Name() string                                  { return "stub" }
+func (s *stubProcessor) Name() string { return "stub" }
 func (s *stubProcessor) Process(_ context.Context, _ *plugin.LogEntry) (*plugin.LogEntry, error) {
 	return nil, nil
 }
@@ -110,9 +110,9 @@ func TestRegistry_Register(t *testing.T) {
 // for Flow 070 / Task 1.1.6. The processor.Build() wrapper MUST short-circuit on
 // cfg.Enabled == false BEFORE consulting the factory store, returning (nil, nil).
 // We verify both halves of the contract:
-//   1. Returned values are (nil, nil).
-//   2. The registered factory is NEVER invoked — the factory body calls t.Fatalf
-//      so a regression that reaches the factory surfaces immediately.
+//  1. Returned values are (nil, nil).
+//  2. The registered factory is NEVER invoked — the factory body calls t.Fatalf
+//     so a regression that reaches the factory surfaces immediately.
 func TestRegistry_Build_Disabled_ReturnsNilWithoutFactory(t *testing.T) {
 	name := "test-disabled-" + t.Name()
 

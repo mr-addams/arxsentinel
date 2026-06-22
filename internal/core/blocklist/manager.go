@@ -71,10 +71,10 @@ type SourceConfig struct {
 // YAML: blocklist.lists[].name, blocklist.lists[].enabled, blocklist.lists[].refresh_interval, blocklist.lists[].sources.
 // Consumer: NewManager, startList, Update.
 type ListConfig struct {
-	Name            string         `yaml:"name"`              // Internal — list identifier. Consumer: startList, Match, MatchResult.
-	Enabled         *bool          `yaml:"enabled"`           // YAML: blocklist.lists[].enabled, default true. Consumer: listEnabled.
-	RefreshInterval Duration       `yaml:"refresh_interval"`  // YAML: blocklist.lists[].refresh_interval. Consumer: startList (ticker interval).
-	Sources         []SourceConfig `yaml:"sources"`           // YAML: blocklist.lists[].sources[]. Consumer: startList, fetchAndUpdate.
+	Name            string         `yaml:"name"`             // Internal — list identifier. Consumer: startList, Match, MatchResult.
+	Enabled         *bool          `yaml:"enabled"`          // YAML: blocklist.lists[].enabled, default true. Consumer: listEnabled.
+	RefreshInterval Duration       `yaml:"refresh_interval"` // YAML: blocklist.lists[].refresh_interval. Consumer: startList (ticker interval).
+	Sources         []SourceConfig `yaml:"sources"`          // YAML: blocklist.lists[].sources[]. Consumer: startList, fetchAndUpdate.
 }
 
 // Config is the top-level blocklist configuration embedded in the application config.
@@ -83,7 +83,7 @@ type ListConfig struct {
 // Consumer: NewManager, Update.
 type Config struct {
 	Storage string       `yaml:"storage"` // YAML: blocklist.storage, default "" (in-memory). Consumer: NewManager, Update.
-	Lists   []ListConfig `yaml:"lists"`    // YAML: blocklist.lists[]. Consumer: NewManager, Update.
+	Lists   []ListConfig `yaml:"lists"`   // YAML: blocklist.lists[]. Consumer: NewManager, Update.
 }
 
 // Duration is a time.Duration that unmarshals from YAML strings like "24h", "30m".

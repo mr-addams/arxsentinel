@@ -15,17 +15,17 @@ import (
 
 // mockIPView is a test double implementing plugin.IPView.
 type mockIPView struct {
-	ip             string
-	totalRequests  int
-	requests404    int
-	recentPaths    []string
-	approxRate1m   float64
+	ip            string
+	totalRequests int
+	requests404   int
+	recentPaths   []string
+	approxRate1m  float64
 }
 
-func (m *mockIPView) GetIP() string                       { return m.ip }
-func (m *mockIPView) GetTotalRequests() int               { return m.totalRequests }
-func (m *mockIPView) GetRequests404() int                 { return m.requests404 }
-func (m *mockIPView) RecentPaths() []string               { return m.recentPaths }
+func (m *mockIPView) GetIP() string                           { return m.ip }
+func (m *mockIPView) GetTotalRequests() int                   { return m.totalRequests }
+func (m *mockIPView) GetRequests404() int                     { return m.requests404 }
+func (m *mockIPView) RecentPaths() []string                   { return m.recentPaths }
 func (m *mockIPView) ApproxRate(window time.Duration) float64 { return m.approxRate1m }
 
 // TestExecDetector_Name tests that Name() returns the detector's registered name.

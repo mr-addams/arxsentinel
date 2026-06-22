@@ -27,8 +27,8 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/crypto/bcrypt"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/mr-addams/arxsentinel/internal/core/state"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"

@@ -330,7 +330,7 @@ func runPipeline(
 				processedCount:   &processedCount,
 				threatCount:      &threatCount,
 				Tracker:          tracker,
-		Scorer:           scorer.NewScorer(cfg.Scoring, buildPipelineDetectors(ctx, cfg, pipeCfg, shared), utils.Log),
+				Scorer:           scorer.NewScorer(cfg.Scoring, buildPipelineDetectors(ctx, cfg, pipeCfg, shared), utils.Log),
 				Sinks:            sinks,     // те же sinks — уже перезагружены выше
 				Executors:        executors, // те же executors — state (ban list, TTL) должен пережить reload
 				Matcher:          newMatcher,

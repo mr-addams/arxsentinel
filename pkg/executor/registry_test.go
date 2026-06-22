@@ -82,8 +82,8 @@ type mockExecutor struct {
 
 func (m *mockExecutor) Manifest() plugin.Manifest { return plugin.Manifest{} }
 
-func (m *mockExecutor) Name() string        { return m.name }
-func (m *mockExecutor) Type() string        { return "mock" }
+func (m *mockExecutor) Name() string                { return m.name }
+func (m *mockExecutor) Type() string                { return "mock" }
 func (m *mockExecutor) Stats() plugin.ExecutorStats { return plugin.ExecutorStats{} }
 func (m *mockExecutor) Run(_ context.Context, source plugin.EventSource) error {
 	for {

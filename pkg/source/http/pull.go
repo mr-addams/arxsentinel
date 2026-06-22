@@ -91,4 +91,3 @@ func runPull(ctx context.Context, cfg *parsedConfig, adapter adapters.Adapter, o
 		}
 	}
 }
-

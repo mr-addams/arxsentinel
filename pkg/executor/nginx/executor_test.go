@@ -147,8 +147,8 @@ func TestDuplicateSkipped(t *testing.T) {
 	listFile := filepath.Join(dir, "autoblock.list")
 
 	exec := newTestExecutor(t, map[string]any{
-		"list_file":     listFile,
-		"ttl":           "1h",
+		"list_file":      listFile,
+		"ttl":            "1h",
 		"flush_interval": "10s",
 	})
 

@@ -26,14 +26,14 @@ type mockScoreState struct {
 	rate        float64
 }
 
-func (m *mockScoreState) GetIP() string                    { return m.ip }
-func (m *mockScoreState) GetTotalRequests() int            { return m.total }
-func (m *mockScoreState) GetRequests404() int              { return m.requests404 }
-func (m *mockScoreState) RecentPaths() []string            { return m.paths }
+func (m *mockScoreState) GetIP() string                      { return m.ip }
+func (m *mockScoreState) GetTotalRequests() int              { return m.total }
+func (m *mockScoreState) GetRequests404() int                { return m.requests404 }
+func (m *mockScoreState) RecentPaths() []string              { return m.paths }
 func (m *mockScoreState) ApproxRate(_ time.Duration) float64 { return m.rate }
-func (m *mockScoreState) GetScore() int                    { return m.score }
-func (m *mockScoreState) GetScoreUpdatedAt() time.Time     { return m.scoreAt }
-func (m *mockScoreState) SetScore(score int, at time.Time) { m.score = score; m.scoreAt = at }
+func (m *mockScoreState) GetScore() int                      { return m.score }
+func (m *mockScoreState) GetScoreUpdatedAt() time.Time       { return m.scoreAt }
+func (m *mockScoreState) SetScore(score int, at time.Time)   { m.score = score; m.scoreAt = at }
 
 // fixedDetector returns a fixed DetectResult regardless of input.
 // Allows precise control over score contribution when testing scorer.
@@ -52,7 +52,7 @@ func (d *fixedDetector) Detect(_ detector.IPView, _ *parser.LogEntry) detector.D
 // makeDetector creates a mock detector with specified score and reason.
 func makeDetector(name string, score int, reason string) detector.Detector {
 	return &fixedDetector{
-		name: name,
+		name:   name,
 		result: detector.DetectResult{Score: score, Module: name, Reason: reason},
 	}
 }

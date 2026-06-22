@@ -37,8 +37,8 @@ var mandatoryGroups = []string{"remote_addr", "time", "request", "status", "byte
 //
 // Internal — not exposed via config. Consumer: profiles.go (profile constructors).
 type RegexParser struct {
-	re      *regexp.Regexp           // Compiled regex pattern. Consumer: Parse.
-	indices map[string]int           // Internal — group name to subexpression index. Consumer: Parse.
+	re      *regexp.Regexp // Compiled regex pattern. Consumer: Parse.
+	indices map[string]int // Internal — group name to subexpression index. Consumer: Parse.
 }
 
 // NewRegexParser compiles pattern and verifies all mandatory named groups are present.

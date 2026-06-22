@@ -125,12 +125,12 @@ func Register(name string, f Factory) {
 // because exec detectors have an independent subprocess lifecycle.
 //
 // Behaviour preserved byte-for-byte from the pre-migration implementation:
-//   1. nil-return (nil, nil) on cfg.Enabled == false — short-circuits BEFORE
-//      registry lookup so disabled detectors cost zero store lookups.
-//   2. Registry lookup, then execplugin fallback when name unknown AND
-//      cfg.Exec != "" — same order, same error message, same context.
-//   3. Factory invocation with (cfg, shared) — SharedResources DI stays in
-//      the wrapper and is never observed by the generic core.
+//  1. nil-return (nil, nil) on cfg.Enabled == false — short-circuits BEFORE
+//     registry lookup so disabled detectors cost zero store lookups.
+//  2. Registry lookup, then execplugin fallback when name unknown AND
+//     cfg.Exec != "" — same order, same error message, same context.
+//  3. Factory invocation with (cfg, shared) — SharedResources DI stays in
+//     the wrapper and is never observed by the generic core.
 func Build(ctx context.Context, name string, cfg DetectorConfig, shared SharedResources) (plugin.Detector, error) {
 	_ = ctx // accepted for signature parity; intentionally not propagated to the Factory type.
 

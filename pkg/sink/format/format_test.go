@@ -130,12 +130,12 @@ func TestFormatSentinelThreat(t *testing.T) {
 	}
 
 	checks := map[string]any{
-		"ts":      "2026-04-05T14:33:12Z",
-		"ip":      "1.2.3.4",
-		"score":   float64(85),
-		"level":   "THREAT",
-		"reason":  "probe:env:3,bad_bot:known",
-		"source":  "frontend",
+		"ts":     "2026-04-05T14:33:12Z",
+		"ip":     "1.2.3.4",
+		"score":  float64(85),
+		"level":  "THREAT",
+		"reason": "probe:env:3,bad_bot:known",
+		"source": "frontend",
 	}
 	for key, want := range checks {
 		got, ok := m[key]

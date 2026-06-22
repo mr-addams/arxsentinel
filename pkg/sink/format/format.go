@@ -49,16 +49,16 @@ func FormatFailban(e plugin.ThreatEvent) string {
 //
 // Internal — not in config. Consumer: FormatJSON.
 type jsonEnvelope struct {
-	Timestamp  string   `json:"timestamp"` // Internal — RFC3339 timestamp. Consumer: FormatJSON.
-	Level      string   `json:"level"`     // Internal — threat level. Consumer: FormatJSON.
+	Timestamp  string   `json:"timestamp"`             // Internal — RFC3339 timestamp. Consumer: FormatJSON.
+	Level      string   `json:"level"`                 // Internal — threat level. Consumer: FormatJSON.
 	Stream     string   `json:"stream,omitempty"`      // Internal — stream name. Consumer: FormatJSON.
-	Source     string   `json:"source,omitempty"`     // Internal — source path. Consumer: FormatJSON.
+	Source     string   `json:"source,omitempty"`      // Internal — source path. Consumer: FormatJSON.
 	SourceType string   `json:"source_type,omitempty"` // Internal — source type. Consumer: FormatJSON.
-	IP         string   `json:"ip"`        // Internal — IP address. Consumer: FormatJSON.
-	Score      int      `json:"score"`     // Internal — accumulated score. Consumer: FormatJSON.
-	Modules    []string `json:"modules"`   // Internal — triggered detector names. Consumer: FormatJSON.
-	Reason     string   `json:"reason"`    // Internal — human-readable reason. Consumer: FormatJSON.
-	RawLine    string   `json:"raw_line,omitempty"` // Internal — raw log line for debug. Consumer: FormatJSON.
+	IP         string   `json:"ip"`                    // Internal — IP address. Consumer: FormatJSON.
+	Score      int      `json:"score"`                 // Internal — accumulated score. Consumer: FormatJSON.
+	Modules    []string `json:"modules"`               // Internal — triggered detector names. Consumer: FormatJSON.
+	Reason     string   `json:"reason"`                // Internal — human-readable reason. Consumer: FormatJSON.
+	RawLine    string   `json:"raw_line,omitempty"`    // Internal — raw log line for debug. Consumer: FormatJSON.
 }
 
 // sentinelThreatLine is the JSON format for sentinel-threat transport.

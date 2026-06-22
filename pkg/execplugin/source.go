@@ -34,20 +34,20 @@ import (
 // to the pipeline startup sequence, allowing clean restart semantics.
 //
 // Run() sends {"v":"1","action":"start"} to the plugin stdin, then reads SourceEntry
-	// lines from stdout in a loop. When ctx is cancelled, it sends {"v":"1","action":"stop"}
-	// and exits gracefully.
-	// ExecSource creates a fresh ManagedProcess on each Run() — allows clean restart.
-	type ExecSource struct {
-		execPath  string // Internal — plugin binary path. Consumer: Run
-		linesRead atomic.Int64 // Internal — lines successfully parsed. Consumer: Stats
-		parseErrs atomic.Int64 // Internal — JSON parse failures. Consumer: Stats
-		dropped   atomic.Int64 // Internal — entries dropped due to full output channel. Consumer: Stats (H2)
-	}
+// lines from stdout in a loop. When ctx is cancelled, it sends {"v":"1","action":"stop"}
+// and exits gracefully.
+// ExecSource creates a fresh ManagedProcess on each Run() — allows clean restart.
+type ExecSource struct {
+	execPath  string       // Internal — plugin binary path. Consumer: Run
+	linesRead atomic.Int64 // Internal — lines successfully parsed. Consumer: Stats
+	parseErrs atomic.Int64 // Internal — JSON parse failures. Consumer: Stats
+	dropped   atomic.Int64 // Internal — entries dropped due to full output channel. Consumer: Stats (H2)
+}
 
 // NewSource creates an ExecSource.
-	// The subprocess is NOT started until Run() is called.
-	// This defers process startup to the pipeline startup sequence.
-	// Called from: pipeline.newSource. Non-blocking.
+// The subprocess is NOT started until Run() is called.
+// This defers process startup to the pipeline startup sequence.
+// Called from: pipeline.newSource. Non-blocking.
 func NewSource(execPath string) (*ExecSource, error) {
 	// Validate that execPath is non-empty
 	if execPath == "" {
