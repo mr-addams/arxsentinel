@@ -4,7 +4,9 @@
 #   Build profile consistency verifier (Flow 075, Phase 1.5; extended for
 #   detectors in Flow 076, Task 6.1).
 #   Three static invariants over profiles/*.yaml, cmd/arxsentinel/plugins_*.go,
-#   pkg/{source,sink,executor,processor,detector}/, and cookbook/profiles/*.yaml:
+#   plugin source directories (resolved via pkg_relative_dir across the
+#   two-module layout: arx-core/pkg/, arxsentinel/pkg/<kind>plugins/, legacy
+#   pkg/), and cookbook/profiles/*.yaml:
 #
 #     (a) Declaration ↔ generated drift
 #         For each profiles/<name>.yaml, plugin names (sources/sinks/executors/
@@ -13,12 +15,13 @@
 #         hand-maintained). Extra/missing → fail.
 #
 #   Маппинг profile-name → blank-import path: 1:1, с единственным исключением
-#   `ua` → `pkg/detector/useragent` (hardcoded в verifier; регистровое имя остаётся
-#   "ua").
+#   `ua` → `pkg/detector/useragent` (suffix override в `pkg_suffix_for`;
+#   физическая директория далее резолвится через `pkg_relative_dir` —
+#   регистровое имя остаётся "ua").
 #
 #     (b) Plugin name → Register existence
 #         Each declared source/sink/executor/detector name must have a matching
-#         `Register("<name>"` call in pkg/<kind>/<name-or-exception>/*.go
+#         `Register("<name>"` call in the resolved plugin directory's *.go
 #         (non-test). Processors are checked only for package existence
 #         (registry package; Decision 15) — no Register call required.
 #
@@ -30,8 +33,11 @@
 #         so they participate in the declared set but are not expected to appear
 #         as stream/executor types.
 #
-# The single path exception for detectors is also hardcoded because the package
-# directory is 'useragent' while the profile/registry name remains 'ua'.
+# The detector suffix override (ua → useragent) lives in `pkg_suffix_for()`.
+# All other path resolution is filesystem-driven: pkg_relative_dir() probes
+# arx-core/pkg/<kind>/<suffix>, arxsentinel/pkg/<kind>plugins/<suffix>, then
+# legacy pkg/<kind>/<suffix>; expected_import_path() derives the import path
+# from whichever location actually exists.
 #
 #   Run manually:  bash scripts/check-build-profiles.sh
 #   Pre-commit:    called by scripts/hooks/pre-commit when profile/plugin files
@@ -96,46 +102,133 @@ pkg_suffix_for() {
   esac
 }
 
-# expected_import_path <kind> <name>
-#   Returns the canonical import path (relative to repo root, as it appears in
-#   blank-import lines: github.com/mr-addams/arxsentinel/pkg/...).
-expected_import_path() {
-  local kind="$1" name="$2"
-  local suffix; suffix="$(pkg_suffix_for "$kind" "$name")"
-  case "$kind" in
-    sources)    echo "github.com/mr-addams/arxsentinel/pkg/source/$suffix" ;;
-    sinks)      echo "github.com/mr-addams/arxsentinel/pkg/sink/$suffix" ;;
-    executors)  echo "github.com/mr-addams/arxsentinel/pkg/executor/$suffix" ;;
-    processors)
-      if [ "$name" = "processor" ]; then
-        echo "github.com/mr-addams/arxsentinel/pkg/processor"
-      else
-        echo "github.com/mr-addams/arxsentinel/pkg/processor/$suffix"
-      fi
-      ;;
-    detectors) echo "github.com/mr-addams/arxsentinel/pkg/detector/$suffix" ;;
+# kind_dir <kind>
+#   Maps profile kind (sources/sinks/executors/processors/detectors) to the
+#   directory name used under each module's pkg/ tree. Kept singular so the
+#   resolved path matches Go package layout (pkg/source, pkg/sink, ...).
+kind_dir() {
+  case "$1" in
+    sources)    echo "source" ;;
+    sinks)      echo "sink" ;;
+    executors)  echo "executor" ;;
+    processors) echo "processor" ;;
+    detectors)  echo "detector" ;;
     *) echo "" ;;
   esac
 }
 
 # pkg_relative_dir <kind> <name>
-#   Filesystem path under pkg/ for os.path checks (invariant b / processor check).
+#   Resolves the actual filesystem path of a plugin (kind, name) by probing the
+#   locations it could live in under the two-module layout (Flow 080):
+#
+#     1. arx-core/pkg/<kind-dir>/<suffix>          — Core transports/registries
+#        (source/sink transports, processor registry)
+#     2. arxsentinel/pkg/<kind-dir>plugins/<suffix> — Product split-plugins
+#        (executorplugins, detectorplugins, processorplugins — planned for
+#        later phases)
+#     3. pkg/<kind-dir>/<suffix>                    — legacy / pre-migration
+#        (still in place for everything not yet relocated)
+#
+#   The first existing path wins. If none exist, returns the legacy path so
+#   the existing "package directory not found" diagnostic still fires with the
+#   most expected location.
+#
+#   This makes the verifier robust across every intermediate migration state:
+#   the same script validates the repo whether a plugin lives in arx-core,
+#   arxsentinel, or the legacy pkg/ tree.
 pkg_relative_dir() {
   local kind="$1" name="$2"
   local suffix; suffix="$(pkg_suffix_for "$kind" "$name")"
+  local kdir; kdir="$(kind_dir "$kind")"
+  [ -z "$kdir" ] && { echo ""; return; }
+
+  local candidates=()
   case "$kind" in
-    sources)    echo "pkg/source/$suffix" ;;
-    sinks)      echo "pkg/sink/$suffix" ;;
-    executors)  echo "pkg/executor/$suffix" ;;
     processors)
       if [ "$name" = "processor" ]; then
-        echo "pkg/processor"
+        # Registry package: special-case arx-core/pkg/processor | pkg/processor
+        # (no <suffix> suffix and no <kind>plugins/ split form for the bare
+        # registry itself).
+        #
+        # NOTE: Today only `pkg/processor` exists; `arx-core/pkg/processor`
+        # has not been created yet. The probe loop will pick whichever
+        # appears first. When arx-core/pkg/processor is materialised
+        # (Phase 1+), audit cmd/arxsentinel/plugins_*.go imports — they
+        # must switch from the legacy `pkg/processor` import to the
+        # arx-core path in lockstep, otherwise invariant (a) will report
+        # an immediate drift across all profiles.
+        candidates=( "arx-core/pkg/processor" "pkg/processor" )
       else
-        echo "pkg/processor/$suffix"
+        candidates=(
+          "arx-core/pkg/${kdir}/$suffix"
+          "arxsentinel/pkg/${kdir}plugins/$suffix"
+          "pkg/${kdir}/$suffix"
+        )
       fi
       ;;
-    detectors) echo "pkg/detector/$suffix" ;;
-    *) echo "" ;;
+    sources|sinks|executors|detectors)
+      candidates=(
+        "arx-core/pkg/${kdir}/$suffix"
+        "arxsentinel/pkg/${kdir}plugins/$suffix"
+        "pkg/${kdir}/$suffix"
+      )
+      ;;
+    *)
+      echo ""
+      return
+      ;;
+  esac
+
+  local cand
+  for cand in "${candidates[@]}"; do
+    if [ -d "$cand" ]; then
+      echo "$cand"
+      return
+    fi
+  done
+
+  # None exist — return the legacy path so callers raise the same
+  # "package directory not found" diagnostic as before the migration.
+  echo "pkg/${kdir}/$suffix"
+}
+
+# expected_import_path <kind> <name>
+#   Returns the canonical import path that should appear in plugins_<name>.go
+#   blank-import lines. Derived from the resolved filesystem location returned
+#   by pkg_relative_dir(): a path under arx-core/ maps to
+#   github.com/mr-addams/arx-core/..., a path under arxsentinel/ to
+#   github.com/mr-addams/arxsentinel/..., and a legacy pkg/ path to the
+#   arxsentinel module (the only module that ever hosted pkg/).
+#
+#   Resolving from the actual filesystem (not from a hardcoded prefix) is what
+#   makes the verifier correct mid-migration: the same script accepts both
+#   legacy pkg/.../foo and arx-core/pkg/.../foo imports.
+expected_import_path() {
+  local kind="$1" name="$2"
+  local rel; rel="$(pkg_relative_dir "$kind" "$name")"
+  [ -z "$rel" ] && { echo ""; return; }
+
+  case "$rel" in
+    arx-core/*)
+      echo "github.com/mr-addams/arx-core/${rel#arx-core/}"
+      ;;
+    arxsentinel/*)
+      echo "github.com/mr-addams/arxsentinel/${rel#arxsentinel/}"
+      ;;
+    pkg/*)
+      echo "github.com/mr-addams/arxsentinel/${rel}"
+      ;;
+    *)
+      # Unknown prefix — pkg_relative_dir() must have produced a path we did
+      # not anticipate (refactor regression). Fail loudly by emitting nothing;
+      # invariants (a)/(c) treat empty expected paths as "unresolved → fail"
+      # and the diagnostic names (kind, name) directly, which is far more
+      # useful than silently minting an import path that can never match
+      # plugins_<name>.go. We do NOT `return 1` because this function runs
+      # inside a command substitution and a non-zero exit would abort the
+      # whole script under `set -e`.
+      echo ""
+      ;;
   esac
 }
 
@@ -209,9 +302,11 @@ while IFS= read -r profile_path; do
   done | sort -u > "$expected_file"
 
   # Build actual blank-imports from the .go file.
-  # Pattern: lines starting with whitespace, ` _ "github.com/..."`
+  # Pattern: lines starting with whitespace, ` _ "github.com/..."`. Match both
+  # modules so that plugins living in arx-core/.../pkg/ and arxsentinel/.../pkg/
+  # both count (Flow 080 two-module layout).
   actual_file="$(mktemp)"
-  grep -E '^[[:space:]]*_[[:space:]]*"github\.com/mr-addams/arxsentinel/pkg/' "$go_file" \
+  grep -E '^[[:space:]]*_[[:space:]]*"github\.com/mr-addams/(arxsentinel|arx-core)/pkg/' "$go_file" \
     | sed -E 's|^[[:space:]]*_[[:space:]]*"([^"]+)".*|\1|' \
     | sort -u > "$actual_file"
 
@@ -240,11 +335,16 @@ done < <(profiles_list)
 #
 # For source/sink/executor/detector entries: require a `Register("<name>"` literal
 #   (regardless of the receiver — detector / pkgsink / pkgsource / executor) to
-#   exist in a non-test .go file under pkg/<kind>/<name-or-exception>/. Catches
-#   typos and renamed-but-not-profile-updated plugins (Decision 4 / Decision 15).
+#   exist in a non-test .go file under the resolved plugin directory.
+#   The resolved directory comes from pkg_relative_dir(), which probes
+#   arx-core/pkg/, arxsentinel/pkg/<kind>plugins/, and the legacy pkg/ tree
+#   in that order. Catches typos and renamed-but-not-profile-updated plugins
+#   (Decision 4 / Decision 15).
 #
-#   For detector entries: the only path exception is `ua` → pkg/detector/useragent;
-#   the Register-name lookup still uses the literal profile name "ua".
+#   For detector entries: the suffix override `ua → useragent` remains in
+#   pkg_suffix_for(); the directory itself is then resolved by pkg_relative_dir()
+#   across arx-core/, arxsentinel/, or legacy pkg/. The Register-name lookup
+#   still uses the literal profile name "ua".
 #
 #   For processor entries: only require the package directory to exist on disk
 #   (registry package has no Register call by plugin name — Decision 15).
