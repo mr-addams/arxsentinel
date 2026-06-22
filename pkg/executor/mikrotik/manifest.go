@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/pkg/dedup"
+	"github.com/mr-addams/arx-core/pkg/dedup"
 	"github.com/mr-addams/arx-core/pkg/logger"
 	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
