@@ -1,15 +1,17 @@
 # pkg/logger
 
-Operational logger contract for `pkg/` libraries of `arx-core`. Removes
-the `pkg -> internal/sys/utils` dependency that blocks publishing `pkg/`
-as a standalone library (Flow 072, Decision 1).
+Operational logger contract for libraries in the `arx-core` framework.
+This is the single `Logger` interface that `pkg/` packages depend on,
+so any `pkg/` library stays decoupled from the host application's
+logging implementation and can be embedded in third-party products.
 
 ## Boundary
 
-- **Stdlib only.** No `internal/` imports, no arxsentinel vocabulary, no
-  formatting/colors — all of that is the adapter's job.
-- **Behaviour-preserving.** The `internal/sys/utils` adapter (Task 1.2.6)
-  forwards calls to `utils.Log` byte-for-byte.
+- **Stdlib only.** No product-internal imports, no product-specific
+  vocabulary, no formatting, no colours — all of that is the host
+  adapter's job.
+- **Behaviour-preserving.** A host adapter forwards `Log` calls to the
+  product's existing logger without translation or filtering.
 
 ## Interface
 
@@ -29,9 +31,9 @@ const (
     LevelError   = "error"
 )
 ```
-Values match `utils.Log`'s documented vocabulary
-(`internal/sys/utils/logging.go` line 282). Plain strings so the adapter
-forwards them unchanged.
+
+Values are plain strings so a host adapter can forward them unchanged
+to whatever logging backend the host application uses.
 
 ## Default no-op
 
@@ -40,21 +42,43 @@ type NopLogger struct{}
 func (NopLogger) Log(string, string, string) {}
 var Nop = NopLogger{}
 ```
-`Nop` is the conventional no-op. `pkg/` factories must accept a
-`Logger` and replace `nil` with `Nop` — never fall back to `utils.Log`.
-That contract keeps `pkg/` independent of `internal/`.
+
+`Nop` is the conventional zero-cost no-op. `pkg/` factory constructors
+must accept a `Logger` and replace `nil` with `Nop` instead of falling
+back to a host-application global logger. That contract keeps `pkg/`
+independent of the host.
 
 ## Usage
 
 ```go
 import "github.com/mr-addams/arx-core/pkg/logger"
 
-if log == nil { log = logger.Nop }
+if log == nil {
+    log = logger.Nop
+}
 log.Log("EXECUTOR", "starting", logger.LevelInfo)
 ```
 
+## Custom adapter example
+
+```go
+type StdLogger struct{ Out io.Writer }
+
+func (l StdLogger) Log(tag, msg, level string) {
+    fmt.Fprintf(l.Out, "%s [%s] %s: %s\n", level, tag, level, msg)
+}
+
+var _ logger.Logger = StdLogger{}
+```
+
+A product that wants structured logging or colour-coded output wraps
+this interface with its own adapter; `pkg/` libraries remain agnostic.
+
 ## Tests
 
-`logger_test.go`: compile-time interface satisfaction; `Nop` does not
-panic; `Level*` constants equal `utils.Log`'s strings (text-only read);
-a recording implementation forwards arguments verbatim and in order.
+`logger_test.go` covers:
+
+- Compile-time interface satisfaction.
+- `Nop` does not panic and performs no observable work.
+- `Level*` constants match the documented vocabulary.
+- A recording implementation forwards arguments verbatim and in order.

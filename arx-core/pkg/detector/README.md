@@ -1,87 +1,70 @@
-# pkg/detector — Plugin registry для детекторов
+# pkg/detector — Detector plugin registry
 
-Центральный регистр, общие типы и вспомогательные функции для детекторных
-плагинов ArxSentinel. Каждый детектор саморегистрируется через `init()`,
-а pipeline получает рабочий экземпляр через `Build(ctx, name, cfg, shared)`.
-Детекторы **stateless** — всё per-IP состояние передаётся через
-`plugin.IPView` на каждый вызов `Detect`.
+Central registry, shared types, and parameter helpers for detector plugins
+of the arx-core framework. Each detector self-registers via `init()` so the
+pipeline can instantiate detectors by name from configuration without a
+hard-coded factory list. Detectors are **stateless** — all per-IP state is
+passed to each `Detect` call through `plugin.IPView` (see `pkg/plugin`).
 
-Пакет зависит только от `pkg/plugin`, `pkg/execplugin` и
-`pkg/pluginregistry`. Он **не импортирует ничего из `internal/`**,
-поэтому может использоваться как самостоятельная библиотека.
+The package depends only on `pkg/plugin`, `pkg/execplugin`, and
+`pkg/pluginregistry`. It does **not** import anything from a product layer,
+so it can be used as a standalone library.
 
-## Структура пакета
+## Package Layout
 
 ```
 pkg/detector/
-├── registry.go       # Registry (Register/Build/Names), shared types
-│                     # (DetectorConfig / Matcher / SharedResources) и Factory
-├── params.go         # Exported helpers для парсинга конфига детектора:
+├── registry.go       # Registry (Register / Build / Names),
+│                     # shared types (DetectorConfig, Matcher, SharedResources),
+│                     # and Factory
+├── params.go         # Exported helpers for parsing detector config:
 │                     # GetInt / GetFloat64 / GetBool / GetDuration / GetStrings
-└── registry_test.go  # Registry-infra тесты: Names, Disabled, Unknown
+└── registry_test.go  # Registry-infra tests: Names, Disabled, Unknown
 ```
 
-## Sub-пакеты (детекторы)
+## Sub-packages (detectors)
 
-Каждый детектор живёт в отдельном sub-пакете для того, чтобы профильные
-сборки могли исключать неиспользуемые детекторы из бинаря (tree-shaking).
+Each detector lives in its own sub-package so that build profiles can
+exclude unused detectors from the resulting binary (tree-shaking).
 
-| Путь sub-пакета | Register-имя | Файлы |
-|-----------------|--------------|-------|
-| `pkg/detector/probe/`      | `probe`      | `probe.go`, `manifest.go`, `probe_test.go` |
-| `pkg/detector/rate/`       | `rate`       | `rate.go`, `manifest.go`, `rate_test.go` |
-| `pkg/detector/bruteforce/` | `bruteforce` | `bruteforce.go`, `manifest.go`, `bruteforce_test.go` |
-| `pkg/detector/crawler/`    | `crawler`    | `crawler.go`, `manifest.go`, `crawler_test.go` |
-| `pkg/detector/noasset/`    | `noasset`    | `noasset.go`, `manifest.go`, `noasset_test.go` |
-| `pkg/detector/badbot/`     | `badbot`     | `badbot.go`, `manifest.go`, `badbot_test.go` |
-| `pkg/detector/overflow/`   | `overflow`   | `overflow.go`, `manifest.go`, `overflow_test.go` |
-| `pkg/detector/useragent/`  | `ua`         | `useragent.go`, `manifest.go`, `useragent_test.go` |
+The convention is:
 
-Каждый sub-пакет устроен одинаково:
-
-- `<name>.go` — тип детектора, фабрика и `init()` с `detector.Register("<name>", …)`.
-- `manifest.go` — метод `Manifest()` на типе детектора, возвращающий
+- `<name>.go` — detector type, factory function, and `init()` calling
+  `detector.Register("<name>", …)`.
+- `manifest.go` — `Manifest()` method on the detector type, returning
   `plugin.Manifest`.
-- `<name>_test.go` — unit-тесты самого детектора плюс registry smoke-тесты.
+- `<name>_test.go` — unit tests for the detector plus registry smoke tests.
 
-**Исключение имени.** Путь `pkg/detector/useragent/` регистрируется под
-именем `ua`. В YAML конфигурации и в pipeline-именах используется
-`useragent`, но в `detector.Register` и при blank-import — `ua`.
+Build profiles wire selected sub-packages via blank-import in their
+profile file. Detectors not imported by the profile are dropped by the
+Go linker. The YAML `name:` field must match the registered name 1:1.
 
-## Подключение (blank-import pattern)
+> Note: the example detector set shipped with the arx-core reference
+> product (a security log aggregator) covers categories such as
+> `probe`, `rate`, `bruteforce`, `crawler`, `noasset`, `badbot`,
+> `overflow`, and `useragent`. Detector names and sub-package names
+> are not required to follow this scheme in third-party projects.
 
-Детекторы подключаются side-effect `init()` через blank-import в файлах
-`cmd/arxsentinel/plugins_<profile>.go`:
+## Wire-up (blank-import pattern)
 
 ```go
 //go:build minimal
 package main
 
-import _ "github.com/mr-addams/arxsentinel/pkg/detector/probe"
-import _ "github.com/mr-addams/arxsentinel/pkg/detector/rate"
+import _ "example.com/myapp/pkg/detector/probe"
+import _ "example.com/myapp/pkg/detector/rate"
 ```
 
-Профили `full`, `minimal`, `iot` — **tree-shakeable**: если профиль не
-blank-import'ит sub-пакет детектора, Go linker не включает код этого
-детектора в бинарь.
-
-R6 (tree-shaking verification) доказано через `go tool nm`:
-
-- `minimal` не содержит символов `pkg/detector/{crawler,noasset,badbot}`.
-- `iot` не содержит символов
-  `pkg/detector/{rate,bruteforce,crawler,noasset,badbot,useragent}`.
-
-Имя профиля в YAML (`name:`) совпадает с Register-именем 1:1, кроме
-исключения `useragent`: YAML `name: useragent` ↔ sub-пакет
-`pkg/detector/useragent`, Register-имя `ua`.
+If the build profile does not blank-import a detector sub-package, the
+Go linker will not include that detector in the resulting binary.
 
 ## Core Types (`registry.go`)
 
 ```go
 type DetectorConfig struct {
     Enabled bool
-    Params  map[string]interface{}  // yaml:",inline"
-    Exec    string                  // путь к внешнему exec-плагину
+    Params  map[string]interface{}  // captures all YAML fields except enabled/exec
+    Exec    string                  // path to an external exec-plugin binary
 }
 
 type Matcher interface {
@@ -96,12 +79,12 @@ type SharedResources interface {
 type Factory func(cfg DetectorConfig, shared SharedResources) (plugin.Detector, error)
 ```
 
-- `Enabled == false` → `Build` возвращает `(nil, nil)`.
-- `Params` — всё, что не `enabled` и не `exec`. Детекторы извлекают
-  типизированные значения через helpers из `params.go`.
-- `Matcher` — duck-typed: конкретный `*blocklist.Manager` в
-  `internal/core/blocklist` удовлетворяет ему неявно, без явного импорта.
-- `SharedResources` нужен прежде всего `badbot`.
+- `Enabled == false` → `Build` returns `(nil, nil)`.
+- `Params` holds every YAML key that is not `enabled` or `exec`. Detectors
+  extract typed values via the helpers from `params.go`.
+- `Matcher` is duck-typed — any concrete blocklist manager that exposes
+  the two methods satisfies it implicitly, with no explicit import.
+- `SharedResources` is used by detectors that need external runtime state.
 
 ### Registry API
 
@@ -111,33 +94,33 @@ func Build(ctx context.Context, name string, cfg DetectorConfig, shared SharedRe
 func Names() []string
 ```
 
-- `Register` паникует при дублирующем имени — это программная ошибка,
-  которая должна всплыть на старте.
-- `Build` возвращает `(nil, nil)` для disabled-детекторов, живой детектор
-  для зарегистрированного имени, exec-обёртку для неизвестного имени с
-  `cfg.Exec != ""`, или ошибку иначе.
-- `Names` возвращает отсортированный список зарегистрированных имён.
+- `Register` panics on a duplicate name — duplication is a programmer
+  error that must surface at startup.
+- `Build` returns `(nil, nil)` for a disabled detector, a live detector
+  for a registered name, an exec wrapper for an unknown name with
+  `cfg.Exec != ""`, or an error otherwise.
+- `Names` returns a sorted slice of all registered names.
 
 ### Exec fallback
 
-Если имя не зарегистрировано, но `cfg.Exec` задан, `Build` делегирует в
-`pkg/execplugin` и возвращает обёртку, которая вызывает внешний бинарь
-на каждый `Detect`. Это позволяет поставлять произвольный детектор без
-перекомпиляции агента.
+If a name is not registered but `cfg.Exec` is set, `Build` delegates to
+`pkg/execplugin` and returns a wrapper that invokes the external binary
+on every `Detect` call. This lets operators ship arbitrary detectors
+without recompiling the host process.
 
 ### Thread safety
 
-Фабричная карта защищена `sync.RWMutex`. `Names()` и `Build()` берут read-
-lock, `Register()` — write-lock. `Register` предназначен для запуска из
-`init()`; mutex пригодится для любых будущих путей динамической
-регистрации и держит race-detector тихим.
+The factory map is guarded by a `sync.RWMutex`. `Names()` and `Build()`
+take the read lock; `Register()` takes the write lock. `Register` is
+intended to be called from `init()`; the mutex also covers any future
+dynamic-registration path and keeps the race detector quiet.
 
-## Helpers (`params.go`)
+## Parameter helpers (`params.go`)
 
-Все helpers работают с `DetectorConfig.Params` и возвращают
-`defaultVal`, если ключ отсутствует или тип некорректен. Это
-намеренное silent-degradation: ошибка в конфиге одного детектора не
-должна падать весь агент.
+All helpers operate on `DetectorConfig.Params` and return `defaultVal`
+when the key is absent or the value type cannot be converted. Silent
+degradation is intentional: a misconfigured detector must not bring
+down the whole host process.
 
 ### `GetInt`
 
@@ -145,8 +128,9 @@ lock, `Register()` — write-lock. `Register` предназначен для з
 func GetInt(cfg DetectorConfig, key string, defaultVal int) int
 ```
 
-Принимает `int`, `int64`, `float64` (yaml иногда даёт float64 для целых
-чисел). Возвращает `defaultVal` при отсутствии ключа или неподходящем типе.
+Accepts `int`, `int64`, and `float64` (YAML sometimes produces
+`float64` for whole numbers). Returns `defaultVal` when the key is
+absent or the type does not match.
 
 ### `GetFloat64`
 
@@ -154,8 +138,8 @@ func GetInt(cfg DetectorConfig, key string, defaultVal int) int
 func GetFloat64(cfg DetectorConfig, key string, defaultVal float64) float64
 ```
 
-Принимает `float64`, `int`, `int64`. Возвращает `defaultVal` при отсутствии
-ключа или неподходящем типе.
+Accepts `float64`, `int`, and `int64`. Returns `defaultVal` on missing
+key or wrong type.
 
 ### `GetBool`
 
@@ -163,8 +147,7 @@ func GetFloat64(cfg DetectorConfig, key string, defaultVal float64) float64
 func GetBool(cfg DetectorConfig, key string, defaultVal bool) bool
 ```
 
-Принимает только `bool`. Возвращает `defaultVal` при отсутствии ключа или
-некорректном типе.
+Accepts `bool` only. Returns `defaultVal` on missing key or wrong type.
 
 ### `GetDuration`
 
@@ -172,14 +155,13 @@ func GetBool(cfg DetectorConfig, key string, defaultVal bool) bool
 func GetDuration(cfg DetectorConfig, key string, defaultVal time.Duration) time.Duration
 ```
 
-Принимает:
+Accepts:
 
-- `string` — парсится через `time.ParseDuration` (например, `"30s"`,
+- `string` — parsed via `time.ParseDuration` (for example `"30s"`,
   `"1m"`, `"500ms"`).
-- `int`, `int64`, `float64` — значение в наносекундах.
+- `int`, `int64`, `float64` — interpreted as a duration in nanoseconds.
 
-Возвращает `defaultVal` при отсутствии ключа, неизвестном типе или
-ошибке парсинга.
+Returns `defaultVal` on missing key, unknown type, or parse error.
 
 ### `GetStrings`
 
@@ -187,21 +169,39 @@ func GetDuration(cfg DetectorConfig, key string, defaultVal time.Duration) time.
 func GetStrings(cfg DetectorConfig, key string, defaultVal []string) []string
 ```
 
-Принимает:
+Accepts:
 
-- `[]string` — возвращается как есть.
-- `[]interface{}` — каждый элемент приводится к `string`; не-строковые
-  элементы пропускаются.
+- `[]string` — returned as-is.
+- `[]interface{}` — each element cast to `string`; non-string items
+  are skipped.
 
-Возвращает `defaultVal` при отсутствии ключа или неподходящем типе.
+Returns `defaultVal` on missing key or wrong type.
 
-## Историческое
+## Usage example
 
-До Flow 076 (2026-06-22) все восемь детекторов жили в одном пакете
-`pkg/detector` в файлах `probe.go`, `rate.go`, `bruteforce.go`,
-`crawler.go`, `noasset.go`, `badbot.go`, `useragent.go`, `overflow.go`.
-После Flow 076 / Task 7.1 детекторы разнесены в sub-пакеты, чтобы:
+```go
+import (
+    "github.com/mr-addams/arx-core/pkg/detector"
+    "github.com/mr-addams/arx-core/pkg/plugin"
+)
 
-- включать только нужные детекторы через blank-import профильных файлов;
-- позволить Go compiler/linker вырезать неиспользуемые детекторы из
-  профильных бинарей (доказано R6 verifier).
+// In a custom detector's init():
+func init() {
+    detector.Register("rate", NewRateDetector)
+}
+
+func NewRateDetector(cfg detector.DetectorConfig, shared detector.SharedResources) (plugin.Detector, error) {
+    window := detector.GetDuration(cfg, "window", time.Minute)
+    threshold := detector.GetInt(cfg, "threshold", 100)
+    return &rateDetector{window: window, threshold: threshold}, nil
+}
+
+// In the pipeline:
+det, err := detector.Build(ctx, "rate", detector.DetectorConfig{
+    Enabled: true,
+    Params:  map[string]interface{}{"threshold": 250},
+}, sharedResources)
+if det == nil {
+    // Disabled — skip silently.
+}
+```

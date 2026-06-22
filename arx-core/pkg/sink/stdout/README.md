@@ -1,97 +1,103 @@
 # pkg/sink/stdout — Stdout Sink
 
-StdoutSink writes threat events directly to the process standard output in one of three formats (fail2ban, JSON, or Sentinel-threat NDJSON). Used for debugging, piping to external tools, or containerised deployments where stdout is the log stream. Supports an injectable writer for testing.
+The `stdout` sink writes scored `plugin.ThreatEvent` records directly to
+the arx-core process's standard output in one of three formats:
+`fail2ban`, `json`, or `sentinel-threat`. Use it for interactive
+debugging, piping scored events into shell tooling (`jq`, `grep`, log
+shippers), and containerised deployments where stdout is the canonical
+log stream. A test-only constructor accepts any `*os.File` so unit tests
+can capture writes without touching the real process stdout.
 
-The pipeline calls `Write` for every scored event that reaches the sink stage. The consumer is whatever process or pipeline reads `os.Stdout` of the Arxsentinel daemon (a shell pipe, a log shipper, a container runtime, or a developer terminal).
+## Plugin identity
 
-## Plugin Identity
+| Field          | Value                    |
+|----------------|--------------------------|
+| PluginID       | `stdout`                 |
+| PluginVersion  | `1.0.0`                  |
+| Role           | `plugin.RoleSink`        |
+| InputType      | `plugin.TypeScoredEvent` |
+| OutputType     | `plugin.TypeNone`        |
+| Tags           | `["stdout", "console"]`  |
 
-| Field | Value |
-|-------|-------|
-| PluginID | `"stdout"` |
-| Version | `v1.0.0` |
-| Role | `RoleSink` |
-| Input | `TypeScoredEvent` |
-| Output | `TypeNone` |
-| Tags | `["stdout", "console"]` |
+## Configuration
 
-## Module Layout
+| Field    | Type   | Required | Description                                                      |
+|----------|--------|----------|------------------------------------------------------------------|
+| `Format` | string | yes      | One of `fail2ban`, `json`, `sentinel-threat`. Unknown values are rejected at construction. |
 
-```
-pkg/sink/stdout/
-├── manifest.go          # Manifest() method
-├── register.go          # init() registration, factory
-├── sink.go              # StdoutSink struct, NewStdoutSink, Write, Close, Stats
-├── sink_test.go         # Unit tests (151 lines)
-```
-
-## Configuration Reference
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `format` | string | yes | – | Output format: `"fail2ban"`, `"json"`, or `"sentinel-threat"` |
-
-## Behaviour Details
-
-- **Startup:** `NewStdoutSink(format)` creates sink with `os.Stdout` as writer. `NewStdoutSinkWithWriter(w, format)` allows injecting any `*os.File` for tests.
-- **Write:** Switch on format (same three formats as file sink). Mutex-locked write to underlying file handle.
-- **Drop Policy:** No drop — if write fails, error is returned and `Errors` counter incremented.
-- **Close:** No-op — stdout is never closed by the sink.
-
-## Close / Shutdown
-
-- `Close()` is a no-op — the process owns `os.Stdout`.
-
-## Metrics and Stats
-
-| Counter | Type | Description | Incremented When |
-|---------|------|-------------|------------------|
-| `EventsWritten` | atomic.Int64 | Events successfully written | After each successful write |
-| `Dropped` | atomic.Int64 | Events dropped (always 0) | Never incremented (no drop path) |
-| `Errors` | atomic.Int64 | Write errors | On write failure |
-
-## Constructors
+## Public API
 
 ```go
-func NewStdoutSink(format string) *StdoutSink
-func NewStdoutSinkWithWriter(w *os.File, format string) *StdoutSink  // test helper
+// StdoutSink writes threat events to an *os.File (typically os.Stdout)
+// in a fixed output format. Safe for concurrent Write calls — the
+// underlying file write is serialised through an internal mutex.
+type StdoutSink struct { /* unexported */ }
+
+// NewStdoutSink returns a StdoutSink writing to os.Stdout in format.
+// Returns an error if format is not one of fail2ban | json | sentinel-threat.
+func NewStdoutSink(format string) (*StdoutSink, error)
+
+// NewStdoutSinkWithWriter returns a StdoutSink writing to w in format.
+// Test helper — inject a pipe or temp file to capture output without
+// touching the real process stdout.
+func NewStdoutSinkWithWriter(w *os.File, format string) (*StdoutSink, error)
+
+func (s *StdoutSink) Name() string                       // always "stdout"
+func (s *StdoutSink) Write(ctx context.Context, event plugin.ThreatEvent) error
+func (s *StdoutSink) Close() error                       // no-op
+func (s *StdoutSink) Stats() plugin.SinkStats            // EventsWritten, Dropped, Errors
+func (s *StdoutSink) Manifest() plugin.Manifest
 ```
+
+`Close` is intentionally a no-op — the process owns `os.Stdout`, not the
+sink. `Write` accepts a `context.Context` to satisfy `plugin.Sink` but
+does not honour cancellation: stdout writes are short syscalls serialised
+through a mutex, so cancellation would add complexity without changing
+observable behaviour.
 
 ## Registration
 
 ```go
 func init() {
-    pkgsink.Register("stdout", factory)
-    pkgsink.RegisterManifest("stdout", manifest)
+    pkgsink.Register("stdout", func(_ context.Context, cfg pkgsink.SinkConfig) (plugin.Sink, error) {
+        return NewStdoutSink(cfg.Format)
+    })
+    pkgsink.RegisterManifest("stdout", (&StdoutSink{}).Manifest())
 }
-// factory: NewStdoutSink(cfg.Format)
 ```
 
-The `init()` function registers both the factory and the manifest with the central `pkgsink` registry. The factory passes `cfg.Format` directly to `NewStdoutSink`.
+The factory passes `cfg.Format` straight to `NewStdoutSink`; an invalid
+format is rejected at construction with a descriptive error rather than
+silently producing zero output.
 
-## Quick-Start Example
+## Counters
+
+| Counter         | Source         | Notes                                       |
+|-----------------|----------------|---------------------------------------------|
+| `EventsWritten` | `atomic.Int64` | Incremented after each successful write     |
+| `Dropped`       | `atomic.Int64` | Always 0 — no buffering, no drop path       |
+| `Errors`        | `atomic.Int64` | Marshalling or write failures               |
+
+## Example
 
 ```yaml
 sinks:
-  - plugin: stdout
+  - type: stdout
     format: json
 ```
 
+Pipe the resulting JSON stream through `jq` for human-readable inspection
+in development, or redirect to a file and let the host's log-rotation
+infrastructure handle retention:
+
 ```bash
-# Pipe JSON threats to jq for human-readable inspection
-arxsentinel --config /etc/arxsentinel/config.yaml | jq .
-
-# Or to a file with rotation by the OS logrotate
-arxsentinel --config /etc/arxsentinel/config.yaml >> /var/log/arxsentinel/threats.json
+arx-core --config ./config.yaml | jq .
+arx-core --config ./config.yaml >> /var/log/arx-core/threats.json
 ```
-
-## Tests
-
-- 151 lines of unit tests in `sink_test.go`.
-- Tests use `NewStdoutSinkWithWriter` to inject a pipe or temp file.
 
 ## Dependencies
 
-- Standard library: `os`, `sync`, `sync/atomic`
-- `pkg/plugin` — Manifest, ThreatEvent, SinkStats
-- `pkg/sink` — pkgsink register helpers
+- `pkg/plugin` — `Sink`, `SinkStats`, `ThreatEvent`, `Manifest`.
+- `pkg/sink` — `Register`, `RegisterManifest`, `SinkConfig`.
+- `pkg/sink/format` — `FormatFailban`, `FormatJSON`, `FormatSentinelThreat` helpers.
+- Standard library: `os`, `sync`, `sync/atomic`, `context`, `fmt`.

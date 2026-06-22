@@ -1,14 +1,14 @@
-# pkg/ncs — Named Channel Switch (NCS)
+# pkg/ncs — Named Channel Switch
 
-In-process singleton that connects named pipeline sinks (writers) with executor
-sources (readers). The package owns the dispatch table; each queue lives behind
-a `queue.Queue` interface and may be in-memory, bbolt, or redis — chosen at
-registration time.
+In-process singleton that connects named pipeline sinks (writers) with
+executor sources (readers). The package owns the dispatch table; each
+queue lives behind a `queue.Queue` interface and may be in-memory,
+bbolt, or redis — chosen at registration time.
 
 ## Public API
 
-All five entry points operate on the global singleton and are safe for
-concurrent use.
+All five entry points operate on the package-level singleton and are
+safe for concurrent use.
 
 | Function | Purpose |
 |---|---|
@@ -18,24 +18,55 @@ concurrent use.
 | `AttachReader(name)` | Return the previously registered queue for `Pop`. Returns an error if no queue is registered under `name`. |
 | `DetachWriter(name)` | Decrement the reference counter. The queue is closed and removed only when the last sink deregisters. |
 
-## Boundary (ADR-002)
+## Boundary
 
-`pkg/ncs` is a Core package. It imports ONLY Core siblings:
+`pkg/ncs` is a Core package. It imports only Core siblings:
 
-- `pkg/executor/queue` — the queue interface and its backends
-- `pkg/logger` — typed logger used by `RegisterSinkFromConfig`
-- `pkg/plugin` — `plugin.EventSource` compile-time assertion
+- `pkg/executor/queue` — the queue interface and its backends.
+- `pkg/logger` — typed logger used by `RegisterSinkFromConfig`.
+- `pkg/plugin` — `plugin.EventSource` compile-time assertion.
 
-It does NOT import anything from `internal/`. It does NOT use any
-security-vocabulary (threat/ban/whitelist/blocklist/chainguard/chaincheck) and
-does NOT issue verdicts (`WARN`/`THREAT`/`BAN`). NCS is pure plumbing.
+It does not import any host-internal package. It contains no
+product-specific vocabulary — NCS is pure plumbing.
 
-## Rationale
+## Why a singleton
 
-Extracted from `pkg/executor` per ADR-002 (Phase 2.1.2, blocking pre-task).
-The singleton was the only piece of `pkg/executor` with no dependency on
-plugin registration, manifests, or executor lifecycle. Moving it into its own
-Core package unlocks the subsequent `pkg/executor` registry extraction to
-`arx-core` and keeps `pkg/ncs` reusable from any pipeline component.
+No DI framework, no middleware, no config wiring. Two call sites
+(pipeline and executor) that never import each other. A singleton is
+the simplest correct bridge.
 
-Reference: `docs/architecture/adr/002-telemetrycore-boundary.md`.
+## Thread safety
+
+`RWMutex` — `AttachWriter`, `AttachWriterWithQueue`, and `DetachWriter`
+take the write lock; `AttachReader` takes the read lock.
+
+## Usage example
+
+```go
+import (
+    "context"
+    "github.com/mr-addams/arx-core/pkg/ncs"
+)
+
+// Writer side (sink): register or join a named queue.
+q, err := ncs.AttachWriter("hub-main", 1000)
+if err != nil {
+    return err
+}
+defer ncs.DetachWriter("hub-main")
+
+_ = q.Push(ctx, event)
+
+// Reader side (executor): consume from the same name.
+rq, err := ncs.AttachReader("hub-main")
+if err != nil {
+    return err
+}
+for {
+    ev, err := rq.Pop(ctx)
+    if err != nil {
+        break
+    }
+    _ = ev
+}
+```

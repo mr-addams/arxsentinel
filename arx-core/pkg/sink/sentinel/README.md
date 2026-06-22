@@ -1,62 +1,69 @@
-# pkg/sink/sentinel — Sentinel-Threat Sink
+# pkg/sink/sentinel — Queue-bridge sink
 
-SentinelThreatSink bridges scored events into the Sentinel Hub executor subsystem. It pushes events to a bounded queue managed by the executor — if the queue is full, events are silently dropped (back-pressure). Used for internal event pipeline where Sentinel Hub consumes threats from the queue.
+`SentinelThreatSink` is a sink plugin that bridges scored events into
+another component via the executor queue (`pkg/ncs` / `pkg/executor/queue`).
+It pushes events to a bounded queue — if the queue is full, events are
+silently dropped (back-pressure). The plugin is consumed by a separate
+process or goroutine that reads from the same named queue.
 
-The pipeline calls `Write` for every scored event that reaches the sink stage. The consumer is the executor queue inside the Sentinel Hub; the sink does not own queue lifecycle — it registers and unregisters itself with the executor subsystem.
+The pipeline calls `Write` for every scored event that reaches the
+sink stage. The sink does not own the queue lifecycle — it registers
+and unregisters itself through `pkg/ncs`.
 
-## Plugin Identity
+## Plugin identity
 
 | Field | Value |
-|-------|-------|
-| PluginID | `"sentinel-threat"` |
-| Version | `v1.0.0` |
-| Role | `RoleSink` |
-| Input | `TypeScoredEvent` |
-| Output | `TypeNone` |
-| Tags | `["sentinel", "hub-bridge", "executor-queue"]` |
+|---|---|
+| `PluginID` | `"sentinel-threat"` |
+| `PluginVersion` | `1.0.0` |
+| `Role` | `plugin.RoleSink` |
+| `Input` | `plugin.TypeScoredEvent` |
+| `Output` | `plugin.TypeNone` |
+| `Tags` | `["sentinel", "hub-bridge", "executor-queue"]` |
 
-## Module Layout
+## Package layout
 
 ```
 pkg/sink/sentinel/
-├── manifest.go          # Manifest() method
-├── register.go          # init() registration, factory
-├── sink.go              # SentinelThreatSink struct, New, Write, Close, Stats
+├── manifest.go   # Manifest() method
+├── register.go   # init() registration and factory
+└── sink.go       # SentinelThreatSink struct, New, Write, Close, Stats
 ```
 
-## Configuration Reference
+## Configuration
 
 | Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `name` | string | yes | – | Sink name passed to executor.AttachWriter |
-| `bufferSize` | int | no | 0 (default queue size) | Bounded channel capacity for executor queue |
+|---|---|---|---|---|
+| `name` | string | yes | — | Queue name passed to `ncs.AttachWriter`. |
+| `bufferSize` | int | no | `0` (default queue size) | Bounded channel capacity for the executor queue. |
 
-Validation: `name` validated for non-empty inside `NewSentinelThreatSink`.
+Validation: `name` is checked for non-empty inside `NewSentinelThreatSink`.
 
-## Behaviour Details
+## Behaviour
 
-- **Startup:** `NewSentinelThreatSink(name, bufferSize)` calls `executor.AttachWriter(name, bufferSize)`. If `bufferSize == 0`, executor uses its internal default.
-- **Write:** Calls `q.Push(ctx, event)` on the executor queue. If `ErrQueueFull` → `dropped++` and returns `nil` (silent drop).
-- **Drop Policy:** Silent drop when queue is full — no error propagated to caller.
-- **No Metrics for EventsWritten:** `Stats()` only returns `Dropped`; `EventsWritten` is not tracked.
-- **No Output Format:** Raw `ThreatEvent` passed to queue — no serialization.
+- **Startup.** `NewSentinelThreatSink(name, bufferSize)` calls
+  `ncs.AttachWriter(name, bufferSize)`. When `bufferSize == 0`, the
+  NCS applies its internal default.
+- **Write.** Calls `q.Push(ctx, event)` on the executor queue. If
+  `queue.ErrQueueFull` is returned, the sink increments its dropped
+  counter and returns `nil` — silent drop, no error propagation.
+- **Back-pressure.** The dropped counter is incremented per dropped
+  event; nothing else changes.
+- **Close.** `Close()` calls `ncs.DetachWriter(name)` to decrement the
+  writer reference count. The queue is closed when the last sink
+  deregisters.
 
-## Close / Shutdown
-
-- `Close()` calls `executor.DetachWriter(name)` — removes sink from executor registry.
-
-## Metrics and Stats
-
-| Counter | Type | Description | Incremented When |
-|---------|------|-------------|------------------|
-| `Dropped` | atomic.Int64 | Events dropped due to full queue | On `ErrQueueFull` from `q.Push` |
-
-> Note: No `EventsWritten` counter — total pushed events are not tracked.
-
-## Constructors
+## Public API
 
 ```go
-func NewSentinelThreatSink(name string, bufferSize int) *SentinelThreatSink
+type SentinelThreatSink struct{ /* unexported fields */ }
+
+func NewSentinelThreatSink(name string, bufferSize int) (*SentinelThreatSink, error)
+func (s *SentinelThreatSink) Name() string
+func (s *SentinelThreatSink) Write(ctx context.Context, event plugin.ThreatEvent) error
+func (s *SentinelThreatSink) Close() error
+func (s *SentinelThreatSink) Stats() plugin.SinkStats
+func (s *SentinelThreatSink) Manifest() plugin.Manifest
 ```
 
 ## Registration
@@ -66,95 +73,65 @@ func init() {
     pkgsink.Register("sentinel-threat", factory)
     pkgsink.RegisterManifest("sentinel-threat", manifest)
 }
-// factory: NewSentinelThreatSink(cfg.Name, 0) — bufferSize hardcoded to 0
+// factory: NewSentinelThreatSink(cfg.Name, 0) — bufferSize is hard-coded to 0.
 ```
 
-The `init()` function registers both the factory and the manifest with the central `pkgsink` registry. The factory calls `NewSentinelThreatSink` with `bufferSize` hardcoded to `0` (executor uses its internal default queue size).
+The `init()` function registers both the factory and the manifest with
+the central sink registry (`pkg/sink`). The factory ignores `ctx` and
+constructs the sink with `bufferSize = 0`, leaving queue sizing to NCS.
 
-## Quick-Start Example
+## Inter-component routing
 
-```yaml
-sinks:
-  - plugin: sentinel-threat
-    name: hub-main
-```
+This sink is the **output half** of the Named Channel Switch bridge.
+Any `plugin.ThreatEvent` written here is consumed by whichever reader
+attaches to the same name. There is no extra configuration knob —
+routing falls out of the NCS map. Three concrete topologies:
 
-```bash
-# Events flow into the executor queue; Sentinel Hub consumes from there
-arxsentinel --config /etc/arxsentinel/config.yaml
-```
+### Component A → Component B (the canonical bridge)
 
-## Inter-Pipeline Routing
+Component A writes threat events to a named NCS queue; Component B
+reads them back through a corresponding source. The two components can
+be:
 
-This sink is the **output half** of the Named Channel Switch bridge. Any
-`plugin.ThreatEvent` written here is consumed by whichever reader attaches
-to the same name. There is no "inter-pipeline" config knob — the routing
-falls out of the NCS map. Three concrete topologies are supported.
-
-### Pipeline A → Pipeline B (the canonical bridge)
-
-Pipeline A writes ThreatEvents to a named NCS queue; Pipeline B reads them
-back through a `sentinel` source. The two pipelines can be:
-
-- Two `streams[]` blocks inside the same ArxSentinel process (the
-  in-process case, queue backend defaults to `memory`).
-- Two separate ArxSentinel processes pointing at the same `bbolt` file
+- Two `streams[]` blocks inside the same arx-core process (the
+  in-process case — queue backend defaults to `memory`).
+- Two separate arx-core processes pointing at the same `bbolt` file
   or the same `redis` key.
 
-```yaml
-# pipeline-a.yaml — writes
-outputs:
-  - plugin: sentinel-threat
-    name: inter-pipeline
-    bufferSize: 1000
-```
-
-```yaml
-# pipeline-b.yaml — reads
-inputs:
-  - type: sentinel
-    addr: ncs://inter-pipeline
-```
-
 The sink's `name:` field must equal the source's `addr:` field
-(`ncs://<name>`). The wiring validator
-(`pkg/pipeline/validator.go:ValidateExecutorWiring`) catches a mismatch
-at startup.
+(`ncs://<name>`). The wiring validator catches a mismatch at startup.
 
 ### Same-process fan-in
 
 A single pipeline can both write and read the NCS through this sink
-and its sibling `sentinel` source. Useful for routing ThreatEvents
-from one detector chain into a second, specialised chain (e.g. only
-high-score events into a stricter scorer). See
-`pkg/source/sentinel/README.md` for the full example.
+and its sibling source. Useful for routing threat events from one
+detector chain into a second, specialised chain (for example, only
+high-score events into a stricter scorer).
 
 ### Plugin-only routing chain
 
 A pipeline whose only job is to forward events from one NCS queue to
 another — a routing layer in front of multiple specialised downstream
-pipelines. The pipeline declares a `sentinel` source (reads from NCS)
-and a `sentinel-threat` sink (writes to NCS); the rest of the
-processing chain is empty.
+pipelines. The pipeline declares a source (reads from NCS) and a
+`SentinelThreatSink` (writes to NCS); the rest of the processing chain
+is empty.
 
 ### Operational notes
 
 - The sink **does not own queue lifecycle in the bbolt/redis case**
   (`AttachWriterWithQueue` is used by `RegisterSinkFromConfig`); the
-  pre-registered queue from `preRegisterExecutorQueues` outlives the
-  sink. The sink still calls `DetachWriter` on `Close()` to decrement
-  the writer refcount, but the queue itself is closed by the last
-  `DetachWriter`, not by this sink in isolation.
-- The default `bufferSize: 0` means "use the executor's default". For
-  pipeline-to-pipeline scenarios where the downstream reader is in a
+  pre-registered queue outlives the sink. The sink still calls
+  `DetachWriter` on `Close()` to decrement the writer refcount, but
+  the queue itself is closed by the last `DetachWriter`, not by this
+  sink in isolation.
+- The default `bufferSize: 0` means "use the NCS default". For
+  cross-process scenarios where the downstream reader is in a
   different process, set an explicit `bufferSize` (e.g. `1000`) to
   avoid blocking the pipeline when the reader briefly falls behind.
-- For the full NCS contract, see `pkg/executor/README.md`. For the
-  queue backend selection guide, see `pkg/executor/queue/README.md`.
 
 ## Dependencies
 
-- `pkg/executor` — AttachWriter, DetachWriter, queue.Queue
-- `pkg/executor/queue` — Queue interface, ErrQueueFull
-- `pkg/plugin` — Manifest, ThreatEvent, SinkStats
-- `pkg/sink` — pkgsink register helpers
+- `pkg/executor/queue` — `Queue` interface, `ErrQueueFull`.
+- `pkg/ncs` — `AttachWriter`, `DetachWriter`.
+- `pkg/plugin` — `Manifest`, `ThreatEvent`, `SinkStats`.
+- `pkg/sink` — sink registry helpers.

@@ -3,8 +3,8 @@
 `plugin.ThreatEvent` values cross pipeline and executor boundaries through
 a **`queue.Queue`** — a small interface with four methods (`Push`, `Pop`,
 `Len`, `Close`). The queue itself is a storage primitive; it is *not* the
-Named Channel Switch. The NCS (`pkg/executor/channelswitch.go`) holds
-queues by name; the queue is the storage that backs a given NCS channel.
+Named Channel Switch. The NCS (`pkg/runtime/`) holds queues by name; the
+queue is the storage that backs a given NCS channel.
 
 Three implementations live in this package. All three implement the same
 `Queue` interface, so the NCS — and any plugin that calls `Pop` or
@@ -16,7 +16,7 @@ change.
 |---------|---------|---------------|-------------|
 | [`memory`](#memory-queue) | in-process channel | single process | dev, tests, low-latency in-process fan-in |
 | [`bbolt`](#bbolt-queue) | file on disk | single writer, multiple readers (same file) | prod bare-metal / Docker; persistence without an external service |
-| [`redis`](#redis-queue) | Redis list | distributed, multi-replica | K8s / multi-replica deployments that need a shared queue |
+| [`redis`](#redis-queue) | Redis list | distributed, multi-replica | k8s / multi-replica deployments that need a shared queue |
 
 The full selection criteria — when to pick which backend — are in
 [**Queue Backend Selection Guide**](#queue-backend-selection-guide)
@@ -44,6 +44,9 @@ Two sentinel errors are returned by every backend:
 - `ErrQueueClosed` — `Push` or `Pop` was called after `Close`. Callers
   should treat this as a signal to terminate their loop.
 
+`BboltQueue` additionally defines `ErrQueueCorrupted` for malformed
+bucket state (seq/read counters or stored events).
+
 All three backends are safe for concurrent `Push` and `Pop` calls.
 
 ---
@@ -65,8 +68,8 @@ restart.
 ### When it shines
 
 - Unit and integration tests (no file system, no external service).
-- Single-process pipelines with a `sentinel` source and a
-  `sentinel-threat` sink inside the same `arxsentinel` instance.
+- Single-process pipelines with a source and a sink inside the same
+  `arx-core` instance.
 - The default when `queue:` is absent from `ExecutorSourceRef` —
   zero-config, zero-dependency.
 
@@ -77,29 +80,25 @@ restart.
   with any uptime requirement, choose `bbolt` or `redis`.
 - **Back-pressure is strict.** `Push` returns `ErrQueueFull`
   immediately if the buffer is full and the context has not been
-  cancelled. The `pkg/sink/sentinel/` sink treats this as a silent
-  drop and increments its `Dropped` counter. The buffer is fixed
-  at the package's `DefaultBufferSize` (1000) and is not exposed
-  via `QueueConfig` — see the package source for the constant.
+  cancelled. The buffer is fixed at the package's `DefaultBufferSize`
+  (1000) and is not exposed via `QueueConfig`.
 
 ---
 
 ## Bbolt Queue
 
 `NewBboltQueue(path, bucket string, log logger.Logger) (*BboltQueue, error)` —
-events persisted in a single bbolt file. Survives process restarts; one file
-per executor (or per NCS channel name).
+events persisted in a single bbolt file. Survives process restarts; one
+file per executor (or per NCS channel name).
 
-`log` is the operational logger used for the `QUEUE` tag (one call site in
-`Pop` — the "event lost during shutdown" warning). If `nil` is passed, the
-constructor replaces it with `pkg/logger.Nop` — the queue never crashes on a
-log call. The queue package is not registry-registered; callers
-(`pkg/executor/channelswitch.go` for production, tests for unit) instantiate
-it directly. The real bridge from `internal/sys/utils.Log` is wired in
-`cmd/arxsentinel` in Flow 072 Task 1.2.7; until then production callers pass
-`logger.Nop` and `QUEUE`-tag warnings are silent in production output.
+`log` is the operational logger used for the `QUEUE` tag (one call site
+in `Pop` — the "event lost during shutdown" warning). If `nil` is
+passed, the constructor replaces it with `pkg/logger.Nop` — the queue
+never crashes on a log call. The queue package is not
+registry-registered; callers (the NCS for production, tests for unit)
+instantiate it directly.
 
-- **Capacity:** unbounded on disk. Memory is the constraint — Len()
+- **Capacity:** unbounded on disk. Memory is the constraint — `Len()`
   is `seq - read`, where both are uint64 counters stored in the
   bucket.
 - **Persistence:** full. Every `Push` is fsync'd (via bbolt's default
@@ -110,7 +109,7 @@ it directly. The real bridge from `internal/sys/utils.Log` is wired in
   For multi-process read access, run a single writer and either share
   the file via `redis` or split the writer/reader across different
   buckets.
-- **Cross-process:** **only via a single writer.** Two `arxsentinel`
+- **Cross-process:** **only via a single writer.** Two `arx-core`
   processes pointing at the same `.db` file conflict on the bbolt
   lock. For two-process collaboration, use `redis`.
 
@@ -153,7 +152,7 @@ shared across replicas.
   `maxmemory-policy noeviction`, the server rejects writes when
   full — `Push` returns the error.
 - **Multi-reader / multi-writer:** **yes.** Any number of
-  `arxsentinel` instances can `Push` and `Pop` the same key, and
+  `arx-core` instances can `Push` and `Pop` the same key, and
   Redis hands each event to exactly one consumer (Redis lists are
   not pub/sub).
 - **Cross-process:** **yes.** This is the only backend that supports
@@ -161,18 +160,18 @@ shared across replicas.
 
 ### When it shines
 
-- **Kubernetes / multi-replica.** Several `arxsentinel` pods share
+- **Kubernetes / multi-replica.** Several `arx-core` pods share
   the same queue. A failure or rolling restart of one pod does not
   stall event delivery — the other pods keep consuming.
-- **Operational tooling already runs Redis.** Adding arxsentinel to
+- **Operational tooling already runs Redis.** Adding arx-core to
   an existing Redis-backed stack is one less moving part.
-- **Long-distance pipelines.** Two `arxsentinel` processes in
+- **Long-distance pipelines.** Two `arx-core` processes in
   different data centres, sharing a queue over a private link.
 
 ### When it bites
 
 - **External dependency.** Redis must be reachable from every
-  arxsentinel instance, and it must be sized for the event
+  arx-core instance, and it must be sized for the event
   throughput. A Redis outage halts the pipeline.
 - **Network latency floor.** Every `Push` and `Pop` is a network
   round-trip. For a single-process pipeline on a single host, this
@@ -207,7 +206,6 @@ type QueueConfig struct {
 # the package's default (DefaultBufferSize = 1000).
 executors:
   - name: cf-block
-    type: cloudflare
     sources:
       - name: cf-stream
         queue:
@@ -215,30 +213,28 @@ executors:
 
   # Bbolt — persistent single-host queue.
   - name: cf-block
-    type: cloudflare
     sources:
       - name: cf-stream
         queue:
           type: bbolt
-          path: /var/lib/arxsentinel/cf-stream.db
+          path: /var/lib/arx-core/cf-stream.db
           bucket: q
 
   # Redis — distributed, multi-replica.
   - name: cf-block
-    type: cloudflare
     sources:
       - name: cf-stream
         queue:
           type: redis
           url: redis://redis.svc:6379
-          key: arxsentinel:queue:cf-stream
+          key: arx-core:queue:cf-stream
 ```
 
-The configuration is consumed by `RegisterSinkFromConfig` in
-`pkg/executor/channelswitch.go`, which constructs the right backend
-and registers it in the NCS under the channel name. After
-registration, every `AttachReader(name)` call returns the same queue
-instance — backend is invisible to the executor.
+The configuration is consumed by the NCS in `pkg/runtime/`, which
+constructs the right backend from `QueueConfig.Type` and registers it
+under the channel name. After registration, every consumer attached
+to that name receives the same queue instance — the backend is
+invisible to the executor.
 
 ---
 
@@ -257,7 +253,7 @@ that does not need cross-process delivery or persistence.
 
 **Use `memory` for:**
 
-- Local development (`arxsentinel --config ./dev.yaml`).
+- Local development (`arx-core --config ./dev.yaml`).
 - Unit and integration tests.
 - Single-process production where losing the in-flight buffer on
   restart is acceptable (a few minutes of events, replayed from
@@ -274,7 +270,7 @@ that does not need cross-process delivery or persistence.
 ### Rule 2 — Use `bbolt` for prod single-instance
 
 `bbolt` is the right answer for **any** production deployment that
-runs a single `arxsentinel` instance (bare-metal, systemd,
+runs a single `arx-core` instance (bare-metal, systemd,
 single-replica Docker) and needs events to survive a restart.
 
 **Use `bbolt` for:**
@@ -286,11 +282,11 @@ single-replica Docker) and needs events to survive a restart.
 
 **Skip `bbolt` when:**
 
-- More than one `arxsentinel` process needs to read or write the
+- More than one `arx-core` process needs to read or write the
   same queue — bbolt's file lock forbids this.
 - The queue must be reachable from a different host.
 
-### Rule 3 — Use `redis` for K8s and multi-replica
+### Rule 3 — Use `redis` for k8s and multi-replica
 
 `redis` is the only backend that supports multiple writers and
 multiple readers across processes. It is the right answer for
@@ -299,7 +295,7 @@ horizontal scale.
 **Use `redis` for:**
 
 - Kubernetes deployments with more than one pod.
-- Any topology that runs multiple `arxsentinel` instances and
+- Any topology that runs multiple `arx-core` instances and
   needs them to share a queue.
 - Long-distance pipelines (different hosts, different data
   centres).
@@ -320,7 +316,7 @@ horizontal scale.
 | Local dev / tests | `memory` |
 | Single-replica prod, no crash recovery | `memory` |
 | Single-replica prod, must survive restart | `bbolt` |
-| Multi-replica prod, K8s, shared state | `redis` |
+| Multi-replica prod, k8s, shared state | `redis` |
 | Cross-host / cross-DC pipelines | `redis` |
 | Air-gapped prod, no external services | `bbolt` |
 
@@ -328,28 +324,26 @@ horizontal scale.
 
 Different executor sources in the same pipeline can use different
 backends — the choice is per `ExecutorSourceRef`, not per
-arxsentinel instance. A typical mixed deployment looks like:
+arx-core instance. A typical mixed deployment looks like:
 
 ```yaml
 executors:
-  # Cloudflare lives on the same host as the pipeline → bbolt.
-  - name: cf-block
-    type: cloudflare
+  # Source-A lives on the same host as the pipeline → bbolt.
+  - name: source-a-block
     sources:
-      - name: cf-stream
+      - name: source-a-stream
         queue:
           type: bbolt
-          path: /var/lib/arxsentinel/cf.db
+          path: /var/lib/arx-core/a.db
 
-  # MikroTik lives in another region → redis.
-  - name: mk-block
-    type: mikrotik
+  # Source-B lives in another region → redis.
+  - name: source-b-block
     sources:
-      - name: mk-stream
+      - name: source-b-stream
         queue:
           type: redis
           url: redis://redis.eu-west:6379
-          key: arxsentinel:queue:mk-stream
+          key: arx-core:queue:source-b-stream
 ```
 
 This is by design. The NCS does not care which backend a given
@@ -362,28 +356,26 @@ natural deployment location.
 ## Operational notes
 
 - **Backpressure.** All three backends surface `ErrQueueFull` from
-  `Push`. Sinks that care (currently `pkg/sink/sentinel/`) drop or
-  block per their own policy. If you see a growing `Dropped`
-  counter, increase buffer size (memory), provision more disk
-  (bbolt), or scale Redis (redis).
+  `Push`. Sinks that care drop or block per their own policy. If
+  you see a growing `Dropped` counter, increase buffer size
+  (memory), provision more disk (bbolt), or scale Redis (redis).
 - **Graceful shutdown.** `Close` is idempotent on every backend.
   The pipeline's shutdown sequence cancels the application context
   first, waits for `Pop` callers to return, and only then calls
-  `DetachWriter` — which in turn calls `Close`. Reversing this
-  order risks dropping in-flight events.
+  `Close`. Reversing this order risks dropping in-flight events.
 - **Inspecting a bbolt file.** The bbolt CLI (`go install
   go.etcd.io/bbolt/cmd/bbolt@latest`) can dump a queue's contents
   for debugging:
 
   ```bash
-  bbolt page /var/lib/arxsentinel/cf.db
-  bbolt get /var/lib/arxsentinel/cf.db q <key> --format hex
+  bbolt page /var/lib/arx-core/a.db
+  bbolt get /var/lib/arx-core/a.db q <key> --format hex
   ```
 
-  The `bbolt` bucket is JSON-serialised `plugin.ThreatEvent`s
+  The bucket is JSON-serialised `plugin.ThreatEvent`s
   keyed by an internal `uint64` sequence. Iterating the page
   shows the full backlog.
-- **Redis observability.** `LLEN arxsentinel:queue:<name>` reports
+- **Redis observability.** `LLEN arx-core:queue:<name>` reports
   the current depth; `LRANGE … 0 9` peeks at the ten oldest
   events. Standard Redis monitoring applies.
 
@@ -391,13 +383,11 @@ natural deployment location.
 
 ## See also
 
-- `pkg/executor/README.md` — the NCS itself, including the
-  writer-first / reader-second startup contract.
-- `pkg/executor/channelswitch.go` — `RegisterSinkFromConfig`, the
-  function that turns a `QueueConfig` into a registered queue.
-- `pkg/source/sentinel/README.md` — the source side of pipeline
-  bridging.
-- `pkg/sink/sentinel/README.md` — the sink side, with three
-  inter-pipeline routing topologies.
-- `pkg/executor/COOKBOOK.md` — full NCS cookbook: plugin-only
-  chains, fan-in, chain forwarding.
+- `pkg/runtime/` — the NCS itself, including the writer-first /
+  reader-second startup contract.
+- `pkg/executor/registry.go` — `RegisterExecutor` / `RegisterSink`,
+  the entry points plugins use to wire executors and sinks into
+  the runtime.
+- `docs/plugin-development.md` — how to build a plugin that reads
+  from a queue via `EventSource`.
+- `docs/architecture.md` — runtime lifecycle and NCS wiring.

@@ -1,95 +1,103 @@
 # pkg/sink/exec — Exec Sink
 
-ExecSink delegates threat events to an external plugin binary via subprocess. It fires NDJSON lines over stdin to a managed child process and does not wait for acknowledgement (fire-and-forget). Used when event processing must happen outside the Arxsentinel process — e.g., custom SIEM bridge, legacy pipeline, or external enrichments.
+The `exec` sink delivers every scored `plugin.ThreatEvent` to an external
+plugin binary running as a managed subprocess. The plugin communicates with
+arx-core over NDJSON on its stdin (fire-and-forget — no acknowledgement is
+read back), letting the plugin perform any side effect that must happen
+outside the arx-core process: a custom SIEM bridge, a legacy forwarding
+pipeline, or an in-house enrichment service. The factory validates the
+binary path at startup, spawns the process synchronously, and hands the
+lifecycle to the registered `plugin.Sink` implementation; the subprocess
+is owned for the sink's entire lifetime and shut down on `Close`.
 
-The pipeline calls `Write` for every scored event that reaches the sink stage. The consumer is the external plugin binary spawned at startup; the sink owns the subprocess for its lifetime and shuts it down on `Close`.
+This package is a thin registration layer. The actual implementation
+(`ExecSink`, `ManagedProcess`, NDJSON protocol) lives in
+`pkg/execplugin/sink.go`; `init()` here wires it into the sink registry
+under the name `exec`.
 
-## Plugin Identity
+## Plugin identity
 
-| Field | Value |
-|-------|-------|
-| PluginID | `"exec"` |
-| Version | `v1.0.0` |
-| Role | `RoleSink` |
-| Input | `TypeScoredEvent` |
-| Output | `TypeNone` |
-| Tags | `["exec", "external", "plugin"]` |
+| Field          | Value                  |
+|----------------|------------------------|
+| PluginID       | `exec`                 |
+| PluginVersion  | `1.0.0`                |
+| Role           | `plugin.RoleSink`      |
+| InputType      | `plugin.TypeScoredEvent` |
+| OutputType     | `plugin.TypeNone`      |
+| Tags           | `["exec", "external", "plugin"]` |
 
-## Module Layout
+## Configuration
 
-```
-pkg/sink/exec/
-├── register.go          # init() registration, factory
-```
+`exec` is selected by setting the sink's `Type` field to `"exec"` in the
+pipeline config. The factory reads one field on `sink.SinkConfig`:
 
-> Implementation lives in `pkg/execplugin/sink.go`, not in this package.
+| Field | Type   | Required | Description                                   |
+|-------|--------|----------|-----------------------------------------------|
+| `Exec` | string | yes      | Filesystem path to the plugin binary. Empty values are rejected at construction. |
 
-## Configuration Reference
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `exec` | string | yes | – | Path to the external plugin binary |
-| `name` | string | – (auto) | `"exec:<path>"` | Sink name derived from binary path |
-
-Validation: `cfg.Exec != ""` — factory rejects empty exec path.
-
-## Behaviour Details
-
-- **Startup:** `NewSink(execPath)` spawns the plugin binary synchronously via `ManagedProcess`. If spawn fails, constructor returns error.
-- **Write:** Fire-and-forget — serializes event as NDJSON `WriteRequest{V: ProtoVersion, Action: "write", Event: threatEventToJSON(event)}` and sends via `proc.Send()`. Mutex-locked through `s.proc.Lock()`.
-- **Drop Policy:** No explicit dropped counter; `Dropped` is hardcoded to 0 in `Stats()`.
-- **Fire-and-forget rationale (no ACK):** `Write()` does not call `Recv()` after `Send()` — there is no `WriteAck` wait. In `protocol.go:236-237`: *"Absence of ack is not an error — the caller should assume OK if no response is sent."* `WriteAck` is optional (`protocol.go type WriteAck struct`). The sink is intentionally simplified: it does not require a response from the plugin, allowing the plugin to process asynchronously.
-- **Behaviour on subprocess crash:** `ManagedProcess.Send()` (`process.go:119`) writes to the `stdin` pipe: `p.stdin.Write(append(line, '\n'))`. If the subprocess has crashed (pipe closed) → `Send()` returns the error `"failed to write to plugin stdin: %w"`. `sink.go Write()` receives the error, increments the `errors` counter, and returns the `error` upstream. **No reconnect is performed** — ExecSink holds a single `ManagedProcess` for its entire lifetime (created in `NewSink`). The only way to recreate it: `Close()` + a fresh `NewSink()` from outside. Comment in `sink.go:26`: *"ExecSink holds a persistent ManagedProcess — recreated only on Close+reopen."*
-- **ProtoVersion:** `const ProtoVersion = "1"` (`protocol.go:29`). A string constant used in `WriteRequest.V` for protocol compatibility. Future protocol versions may change this value for backwards-compatibility checks.
-- **Error Handling:** Errors during write increment `errors` atomic counter.
-- **Protocol:** `WriteRequest` with `ProtoVersion`, action `"write"`, and JSON-serialized event.
-
-## Close / Shutdown
-
-- `Close()` shuts down the subprocess (delegated to `ManagedProcess`).
-- No `Reload()` — not needed for external binary.
-
-## Metrics and Stats
-
-| Counter | Type | Description | Incremented When |
-|---------|------|-------------|------------------|
-| `EventsWritten` | atomic.Int64 | Events sent to subprocess | After each `Write` call |
-| `Dropped` | atomic.Int64 | Hardcoded to 0 | Never incremented |
-| `Errors` | atomic.Int64 | Write failures | On write error |
-
-## Constructors
-
-```go
-func NewSink(execPath string) (*ExecSink, error)
-```
+The sink's `Name()` is auto-derived as `"exec:<execPath>"`; no user-facing
+`name` field is consumed.
 
 ## Registration
 
 ```go
 func init() {
-    pkgsink.Register("exec", factory)
-    pkgsink.RegisterManifest("exec", manifest)
+    pkgsink.Register("exec", func(ctx context.Context, cfg pkgsink.SinkConfig) (plugin.Sink, error) {
+        if cfg.Exec == "" {
+            return nil, fmt.Errorf("sink type=exec requires exec field (path to plugin binary)")
+        }
+        return execplugin.NewSink(ctx, cfg.Exec)
+    })
+    pkgsink.RegisterManifest("exec", (&execplugin.ExecSink{}).Manifest())
 }
-// factory: checks cfg.Exec != "", calls execplugin.NewSink(cfg.Exec)
 ```
 
-The `init()` function registers both the factory and the manifest with the central `pkgsink` registry. The factory enforces non-empty `cfg.Exec` and delegates construction to `execplugin.NewSink`.
+The `ctx` is propagated into `NewManagedProcess` so the subprocess spawn
+honours shutdown signals from the start (otherwise a hanging plugin binary
+would block the pipeline on startup until a process-kill timeout fires).
 
-## Quick-Start Example
+## Behaviour
+
+- **Startup.** `NewSink(ctx, execPath)` opens a `ManagedProcess` against
+  the binary at `execPath`. Failure to spawn returns an error and the
+  pipeline aborts the sink.
+- **Write.** Each event is serialised as a NDJSON `WriteRequest` with
+  `protoversion = "1"` and `action = "write"`, then handed to
+  `ManagedProcess.Send`. The write is fire-and-forget — there is no
+  `WriteAck` wait. Concurrent `Write` calls are serialised through the
+  process lock.
+- **Drop policy.** None — `Stats().Dropped` is hardcoded to `0`. Write
+  errors increment the `Errors` counter and are returned to the caller.
+- **Crash recovery.** If the subprocess dies (stdin pipe closes),
+  `Write` returns `"failed to send WriteRequest: <err>"` and `Errors`
+  is incremented. The sink does **not** reconnect. Recovery requires
+  `Close` followed by a fresh sink construction.
+- **Close.** Delegates to `ManagedProcess.Close`, terminating the
+  subprocess gracefully. `Close` is not re-entrant safe in the sense
+  that the same sink cannot be reopened — build a new sink instead.
+
+## Counters
+
+| Counter         | Source              | Notes                                  |
+|-----------------|---------------------|----------------------------------------|
+| `EventsWritten` | `atomic.Int64`      | Incremented after each successful send |
+| `Dropped`       | hardcoded `0`       | No buffering layer in Phase 1          |
+| `Errors`        | `atomic.Int64`      | Marshalling or send failures           |
+
+## Example
 
 ```yaml
 sinks:
-  - plugin: exec
-    exec: /usr/local/bin/arxsentinel-siem-bridge
+  - type: exec
+    exec: /usr/local/bin/example-siem-bridge
 ```
 
-```bash
-# Run the daemon; the exec sink will spawn the plugin binary at startup
-arxsentinel --config /etc/arxsentinel/config.yaml
-```
+The factory spawns `/usr/local/bin/example-siem-bridge` on startup and
+writes one NDJSON line per scored event to its stdin. The sink stays
+attached to the same process for its entire lifetime.
 
 ## Dependencies
 
-- `pkg/execplugin` — ExecSink implementation, ManagedProcess
-- `pkg/plugin` — Manifest, ThreatEvent, SinkStats
-- `pkg/sink` — pkgsink register helpers
+- `pkg/execplugin` — `ExecSink`, `ManagedProcess`, NDJSON protocol types.
+- `pkg/plugin` — `Sink`, `SinkStats`, `ThreatEvent`, `Manifest`.
+- `pkg/sink` — `Register`, `RegisterManifest`, `SinkConfig`.
