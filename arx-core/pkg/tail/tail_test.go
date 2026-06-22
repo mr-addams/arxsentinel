@@ -1,13 +1,18 @@
-package utils
+package tail
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+// noopLogFnForTest is the no-op logger callback passed to NewTailReader in
+// every test below. The tests do not assert on log output — the legacy
+// ConsoleWriter redirect was pure noise suppression, now replaced by an
+// injected no-op at the right architectural seam (logFn parameter).
+func noopLogFnForTest(tag, msg, level string) {}
 
 // ========================== Test NewTailReader ==========================================
 
@@ -18,7 +23,7 @@ func TestNewTailReaderCreatesInstance(t *testing.T) {
 	lines := make(chan string, 10)
 	retryInterval := 100 * time.Millisecond
 
-	reader := NewTailReader(filePath, lines, retryInterval)
+	reader := NewTailReader(filePath, lines, retryInterval, noopLogFnForTest)
 
 	if reader == nil {
 		t.Errorf("NewTailReader returned nil")
@@ -49,13 +54,8 @@ func TestRunReadsExistingFile(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	// Redirect logging to discard output
-	oldConsole := ConsoleWriter
-	ConsoleWriter = io.Discard
-	defer func() { ConsoleWriter = oldConsole }()
-
 	lines := make(chan string, 10)
-	reader := NewTailReader(filePath, lines, 50*time.Millisecond)
+	reader := NewTailReader(filePath, lines, 50*time.Millisecond, noopLogFnForTest)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -104,13 +104,8 @@ func TestRunClosesChannelOnContextDone(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	// Redirect logging
-	oldConsole := ConsoleWriter
-	ConsoleWriter = io.Discard
-	defer func() { ConsoleWriter = oldConsole }()
-
 	lines := make(chan string, 10)
-	reader := NewTailReader(filePath, lines, 100*time.Millisecond)
+	reader := NewTailReader(filePath, lines, 100*time.Millisecond, noopLogFnForTest)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -139,13 +134,8 @@ func TestRunWaitsForFileThatDoesNotExistYet(t *testing.T) {
 
 	// File does not exist yet
 
-	// Redirect logging
-	oldConsole := ConsoleWriter
-	ConsoleWriter = io.Discard
-	defer func() { ConsoleWriter = oldConsole }()
-
 	lines := make(chan string, 10)
-	reader := NewTailReader(filePath, lines, 50*time.Millisecond)
+	reader := NewTailReader(filePath, lines, 50*time.Millisecond, noopLogFnForTest)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
@@ -186,13 +176,8 @@ func TestRunHandlesEmptyFile(t *testing.T) {
 		t.Fatalf("failed to create empty file: %v", err)
 	}
 
-	// Redirect logging
-	oldConsole := ConsoleWriter
-	ConsoleWriter = io.Discard
-	defer func() { ConsoleWriter = oldConsole }()
-
 	lines := make(chan string, 10)
-	reader := NewTailReader(filePath, lines, 100*time.Millisecond)
+	reader := NewTailReader(filePath, lines, 100*time.Millisecond, noopLogFnForTest)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -221,7 +206,7 @@ func TestIsTargetFileComparison(t *testing.T) {
 	filePath := filepath.Join(tmpDir, "test.log")
 
 	lines := make(chan string, 10)
-	reader := NewTailReader(filePath, lines, 100*time.Millisecond)
+	reader := NewTailReader(filePath, lines, 100*time.Millisecond, noopLogFnForTest)
 
 	// Create a fake fsnotify.Event-like structure
 	// (we can't import fsnotify.Event here without external deps, so we test indirectly via Run)
@@ -234,11 +219,6 @@ func TestIsTargetFileComparison(t *testing.T) {
 			t.Fatalf("failed to create file: %v", err)
 		}
 	}
-
-	// Redirect logging
-	oldConsole := ConsoleWriter
-	ConsoleWriter = io.Discard
-	defer func() { ConsoleWriter = oldConsole }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -286,7 +266,7 @@ func TestHandleTruncationDetectsCopytruncate(t *testing.T) {
 	}
 
 	// Now call handleTruncation — should detect that position > size
-	reader := NewTailReader(filePath, make(chan string), 100*time.Millisecond)
+	reader := NewTailReader(filePath, make(chan string), 100*time.Millisecond, noopLogFnForTest)
 
 	// We cannot call handleTruncation directly (it's a method on TailReader)
 	// but we can verify the logic by checking file state indirectly through Run
@@ -305,19 +285,14 @@ func TestMultilineReading(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "multiline.log")
 
-	// Create file with multiple lines
+// Create file with multiple lines
 	content := "line 1\nline 2\nline 3\n"
 	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to create file: %v", err)
+		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	// Redirect logging
-	oldConsole := ConsoleWriter
-	ConsoleWriter = io.Discard
-	defer func() { ConsoleWriter = oldConsole }()
-
 	lines := make(chan string, 10)
-	reader := NewTailReader(filePath, lines, 50*time.Millisecond)
+	reader := NewTailReader(filePath, lines, 50*time.Millisecond, noopLogFnForTest)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()

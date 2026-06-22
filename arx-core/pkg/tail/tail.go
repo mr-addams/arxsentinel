@@ -1,4 +1,4 @@
-// ========================== Module utils/tail ==========================================
+// ========================== Module arx-core/pkg/tail ==========================================
 //   Tail-reader for reading access.log in tail -f mode with logrotate support.
 //   Uses fsnotify (inotify) to detect file rotation.
 //
@@ -16,9 +16,14 @@
 //     WRITE      → [copytruncate?] → readAvailableLines
 //     RENAME/RM  → drain tail → close → f = nil
 //     CREATE     → open new file → read from start
-//     ctx.Done() → close fd → return
+//   ctx.Done() → close fd → return
 
-package utils
+// Package tail implements a tail-following reader with logrotate support.
+//
+// Decoupled from a concrete logger: the consumer injects a logFn callback
+// (same pattern as arx-core/pkg/source/file.FileSource). nil is replaced
+// with an internal no-op so call-sites can pass nil safely.
+package tail
 
 import (
 	"bufio"
@@ -32,6 +37,11 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 )
+
+// noopLogFn is the default no-op sink for NewTailReader when logFn is nil.
+// Kept package-private; callers should pass their own callback when they
+// want observability.
+func noopLogFn(tag, msg, level string) {}
 
 // maxLineSize — maximum accepted line length in bytes.
 // ReadString accumulates chunks until '\n' — an anomalously long URL in the nginx log
@@ -62,19 +72,26 @@ type TailReader struct {
 	filePath      string        // YAML: inputs[i].path — path to the log file. Consumer: Run
 	lines         chan string   // YAML: — buffered channel for read lines. Consumer: pipeline.runSource
 	retryInterval time.Duration // YAML: general.tail_retry_interval, default 1s — retry interval when file is unavailable. Consumer: waitForFile
+	logFn         func(tag, msg, level string)
 }
 
 // NewTailReader creates a TailReader.
 // lines — buffered channel for read lines (size: cfg.General.LinesBufSize).
 // retryInterval — wait interval when file is unavailable (cfg.General.TailRetryInterval).
+// logFn — injected logger callback; nil is replaced with a no-op.
 // TailReader closes the channel when Run completes — main can wait for !ok during drain.
 // Called from: pipeline.runSource.
 // Start with: go t.Run(ctx). Blocking.
-func NewTailReader(filePath string, lines chan string, retryInterval time.Duration) *TailReader {
+func NewTailReader(filePath string, lines chan string, retryInterval time.Duration, logFn func(tag, msg, level string)) *TailReader {
+	lf := logFn
+	if lf == nil {
+		lf = noopLogFn
+	}
 	return &TailReader{
 		filePath:      filePath,
 		lines:         lines,
 		retryInterval: retryInterval,
+		logFn:         lf,
 	}
 }
 
@@ -92,7 +109,7 @@ func (t *TailReader) Run(ctx context.Context) {
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		Log("TAIL", fmt.Sprintf("failed to create watcher: %v", err), "error")
+		t.logFn("TAIL", fmt.Sprintf("failed to create watcher: %v", err), "error")
 		return
 	}
 	defer watcher.Close()
@@ -101,7 +118,7 @@ func (t *TailReader) Run(ctx context.Context) {
 	// Only the directory guarantees receiving CREATE after the old inode disappears.
 	dir := filepath.Dir(t.filePath)
 	if err := watcher.Add(dir); err != nil {
-		Log("TAIL", fmt.Sprintf("failed to watch directory %s: %v", dir, err), "error")
+		t.logFn("TAIL", fmt.Sprintf("failed to watch directory %s: %v", dir, err), "error")
 		return
 	}
 
@@ -121,17 +138,17 @@ func (t *TailReader) Run(ctx context.Context) {
 	// Watch the file itself for WRITE/RENAME/REMOVE events.
 	// Not fatal if Add fails — WRITE events will still arrive via directory watch.
 	if err := watcher.Add(t.filePath); err != nil {
-		Log("TAIL", fmt.Sprintf("failed to watch file %s: %v", t.filePath, err), "error")
+		t.logFn("TAIL", fmt.Sprintf("failed to watch file %s: %v", t.filePath, err), "error")
 	}
 
 	reader := bufio.NewReaderSize(f, maxLineSize)
 
-	Log("TAIL", fmt.Sprintf("watching started: %s", t.filePath), "info")
+	t.logFn("TAIL", fmt.Sprintf("watching started: %s", t.filePath), "info")
 
 	for {
 		select {
 		case <-ctx.Done():
-			Log("TAIL", "watching stopped", "info")
+			t.logFn("TAIL", "watching stopped", "info")
 			if f != nil {
 				f.Close()
 				f = nil
@@ -146,14 +163,14 @@ func (t *TailReader) Run(ctx context.Context) {
 				}
 				return
 			}
-			Log("TAIL", fmt.Sprintf("fsnotify: %s %s", event.Op, event.Name), "debug")
+			t.logFn("TAIL", fmt.Sprintf("fsnotify: %s %s", event.Op, event.Name), "debug")
 
 			switch {
 			case t.isTargetFile(event) && event.Has(fsnotify.Write):
 				// New data — first check for truncation (copytruncate logrotate),
 				// then read lines.
 				if f != nil && t.handleTruncation(f, reader) {
-					Log("TAIL", "copytruncate: file truncated, reading from start", "info")
+					t.logFn("TAIL", "copytruncate: file truncated, reading from start", "info")
 				}
 				if f != nil {
 					t.readAvailableLines(reader)
@@ -169,7 +186,7 @@ func (t *TailReader) Run(ctx context.Context) {
 					f = nil
 				}
 				_ = watcher.Remove(t.filePath) // inode gone — remove watch
-				Log("TAIL", "file rotated (mv), waiting for new file", "info")
+				t.logFn("TAIL", "file rotated (mv), waiting for new file", "info")
 
 			case t.isTargetFile(event) && event.Has(fsnotify.Create):
 				// New file created (after mv rotation or nginx recreation).
@@ -181,14 +198,14 @@ func (t *TailReader) Run(ctx context.Context) {
 				}
 				newF, err := os.Open(t.filePath)
 				if err != nil {
-					Log("TAIL", fmt.Sprintf("failed to open new file: %v", err), "error")
+					t.logFn("TAIL", fmt.Sprintf("failed to open new file: %v", err), "error")
 					f = nil
 					continue
 				}
 				f = newF
 				reader.Reset(f)
 				_ = watcher.Add(t.filePath)
-				Log("TAIL", "new file opened after rotation", "info")
+				t.logFn("TAIL", "new file opened after rotation", "info")
 				t.readAvailableLines(reader)
 			}
 
@@ -200,7 +217,7 @@ func (t *TailReader) Run(ctx context.Context) {
 				}
 				return
 			}
-			Log("TAIL", fmt.Sprintf("watcher error: %v", err), "error")
+			t.logFn("TAIL", fmt.Sprintf("watcher error: %v", err), "error")
 		}
 	}
 }
@@ -228,12 +245,12 @@ func (t *TailReader) waitForFile(ctx context.Context) *os.File {
 			if err == nil {
 				if _, seekErr := f.Seek(0, io.SeekEnd); seekErr != nil {
 					f.Close()
-					Log("TAIL", fmt.Sprintf("seek(EOF) error in %s: %v", t.filePath, seekErr), "error")
+					t.logFn("TAIL", fmt.Sprintf("seek(EOF) error in %s: %v", t.filePath, seekErr), "error")
 				} else {
 					return f
 				}
 			} else {
-				Log("TAIL", fmt.Sprintf("file unavailable (%v), retrying in %v", err, t.retryInterval), "warning")
+				t.logFn("TAIL", fmt.Sprintf("file unavailable (%v), retrying in %v", err, t.retryInterval), "warning")
 			}
 			timer.Reset(t.retryInterval)
 		}
@@ -301,7 +318,7 @@ func (t *TailReader) readAvailableLines(reader *bufio.Reader) {
 			// Drop anomalously long lines before trimming — an oversized URL
 			// in the log is either corruption or an overflow attack; skip it.
 			if len(line) > maxLineSize {
-				Log("TAIL", fmt.Sprintf("line too long (%d bytes), dropped", len(line)), "warning")
+				t.logFn("TAIL", fmt.Sprintf("line too long (%d bytes), dropped", len(line)), "warning")
 				if err != nil {
 					return
 				}
@@ -313,7 +330,7 @@ func (t *TailReader) readAvailableLines(reader *bufio.Reader) {
 				case t.lines <- line:
 				default:
 					// Downstream (parser/processor) is too slow — line dropped
-					Log("TAIL", "channel full, line dropped", "warning")
+					t.logFn("TAIL", "channel full, line dropped", "warning")
 				}
 			}
 		}

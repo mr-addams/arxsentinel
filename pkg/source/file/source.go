@@ -9,11 +9,11 @@
 //
 //   WHAT IS NOT HERE:
 //     manifest.go — PluginID, Role, DataType declarations
-//     internal/sys/utils/tail.go — platform-specific file tailing (inotify/FSEvents)
+//     arx-core/pkg/tail — platform-specific file tailing (inotify/FSEvents)
 //
-//   NOTE: pkg/source/file still imports internal/sys/utils for utils.NewTailReader
-//   (Run(), line below). Removing this import is deferred to Phase 1.3 (Tail
-//   Abstraction) — see Flow 072 DECISIONS.md Scope.
+//   NOTE: pkg/source/file uses arx-core/pkg/tail (Tier 2 Core package).
+//   The tail reader is decoupled via injected logFn, same pattern as
+//   FileSource — no internal/ coupling remains on the read-path.
 
 package file
 
@@ -24,12 +24,8 @@ import (
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/parser"
-	// TODO(Phase 1.3 — Tail Abstraction): pkg/source/file still imports
-	// internal/sys/utils for utils.NewTailReader (see Run()). Dropping this
-	// import is the subject of a separate flow (Phase 1.3). Flow 072 only
-	// removes the utils.Log fallback; it does not touch this import.
-	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/tail"
 	pkgsource "github.com/mr-addams/arxsentinel/pkg/source"
 )
 
@@ -108,8 +104,10 @@ func (s *FileSource) Stats() plugin.SourceStats {
 // Blocking — runs until ctx is cancelled.
 func (s *FileSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
 	lines := make(chan string, defaultLinesBufSize)
-	tail := utils.NewTailReader(s.path, lines, s.retryInterval)
-	go tail.Run(ctx)
+	// Local variable renamed from `tail` to `reader` to avoid a name clash
+	// with the `tail` package imported above.
+	reader := tail.NewTailReader(s.path, lines, s.retryInterval, s.logFn)
+	go reader.Run(ctx)
 
 	for line := range lines {
 		s.linesRead.Add(1)
