@@ -1,30 +1,37 @@
 #!/usr/bin/env bash
 # ========================== check-build-profiles.sh ====================================
 #
-#   Build profile consistency verifier (Flow 075, Phase 1.5).
+#   Build profile consistency verifier (Flow 075, Phase 1.5; extended for
+#   detectors in Flow 076, Task 6.1).
 #   Three static invariants over profiles/*.yaml, cmd/arxsentinel/plugins_*.go,
-#   pkg/{source,sink,executor,processor}/, and cookbook/profiles/*.yaml:
+#   pkg/{source,sink,executor,processor,detector}/, and cookbook/profiles/*.yaml:
 #
 #     (a) Declaration ↔ generated drift
 #         For each profiles/<name>.yaml, plugin names (sources/sinks/executors/
-#         processors; detectors are ignored — Decision 12) are matched against
-#         blank-imports in cmd/arxsentinel/plugins_<name>.go (for `full` —
-#         plugins_full.go, hand-maintained). Extra/missing → fail.
+#         processors/detectors) are matched against blank-imports in
+#         cmd/arxsentinel/plugins_<name>.go (for `full` — plugins_full.go,
+#         hand-maintained). Extra/missing → fail.
+#
+#   Маппинг profile-name → blank-import path: 1:1, с единственным исключением
+#   `ua` → `pkg/detector/useragent` (hardcoded в verifier; регистровое имя остаётся
+#   "ua").
 #
 #     (b) Plugin name → Register existence
-#         Each declared source/sink/executor name must have a matching
-#         `Register("<name>"` call in pkg/<kind>/<name>/*.go (non-test).
-#         Processors are checked only for package existence (registry package;
-#         Decision 15) — no Register call required.
+#         Each declared source/sink/executor/detector name must have a matching
+#         `Register("<name>"` call in pkg/<kind>/<name-or-exception>/*.go
+#         (non-test). Processors are checked only for package existence
+#         (registry package; Decision 15) — no Register call required.
 #
 #     (c) Reference config ↔ profile membership
 #         For each cookbook/profiles/<name>.yaml, every `type:` field in
 #         streams/inputs/outputs/executors must correspond to a plugin declared
 #         in profiles/<name>.yaml. Detects cookbook drift after a profile change.
+#         Detectors are not individually declared as `type:` in cookbook configs,
+#         so they participate in the declared set but are not expected to appear
+#         as stream/executor types.
 #
-#   Detectors (Decision 12), cloudflare executor (Decision 13), and
-#   pkg/sink/file (named-import in pipeline.go) are intentionally outside the
-#   verified set. Module field is ignored by the verifier (Decision 16).
+# The single path exception for detectors is also hardcoded because the package
+# directory is 'useragent' while the profile/registry name remains 'ua'.
 #
 #   Run manually:  bash scripts/check-build-profiles.sh
 #   Pre-commit:    called by scripts/hooks/pre-commit when profile/plugin files
@@ -73,14 +80,18 @@ done
 #
 # pkg_suffix_for <kind> <name>
 #   Resolves the package-directory suffix for a plugin (kind, name) pair.
-#   Override case: Register name "sentinel-threat" lives in pkg/sink/sentinel
-#   (Decision 15 / Decision 16, Flow 075) — the Register name stays verbatim in
-#   profile YAML, only the derived package path is redirected. The Register-name
-#   lookup done elsewhere in this script continues to use the literal name.
+#   Override cases:
+#     - Register name "sentinel-threat" lives in pkg/sink/sentinel
+#       (Decision 15 / Decision 16, Flow 075).
+#     - Detector "ua" lives in pkg/detector/useragent (Flow 076, Task 6.1);
+#       the Register name stays "ua" regardless of the directory name.
+#   In every exception the Register name stays verbatim in profile YAML; only the
+#   derived package/import path is redirected.
 pkg_suffix_for() {
   local kind="$1" name="$2"
   case "$kind/$name" in
     sinks/sentinel-threat) echo "sentinel" ;;
+    detectors/ua)          echo "useragent" ;;
     *) echo "$name" ;;
   esac
 }
@@ -102,6 +113,7 @@ expected_import_path() {
         echo "github.com/mr-addams/arxsentinel/pkg/processor/$suffix"
       fi
       ;;
+    detectors) echo "github.com/mr-addams/arxsentinel/pkg/detector/$suffix" ;;
     *) echo "" ;;
   esac
 }
@@ -122,12 +134,14 @@ pkg_relative_dir() {
         echo "pkg/processor/$suffix"
       fi
       ;;
+    detectors) echo "pkg/detector/$suffix" ;;
     *) echo "" ;;
   esac
 }
 
 # Extract declared plugin names for a given kind from a profile YAML.
-# Empty/absent kind yields no lines. Detectors intentionally NOT handled here.
+# Empty/absent kind yields no lines. Detectors handled like other plugin kinds since
+# Flow 076 (Task 6.1).
 declared_names() {
   local profile="$1" kind="$2"
   # Match `  - name: foo` lines that appear under the `<kind>:` block.
@@ -163,11 +177,11 @@ profile_name_from_path() {
 
 # ── (a) Declaration ↔ generated drift ──────────────────────────────────────────
 #
-# For each profile, build the expected set of import paths from declarations
-# (sources/sinks/executors/processors — detectors ignored) and compare against
-# the blank-import lines actually present in plugins_<name>.go.
-# For `full` → plugins_full.go (hand-maintained, //go:build !arx_tag).
-# For other profiles → plugins_<name>.go (generated).
+#   For each profile, build the expected set of import paths from declarations
+#   (sources/sinks/executors/processors/detectors) and compare against
+#   the blank-import lines actually present in plugins_<name>.go.
+#   For `full` → plugins_full.go (hand-maintained, //go:build !arx_tag).
+#   For other profiles → plugins_<name>.go (generated).
 
 info "A. Declaration ↔ generated drift"
 
@@ -187,7 +201,7 @@ while IFS= read -r profile_path; do
 
   # Build expected imports (sorted, unique) — one import path per line.
   expected_file="$(mktemp)"
-  for kind in sources sinks executors processors; do
+  for kind in sources sinks executors processors detectors; do
     while IFS= read -r n; do
       [ -z "$n" ] && continue
       expected_import_path "$kind" "$n"
@@ -224,20 +238,23 @@ done < <(profiles_list)
 
 # ── (b) Plugin name → Register existence ───────────────────────────────────────
 #
-# For source/sink/executor entries: require a `Register("<name>"` literal
-# (regardless of the receiver — pkgsink / pkgsource / executor) to exist in a
-# non-test .go file under pkg/<kind>/<name>/. Catches typos and
-# renamed-but-not-profile-updated plugins (Decision 4 / Decision 15).
+# For source/sink/executor/detector entries: require a `Register("<name>"` literal
+#   (regardless of the receiver — detector / pkgsink / pkgsource / executor) to
+#   exist in a non-test .go file under pkg/<kind>/<name-or-exception>/. Catches
+#   typos and renamed-but-not-profile-updated plugins (Decision 4 / Decision 15).
 #
-# For processor entries: only require the package directory to exist on disk
-# (registry package has no Register call by plugin name — Decision 15).
+#   For detector entries: the only path exception is `ua` → pkg/detector/useragent;
+#   the Register-name lookup still uses the literal profile name "ua".
+#
+#   For processor entries: only require the package directory to exist on disk
+#   (registry package has no Register call by plugin name — Decision 15).
 
 info "B. Plugin name → Register existence"
 
 while IFS= read -r profile_path; do
   pname="$(profile_name_from_path "$profile_path")"
 
-  for kind in sources sinks executors processors; do
+  for kind in sources sinks executors processors detectors; do
     while IFS= read -r n; do
       [ -z "$n" ] && continue
 
@@ -259,8 +276,8 @@ while IFS= read -r profile_path; do
         continue
       fi
 
-      # source/sink/executor: look for Register("<name>" in non-test .go files.
-      # The receiver (pkgsink / pkgsource / executor) is intentionally not
+      # source/sink/executor/detector: look for Register("<name>" in non-test .go files.
+      # The receiver (detector / pkgsink / pkgsource / executor) is intentionally not
       # anchored — the universal pattern is `Register\(\s*"<name>"\s*,`.
       if grep -rnE "Register\(\s*\"${n}\"\s*," "$pkg_dir"/*.go 2>/dev/null \
            | grep -v _test.go | grep -q .; then
@@ -302,7 +319,7 @@ while IFS= read -r profile_path; do
 
   # Build union of all declared plugin names (Register names) for this profile.
   declared_set_file="$(mktemp)"
-  for kind in sources sinks executors processors; do
+  for kind in sources sinks executors processors detectors; do
     declared_names "$profile_path" "$kind"
   done | sort -u > "$declared_set_file"
 
@@ -314,7 +331,7 @@ while IFS= read -r profile_path; do
   # cases like `type: sentinel-threat` (Register name) vs `type: sentinel`
   # (directory name). The canonical contract is the Register name.
   declared_tails_file="$(mktemp)"
-  for kind in sources sinks executors processors; do
+  for kind in sources sinks executors processors detectors; do
     while IFS= read -r n; do
       [ -z "$n" ] && continue
       pkg_dir="$(pkg_relative_dir "$kind" "$n")"
