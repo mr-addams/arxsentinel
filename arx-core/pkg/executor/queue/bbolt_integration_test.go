@@ -34,16 +34,11 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-// jsonFields mirrors the wire-format fixture product-side Formatter impls
-// produce; tests marshal to []byte before Push. Core does not import the
-// product type.
-type jsonFields struct {
-	IP      string   `json:"ip"`
-	Level   string   `json:"level"`
-	Score   int      `json:"score"`
-	Reason  string   `json:"reason"`
-	Modules []string `json:"modules"`
-}
+// jsonFields переиспользуется из bbolt_test.go (компилируется без build-тега,
+// доступен всему пакету queue). С -tags integration этот файл компилируется
+// вместе с bbolt_test.go, поэтому дублировать декларацию здесь нельзя —
+// компилятор падает с "redeclared in this block". Содержательно тип
+// идентичен — IP/Level/Score/Reason/Modules.
 
 // bboltIntegrationEvent returns a JSON payload mirroring what the
 // product-side SentinelFormatter would emit — unique IP per idx so the
