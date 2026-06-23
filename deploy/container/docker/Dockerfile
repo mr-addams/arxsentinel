@@ -24,6 +24,10 @@ ARG TARGETARCH=amd64
 WORKDIR /src
 
 COPY go.mod go.sum ./
+# Копируем go.mod/go.sum сабмодуля arx-core ДО go mod download — replace-директива
+# в корневом go.mod (=> ./arx-core) заставляет инструмент резолвить зависимость
+# относительно контекста сборки; без этого шага слой с mod download падает.
+COPY arx-core/go.mod arx-core/go.sum ./arx-core/
 RUN go mod download
 
 COPY . .

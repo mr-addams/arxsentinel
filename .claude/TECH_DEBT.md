@@ -21,6 +21,39 @@ severity, description, and proposed resolution.
 
 ## Open
 
+### [070-PC] Pre-commit hook таймаут превышает лимит coder-агента — RESOLVED
+
+- **Flow:** #070 — Phase 1.1 Registry Typification (raised)
+- **Resolved by:** Flow #071 — split-precommit-hook (2026-06-21)
+- **Severity:** low
+- **Area:** `scripts/hooks/pre-commit`, `scripts/hooks/pre-push`, `scripts/install-hooks.sh`
+- **Problem:** Полный pre-commit hook (test suite + `-race` + integration ~3 мин) превышает дефолтный 120s bash-таймаут coder-агента при коммите. Результат — coder вынужден использовать `--no-verify`, обходя гейт на самом коммите (хотя гейт проходит вручную в CI без проблем). Риск: коммит попадает без авто-верификации hook-гейта, хотя пост-факто CI его перепроверит.
+- **Resolution (applied):** Перенести `tests/integration/run.sh` из `scripts/hooks/pre-commit` в новый `scripts/hooks/pre-push` (Decision 1, Flow #071). Pre-commit держит быстрый бэкстоп: docs-only short-circuit, LICENSE sync, config-sync (по условию), `TestStartupShutdownInvariants`, `go test -race -count=1 ./...` (`-timeout 300s`), `go vet ./...`. Integration проверяется на 3 уровнях: per-task gate (агент вручную), `pre-push` git hook, и CI (`integration.yml` на PR→dev). Альтернатива «поднять commit-таймаут coder-агента» отвергнута (не portable). Install-механизм — `scripts/install-hooks.sh` (idempotent, относительные симлинки для обоих хуков).
+- **Status:** resolved (2026-06-21)
+- **Commits (Flow #071):**
+  - `d9d64ff` — Task 1.1: создать `scripts/hooks/pre-push`
+  - `dbd8023` — Task 1.2: убрать integration из `scripts/hooks/pre-commit`, обновить install-комментарий на `scripts/install-hooks.sh`
+  - `29bff4d` — Task 1.3: создать `scripts/install-hooks.sh`
+- **Refs:** `.opencode/flows/071_2026-06-21_split-precommit-hook/DECISIONS.md`
+  (Decision 1 — split pre-commit/pre-push; Decision 2 — install-hooks.sh; Decision 4 — per-task gate preserves integration; Decision 5 — atomic tasks 1→4).
+- **Note:** `PLATFORM_ROADMAP.md` (Transformation Safety Protocol) обновлён локально для отражения 3-уровневой модели integration; файл намеренно в `.gitignore:84` (внутренний стратегический документ, не для публичного репо).
+
+---
+
+### [068-1] Тесты реестров не идемпотентны к `go test -count>1`
+- **Flow:** #068 — Baseline & Dependency Map (Phase 0.2/0.3)
+- **Severity:** low
+- **Area:** `pkg/executor`, `pkg/sink`, `pkg/source` (registry-тесты), `pkg/source/http/adapters`
+- **Problem:** при `go test -count=3 ./...` пакеты падают с `panic: duplicate registration`
+  (executor/sink/source) и PubSub JWT → 401 (http/adapters). Причина — тесты регистрируют
+  плагины в глобальный singleton-реестр без cleanup/reset между прогонами; на 2-м прогоне
+  в том же бинаре — дубликат. С `-count=1` всё зелёное (`go test -race -count=1 ./...` →
+  30 ok, 0 FAIL, 0 DATA RACE). Код реестра исправен — дефект только в тестах.
+- **Resolution:** добавить `t.Cleanup`/reset глобального реестра между прогонами (или
+  изолированный экземпляр реестра в тестах вместо singleton). Естественно чинить в Phase 1.1
+  при переводе реестров на generic `Registry[T,CFG]` — заодно сделать тесты идемпотентными.
+- **Status:** resolved (Flow #070 — Task 1.1.0)
+
 ### [030-1] Alert Sinks with dedup/rate limit (Telegram, Slack, PagerDuty, Zapier)
 
 - **Flow:** #030 — Universal I/O Phase 2

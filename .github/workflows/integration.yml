@@ -48,14 +48,18 @@ jobs:
 
       - name: Run bbolt integration tests
         # bbolt использует локальные .db файлы в t.TempDir() — никаких
-        # внешних сервисов не требуется. -tags integration активирует
-        # bbolt_integration_test.go; -run фильтрует только bbolt-тесты.
+        # внешних сервисов не требуется. Запуск в контексте модуля arx-core
+        # (отдельный go module — нужен working-directory: arx-core).
+        # -tags integration активирует bbolt_integration_test.go;
+        # -run фильтрует только bbolt-тесты.
+        working-directory: arx-core
         run: go test -tags integration -run TestBboltIntegration ./pkg/executor/queue/ -v -count=1
 
       - name: Run redis integration tests
         # redis-тесты сами проверяют доступность Redis и t.Skip если
         # его нет, но service container гарантирует что REDIS_URL
-        # реален. Тот же build tag и фильтр по имени теста.
+        # реален. Запуск в контексте модуля arx-core.
+        working-directory: arx-core
         run: go test -tags integration -run TestRedisIntegration ./pkg/executor/queue/ -v -count=1
 
   integration:
@@ -129,7 +133,7 @@ jobs:
           # Run unit tests to separate our code regressions from upstream product changes.
           # A passing unit test suite means the Go binary is correct — failures are then
           # almost certainly caused by a product image update breaking our integration.
-          if go test ./... > /tmp/unit-tests.txt 2>&1; then
+          if go test -race -count=1 ./... > /tmp/unit-tests.txt 2>&1; then
             echo "**Unit tests:** ✅ PASS — binary is intact" >> "$summary"
             echo "" >> "$summary"
             echo "> Integration failures are likely caused by upstream product changes." >> "$summary"
@@ -228,3 +232,57 @@ jobs:
             /tmp/arxsentinel validate --config "$f" || { echo "INVALID: $f"; exit 1; }
           done
           echo "all configs valid"
+
+  # ────────────────────── Build profiles (Flow 075, ADR-003) ───────────────────
+  # Static verifier runs once for all profiles; build/test jobs depend on it
+  # so profile builds are skipped entirely if the verifier fails. The full
+  # profile is already covered by `queue-backends`/`integration`/`validate-cookbook`
+  # (default build, no tags) — not duplicated here.
+
+  build-profiles-verify:
+    name: Build profiles static verifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Run check-build-profiles.sh
+        run: bash scripts/check-build-profiles.sh
+
+  build-minimal:
+    name: Build & test (minimal profile)
+    needs: [build-profiles-verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build (minimal)
+        run: go build -tags "arx_tag minimal" ./...
+      - name: Test (minimal)
+        run: go test -tags "arx_tag minimal" ./... -timeout 120s
+
+  build-iot:
+    name: Build & test (iot profile)
+    needs: [build-profiles-verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build (iot)
+        run: go build -tags "arx_tag iot" ./...
+      - name: Test (iot)
+        run: go test -tags "arx_tag iot" ./... -timeout 120s

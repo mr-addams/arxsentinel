@@ -6,7 +6,7 @@ package main
 import (
 	"testing"
 
-	cloudflare "github.com/mr-addams/arxsentinel/pkg/executor/cloudflare"
+	cloudflare "github.com/mr-addams/arxsentinel/pkg/executorplugins/cloudflare"
 )
 
 func TestFilterByComment_InstancePrefix(t *testing.T) {

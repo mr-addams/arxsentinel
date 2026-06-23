@@ -40,6 +40,9 @@ logs/
 /arxsentinel
 /bin/
 
+# Бинарь примера logaggregator (собирается через `go build ./arx-core/examples/logaggregator`)
+arx-core/examples/logaggregator/logaggregator
+
 # Интеграционные тесты — runtime-артефакты (логи серверов, threat-логи, загружаемые блеклисты)
 tests/integration/logs/
 tests/integration/blocklist/
@@ -79,3 +82,9 @@ precommit-scan-*.md
 
 # Временные брифы для opencode-агентов (gofer, coder, architect)
 .tmp/
+
+# Внутренний стратегический документ (не для публичного репо)
+PLATFORM_ROADMAP.md
+
+# Внутренние ADR (архитектурные решения трансформации — не для публичного репо)
+docs/architecture/adr/

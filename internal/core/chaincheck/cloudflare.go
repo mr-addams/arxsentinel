@@ -100,12 +100,12 @@ type CloudflareConfig struct {
 // YAML: chain_guard.cloudflare.*. Consumer: checker.go (Check).
 type CloudflareChecker struct {
 	mu     sync.RWMutex
-	nets   []*net.IPNet           // Internal — compiled Cloudflare CIDRs, replaced on refresh. Consumer: Contains, IsLoaded.
-	cfg    CloudflareConfig        // YAML: current config. Consumer: startRefreshLoop, fetchAll.
-	client *http.Client           // Internal — HTTP client with 30s timeout. Consumer: fetchSource.
+	nets   []*net.IPNet     // Internal — compiled Cloudflare CIDRs, replaced on refresh. Consumer: Contains, IsLoaded.
+	cfg    CloudflareConfig // YAML: current config. Consumer: startRefreshLoop, fetchAll.
+	client *http.Client     // Internal — HTTP client with 30s timeout. Consumer: fetchSource.
 
-	cancel context.CancelFunc      // Internal — cancels the refresh goroutine. Consumer: stopRefreshLoop, Update.
-	done   chan struct{}           // Internal — closed when the goroutine exits. Consumer: stopRefreshLoop.
+	cancel context.CancelFunc // Internal — cancels the refresh goroutine. Consumer: stopRefreshLoop, Update.
+	done   chan struct{}      // Internal — closed when the goroutine exits. Consumer: stopRefreshLoop.
 }
 
 // NewCloudflareChecker loads the fallback CIDRs synchronously so that IsLoaded()

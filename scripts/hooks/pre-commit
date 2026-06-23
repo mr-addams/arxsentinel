@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # pre-commit — enforces startup/shutdown invariants and runs the full test suite.
 #
-# Install: ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit
+# Install: bash scripts/install-hooks.sh
 #
 # Checks (in order):
 #   0. check-config-sync.sh          — verifies all env vars and YAML sections are
@@ -10,9 +10,13 @@
 #   1. TestStartupShutdownInvariants — verifies that main.go satisfies all
 #      startup/shutdown sequence and WaitGroup tracking invariants (see CLAUDE.md).
 #   2. go test ./...                  — full test suite across all packages.
-#   3. integration tests             — 6 server types × 7 detectors + chain scenarios.
-#   4. go vet ./...                   — catches context misuse, WaitGroup errors,
+#   3. go vet ./...                   — catches context misuse, WaitGroup errors,
 #      unreachable code, and other static issues.
+#
+# Integration (tests/integration/run.sh, ~3 min, docker + live servers) moved
+# to a dedicated pre-push hook in Flow #071: it is too slow for per-commit
+# backstop but enforced locally before a push AND in CI (integration.yml on
+# PR→dev) AND by the per-task acceptance gate (agent runs it manually).
 
 set -euo pipefail
 
@@ -31,6 +35,17 @@ if git diff --cached --name-only | grep -qE '^LICENSE$|^cmd/arxsentinel/LICENSE$
   fi
 fi
 
+# Build-profile consistency — only when profile/plugin files are staged.
+# Verifies declaration ↔ generated drift, plugin Register existence, and
+# cookbook type ∈ profile membership (scripts/check-build-profiles.sh, Flow 075).
+PROFILE_PATTERN='^profiles/|^cmd/arxsentinel/plugins_.*\.go$|^cmd/arxsentinel/main\.go$|^pkg/(source|sink|executor|processor)/|^tools/gen-plugins/'
+if git diff --cached --name-only | grep -qE "$PROFILE_PATTERN"; then
+  echo "[pre-commit] checking build profiles consistency..."
+  bash scripts/check-build-profiles.sh
+else
+  echo "[pre-commit] build profiles not touched — skipping consistency check"
+fi
+
 # Config chain check — only when config chain files are staged.
 # Chain: config.go → config.yaml → config.docker.yaml → .env.example → README tables.
 CONFIG_CHAIN_PATTERN='internal/sys/config/config\.go|^config\.yaml$|^config\.example\.yaml$|deploy/container/docker/config\.docker\.yaml|deploy/container/docker/\.env\.example|deploy/container/docker/README\.md|deploy/container/k8s/arxsentinel/README\.md'
@@ -45,10 +60,9 @@ echo "[pre-commit] checking startup/shutdown invariants..."
 go test ./cmd/arxsentinel -run TestStartupShutdownInvariants -count=1 -timeout 30s
 
 echo "[pre-commit] running full test suite..."
-go test ./... -count=1 -timeout 120s
-
-echo "[pre-commit] running integration tests..."
-bash tests/integration/run.sh
+# -race adds 2–5x overhead to test runtime; bump timeout from 120s to 300s to
+# avoid false timeouts on slow CI/local machines.
+go test -race -count=1 ./... -timeout 300s
 
 echo "[pre-commit] go vet..."
 go vet ./...

@@ -5,13 +5,22 @@
 //     - main()                          — загрузка конфига, init логгера, metrics-сервер, запуск стримов
 //
 //   ДРУГИЕ ФАЙЛЫ ПАКЕТА:
-//     - pipeline.go                     — PipelineContext, SharedResources, runStream, runPipeline, processLine
+//     - pipeline.go                     — SharedResources (singleton-контейнер)
+//     - processor_security.go           — securityProcessor.Process (verbatim port of processLine)
+//     - processor_factory.go            — securityFactory implements runtime.LineProcessorFactory + runtime.LineProcessor
+//     - runtime_adapter.go              — adaptConfigToStreams: config.Config → []runtime.StreamSpec
 //     - builders.go                     — buildSources, buildSinks, buildParserForInput, buildPipelineDetectors
 //     - executors.go                    — startExecutors, preRegisterExecutorQueues
 //     - helpers.go                      — вспомогательные функции: parseFlag*, PID, sdNotify, metricsHandler
 //     - validate.go                     — validateConfig (валидация pipeline wiring)
 //     - cleanup.go                      — подкоманда cleanup
 //     - license.go                      — подкоманда license
+//
+//   RUNTIME (Flow 081 Phase 3):
+//     Вся stream-оркестрация (fan-in / dispatch / drain / SIGHUP-reload) вынесена
+//     в arx-core/pkg/runtime. main.go теперь только собирает StreamSpec'и через
+//     runtime_adapter.adaptConfigToStreams и запускает coreruntime.Run на каждый
+//     стрим, передавая securityFactory и reloadCh. См. ADR-004.
 //
 //   STARTUP SEQUENCE (порядок обязателен — нарушения ведут к panic или потере данных):
 //     1. config.LoadConfig()              — должен быть первым; все компоненты зависят от cfg
@@ -21,12 +30,12 @@
 //     5. metrics.Init() + srv.ListenAndServe() — до стримов; scraper получает непрерывные серии
 //     6. blocklist.NewManager()           — до buildDetectors(); детекторы зависят от него
 //     7. chaincheck.NewChecker()          — до стримов; проверяет каждую запись лога с начала
-//     8. runStream() × N                  — последним; все shared-ресурсы должны существовать
+//     8. coreruntime.Run() × N            — последним; все shared-ресурсы должны существовать
 //
 //   SHUTDOWN SEQUENCE (SIGTERM/SIGINT → ctx.Done()):
 //     1. tail.Run() exits                — закрывает lines-канал
 //     2. drainLoop completes             — все буферизованные строки обработаны
-//     3. runStream returns → wg.Done()   — стрим полностью завершён
+//     3. coreruntime.Run returns → wg.Done() — стрим полностью завершён
 //     4. metricsWg.Wait()                — HTTP-сервер Shutdown() завершён (таймаут 5s)
 //     5. wg.Wait() in main()             — все стримы подтверждённо завершены
 //     6. defers LIFO: cancel() → removePID() → utils.Close()
@@ -37,6 +46,8 @@
 //     - SIGHUP никогда не гонится с обработкой строк — оба в одной select-горутине на стрим
 
 package main
+
+//go:generate go run github.com/mr-addams/arxsentinel/tools/gen-plugins -profiles ../../profiles -out .
 
 import (
 	"context"
@@ -52,26 +63,16 @@ import (
 	"syscall"
 	"time"
 
+	ncs "github.com/mr-addams/arx-core/pkg/ncs"
+	coreruntime "github.com/mr-addams/arx-core/pkg/runtime"
 	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
 	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 	"github.com/mr-addams/arxsentinel/internal/core/output"
+	"github.com/mr-addams/arxsentinel/internal/core/state"
 	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/metrics"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
-	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
-	_ "github.com/mr-addams/arxsentinel/pkg/executor/mikrotik"
-	_ "github.com/mr-addams/arxsentinel/pkg/executor/nginx"
-	_ "github.com/mr-addams/arxsentinel/pkg/processor"
-	_ "github.com/mr-addams/arxsentinel/pkg/sink/exec"
-	_ "github.com/mr-addams/arxsentinel/pkg/sink/sentinel"
-	_ "github.com/mr-addams/arxsentinel/pkg/sink/stdout"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/exec"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/file"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/http"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/sentinel"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/stdin"
-	_ "github.com/mr-addams/arxsentinel/pkg/source/syslog"
 )
 
 // version инжектируется goreleaser через ldflags (-X main.version={{.Version}}).
@@ -160,7 +161,7 @@ func main() {
 	// --input / --output флаги полностью переопределяют секции I/O в конфиге.
 	// При наличии любого из флагов cfg.Streams заменяется одним CLI-driven стримом.
 	// Migrate() уже был вызван внутри LoadConfig; здесь собираем pipeline напрямую,
-	// чтобы runStream() всегда видел Pipelines != nil.
+	// чтобы coreruntime.Run всегда видел Pipelines != nil.
 	if *inputFlag != "" || *outputFlag != "" {
 		// Незаданные флаги откатываются на уже мигрированные top-level дефолты.
 		inputs := cfg.Inputs
@@ -188,7 +189,7 @@ func main() {
 	}
 
 	// ── Инициализация логгера ─────────────────────────────────────────────────────────
-	// Threat-лог управляется per-stream (runStream открывает файл каждого стрима напрямую).
+	// Threat-лог управляется per-stream (engine пишет в каждый sink из StreamSpec).
 	// Передаём пустой threatLogPath, чтобы глобальный utils.LogThreat не использовался.
 	if err := utils.Init(cfg.Logging.Debug, cfg.Logging.ConsoleColor,
 		cfg.Output.OperationalLog, ""); err != nil {
@@ -400,17 +401,73 @@ func main() {
 	// ── Запуск executor-горутин (top-level автономные, Flow #042) ───────────────────────
 	// Executors собираются из cfg.Executors и подключаются к Named Channel Switch sources,
 	// регистрируемым sentinel-threat sink'ами внутри stream-pipeline (T5).
-	// ── Запуск стримов ────────────────────────────────────────────────────────────────
+	// ── Запуск стримов (Flow 081 Phase 3: runtime.Run + securityFactory) ───────────────
+
+	// MetricsCallbacks — адаптер из runtime-callback'ов в product metrics.* функции.
+	// Engine зовёт:
+	//   - RecordLine(s, p, src, st) на КАЖДОЙ строке ДО Process (даже при Skip) →
+	//     здесь = RecordLine + RecordInputLine (как в старом securityProcessor.Process).
+	//   - RecordOutputEvent(s, p, sinkName) — sinkType вычисляется из имени
+	//     через sinkTypeFromName (как в старом securityProcessor.Process).
+	//   - UpdateGauges — прямой проброс.
+	metricsCb := &coreruntime.MetricsCallbacks{
+		RecordLine: func(s, p, src, st string) {
+			metrics.RecordLine(s, p)
+			metrics.RecordInputLine(s, p, src, st)
+		},
+		RecordThreat:      metrics.RecordThreat,
+		RecordDetectorHit: metrics.RecordDetectorHit,
+		RecordOutputEvent: func(s, p, sinkName string) {
+			metrics.RecordOutputEvent(s, p, sinkName, sinkTypeFromName(sinkName))
+		},
+		UpdateGauges: func(s, p string, tracked, suspicious int64) {
+			metrics.UpdateGauges(s, p, int(tracked), int(suspicious))
+		},
+	}
+
+	// runtime.SharedResources — opaque контейнер, который engine пробрасывает
+	// в factory.Build. Здесь мы кладём те же singleton'ы, что и в локальный
+	// shared (нужен buildPipelineDetectors → bridgeShared).
+	runtimeShared := coreruntime.SharedResources{
+		BlocklistManager: shared.BlocklistManager,
+		ChainChecker:     shared.ChainChecker,
+		WarningsWriter:   shared.WarningsWriter,
+		MetricsCallbacks: metricsCb,
+	}
+
+	streamSpecs, streamReloadChs, err := adaptConfigToStreams(ctx, cfg)
+	if err != nil {
+		utils.Log("STARTUP", "stream adaptation error: "+err.Error(), "error")
+		os.Exit(1)
+	}
+	// SIGHUP-fanout: подменяем раннее-созданные reloadChs на те, что соответствуют
+	// StreamSpec.Pipelines (те же индексы — main.go строит reloadChs в порядке cfg.Streams).
+	reloadChs = streamReloadChs
 
 	var wg sync.WaitGroup
-	for i, streamCfg := range cfg.Streams {
+	for i, spec := range streamSpecs {
+		factory := &securityFactory{
+			ctx:        ctx,
+			path:       path,
+			ipCache:    ipCache,
+			resolver:   resolver,
+			cfg:        cfg,
+			streamName: cfg.Streams[i].Name,
+			trackers:   make(map[string]*state.Tracker),
+			shared:     runtimeShared,
+		}
 		wg.Add(1)
-		go runStream(ctx, path, cfg, streamCfg, ipCache, resolver, reloadChs[i], &wg, shared)
+		go func(spec coreruntime.StreamSpec, factory *securityFactory, reloadCh <-chan struct{}) {
+			defer wg.Done()
+			if err := coreruntime.Run(ctx, spec, factory, runtimeShared, reloadCh, utils.Log); err != nil {
+				utils.Log("ERROR", fmt.Sprintf("stream %q: runtime.Run error: %v", spec.Name, err), "error")
+			}
+		}(spec, factory, reloadChs[i])
 	}
 
 	// Запускаем executors ПОСЛЕ stream-горутин, чтобы sentinel-threat sink'и успели
 	// зарегистрировать свои Named Channel Switch каналы. Короткая задержка даёт
-	// pipeline-горутинам дойти до runPipeline → buildSinks → AttachWriter до AttachReader.
+	// pipeline-горутинам дойти до engine.runPipeline → buildSinks → AttachWriter до AttachReader.
 	var execWg sync.WaitGroup
 	if len(cfg.Executors) > 0 {
 		go func() {
@@ -433,7 +490,7 @@ func main() {
 	// DetachWriter все NCS-источники, чтобы executor Run()-циклы вышли по закрытому каналу.
 	for _, ec := range cfg.Executors {
 		for _, src := range ec.Sources {
-			pkgexecutor.DetachWriter(src.Name)
+			ncs.DetachWriter(src.Name)
 		}
 	}
 	execWg.Wait()

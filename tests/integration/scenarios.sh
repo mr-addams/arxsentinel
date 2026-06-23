@@ -887,7 +887,7 @@ PYEOF
     sleep 0.5
     local ARX_BIN_JWKS="${TMPDIR}/arx-test-jwks"
     go build -ldflags \
-        "-X github.com/mr-addams/arxsentinel/pkg/source/http/adapters.jwksFetchURL=http://127.0.0.1:${JWKS_PORT}/certs" \
+        "-X github.com/mr-addams/arx-core/pkg/source/http/adapters.jwksFetchURL=http://127.0.0.1:${JWKS_PORT}/certs" \
         -o "$ARX_BIN_JWKS" ./cmd/arxsentinel 2>&1
 
     cat > "$TMPDIR/config.yaml" << YAML

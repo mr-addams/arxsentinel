@@ -40,8 +40,8 @@ import (
 // YAML: chain_guard.warnings_log (via path argument). Consumer: chaincheck (main.go).
 type WarningsWriter struct {
 	mu   sync.Mutex
-	file *os.File   // Internal — open file handle, nil after Close. Consumer: WriteChainWarning, Reopen, Close.
-	path string     // Internal — file path for Reopen. Consumer: Reopen, Close.
+	file *os.File // Internal — open file handle, nil after Close. Consumer: WriteChainWarning, Reopen, Close.
+	path string   // Internal — file path for Reopen. Consumer: Reopen, Close.
 }
 
 // NewWarningsWriter opens path in append mode (O_CREATE|O_WRONLY|O_APPEND, 0644).

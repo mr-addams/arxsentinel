@@ -36,8 +36,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arx-core/pkg/parser"
 )
 
 // pathBufSize — depth of the path ring buffer per IP.
@@ -53,16 +53,17 @@ const pathBufSize = 64
 // YAML: (computed, not stored) — no direct config mapping. Consumer: all detectors.
 //
 // Lifecycle:
-//   created → first Update(entry) for this IP
-//   active  → LastSeen is updated on every Update
-//   deleted → GC when LastSeen < now-retention OR LRU eviction at max_tracked_ips
+//
+//	created → first Update(entry) for this IP
+//	active  → LastSeen is updated on every Update
+//	deleted → GC when LastSeen < now-retention OR LRU eviction at max_tracked_ips
 type IPState struct {
-	IP        string         // IP address from LogEntry.RealIP. Consumer: all detectors.
-	FirstSeen time.Time      // First request timestamp. Consumer: metrics, logging.
-	LastSeen  time.Time      // Last request timestamp, updated on every Update. Consumer: GC, detectors.
+	IP        string    // IP address from LogEntry.RealIP. Consumer: all detectors.
+	FirstSeen time.Time // First request timestamp. Consumer: metrics, logging.
+	LastSeen  time.Time // Last request timestamp, updated on every Update. Consumer: GC, detectors.
 
-	TotalRequests int        // Internal — total request counter. Consumer: metrics, rate detector.
-	Requests404   int        // Internal — 404 count for bruteforce ratio (Flow #6.1). Consumer: to be added.
+	TotalRequests int // Internal — total request counter. Consumer: metrics, rate detector.
+	Requests404   int // Internal — 404 count for bruteforce ratio (Flow #6.1). Consumer: to be added.
 
 	// ── Path ring buffer ──────────────────────────────────────────────────────────
 	pathBuf  [pathBufSize]string // Internal — ring buffer, last pathBufSize paths. Consumer: probe detector, crawler detector.
@@ -72,27 +73,27 @@ type IPState struct {
 	// pathCache caches the result of RecentPaths() to avoid make+copy on every detector call.
 	// pathDirty is set to true in Update() after writing to pathBuf; cleared in RecentPaths().
 	// Safe without locks: pipeline is single-threaded, Update() and RecentPaths() never interleave.
-	pathCache []string         // Internal — cached RecentPaths result. Consumer: RecentPaths.
-	pathDirty bool              // Internal — true when pathBuf written but cache not rebuilt. Consumer: RecentPaths.
+	pathCache []string // Internal — cached RecentPaths result. Consumer: RecentPaths.
+	pathDirty bool     // Internal — true when pathBuf written but cache not rebuilt. Consumer: RecentPaths.
 
 	// ── Sliding window rate counters ──────────────────────────────────────────────────
-	rateWindowStart time.Time  // Internal — start of current rate counting window. Consumer: ApproxRate, updateRateLocked.
-	rateCurrCount   int        // Internal — requests in current window. Consumer: ApproxRate, updateRateLocked.
-	ratePrevCount   int        // Internal — requests in previous window. Consumer: ApproxRate, updateRateLocked.
+	rateWindowStart time.Time // Internal — start of current rate counting window. Consumer: ApproxRate, updateRateLocked.
+	rateCurrCount   int       // Internal — requests in current window. Consumer: ApproxRate, updateRateLocked.
+	ratePrevCount   int       // Internal — requests in previous window. Consumer: ApproxRate, updateRateLocked.
 
 	// ── Score ─────────────────────────────────────────────────────────────────────────
-	score          int         // Internal — accumulated score with linear decay. Consumer: scorer (via ScoreAccess).
-	scoreUpdatedAt time.Time   // Internal — last score update timestamp. Consumer: scorer (via ScoreAccess).
+	score          int       // Internal — accumulated score with linear decay. Consumer: scorer (via ScoreAccess).
+	scoreUpdatedAt time.Time // Internal — last score update timestamp. Consumer: scorer (via ScoreAccess).
 
 	// LRU list element — for Tracker use only. Do not modify manually.
-	lruElem *list.Element      // Internal — linked list element for LRU eviction. Consumer: Tracker.updateRateLocked, evictLRULocked.
+	lruElem *list.Element // Internal — linked list element for LRU eviction. Consumer: Tracker.updateRateLocked, evictLRULocked.
 }
 
 // ++++++++++++++++++++++++++ Implementation of detector.IPView +++++++++++++++++++++++++++
 
-func (s *IPState) GetIP() string           { return s.IP }
-func (s *IPState) GetTotalRequests() int   { return s.TotalRequests }
-func (s *IPState) GetRequests404() int     { return s.Requests404 }
+func (s *IPState) GetIP() string         { return s.IP }
+func (s *IPState) GetTotalRequests() int { return s.TotalRequests }
+func (s *IPState) GetRequests404() int   { return s.Requests404 }
 
 // RecentPaths returns the most recent paths in chronological order (oldest → newest).
 // Returns cached slice — caller does not own the returned []string.
@@ -151,7 +152,7 @@ func (s *IPState) ApproxRate(window time.Duration) float64 {
 
 // ++++++++++++++++++++++++++ Implementation of detector.ScoreAccess +++++++++++++++++++++
 
-func (s *IPState) GetScore() int               { return s.score }
+func (s *IPState) GetScore() int                { return s.score }
 func (s *IPState) GetScoreUpdatedAt() time.Time { return s.scoreUpdatedAt }
 func (s *IPState) SetScore(score int, at time.Time) {
 	s.score = score
@@ -166,12 +167,12 @@ func (s *IPState) SetScore(score int, at time.Time) {
 // Consumer: pipeline (main.go), detectors (via IPView/ScoreAccess).
 type Tracker struct {
 	mu     sync.RWMutex
-	states map[string]*IPState       // Internal — IP address to IPState map. Consumer: Update, GetStats, Len, Has.
-	lru    *list.List                // Internal — LRU list, front=most recent, back=LRU candidate. Consumer: Update, evictLRULocked.
+	states map[string]*IPState // Internal — IP address to IPState map. Consumer: Update, GetStats, Len, Has.
+	lru    *list.List          // Internal — LRU list, front=most recent, back=LRU candidate. Consumer: Update, evictLRULocked.
 
-	maxIPs     int                   // YAML: state.max_tracked_ips, default 100000 — max tracked IPs before LRU eviction. Consumer: Update.
-	rateWindow time.Duration         // YAML: detectors.rate.window, default 60s — sliding window for rate counting. Consumer: updateRateLocked, ApproxRate.
-	retention  time.Duration         // YAML: scoring.observation_window — GC retention threshold. Consumer: runGC.
+	maxIPs     int           // YAML: state.max_tracked_ips, default 100000 — max tracked IPs before LRU eviction. Consumer: Update.
+	rateWindow time.Duration // YAML: detectors.rate.window, default 60s — sliding window for rate counting. Consumer: updateRateLocked, ApproxRate.
+	retention  time.Duration // YAML: scoring.observation_window — GC retention threshold. Consumer: runGC.
 
 	logFn func(tag, msg, level string) // Internal — debug/info logger from main.go. Consumer: Update, RunGC, evictLRULocked.
 }

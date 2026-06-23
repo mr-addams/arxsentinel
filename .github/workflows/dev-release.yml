@@ -33,7 +33,11 @@ jobs:
           go-version-file: go.mod
 
       - name: Run tests
-        run: go test ./...
+        # -race is mandatory under the Transformation Safety Protocol:
+        # the telemetry pipeline moves concurrent code, and silent data races
+        # would corrupt scoring state across module boundaries.
+        # -count=1 disables Go's test-result cache so a regression cannot be masked.
+        run: go test -race -count=1 ./...
 
       - name: Configure git
         run: |

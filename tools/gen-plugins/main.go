@@ -1,0 +1,178 @@
+// ========================== Profile plugin-file generator ===========================
+//   Reads profiles/*.yaml and emits cmd/arxsentinel/plugins_<name>.go for each
+//   non-full profile. Generated files carry `//go:build arx_tag && <name>` and
+//   register the profile's transports via blank-imports.
+//
+//   Phase 1: the `module` field is parsed but ignored — import paths are derived
+//   from the single monorepo path `github.com/mr-addams/arxsentinel/pkg/<kind>/<name>`.
+//   Phase 2.1.4 will activate `module` when the physical arx-core split happens.
+//
+//   Driven by the `//go:generate` directive in cmd/arxsentinel/main.go:
+//     //go:generate go run ./tools/gen-plugins -profiles ../../profiles -out .
+//
+//   See: docs/architecture/adr/003-build-modularity.md, DECISIONS.md Flow 075.
+
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// moduleRoot is the single source of import paths in the Phase 1 monorepo.
+const moduleRoot = "github.com/mr-addams/arxsentinel"
+
+// pluginEntry mirrors one row under plugins.<kind>[] in profiles/<name>.yaml.
+// `Module` is recorded for forward-compatibility (Phase 2.1.4) but not used here.
+type pluginEntry struct {
+	Name   string `yaml:"name"`
+	Module string `yaml:"module"`
+}
+
+// profileSchema mirrors the top-level structure of profiles/<name>.yaml.
+// `Detectors` is informational only (Decision 12) and never emitted.
+type profileSchema struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	Plugins     struct {
+		Executors  []pluginEntry `yaml:"executors"`
+		Processors []pluginEntry `yaml:"processors"`
+		Sinks      []pluginEntry `yaml:"sinks"`
+		Sources    []pluginEntry `yaml:"sources"`
+		Detectors  []pluginEntry `yaml:"detectors"`
+	} `yaml:"plugins"`
+}
+
+// nameToPkgSuffix overrides the package-suffix (directory name) for plugin names
+// that don't match the sub-package directory. Keyed by `kind/name` so the same
+// name in different kinds is unambiguous. Currently only the sentinel sink
+// differs: its Register name is "sentinel-threat" but the package lives in
+// pkg/sink/sentinel (Decision 15 / Decision 16, Flow 075). The Register name is
+// kept verbatim in profile YAML; this map only affects the derived import path.
+var nameToPkgSuffix = map[string]string{
+	"sinks/sentinel-threat": "sentinel",
+}
+
+// pkgSuffix resolves the package-suffix (directory name) for a given (kind,
+// name). Override map wins; default is the plugin name itself.
+func pkgSuffix(kind, name string) string {
+	if s, ok := nameToPkgSuffix[kind+"/"+name]; ok {
+		return s
+	}
+	return name
+}
+
+// kindPath maps a plugin kind to its pkg/ sub-tree. `processors` is special-cased:
+// the registry package `processor` lives directly under pkg/, while sub-packages
+// (future) would live under pkg/processor/<name>. For sinks (and any kind) the
+// pkgSuffix override is consulted first so register-name ≠ directory cases are
+// reconciled (Decision 15).
+func kindPath(kind, name string) string {
+	switch kind {
+	case "processors":
+		if name == "processor" {
+			return moduleRoot + "/pkg/processor"
+		}
+		return moduleRoot + "/pkg/processor/" + pkgSuffix(kind, name)
+	case "sources":
+		return moduleRoot + "/pkg/source/" + pkgSuffix(kind, name)
+	case "sinks":
+		return moduleRoot + "/pkg/sink/" + pkgSuffix(kind, name)
+	case "executors":
+		return moduleRoot + "/pkg/executor/" + pkgSuffix(kind, name)
+	}
+	return ""
+}
+
+func main() {
+	profilesDir := flag.String("profiles", "../../profiles", "directory containing profile YAML files")
+	outDir := flag.String("out", ".", "directory to emit plugins_<name>.go into")
+	flag.Parse()
+
+	entries, err := os.ReadDir(*profilesDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gen-plugins: read profiles dir %q: %v\n", *profilesDir, err)
+		os.Exit(1)
+	}
+
+	var names []string
+	byName := make(map[string]profileSchema)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		base := strings.TrimSuffix(e.Name(), ".yaml")
+		var p profileSchema
+		data, err := os.ReadFile(filepath.Join(*profilesDir, e.Name()))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "gen-plugins: read %s: %v\n", e.Name(), err)
+			os.Exit(1)
+		}
+		if err := yaml.Unmarshal(data, &p); err != nil {
+			fmt.Fprintf(os.Stderr, "gen-plugins: parse %s: %v\n", e.Name(), err)
+			os.Exit(1)
+		}
+		// `full` is hand-maintained in plugins_full.go — parse but do not emit.
+		if base == "full" {
+			continue
+		}
+		names = append(names, base)
+		byName[base] = p
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		p := byName[name]
+		if err := emit(filepath.Join(*outDir, "plugins_"+name+".go"), name, p); err != nil {
+			fmt.Fprintf(os.Stderr, "gen-plugins: emit %s: %v\n", name, err)
+			os.Exit(1)
+		}
+		fmt.Printf("gen-plugins: wrote plugins_%s.go (%d imports)\n", name, countImports(p))
+	}
+}
+
+// emit writes a single plugins_<name>.go file. Imports are collected across all
+// transport kinds, sorted alphabetically for a stable diff (invariant (a) of the
+// verifier relies on this ordering).
+func emit(path, name string, p profileSchema) error {
+	var imports []string
+	add := func(kind string, entries []pluginEntry) {
+		for _, e := range entries {
+			if p := kindPath(kind, e.Name); p != "" {
+				imports = append(imports, p)
+			}
+		}
+	}
+	add("sources", p.Plugins.Sources)
+	add("sinks", p.Plugins.Sinks)
+	add("executors", p.Plugins.Executors)
+	add("processors", p.Plugins.Processors)
+	sort.Strings(imports)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "// Code generated by tools/gen-plugins; DO NOT EDIT.\n\n")
+	fmt.Fprintf(&b, "//go:build arx_tag && %s\n\n", name)
+	fmt.Fprintf(&b, "// ========================== Plugin blank-imports — %s profile =======================\n", name)
+	fmt.Fprintf(&b, "//   Side-effect registration of plugins declared in profiles/%s.yaml.\n", name)
+	fmt.Fprintf(&b, "//   Active only under build tags: -tags \"arx_tag %s\".\n", name)
+	fmt.Fprintf(&b, "//   See docs/architecture/adr/003-build-modularity.md and DECISIONS.md Flow 075.\n\n")
+	fmt.Fprintf(&b, "package main\n\n")
+	fmt.Fprintf(&b, "import (\n")
+	for _, imp := range imports {
+		fmt.Fprintf(&b, "\t_ %q\n", imp)
+	}
+	fmt.Fprintf(&b, ")\n")
+
+	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+func countImports(p profileSchema) int {
+	return len(p.Plugins.Sources) + len(p.Plugins.Sinks) +
+		len(p.Plugins.Executors) + len(p.Plugins.Processors)
+}

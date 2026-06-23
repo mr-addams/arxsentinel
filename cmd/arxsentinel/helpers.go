@@ -2,11 +2,9 @@
 //   Вспомогательные функции, не содержащие основной логики pipeline.
 //
 //   ЧТО ЗДЕСЬ:
-//     - buildTrackerGroups()            — создаёт *state.Tracker для каждой группы стрима
 //     - resolveTrackerGroup()           — определяет группу трекера для pipeline
 //     - pipelineLogTag()                — форматирует лог-префикс stream/pipeline
 //     - findPipelineCfg()               — находит конфиг pipeline по имени или индексу
-//     - sourceMetadata()                — name/type первого source в списке
 //     - sinkTypeFromName()              — извлекает тип синка из Name()
 //     - streamSourceLabel()             — краткое описание источника для startup-лога
 //     - parseFlagInputs() / parseFlagOutputs() — разбор --input/--output CLI-флагов
@@ -27,33 +25,17 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/crypto/bcrypt"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/crypto/bcrypt"
 
-	"github.com/mr-addams/arxsentinel/internal/core/state"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
-	"github.com/mr-addams/arxsentinel/internal/sys/utils"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
 )
 
 // ── TrackerGroup helpers ───────────────────────────────────────────────────────────────
 
-// buildTrackerGroups creates one *state.Tracker per unique tracker group in the stream.
-// Called from: runStream.
-// Non-blocking.
-func buildTrackerGroups(cfg config.Config, streamCfg config.StreamConfig) map[string]*state.Tracker {
-	groups := make(map[string]*state.Tracker)
-	for _, pipeCfg := range streamCfg.Pipelines {
-		group := resolveTrackerGroup(pipeCfg)
-		if _, exists := groups[group]; !exists {
-			groups[group] = state.NewTracker(cfg, utils.Log)
-		}
-	}
-	return groups
-}
-
 // resolveTrackerGroup returns the effective tracker group key for a pipeline.
-// Called from: runStream, buildTrackerGroups.
+// Called from: securityFactory.Build, securityFactory.Reload (production),
+// runtime_adapter.adaptConfigToStreams.
 // Non-blocking.
 //
 // An empty TrackerGroup means isolated: use the pipeline name as the implicit group.
@@ -67,7 +49,7 @@ func resolveTrackerGroup(pipeCfg config.PipelineConfig) string {
 }
 
 // pipelineLogTag returns a human-readable log prefix that includes stream and pipeline names.
-// Called from: runPipeline, main.
+// Called from: main, securityFactory.Reload.
 // Non-blocking.
 //
 // Examples: "stream \"nginx\" pipeline \"api\"", "stream \"nginx\"" (unnamed pipeline).
@@ -82,7 +64,7 @@ func pipelineLogTag(streamName, pipelineName string) string {
 }
 
 // findPipelineCfg locates the pipeline config in a (possibly updated) stream config.
-// Called from: runPipeline.
+// Called from: securityFactory.Build, securityFactory.Reload.
 // Non-blocking.
 //
 // Named pipelines are matched by name; unnamed (auto-wrapped) by index.
@@ -104,24 +86,8 @@ func findPipelineCfg(streamCfg config.StreamConfig, name string, idx int, fallba
 
 // ── Source/Sink metadata ──────────────────────────────────────────────────────────────
 
-// sourceMetadata returns the name and type of the first source for ThreatEvent metadata.
-// Called from: runPipeline.
-// Non-blocking.
-//
-// With multiple sources merged, Phase 1 uses the first source's identity as the stream label.
-func sourceMetadata(sources []plugin.Source) (name, sourceType string) {
-	if len(sources) == 0 {
-		return "", ""
-	}
-	name = sources[0].Name()
-	if strings.HasPrefix(name, "file:") {
-		return name, "file"
-	}
-	return name, "stdin"
-}
-
 // sinkTypeFromName extracts the sink type string from a sink Name() value.
-// Called from: processLine.
+// Called from: main.go (MetricsCallbacks.RecordOutputEvent adapter).
 // Non-blocking.
 //
 // "file:/path/…" → "file", "stdout" → "stdout".

@@ -1,189 +1,149 @@
-# How to Write a New Plugin
+# How to Write a New Plugin (Product Layer)
 
-This guide covers the **manifest-based plugin framework** introduced in v2. Every plugin — Source, Processor, Detector, Executor, Sink — follows the same five-file structure.
-
----
-
-## Choose a Role
-
-| Role | When to use |
-|---|---|
-| `source` | You need to read data from an external system (file, syslog, HTTP poll, cloud API) |
-| `processor` | You need to transform, enrich, or filter events in the middle of the pipeline |
-| `detector` | You need to analyse an event against IP history and compute a threat score |
-| `executor` | You need to perform an action when a threat is detected (block IP, send alert) |
-| `sink` | You need to persist or forward threat events to external storage |
+> **Core five-file pattern, registry / init+blank-import wiring, and
+> plugin role contracts live in
+> [`arx-core/docs/plugin-development.md`](../../arx-core/docs/plugin-development.md).**
+> Read the core contract first, then come back here for the **product-side
+> checklist** and the **MikroTik / Sentinel-source / Sentinel-sink
+> walkthroughs** that are specific to ArxSentinel.
 
 ---
 
-## Five Required Files
+## Product-side plugin checklist
 
-Every plugin must provide these files inside its package directory:
+Before opening a PR for a new product plugin:
 
+- [ ] **Role** — one of `source` / `processor` / `detector` / `executor` / `sink`.
+      See the core contract for the role's interface and lifecycle.
+- [ ] **Manifest** — `PluginID`, `PluginVersion`, `Role`, `InputType`, `OutputType`
+      populated. Add `Produces` / `Consumes` field declarations if your plugin
+      has a non-trivial field contract.
+- [ ] **Config** — struct with `yaml` tags and `DefaultConfig()`. `parseConfig`
+      falls back safely on missing or wrongly-typed values.
+- [ ] **Impl** — implements the correct interface from `arx-core/pkg/plugin/`.
+      For detectors: `Detect(sv IPView, entry *plugin.Event) DetectResult`.
+      For sinks: `Write(ctx, *plugin.Event) error`. For executors:
+      `Run(ctx, EventSource) error` and type-asserts `event.Payload` to
+      its product-owned type.
+- [ ] **Register** — `init()` calls the role's `Register(name, factory)` (and
+      optionally `RegisterManifest(name, manifest)`).
+- [ ] **Blank import** — for `arx-core` plugins: included in the host's
+      blank-import list. For product plugins: included in
+      `cmd/arxsentinel/plugins_full.go` AND `profiles/full.yaml`.
+- [ ] **Tests** — at minimum: Manifest contract + one happy-path test per
+      exported method. Detectors should test against a mock `IPView`.
+      Sinks/executors should test against a real `*plugin.Event` (Envelope +
+      a product-owned payload, e.g. `&threat.ThreatEvent{...}`).
+- [ ] **Boundary rule** — the package does NOT import `arx-core/pkg/plugin`
+      types that are not in the published contract (e.g. `plugin.LogEntry` /
+      `plugin.ThreatEvent` — those types do not exist; payload is opaque).
+- [ ] **Build profile** — for any new source/sink/executor/processor, add
+      an entry to `profiles/full.yaml` AND to `cmd/arxsentinel/plugins_full.go`,
+      then run `bash scripts/check-build-profiles.sh`.
+
+### Verify before commit
+
+```bash
+# Build the binary
+go build ./cmd/arxsentinel
+
+# Run the full test suite
+go test ./...
+
+# Validate profile ↔ plugin drift
+bash scripts/check-build-profiles.sh
+
+# Validate config (for any new executor/sink/source)
+./arxsentinel validate --config=/etc/arxsentinel/config.yaml
+# Expected:
+# ✓ pipeline 'default' — valid (no semantic errors)
 ```
-internal/core/<role>/<plugin-name>/
-├── manifest.go     — identity and data contract
-├── config.go       — configuration struct and defaults
-├── impl.go         — core logic (implements the role interface)
-├── register.go     — init() registration with the role registry
-└── impl_test.go    — unit tests
-```
+
+If a plugin is not found at runtime, check:
+
+1. Blank import is present in `cmd/arxsentinel/plugins_full.go`.
+2. `init()` in `register.go` calls the correct registry function.
+3. The build succeeded with `go build`.
+4. The YAML config uses the exact `PluginID` string from `Manifest.PluginID`.
+
+---
+
+## Walkthrough: MikroTik Executor (product example)
+
+The MikroTik executor (`pkg/executorplugins/mikrotik/`) is the canonical
+example of a product-side executor: it reads `*plugin.Event` from NCS,
+type-asserts `event.Payload` to `*threat.ThreatEvent`, calls MikroTik
+REST API to add the IP to a firewall address-list, and runs a TTL sweep
+goroutine for auto-unban.
 
 ### manifest.go
 
 ```go
-// ========================== manifest =====================================
-//   Identity and data contract for the Manifest framework.
-package myplugin
+// pkg/executorplugins/mikrotik/manifest.go
+package mikrotik
 
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
-// Manifest returns the plugin's identity and data contract.
-func (p *MyPlugin) Manifest() plugin.Manifest {
+func (e *Executor) Manifest() plugin.Manifest {
     return plugin.Manifest{
-        PluginID:      "my-plugin",
+        PluginID:      "mikrotik",
         PluginVersion: "1.0.0",
-        Role:          plugin.RoleProcessor,
-        InputType:     plugin.TypeStructured,
-        OutputType:    plugin.TypeStructured,
+        Role:          plugin.RoleExecutor,
+        InputType:     plugin.TypeScoredEvent,
+        OutputType:    plugin.TypeNone,
+        Tags:          []string{"firewall", "ban", "routeros"},
     }
 }
 ```
 
-Fields:
-
-| Field | Description |
-|---|---|
-| `PluginID` | Unique identifier used in YAML config (lowercase, hyphen-separated) |
-| `PluginVersion` | Semantic version of the plugin |
-| `Role` | One of `RoleSource`, `RoleProcessor`, `RoleDetector`, `RoleExecutor`, `RoleSink` |
-| `InputType` | `DataType` the plugin expects to receive |
-| `OutputType` | `DataType` the plugin produces |
-
-### config.go
+### config.go (excerpt)
 
 ```go
-// ========================== config =======================================
-package myplugin
-
-// Config holds user-configurable parameters for MyPlugin.
 type Config struct {
-    Threshold int    `yaml:"threshold"`
-    Endpoint  string `yaml:"endpoint"`
+    Address   string        `yaml:"address"`     // 10.99.99.1
+    Username  string        `yaml:"username"`
+    Password  string        `yaml:"password"`    // "${MIKROTIK_PASSWORD}"
+    List      string        `yaml:"address_list"`
+    TTL       time.Duration `yaml:"ttl"`
+    Timeout   time.Duration `yaml:"timeout"`
+    MinLevel  string        `yaml:"min_level"`   // skip "" (no event) entries
 }
+```
 
-// DefaultConfig returns the default configuration.
-func DefaultConfig() Config {
-    return Config{
-        Threshold: 50,
-        Endpoint:  "http://localhost:8080",
+### impl.go (excerpt — Run loop)
+
+```go
+func (e *Executor) Run(ctx context.Context, source plugin.EventSource) error {
+    // Startup sync: load current address-list, prime dedup map.
+    if err := e.syncRemoteState(ctx); err != nil {
+        e.log("startup sync failed: %v", err)
+        // continue anyway — better partial dedup than no enforcement
     }
-}
-```
 
-### impl.go
+    // TTL sweep goroutine: auto-unban after expiry.
+    go e.ttlSweep(ctx)
 
-Source template:
-
-```go
-// ========================== impl =========================================
-package myplugin
-
-import (
-    "context"
-    "github.com/mr-addams/arxsentinel/pkg/plugin"
-)
-
-// MySource reads data from a custom external source.
-type MySource struct {
-    cfg    Config
-    name   string
-    stats  plugin.SourceStats
-}
-
-func (s *MySource) Name() string                                   { return s.name }
-func (s *MySource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error { return nil }
-func (s *MySource) Close() error                                   { return nil }
-func (s *MySource) Stats() plugin.SourceStats                      { return s.stats }
-
-// NewMySource creates a new MySource instance.
-func NewMySource(name string, cfg Config) plugin.Source {
-    return &MySource{name: name, cfg: cfg}
-}
-```
-
-Processor template:
-
-```go
-// ========================== impl =========================================
-package myplugin
-
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
-
-type MyProcessor struct {
-    cfg Config
-}
-
-func (p *MyProcessor) Name() string { return "my-processor" }
-func (p *MyProcessor) Process(entry *plugin.LogEntry) (*plugin.LogEntry, error) { return entry, nil }
-```
-
-Detector template:
-
-```go
-// ========================== impl =========================================
-package myplugin
-
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
-
-type MyDetector struct{}
-
-func (d *MyDetector) Name() string { return "my-detector" }
-func (d *MyDetector) Detect(sv plugin.IPView, entry *plugin.LogEntry) plugin.DetectResult {
-    return plugin.DetectResult{Score: 0, Module: d.Name(), Reason: ""}
-}
-```
-
-Sink template:
-
-```go
-// ========================== impl =========================================
-package myplugin
-
-import "github.com/mr-addams/arxsentinel/pkg/plugin"
-
-type MySink struct {
-    cfg   Config
-    stats plugin.SinkStats
-}
-
-func (s *MySink) Name() string { return "my-sink" }
-func (s *MySink) Write(event plugin.ThreatEvent) error {
-    s.stats.EventsWritten++
-    return nil
-}
-func (s *MySink) Close() error { return nil }
-func (s *MySink) Stats() plugin.SinkStats { return s.stats }
-```
-
-Executor template:
-
-```go
-// ========================== impl =========================================
-package myplugin
-
-import (
-    "context"
-    "github.com/mr-addams/arxsentinel/pkg/executor/queue"
-)
-
-type MyExecutor struct{}
-
-func (e *MyExecutor) Run(ctx context.Context, q queue.Queue) error {
     for {
-        event, err := q.Pop(ctx)
-        if err != nil { return err }
-        _ = event // perform action
+        ev, err := source.Pop(ctx)
+        if err != nil {
+            if errors.Is(err, context.Canceled) { return nil }
+            e.stats.Errors++
+            continue
+        }
+        threat, ok := ev.Payload.(*threat.ThreatEvent)
+        if !ok { continue }
+        if !shouldAct(threat.Level, e.cfg.MinLevel) { e.stats.Skipped++; continue }
+
+        if _, ok := e.dedup.LoadOrStore(threat.IP, time.Now()); ok {
+            e.stats.Skipped++   // already banned
+            continue
+        }
+        if err := e.addToAddressList(ctx, threat.IP); err != nil {
+            e.dedup.Delete(threat.IP)
+            e.stats.Errors++
+            continue
+        }
+        e.stats.Executed++
     }
 }
 ```
@@ -191,106 +151,94 @@ func (e *MyExecutor) Run(ctx context.Context, q queue.Queue) error {
 ### register.go
 
 ```go
-// ========================== register ====================================
-package myplugin
+// pkg/executorplugins/mikrotik/register.go
+package mikrotik
 
 import (
-    "github.com/mr-addams/arxsentinel/pkg/plugin"
-    "github.com/mr-addams/arxsentinel/pkg/processor"  // change registry per role
+    "github.com/mr-addams/arx-core/pkg/executor"
+    "github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 func init() {
-    processor.Register("my-plugin", func(cfg map[string]interface{}) plugin.ManifestProcessor {
-        return NewMyProcessor(parseConfig(cfg))
+    executor.Register("mikrotik", func(cfg executor.ExecutorConfig) (plugin.Executor, error) {
+        return New(parseConfig(cfg.Params))
     })
-}
-
-func parseConfig(cfg map[string]interface{}) Config {
-    c := DefaultConfig()
-    if v, ok := cfg["threshold"].(int); ok { c.Threshold = v }
-    if v, ok := cfg["endpoint"].(string); ok { c.Endpoint = v }
-    return c
+    executor.RegisterManifest("mikrotik", (&Executor{}).Manifest())
 }
 ```
 
-Import the correct registry package:
-
-| Role | Registry package |
-|---|---|
-| Source | `github.com/mr-addams/arxsentinel/pkg/source` |
-| Processor | `github.com/mr-addams/arxsentinel/pkg/processor` |
-| Detector | `github.com/mr-addams/arxsentinel/pkg/detector` |
-| Executor | `github.com/mr-addams/arxsentinel/pkg/executor` |
-| Sink | `github.com/mr-addams/arxsentinel/pkg/sink` |
-
-### impl_test.go
+### Blank import + profile entry
 
 ```go
-// ========================== impl_test ===================================
-package myplugin
-
+// cmd/arxsentinel/plugins_full.go
 import (
-    "testing"
-    "github.com/mr-addams/arxsentinel/pkg/plugin"
+    _ "github.com/mr-addams/arxsentinel/pkg/executorplugins/mikrotik"
 )
-
-func TestManifest(t *testing.T) {
-    p := NewMyPlugin(DefaultConfig())
-    m := p.Manifest()
-    if m.PluginID != "my-plugin" {
-        t.Fatalf("expected 'my-plugin', got %q", m.PluginID)
-    }
-    if m.Role != plugin.RoleProcessor {
-        t.Fatalf("expected RoleProcessor, got %v", m.Role)
-    }
-}
-
-func TestProcess(t *testing.T) {
-    // role-specific test logic
-}
 ```
 
----
-
-## Example: MikroTik Executor
-
-The MikroTik executor (`internal/core/executor/mikrotik/`) is the reference implementation for an executor plugin:
-
-- **manifest.go** — declares `RoleExecutor`, `InputType: TypeNone`, `OutputType: TypeNone`
-- **config.go** — host, username, password (from env), address-list, ttl
-- **impl.go** — `Run(ctx, queue.Queue)` pops events and calls MikroTik REST API to add an IP to the blocklist
-- **register.go** — `executor.Register("mikrotik", factory)`
-- **impl_test.go** — mock HTTP server tests for API calls
-
----
-
-## Checklist Before PR
-
-- [ ] **Manifest** — `PluginID`, `PluginVersion`, `Role`, `InputType`, `OutputType` are filled
-- [ ] **Config** — struct with `yaml` tags and `DefaultConfig()` function
-- [ ] **Impl** — implements the correct interface (`plugin.Source`, `plugin.Processor`, `plugin.Detector`, `plugin.Sink`, or executor's `Run(ctx, queue.Queue)`)
-- [ ] **Register** — `init()` registers the plugin in the appropriate role registry
-- [ ] **Tests** — at minimum: Manifest contract + one happy-path test per exported method
-- [ ] **Blank import** — `_ "github.com/mr-addams/arxsentinel/internal/core/<role>/<name>"` added to `cmd/arxsentinel/main.go`
-
----
-
-## Verify
-
-```bash
-# Build the binary
-go build ./cmd/arxsentinel
-
-# Validate the pipeline sees the new plugin
-arxsentinel validate --config=/etc/arxsentinel/pipeline.yaml
-
-# Expected output:
-# ✓ pipeline 'default' — valid (no semantic errors)
+```yaml
+# profiles/full.yaml
+plugins:
+  executors:
+    - { name: mikrotik, module: arxsentinel }
 ```
 
-If the plugin is not found, check:
+### Tests (excerpt)
 
-1. Blank import is present in `main.go`
-2. `init()` in `register.go` calls the correct registry function
-3. The build succeeded with `go build`
-4. The YAML config uses the exact `PluginID` string
+Place `impl_test.go` next to `impl.go`. Mock the HTTP client and assert
+on RouterOS API call shape. See
+`pkg/executorplugins/mikrotik/mikrotik_test.go` for a working example
+that uses `httptest.NewServer`.
+
+---
+
+## Walkthrough: Sentinel source/sink (NCS bridge)
+
+The sentinel source/sink pair (`arx-core/pkg/source/sentinel/`,
+`arx-core/pkg/sink/sentinel/`) wire two ArxSentinel pipelines together
+through NCS. The detector pipeline writes scored events into a named
+queue via `sentinel-threat` sink; another pipeline reads them via
+`sentinel` source and forwards to executors.
+
+### Detector-side config (writes to NCS)
+
+```yaml
+streams:
+  - name: detector
+    pipelines:
+      - name: p0
+        inputs:  [{ type: file, path: /var/log/nginx/access.log }]
+        detectors: { probe: {enabled: true} }
+        outputs: [{ type: sentinel-threat, name: cf-threats }]   # NCS queue name
+```
+
+### Executor-side config (reads from NCS)
+
+```yaml
+streams:
+  - name: executor
+    pipelines:
+      - name: p0
+        inputs: [{ type: sentinel, addr: ncs://cf-threats }]     # same queue name
+        outputs: []   # executors consume in-process via EventSource
+executors:
+  - name: cf-ban
+    type: cloudflare
+    sources: [{ name: cf-threats }]                              # same queue name
+```
+
+Both pipelines (or both processes) share the NCS queue (memory / bbolt /
+redis backend). The `sentinel` source emits `*plugin.Event` with
+`json.RawMessage` payload; the executor type-asserts to `*threat.ThreatEvent`.
+
+---
+
+## See also
+
+- [`arx-core/docs/plugin-development.md`](../../arx-core/docs/plugin-development.md) — full plugin contract.
+- [`docs/PLUGIN_DEV.md`](../PLUGIN_DEV.md) — Sink-vs-Executor, exec+JSON, product walkthroughs.
+- [`docs/executors.md`](../executors.md) — executor framework overview.
+- [`docs/developer/build-profiles.md`](build-profiles.md) — tree-shaking, `arx_tag` sentinel.
+- [`pkg/executorplugins/`](../../pkg/executorplugins/) — reference implementations (cloudflare, mikrotik, nginx).
+- [`arx-core/pkg/source/sentinel/README.md`](../../arx-core/pkg/source/sentinel/README.md),
+  [`arx-core/pkg/sink/sentinel/README.md`](../../arx-core/pkg/sink/sentinel/README.md) — NCS bridge.

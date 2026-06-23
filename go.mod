@@ -4,13 +4,12 @@ go 1.26
 
 require (
 	github.com/fatih/color v1.19.0
-	github.com/fsnotify/fsnotify v1.10.1
 	github.com/moby/moby/client v0.4.1
+	github.com/mr-addams/arx-core v0.0.0-00010101000000-000000000000
 	github.com/prometheus/client_golang v1.23.2
-	github.com/redis/go-redis/v9 v9.20.0
 	github.com/rrethy/ahocorasick v1.0.0
 	github.com/testcontainers/testcontainers-go v0.42.0
-	go.etcd.io/bbolt v1.4.3
+	go.etcd.io/bbolt v1.5.0
 	golang.org/x/crypto v0.52.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -33,6 +32,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
@@ -59,6 +59,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
+	github.com/redis/go-redis/v9 v9.20.1 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.3 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
@@ -75,3 +76,8 @@ require (
 	golang.org/x/sys v0.45.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 )
+
+// arx-core is developed in-repo during the TelemetryCore split (Phase 2).
+// Local replace resolves it without a published version; go.work also uses it.
+// When arx-core is published (Phase 3), drop this replace and pin a real version.
+replace github.com/mr-addams/arx-core => ./arx-core

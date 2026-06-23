@@ -16,11 +16,18 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
-	pkgexecutor "github.com/mr-addams/arxsentinel/pkg/executor"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	pkgexecutor "github.com/mr-addams/arx-core/pkg/executor"
+	ncs "github.com/mr-addams/arx-core/pkg/ncs"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
+
+// productQueueNamespace — product-owned default for bbolt bucket and redis key prefix.
+// Core (arx-core/pkg/executor/queue) has no hardcoded default; the product is the only
+// legitimate owner of its own namespace. Phase 5 (Flow 083).
+const productQueueNamespace = "arxsentinel"
 
 // preRegisterExecutorQueues pre-registers each executor source that has a queue:
 // section with its declared backend (bbolt/redis) and verifies that every
@@ -72,7 +79,21 @@ func preRegisterExecutorQueues(cfg *config.Config) error {
 			if src.Queue == nil {
 				continue
 			}
-			if err := pkgexecutor.RegisterSinkFromConfig(src.Name, src.Queue); err != nil {
+			// Phase 5 (Flow 083): core dropped hardcoded defaults; product applies its own
+			// namespace explicitly so cf/ros-ban and other queue-backed executors still
+			// receive events. Without this, EffectiveBucket/EffectiveKey would panic at
+			// RegisterSinkFromConfig. Core has no knowledge of this constant.
+			if src.Queue.Type == queue.QueueTypeBbolt && src.Queue.Bucket == "" {
+				copy := *src.Queue
+				copy.Bucket = productQueueNamespace
+				src.Queue = &copy
+			}
+			if src.Queue.Type == queue.QueueTypeRedis && src.Queue.Key == "" {
+				copy := *src.Queue
+				copy.Key = productQueueNamespace + ":queue:" + src.Name
+				src.Queue = &copy
+			}
+			if err := ncs.RegisterSinkFromConfig(src.Name, src.Queue, utils.AsLogger()); err != nil {
 				return fmt.Errorf("executor %q source %q: %w", ec.Name, src.Name, err)
 			}
 		}
@@ -125,30 +146,47 @@ func sortedKeys(m map[string]struct{}) []string {
 // Returns an error if any executor cannot be built or any named source cannot be found.
 // On error, the caller should log and continue — executor startup failure is not fatal
 // for the rest of the pipeline (streams still process logs).
+//
+// Flow 073 / Task 1.3.1 — F1 closure: utils.AsLogger() is passed into Build() so
+// the executor factory receives a real bridge instead of logger.Nop. The
+// pre-1.3.1 wiring had no logger argument at this layer; this is the cmd-side
+// counterpart of the registry signature change. EXECUTOR-tag diagnostics
+// (find/create list, sync errors, reload errors, sweep failures) become
+// observable in production output — see integration diff expected: +EXECUTOR log lines.
 func startExecutors(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup) error {
 	for _, ec := range cfg.Executors {
 		ex, err := pkgexecutor.Build(pkgexecutor.ExecutorConfig{
 			Name:   ec.Name,
 			Type:   ec.Type,
 			Config: ec.Config,
-		})
+		}, utils.AsLogger())
 		if err != nil {
 			return fmt.Errorf("executor %q: build: %w", ec.Name, err)
 		}
 
 		for _, src := range ec.Sources {
-			q, err := pkgexecutor.AttachReader(src.Name)
+			q, err := ncs.AttachReader(src.Name)
 			if err != nil {
 				return fmt.Errorf("executor %q: source %q: %w", ec.Name, src.Name, err)
 			}
 
+			// Phase 2.2 (Flow 083 / Gate A — RESOLVED-D strategy II / OPEN-Q3b gray zone):
+			// queue.Queue operates on opaque []byte payloads (see
+			// pkg/executor/queue/queue.go) — the wire format is owned by the
+			// sink-side Formatter and the executor-side adapter. Until the
+			// proper adapter lands in Task 3.3, wrap the queue with a bytes→Event
+			// translator that JSON-decodes the payload into a generic
+			// *plugin.Event. Executors type-assert Event.Payload to their
+			// product-owned type (Gate A: *plugin.ThreatEvent) inside Run.
+			source := newQueueEventSource(q)
+
 			wg.Add(1)
-			go func(ex plugin.Executor, q plugin.EventSource) {
+			go func(ex plugin.Executor, src plugin.EventSource) {
 				defer wg.Done()
-				if err := ex.Run(ctx, q); err != nil && err != context.Canceled {
+				if err := ex.Run(ctx, src); err != nil && err != context.Canceled {
 					utils.Log("EXECUTOR", fmt.Sprintf("executor %s: %v", ex.Name(), err), "error")
 				}
-			}(ex, q)
+			}(ex, source)
 		}
 	}
 	return nil

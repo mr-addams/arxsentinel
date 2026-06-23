@@ -1,0 +1,31 @@
+# ===================== cookbook/profiles/minimal.yaml =================================
+#
+#   Reference config for the `minimal` build profile.
+#   Covers two plugin names from profiles/minimal.yaml:
+#     - source/syslog (type: syslog)
+#     - sink/stdout   (type: stdout)
+#
+#   Not a deployable user config — cookbook/profiles/ exists only as the
+#   static reference set for scripts/check-build-profiles.sh invariant (c).
+#   For ready-to-use recipes see cookbook/<scenario>/.
+#
+# =======================================================================================
+
+# ── Streams ───────────────────────────────────────────────────────────────────────────
+# Smallest valid minimal-profile pipeline: syslog → stdout.
+streams:
+  - name: main
+    inputs:
+      - type: syslog
+        addr: udp://0.0.0.0:5514
+        parser: combined
+    outputs:
+      - type: stdout
+        format: json
+
+# ── Scoring (minimal valid set) ────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: "300s"
+  decay: "linear"

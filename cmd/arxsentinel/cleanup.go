@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
-	cloudflare "github.com/mr-addams/arxsentinel/pkg/executor/cloudflare"
+	cloudflare "github.com/mr-addams/arxsentinel/pkg/executorplugins/cloudflare"
 )
 
 // cleanupCmd parses flags for the cleanup subcommand.
