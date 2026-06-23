@@ -2,7 +2,7 @@
 
 > **Core five-file pattern, registry / init+blank-import wiring, and
 > plugin role contracts live in
-> [`arx-core/docs/plugin-development.md`](../arx-core/docs/plugin-development.md).**
+> [`arx-core/docs/plugin-development.md`](../../arx-core/docs/plugin-development.md).**
 > Read the core contract first, then come back here for the **product-side
 > checklist** and the **MikroTik / Sentinel-source / Sentinel-sink
 > walkthroughs** that are specific to ArxSentinel.
@@ -235,7 +235,7 @@ redis backend). The `sentinel` source emits `*plugin.Event` with
 
 ## See also
 
-- [`arx-core/docs/plugin-development.md`](../arx-core/docs/plugin-development.md) — full plugin contract.
+- [`arx-core/docs/plugin-development.md`](../../arx-core/docs/plugin-development.md) — full plugin contract.
 - [`docs/PLUGIN_DEV.md`](../PLUGIN_DEV.md) — Sink-vs-Executor, exec+JSON, product walkthroughs.
 - [`docs/executors.md`](../executors.md) — executor framework overview.
 - [`docs/developer/build-profiles.md`](build-profiles.md) — tree-shaking, `arx_tag` sentinel.
