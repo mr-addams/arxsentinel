@@ -237,7 +237,14 @@ func (q *BboltQueue) readAndClaim(tx *bbolt.Tx) ([]byte, bool, error) {
 		return nil, false, err
 	}
 
-	return data, true, nil
+	// bbolt returns slices backed by mmap'd memory that is only valid for the
+	// lifetime of the enclosing tx. The payload returned here is shipped to the
+	// caller through a channel and Pop may dereference it long after the tx has
+	// been committed (or the DB closed), which would read garbage. Copy out of
+	// the mmap region before returning.
+	payload := make([]byte, len(data))
+	copy(payload, data)
+	return payload, true, nil
 }
 
 // Push enqueues a payload (opaque bytes) into the bbolt queue.
