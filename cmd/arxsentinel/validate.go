@@ -51,21 +51,18 @@ func validateConfig(cfg config.Config) []pipeline.SemanticError {
 	// (or the deprecated general.log_file/output.threat_log) into streams[].pipelines[].
 	// So cfg.Streams is never empty here and every pipeline lives under a stream.
 	var pipes []pipeline.PipelineContext
-	var hasDetectors []bool
 	var sinkChannels [][]string // sentinel-threat sink names per pipeline, parallel to pipes
 
 	for _, s := range cfg.Streams {
 		for _, pl := range s.Pipelines {
-			pipeCtx, hd := buildPipelineCtx(s.Name, pl)
-			pipes = append(pipes, pipeCtx)
-			hasDetectors = append(hasDetectors, hd)
+			pipes = append(pipes, buildPipelineCtx(s.Name, pl))
 			sinkChannels = append(sinkChannels, sentinelChannelNames(pl))
 		}
 	}
 
 	// Validate each pipeline (spine + terminals). The result carries ProducedType,
 	// reused below to build channel types — no second spine computation.
-	results := pipeline.ValidatePipelines(pipes, hasDetectors)
+	results := pipeline.ValidatePipelines(pipes)
 
 	// Map each sentinel-threat sink name → the produced type of its pipeline.
 	channelTypes := map[string]plugin.DataType{}
@@ -112,7 +109,7 @@ func validateConfig(cfg config.Config) []pipeline.SemanticError {
 // buildPipelineCtx builds a PipelineContext from a single pipeline config.
 // Called from: validateConfig (line 56).
 // Non-blocking.
-func buildPipelineCtx(streamName string, pl config.PipelineConfig) (pipeline.PipelineContext, bool) {
+func buildPipelineCtx(streamName string, pl config.PipelineConfig) pipeline.PipelineContext {
 	var spine []plugin.Manifest
 	for _, inp := range pl.Inputs {
 		// Read the static manifest from the registry — building a live file/exec
@@ -137,6 +134,11 @@ func buildPipelineCtx(streamName string, pl config.PipelineConfig) (pipeline.Pip
 				break
 			}
 		}
+		// Product owns the Scorer-as-spine-stage convention — Core validator treats
+		// spine as an arbitrary producer chain and never inserts stages on the
+		// caller's behalf. Defensive copy + append so ctx.Spine's backing array
+		// is never mutated for any subsequent reader.
+		spine = append(append([]plugin.Manifest{}, spine...), scorerManifest)
 	}
 
 	var sinks []plugin.Manifest
@@ -152,7 +154,20 @@ func buildPipelineCtx(streamName string, pl config.PipelineConfig) (pipeline.Pip
 		PipelineName: pl.Name,
 		Spine:        spine,
 		Sinks:        sinks,
-	}, hd
+	}
+}
+
+// scorerManifest is the product-owned synthetic manifest for the Scorer stage.
+// It transforms detector output (Structured) into ScoredEvent and is appended
+// to the spine when a pipeline has detectors (see buildPipelineCtx). It lives
+// here, not in pkg/pipeline, because the Core validator treats spine as an
+// arbitrary producer chain from config — adding Scorer-as-spine-stage is a
+// product convention (Flow 083, Phase 4b).
+var scorerManifest = plugin.Manifest{
+	PluginID:   "scorer",
+	Role:       plugin.RoleProcessor,
+	InputType:  plugin.TypeStructured,
+	OutputType: plugin.TypeScoredEvent,
 }
 
 // sentinelChannelNames returns the names of all sentinel-threat sinks in a pipeline.

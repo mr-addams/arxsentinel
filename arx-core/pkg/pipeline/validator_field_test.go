@@ -457,7 +457,7 @@ func TestValidateSpine_FieldErrorEnrichedLikeTypeError(t *testing.T) {
 			},
 		},
 	}
-	_, errs := ValidateSpine(ctx, false)
+	_, errs := ValidateSpine(ctx)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 field error, got %d: %v", len(errs), errs)
 	}

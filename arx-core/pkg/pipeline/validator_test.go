@@ -129,7 +129,7 @@ func TestValidateSpine(t *testing.T) {
 				{PluginID: "file", InputType: plugin.TypeNone, OutputType: plugin.TypeStructured},
 			},
 		}
-		produced, errs := ValidateSpine(ctx, false)
+		produced, errs := ValidateSpine(ctx)
 		if len(errs) != 0 {
 			t.Fatalf("expected 0 errors, got %d", len(errs))
 		}
@@ -138,25 +138,25 @@ func TestValidateSpine(t *testing.T) {
 		}
 	})
 
-	t.Run("with detectors — Scorer appended, producedType=ScoredEvent", func(t *testing.T) {
-		// Backing array with spare capacity (len 2, cap 3): a naive append in
-		// ValidateSpine would write the scorer into backing[2], corrupting the
-		// caller's array. The defensive copy must prevent that.
-		backing := make([]plugin.Manifest, 2, 3)
-		backing[0] = plugin.Manifest{PluginID: "file", InputType: plugin.TypeNone, OutputType: plugin.TypeStructured}
-		backing[1] = plugin.Manifest{PluginID: "probe", InputType: plugin.TypeStructured, OutputType: plugin.TypeStructured}
-		ctx := PipelineContext{StreamName: "http", PipelineName: "main", Spine: backing}
-
-		produced, errs := ValidateSpine(ctx, true)
+	t.Run("generic spine with last element producing ScoredEvent", func(t *testing.T) {
+		// Core validator treats spine as an arbitrary producer chain. The
+		// spine here is exactly what the product (cmd/arxsentinel) builds:
+		// a Source followed by a Scorer-as-spine-stage plugin manifest.
+		// producedType is the last element's OutputType.
+		ctx := PipelineContext{
+			StreamName:   "http",
+			PipelineName: "main",
+			Spine: []plugin.Manifest{
+				{PluginID: "file", InputType: plugin.TypeNone, OutputType: plugin.TypeStructured},
+				{PluginID: "scorer", InputType: plugin.TypeStructured, OutputType: plugin.TypeScoredEvent},
+			},
+		}
+		produced, errs := ValidateSpine(ctx)
 		if len(errs) != 0 {
 			t.Fatalf("expected 0 errors, got %d", len(errs))
 		}
 		if produced != plugin.TypeScoredEvent {
 			t.Errorf("producedType = %q, want %q", produced, plugin.TypeScoredEvent)
-		}
-		// Aliasing guard: the spare backing slot must remain zero — not the scorer.
-		if full := backing[:3]; full[2].PluginID == "scorer" {
-			t.Error("ValidateSpine mutated the caller's backing array (slice-append aliasing bug)")
 		}
 	})
 
@@ -169,7 +169,7 @@ func TestValidateSpine(t *testing.T) {
 				{PluginID: "probe", InputType: plugin.TypeScoredEvent, OutputType: plugin.TypeScoredEvent},
 			},
 		}
-		_, errs := ValidateSpine(ctx, false)
+		_, errs := ValidateSpine(ctx)
 		if len(errs) != 1 {
 			t.Fatalf("expected 1 error, got %d", len(errs))
 		}
@@ -421,19 +421,22 @@ func TestValidateExecutorWiring(t *testing.T) {
 
 func TestValidatePipelines(t *testing.T) {
 	t.Run("single valid pipeline with detectors", func(t *testing.T) {
+		// Core treats spine as opaque. We build the spine as the product does:
+		// a Source followed by a Scorer-as-spine-stage manifest.
 		pipes := []PipelineContext{
 			{
 				StreamName:   "http",
 				PipelineName: "main",
 				Spine: []plugin.Manifest{
 					{PluginID: "file", InputType: plugin.TypeNone, OutputType: plugin.TypeStructured},
+					{PluginID: "scorer", InputType: plugin.TypeStructured, OutputType: plugin.TypeScoredEvent},
 				},
 				Sinks: []plugin.Manifest{
 					{PluginID: "file-sink", InputType: plugin.TypeScoredEvent},
 				},
 			},
 		}
-		results := ValidatePipelines(pipes, []bool{true})
+		results := ValidatePipelines(pipes)
 		if len(results) != 1 {
 			t.Fatalf("expected 1 result, got %d", len(results))
 		}
@@ -458,7 +461,7 @@ func TestValidatePipelines(t *testing.T) {
 				},
 			},
 		}
-		results := ValidatePipelines(pipes, []bool{false})
+		results := ValidatePipelines(pipes)
 		if len(results) != 1 {
 			t.Fatalf("expected 1 result, got %d", len(results))
 		}
@@ -477,6 +480,7 @@ func TestValidatePipelines(t *testing.T) {
 				PipelineName: "main",
 				Spine: []plugin.Manifest{
 					{PluginID: "file", InputType: plugin.TypeNone, OutputType: plugin.TypeStructured},
+					{PluginID: "scorer", InputType: plugin.TypeStructured, OutputType: plugin.TypeScoredEvent},
 				},
 				Sinks: []plugin.Manifest{
 					{PluginID: "file-sink", InputType: plugin.TypeScoredEvent},
@@ -493,7 +497,7 @@ func TestValidatePipelines(t *testing.T) {
 				},
 			},
 		}
-		results := ValidatePipelines(pipes, []bool{true, false})
+		results := ValidatePipelines(pipes)
 		if len(results) != 2 {
 			t.Fatalf("expected 2 results, got %d", len(results))
 		}
@@ -515,14 +519,5 @@ func TestValidatePipelines(t *testing.T) {
 		if len(results[1].Errors) != 0 {
 			t.Errorf("result[1] expected 0 errors, got %d", len(results[1].Errors))
 		}
-	})
-
-	t.Run("mismatched slice lengths panics", func(t *testing.T) {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("expected panic, got none")
-			}
-		}()
-		ValidatePipelines([]PipelineContext{{}}, []bool{true, false})
 	})
 }

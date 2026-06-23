@@ -3,8 +3,8 @@
 //   Each pair (i, i+1) is checked: chain[i].OutputType must match chain[i+1].InputType.
 //   TypeAny is universally compatible — it bridges any type on either side.
 //   Also provides topology-aware validation: ValidateSpine checks the producing chain
-//   (Source → Processors → Detectors → [synthetic Scorer]), and ValidateTerminals checks
-//   each sink independently against the spine's produced type.
+//   (Source → Processors → Detectors, producing chain from config), and ValidateTerminals
+//   checks each sink independently against the spine's produced type.
 
 package pipeline
 
@@ -72,12 +72,12 @@ func (e SemanticError) Error() string {
 type PipelineContext struct {
 	StreamName   string            // YAML: streams[i].name — stream identifier. Consumer: ValidateSpine, ValidateTerminals
 	PipelineName string            // YAML: pipelines[i].name — pipeline identifier. Consumer: ValidateSpine, ValidateTerminals
-	Spine        []plugin.Manifest // YAML: — Source → [Processors] → [Detectors] → [synthetic Scorer]. Consumer: ValidateSpine
+	Spine        []plugin.Manifest // YAML: producing chain from config (Source → Processors → Detectors, ...). Consumer: ValidateSpine
 	Sinks        []plugin.Manifest // YAML: — terminal sinks of this pipeline. Consumer: ValidateTerminals
 }
 
 // PipelineResult holds validation errors for one pipeline plus the type its spine
-// produces (Structured for ETL, ScoredEvent when scoring is active). Callers reuse
+// produces (last element's OutputType of the spine). Callers reuse
 // ProducedType to validate executor wiring without recomputing the spine.
 type PipelineResult struct {
 	StreamName   string
@@ -86,37 +86,19 @@ type PipelineResult struct {
 	Errors       []SemanticError
 }
 
-// scorerManifest is the synthetic manifest for the core Scorer (not a plugin).
-// It transforms detector output (Structured) into ScoredEvent. Added to the spine
-// only when the pipeline has detectors (see hasDetectors arg).
-var scorerManifest = plugin.Manifest{
-	PluginID:   "scorer",
-	Role:       plugin.RoleProcessor,
-	InputType:  plugin.TypeStructured,
-	OutputType: plugin.TypeScoredEvent,
-}
-
-// ValidateSpine validates the producing spine: Source → Processors → Detectors → [Scorer].
-// When hasDetectors is true, the synthetic Scorer is appended so the spine ends at ScoredEvent.
-// Returns the spine's final OutputType (the "produced type") and any compatibility errors,
-// each enriched with stream/pipeline context (ConsumerType="spine").
+// ValidateSpine validates the producing spine as an arbitrary producer chain from
+// config (Source → Processors → Detectors, ...). Core treats the spine as opaque:
+// it never mutates or extends it. Returns the spine's final OutputType (the "produced
+// type") and any compatibility errors, each enriched with stream/pipeline context
+// (ConsumerType="spine").
 //
-// Non-destructive: ctx.Spine is never modified — when the Scorer is appended, a fresh
-// slice is allocated so the caller's underlying array is not aliased.
 // An empty spine yields produced type TypeNone; the caller should treat that as a
 // configuration error (no source) before running ValidateTerminals.
 // Called from: validate.go, main.go.
 //
 // Non-blocking.
-func ValidateSpine(ctx PipelineContext, hasDetectors bool) (plugin.DataType, []SemanticError) {
+func ValidateSpine(ctx PipelineContext) (plugin.DataType, []SemanticError) {
 	spine := ctx.Spine
-	if hasDetectors {
-		// Defensive copy: append into a new array so ctx.Spine (and its backing
-		// array, which may have spare capacity) is never mutated for the caller.
-		spine = make([]plugin.Manifest, len(ctx.Spine), len(ctx.Spine)+1)
-		copy(spine, ctx.Spine)
-		spine = append(spine, scorerManifest)
-	}
 
 	errs := Validate(spine)
 	for i := range errs {
@@ -173,13 +155,10 @@ type ExecutorBinding struct {
 // Called from: main.go.
 //
 // Non-blocking.
-func ValidatePipelines(pipes []PipelineContext, hasDetectors []bool) []PipelineResult {
-	if len(pipes) != len(hasDetectors) {
-		panic("pkg/pipeline: ValidatePipelines called with mismatched slice lengths")
-	}
+func ValidatePipelines(pipes []PipelineContext) []PipelineResult {
 	results := make([]PipelineResult, 0, len(pipes))
-	for i, ctx := range pipes {
-		produced, errs := ValidateSpine(ctx, hasDetectors[i])
+	for _, ctx := range pipes {
+		produced, errs := ValidateSpine(ctx)
 		termErrs := ValidateTerminals(ctx, produced)
 		if len(termErrs) > 0 {
 			errs = append(errs, termErrs...)
