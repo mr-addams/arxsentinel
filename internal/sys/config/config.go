@@ -1126,8 +1126,10 @@ func validateConfig(cfg *Config) error {
 func validateInputs(inputs []InputConfig) error {
 	seen := make(map[string]bool)
 	for i, in := range inputs {
-		if in.Type != "file" && in.Type != "stdin" && in.Type != "exec" && in.Type != "syslog" && in.Type != "http" {
-			return fmt.Errorf("inputs[%d]: unknown type %q (want file, stdin, exec, syslog, or http)", i, in.Type)
+		// Изменение (Flow 083): добавлен "sentinel" — легитимный top-level input,
+		// зарегистрированный в plugins_full (pkg/source/sentinel), читает из NCS.
+		if in.Type != "file" && in.Type != "stdin" && in.Type != "exec" && in.Type != "syslog" && in.Type != "http" && in.Type != "sentinel" {
+			return fmt.Errorf("inputs[%d]: unknown type %q (want file, stdin, exec, syslog, http, or sentinel)", i, in.Type)
 		}
 		if in.Type == "syslog" && in.Addr == "" {
 			return fmt.Errorf("inputs[%d]: type=syslog requires addr (e.g. \"udp://:5514\")", i)
