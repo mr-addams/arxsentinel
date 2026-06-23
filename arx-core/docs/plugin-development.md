@@ -37,11 +37,11 @@ host binary ── feeds into ──▶ runtime.Run (engine) — see arx-core/do
 
 | Role      | Interface (in `pkg/plugin/`) | Registry (in `pkg/<role>/`)                | One-line responsibility |
 |-----------|------------------------------|--------------------------------------------|--------------------------|
-| `source`   | `Source`                      | `pkg/source`                               | Read inputs, emit `*LogEntry` |
-| `processor`| `Processor`                   | `pkg/processor`                            | Enrich or filter `*LogEntry` |
+| `source`   | `Source`                      | `pkg/source`                               | Read inputs, emit `*Event` (Payload=opaque, often `*parser.LogEntry`) |
+| `processor`| `Processor`                   | `pkg/processor`                            | Enrich or filter `*Event` |
 | `detector` | `Detector`                    | `pkg/detector`                             | Analyse entry against per-IP state, return score |
 | `executor` | `Executor`                    | `pkg/executor`                             | Pull events from an `EventSource`, perform an action |
-| `sink`     | `Sink`                        | `pkg/sink`                                 | Persist / forward `ThreatEvent` records |
+| `sink`     | `Sink`                        | `pkg/sink`                                 | Persist / forward `*Event` records (Payload cast done in Product `Formatter`) |
 
 Cross-references:
 
@@ -64,16 +64,28 @@ shape of `init()`, `Register(...)`, and how the host binary consumes it.
 Use `source` when you need to read data from an external system: a file on
 disk, a network socket, an HTTP webhook, a stdin pipe, an NCS queue.
 
-A source owns its parser and delivers fully parsed `*plugin.LogEntry` values.
+A source owns its parser and delivers `*plugin.Event` values (the generic
+event carrier: `Event{Envelope, Payload any}`). For HTTP/file/stdin/syslog
+sources the payload is typically `*parser.LogEntry` (see
+[`pkg/parser/event_bridge.go`](../pkg/parser/event_bridge.go) — `WrapLogEntry` /
+`UnwrapLogEntry`); for sentinel/exec sources the payload shape is owned by
+the source itself.
 `Run` blocks until `ctx` is cancelled or an unrecoverable error occurs;
 `Close` releases file handles and OS resources.
 
+The source fills the **transport** part of `Envelope`
+(`Timestamp` / `Stream` / `Source` / `SourceType`); `Level` is left empty
+until a downstream Product processor (scorer) sets it. The engine never
+inspects `Event.Payload` itself — only `Envelope` is a generic DTO.
+
 ### 2.2 Processor — enrich or filter
 
-Use `processor` when you need to transform or enrich a `*LogEntry` in the
-middle of a pipeline. Processors are value-typed — return the (possibly
-modified) entry on success, `(nil, nil)` to drop it, or a non-nil error on
-actual processing failure.
+Use `processor` when you need to transform or enrich a `*plugin.Event` in the
+middle of a pipeline. The generic Event is the carrier (`Event{Envelope, Payload}`);
+processors may inspect or replace `Payload` (commonly `*parser.LogEntry`) and
+may also update `Envelope.Level`. Processors are value-typed — return the
+(possibly modified) event on success, `(nil, nil)` to drop it, or a non-nil
+error on actual processing failure.
 
 Processors are optional in `arx-core` itself — the engine contract in
 `arx-core/docs/contract.md` uses `LineProcessor` for the product wrapper
@@ -82,14 +94,16 @@ coarser-grained version that operates outside the runtime engine.
 
 ### 2.3 Detector — score entries
 
-Use `detector` when you need to analyse a `*LogEntry` against per-IP history
-and return a threat-score contribution. Detectors are **stateless**: every
-input they need arrives in the `plugin.IPView` parameter at call time.
+Use `detector` when you need to analyse a `*plugin.Event` against per-IP
+history and return a threat-score contribution. Detectors are **stateless**:
+every input they need arrives in the `plugin.IPView` parameter at call time.
+The detector reads `entry.Payload` (typically `*parser.LogEntry`); it does
+NOT set `Envelope.Level` — that is the scorer's responsibility in Product.
 
 ```go
 type Detector interface {
     Name() string
-    Detect(sv IPView, entry *LogEntry) DetectResult
+    Detect(sv IPView, entry *plugin.Event) DetectResult
     Manifest() Manifest
 }
 ```
@@ -499,8 +513,10 @@ package myfilter
 
 import (
     "context"
+    "fmt"
     "strings"
 
+    "github.com/mr-addams/arx-core/pkg/parser"
     "github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -514,17 +530,21 @@ type MyFilter struct {
 func (p *MyFilter) Name() string { return "my-filter" }
 
 // Process implements plugin.Processor.
-func (p *MyFilter) Process(ctx context.Context, entry *plugin.LogEntry) (*plugin.LogEntry, error) {
-    if entry == nil {
-        return nil, nil
-    }
-    if p.cfg.DropPrefix != "" && strings.HasPrefix(entry.Path, p.cfg.DropPrefix) {
-        return nil, nil // drop
-    }
-    if p.cfg.MinBytes > 0 && entry.BytesSent < int64(p.cfg.MinBytes) {
-        return nil, nil // drop
-    }
-    return entry, nil
+func (p *MyFilter) Process(ctx context.Context, entry *plugin.Event) (*plugin.Event, error) {
+	if entry == nil {
+		return nil, nil
+	}
+	le, ok := entry.Payload.(*parser.LogEntry)
+	if !ok {
+		return nil, fmt.Errorf("my-filter: unexpected payload type %T", entry.Payload)
+	}
+	if p.cfg.DropPrefix != "" && strings.HasPrefix(le.Path, p.cfg.DropPrefix) {
+		return nil, nil // drop
+	}
+	if p.cfg.MinBytes > 0 && le.BytesSent < int64(p.cfg.MinBytes) {
+		return nil, nil // drop
+	}
+	return entry, nil
 }
 
 // NewMyFilter creates a configured filter instance.
@@ -565,6 +585,7 @@ import (
     "context"
     "testing"
 
+    "github.com/mr-addams/arx-core/pkg/parser"
     "github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -580,9 +601,9 @@ func TestManifest(t *testing.T) {
 }
 
 func TestProcessDropsByPrefix(t *testing.T) {
-    p := NewMyFilter(Config{DropPrefix: "/health"})
-    entry := &plugin.LogEntry{Path: "/health/live"}
-    got, err := p.Process(context.Background(), entry)
+	p := NewMyFilter(Config{DropPrefix: "/health"})
+	entry := &plugin.Event{Payload: &parser.LogEntry{Path: "/health/live"}}
+	got, err := p.Process(context.Background(), entry)
     if err != nil {
         t.Fatalf("unexpected error: %v", err)
     }
@@ -802,12 +823,14 @@ func (m *mockView) RecentPaths() []string          { return m.paths }
 func (m *mockView) ApproxRate(time.Duration) float64 { return m.rate }
 ```
 
-For sources, drive `Run` with a `chan<- *LogEntry` and a cancellable
+For sources, drive `Run` with a `chan<- *plugin.Event` and a cancellable
 context, then assert on the entries received.
 
 For sinks, construct the sink against a `*os.File` (or a test helper
 constructor that accepts any `io.Writer`), call `Write` with a sample
-`ThreatEvent`, and read the file back.
+`*plugin.Event` (Payload set to a product-owned struct, e.g.
+`&threat.ThreatEvent{...}`) plus a product-side `Formatter` for byte-level
+encoding, and read the file back.
 
 ### 9.2 Integration tests (exec+JSON)
 

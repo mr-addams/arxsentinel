@@ -48,7 +48,7 @@ One pipeline goroutine, started per `PipelineSpec` in `streamSpec.Pipelines`. Se
    - If the first source's `Name()` is prefixed with `file:` → `sourceType = "file"`.
    - Otherwise → `sourceType = "stdin"`.
 4. **Resolve buffer size.** `bufSize = streamSpec.BufferSize`. If `0`, fall back to `defaultBufferSize` (1000, hardcoded inside engine — not part of the contract).
-5. **Fan-in sources.** `entries := coreinput.Merge(ctx, pipe.Sources, bufSize, coreinput.LogFn(logFn))`. Each source runs in its own goroutine; `Merge` returns a single `entries <-chan *plugin.LogEntry`. `input.LogFn` and `runtime.LogFn` are distinct named types — the engine converts explicitly.
+5. **Fan-in sources.** `entries := coreinput.Merge(ctx, pipe.Sources, bufSize, coreinput.LogFn(logFn))`. Each source runs in its own goroutine; `Merge` returns a single `entries <-chan *plugin.Event`. `input.LogFn` and `runtime.LogFn` are distinct named types — the engine converts explicitly.
 6. **Start stats goroutine.** `go runStats(...)` with `statsInterval = streamSpec.StatsInterval` (or `defaultStatsInterval` = 30s if zero).
 7. **Main select loop** — three cases:
 
@@ -68,16 +68,16 @@ The goroutine also has a `defer recover` so a panic is logged with tag `RUNTIME`
 
 ## 4. `dispatchEntry` — one-row processing
 
-Source: `engine.go`. Called once per `*plugin.LogEntry` arriving from `entries`. Pure function over its arguments plus the atomics. Steps in order:
+Source: `engine.go`. Called once per `*plugin.Event` arriving from `entries`. Pure function over its arguments plus the atomics. Steps in order:
 
 1. `processedCount.Add(1)`.
 2. **`RecordLine` callback (nil-safe)** — fires **before** `processor.Process`, even on rows that will end up `Skip == true`. Guard: `if cb := shared.MetricsCallbacks; cb != nil && cb.RecordLine != nil { cb.RecordLine(evctx.StreamName, evctx.PipelineName, evctx.SourceName, evctx.SourceType) }`.
 3. `action := processor.Process(ctx, entry, ps, evctx)`.
 4. If `action.Skip`, return.
-5. If `action.ThreatEvent == nil`, return (row passed silently — no event, no fan-out).
-6. **Count threats.** If `action.ThreatEvent.Level == "THREAT"`, `eventCount.Add(1)`. The engine has no level semantics of its own — it uses the literal string `"THREAT"` from `plugin.ThreatEvent`. `"WARN"` does **not** increment `eventCount` (matches the legacy `processLine` semantics).
-7. **`RecordThreat` callback (nil-safe)** — `cb.RecordThreat(streamName, pipelineName, action.ThreatEvent.Level)`.
-8. **Fan-out to sinks.** Iterate `sinks` (order not guaranteed). For each: `sink.Write(ctx, *action.ThreatEvent)`. On error: log `SINK` line with the tag, **continue** to the next sink. Errors do **not** stop the pipeline — one broken sink must not kill the rest. On success: **`RecordOutputEvent` callback (nil-safe)** — `cb.RecordOutputEvent(streamName, pipelineName, sink.Name())`.
+5. If `action.Payload == nil`, return (row passed silently — no event, no fan-out).
+6. **Count threats.** If `action.Payload.Envelope.Level == "THREAT"`, `eventCount.Add(1)`. The engine has no level semantics of its own — it reads the literal string `"THREAT"` from `Envelope.Level` (set upstream by the product-side scorer via `processor.Process`). `"WARN"` does **not** increment `eventCount` (matches the legacy `processLine` semantics).
+7. **`RecordThreat` callback (nil-safe)** — `cb.RecordThreat(streamName, pipelineName, action.Payload.Envelope.Level)`.
+8. **Fan-out to sinks.** Iterate `sinks` (order not guaranteed). For each: `sink.Write(ctx, action.Payload)`. On error: log `SINK` line with the tag, **continue** to the next sink. Errors do **not** stop the pipeline — one broken sink must not kill the rest. On success: **`RecordOutputEvent` callback (nil-safe)** — `cb.RecordOutputEvent(streamName, pipelineName, sink.Name())`.
 
 The error-tolerance on sink writes is a deliberate design choice, not an oversight.
 
@@ -132,7 +132,7 @@ Prior to flow 081, the per-pipeline / per-stream orchestration logic (`runStream
 `pkg/runtime` imports only:
 
 - stdlib (`context`, `fmt`, `strings`, `sync`, `sync/atomic`, `time`).
-- `github.com/mr-addams/arx-core/pkg/plugin` — shared DTOs (`LogEntry`, `ThreatEvent`, `Source`, `Sink`).
+- `github.com/mr-addams/arx-core/pkg/plugin` — shared DTOs (`Event`, `Envelope`, `Source`, `Sink`, `Executor`, `Manifest`).
 - `github.com/mr-addams/arx-core/pkg/input` — `coreinput.Merge` for fan-in.
 
 Anything beyond that violates ADR-002. Reviewers must reject PRs that:

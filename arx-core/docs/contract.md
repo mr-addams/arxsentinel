@@ -51,17 +51,19 @@ Source: `types.go`.
 
 ```go
 type Action struct {
-    Skip        bool
-    ThreatEvent *plugin.ThreatEvent
+    Skip    bool
+    Payload *plugin.Event
 }
 ```
 
 Semantics:
 
 - `Skip == true` — the row is dropped. Downstream stages / sinks see nothing. Filter/gate semantics.
-- `Skip == false`, `ThreatEvent == nil` — the row passed through cleanly. No event is published.
-- `Skip == false`, `ThreatEvent != nil` — the engine fans the event out to every `Sink` on the pipeline.
-- `Skip == true`, `ThreatEvent != nil` — the skip wins (the engine treats the row as dropped and does not publish). Implementations should not set both.
+- `Skip == false`, `Payload == nil` — the row passed through cleanly. No event is published.
+- `Skip == false`, `Payload != nil` — the engine fans the event out to every `Sink` on the pipeline.
+- `Skip == true`, `Payload != nil` — the skip wins (the engine treats the row as dropped and does not publish). Implementations should not set both.
+
+The payload inside `Payload` is opaque to the runtime — the engine only inspects `Payload.Envelope.Level` for the metrics-counter branch in `dispatchEntry`. Concrete payload types are owned by their producers (e.g. a Product-side `*threat.ThreatEvent` carried as `Payload.Payload`); the engine never type-asserts them.
 
 `Action` is a **value type**, no mutexes, copy on every return. The runtime never interprets the contents beyond the three branches above. `processor.Process` must be deterministic for the same `(entry, state)` pair — the engine relies on this to keep a single goroutine per pipeline.
 
@@ -97,17 +99,18 @@ Source: `types.go`.
 
 ```go
 type LineProcessor interface {
-    Process(ctx context.Context, entry *plugin.LogEntry, state ProcessorState, evctx EventContext) Action
+    Process(ctx context.Context, entry *plugin.Event, state ProcessorState, evctx EventContext) Action
 }
 ```
 
 Contract:
 
 - Called **sequentially in a single goroutine per pipeline**. There is no concurrent dispatch within one pipeline.
+- `entry` is the generic event carrier `*plugin.Event` (Envelope + opaque Payload). For the row pre-processor stage the Payload is typically `*parser.LogEntry` — the engine does not require this, only the receiving LineProcessor does.
 - `state` is whatever `factory.Build` (or the most recent `factory.Reload`) returned.
 - `evctx` is the static per-pipeline `EventContext`; do not mutate it.
 - Must be deterministic for the same `(entry, state)`.
-- The runtime does not interpret the returned `Action` beyond `Skip`/`ThreatEvent` checks.
+- The runtime does not interpret the returned `Action` beyond `Skip`/`Payload` checks.
 
 ### 5. `LineProcessorFactory` (interface)
 
@@ -186,7 +189,7 @@ Callback semantics:
 
 - `RecordLine` — fires on **every** row, **before** `processor.Process`, even if the eventual `Action.Skip == true`. It marks "row received".
 - `RecordInputLine` — sibling of `RecordLine`, distinguished by where in the pipeline the row is observed (engine currently calls `RecordLine`; `RecordInputLine` is reserved for future stages).
-- `RecordThreat` — fires only when `action.ThreatEvent != nil`, carrying `ThreatEvent.Level` (e.g. `"THREAT"`, `"WARN"`).
+- `RecordThreat` — fires only when `action.Payload != nil`, carrying `action.Payload.Envelope.Level` (e.g. `"THREAT"`, `"WARN"`).
 - `RecordDetectorHit` — Product calls this from inside its own `Process` / `Build` closures when a specific detector module fires; the engine itself does not invoke it.
 - `RecordOutputEvent` — fires after each successful `sink.Write` (one event per sink that succeeded).
 - `UpdateGauges` — fired periodically from the stats goroutine with the latest `processedCount` and `eventCount` snapshots; Product-typed metrics register Prometheus gauges here.
@@ -209,7 +212,7 @@ type PipelineSpec struct {
 - `Name` — axis label `pipeline_name` for logs and metrics.
 - `Idx` — position in `StreamSpec.Pipelines` (`0..len-1`), forwarded verbatim into `EventContext.PipelineIdx`.
 - `Sources` — already-built `plugin.Source` instances, Product constructs them before calling `Run`. The engine feeds them into `coreinput.Merge` for fan-in.
-- `Sinks` — already-built `plugin.Sink` instances. The engine fans every `ThreatEvent` out to all of them.
+- `Sinks` — already-built `plugin.Sink` instances. The engine fans every non-skip `Action.Payload` out to all of them.
 
 **Detectors do not appear here.** Product passes them via closure into `LineProcessorFactory.Build`. `PipelineSpec` describes *what* runs; `factory.Build` describes *how* (including detector wiring).
 
@@ -296,13 +299,13 @@ func (p *myProcessor) Reload(old ProcessorState, ctx context.Context) (Processor
     return &myState{}, nil
 }
 
-func (p *myProcessor) Process(ctx context.Context, entry *plugin.LogEntry, state ProcessorState, evctx EventContext) Action {
+func (p *myProcessor) Process(ctx context.Context, entry *plugin.Event, state ProcessorState, evctx EventContext) Action {
     st := state.(*myState)
     if st.shouldSkip(entry) {
         return Action{Skip: true}
     }
     if ev := st.detectThreat(entry); ev != nil {
-        return Action{ThreatEvent: ev}
+        return Action{Payload: ev}
     }
     return Action{}
 }
