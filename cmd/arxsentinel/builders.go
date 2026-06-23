@@ -265,7 +265,7 @@ func buildSinks(ctx context.Context, streamName string, outputs []config.SinkCon
 	}
 	sinks := make([]plugin.Sink, 0, len(outputs))
 	for _, out := range outputs {
-		formatter, err := formatterForFormat(out.Format, streamName)
+		formatter, err := formatterForFormat(out.Type, out.Format, streamName)
 		if err != nil {
 			return nil, fmt.Errorf("sink %q: %w", out.Type, err)
 		}
@@ -285,16 +285,35 @@ func buildSinks(ctx context.Context, streamName string, outputs []config.SinkCon
 	return sinks, nil
 }
 
-// formatterForFormat maps the YAML format hint to a concrete format.Formatter
-// implementation. Returns nil (not an error) when the sink type does not
-// need serialization (e.g. exec sinks that own their own Formatter) — in
-// that case out.Type != "" and the caller skips the nil check. Unknown
-// format strings produce an error so misconfiguration fails fast at startup
-// instead of silently producing empty threat logs.
+// formatterForFormat maps the sink type + YAML format hint to a concrete
+// format.Formatter implementation.
 //
-// streamName is required for "sentinel-threat" format (the wire format
+// The sink type takes precedence over the format string: a sentinel-threat
+// sink ALWAYS uses the SentinelFormatter because its wire format is owned
+// by the sentinel-threat transport (a JSON *plugin.ThreatEvent that the
+// queueEventSource adapter decodes back into a *plugin.ThreatEvent on the
+// executor side — see cmd/arxsentinel/queue_event_source.go). Decoupling
+// the format from the sink type here was a regression of Task 2.2
+// (Flow 083, 2bcb354): when the YAML's `format` field was empty (the
+// normal case for a sentinel-threat output — its format is implicit),
+// the empty-string branch returned a FailbanFormatter, and the NCS queue
+// ended up holding Fail2Ban lines that the executor's JSON decoder could
+// not parse. With the sink-type branch, this is no longer possible: any
+// sentinel-threat output gets a SentinelFormatter regardless of the
+// `format` field.
+//
+// For file/stdout sinks the format hint is what the user controls:
+// fail2ban (default) / json. Unknown format strings produce an error so
+// misconfiguration fails fast at startup instead of silently producing
+// empty threat logs.
+//
+// streamName is required for "sentinel-threat" sinks (the wire format
 // embeds it); it is otherwise unused.
-func formatterForFormat(format, streamName string) (sinkformat.Formatter, error) {
+func formatterForFormat(sinkType, format, streamName string) (sinkformat.Formatter, error) {
+	// Sentinel-threat owns its own wire format — the sink type decides.
+	if sinkType == "sentinel-threat" {
+		return &sinkformat.SentinelFormatter{StreamName: streamName}, nil
+	}
 	switch format {
 	case "", "fail2ban":
 		// Empty string falls back to fail2ban — matches the pre-Phase-2.2
@@ -302,9 +321,7 @@ func formatterForFormat(format, streamName string) (sinkformat.Formatter, error)
 		return &sinkformat.FailbanFormatter{}, nil
 	case "json":
 		return &sinkformat.JSONFormatter{}, nil
-	case "sentinel-threat":
-		return &sinkformat.SentinelFormatter{StreamName: streamName}, nil
 	default:
-		return nil, fmt.Errorf("unknown format %q (want fail2ban, json, or sentinel-threat)", format)
+		return nil, fmt.Errorf("unknown format %q for sink type %q (want fail2ban or json)", format, sinkType)
 	}
 }
