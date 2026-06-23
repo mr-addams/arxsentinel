@@ -18,7 +18,12 @@
 //
 //   Run is called in its own goroutine. The source is an EventSource — typically a
 //   queue.Queue from pkg/executor/queue but defined here as an interface to avoid
-//   circular imports (pkg/executor/queue imports pkg/plugin for ThreatEvent).
+//   circular imports (pkg/executor/queue imports pkg/plugin for Event, so plugin
+//   cannot import queue back).
+//
+//   Phase 2.2 (Flow 083 / RESOLVED-Q9): EventSource.Pop returns the generic
+//   *plugin.Event. Executor implementations type-assert Event.Payload to their
+//   product-owned type (typically *product.ThreatEvent) inside Run.
 
 package plugin
 
@@ -26,11 +31,11 @@ import "context"
 
 // EventSource is the consumer side of an event queue. Executors call Pop in their
 // Run loop. Defined in plugin to avoid circular import: pkg/executor/queue imports
-// pkg/plugin for ThreatEvent, so plugin cannot import queue back.
+// pkg/plugin for *Event, so plugin cannot import queue back.
 //
 // Implementations: queue.MemoryQueue, queue.BboltQueue, queue.RedisQueue.
 type EventSource interface {
-	Pop(ctx context.Context) (ThreatEvent, error)
+	Pop(ctx context.Context) (*Event, error)
 }
 
 // ExecutorStats — generic operational counters emitted by an Executor.
@@ -57,6 +62,9 @@ type ExecutorStats struct {
 // raw <-chan. Named Channel Switch provides a queue.Queue which satisfies EventSource.
 // Run() is called as a goroutine and returns when ctx is cancelled.
 //
+// Phase 2.2 (Flow 083): events popped from EventSource are generic *plugin.Event;
+// the executor type-asserts Payload to its product-owned type inside Run.
+//
 // Implementations are responsible for:
 //   - Startup sync (e.g., loading current ban list from remote API).
 //   - Deduplication (e.g., skipping already-banned IPs).
@@ -64,7 +72,7 @@ type ExecutorStats struct {
 //   - Retry / circuit-breaker logic on external API failures.
 //   - Batch accumulation and flush (when applicable).
 //
-// Run receives ThreatEvents via Pop and must be safe for concurrent access only
+// Run receives *Event values via Pop and must be safe for concurrent access only
 // via the EventSource — no external goroutines call methods on the Executor after Run() starts.
 type Executor interface {
 	Name() string

@@ -31,6 +31,10 @@ import (
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
+// Phase 2.2 (Flow 083): Detect now receives *plugin.Event. The noasset
+// detector does not consult the current event payload — it works over the
+// IP's RecentPaths() history — so the event is intentionally ignored.
+
 func init() {
 	detector.Register("noasset", newNoAssetFactory)
 }
@@ -80,7 +84,7 @@ func (d *noAssetDetector) Name() string { return "noasset" }
 // Called from: pipeline.processEntries.
 //
 // Non-blocking.
-func (d *noAssetDetector) Detect(sv plugin.IPView, _ *plugin.LogEntry) plugin.DetectResult {
+func (d *noAssetDetector) Detect(sv plugin.IPView, _ *plugin.Event) plugin.DetectResult {
 	paths := sv.RecentPaths()
 
 	var pageCount, assetCount int

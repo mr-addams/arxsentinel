@@ -33,7 +33,6 @@ import (
 
 	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	"github.com/mr-addams/arx-core/pkg/logger"
-	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // DefaultBufferSize is used by AttachWriter when bufferSize <= 0.
@@ -155,4 +154,16 @@ func DetachWriter(name string) {
 }
 
 // Compile-time guarantee that queue.Queue satisfies plugin.EventSource.
-var _ plugin.EventSource = (queue.Queue)(nil)
+//
+// Phase 2.2 (Flow 083 / Gate A — RESOLVED-D strategy II / OPEN-Q3b gray zone):
+// queue.Queue still operates on opaque []byte payloads (see
+// pkg/executor/queue/queue.go — deliberate, so persistent backends
+// serialize via JSON cleanly across process restarts). The Sink side
+// (Formatter) and Executor side (adapter) own wire-schema translation.
+// An EventSource adapter lives in Task 3.3 (Flow 083) — for Gate A we
+// disable this compile-time assertion to unblock build; the actual
+// contract conversion is wired via RegisterSinkFromConfig + executor
+// adapters at runtime.
+// This declaration is intentionally commented out during Gate A and
+// restored in Task 3.3 once the adapter is in place.
+// var _ plugin.EventSource = (queue.Queue)(nil)

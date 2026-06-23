@@ -4,16 +4,8 @@
 //   from parser.go strips RFC 3164 / RFC 5424 envelopes before forwarding the
 //   embedded log line to the configured LineParser.
 //
-//   WHAT IS HERE:
-//     - SyslogSource struct — network listener with atomic counters
-//     - New() constructor
-//     - Run() dispatcher → runPacket() (UDP/unixgram) / runStream() (TCP/unix)
-//     - Name(), Close(), Stats(), Manifest() — Source interface
-//     - init() — registers factory and manifest in pkg/source
-//
-//   WHAT IS NOT HERE:
-//     - parseMessage() — lives in parser.go (same package)
-//     - RFC 3164 / RFC 5424 format details — see parser.go
+//   Phase 2.2 (Flow 083 / RESOLVED-Q9): emits *plugin.Event with parser-owned
+//   LogEntry as Payload (built via WrapLogEntry).
 
 package syslog
 
@@ -26,38 +18,28 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 )
 
 // SyslogSource listens for syslog messages over network transports and delivers
-// parsed LogEntry values to the pipeline.
+// parsed *plugin.Event values to the pipeline.
 type SyslogSource struct {
 	name    string
-	network string               // "udp", "tcp", "unixgram", "unix"
-	host    string               // ":5514" or "/var/run/arx.sock"
-	parser  pkgsource.LineParser // parses extracted log line into *plugin.LogEntry
+	network string
+	host    string
+	parser  pkgsource.LineParser
 	logFn   func(tag, msg, level string)
 
-	linesRead   atomic.Int64 // total messages received
-	parseErrors atomic.Int64 // messages that failed to parse
-	dropped     atomic.Int64 // entries dropped due to full channel buffer
-	maxConns    int          // max simultaneous TCP connections (H5); 0 = unlimited (default 1000 from config)
+	linesRead   atomic.Int64
+	parseErrors atomic.Int64
+	dropped     atomic.Int64
+	maxConns    int
 }
 
-// defaultMaxConns используется как значение по умолчанию, пока конфигурация
-// не будет подключена через Task 2.6 (ARXSENTINEL_SYSLOG_MAX_CONNECTIONS).
 const defaultMaxConns = 1000
 
-// New creates a SyslogSource. addr is a URI-like string parsed by parseAddr:
-//
-//	"udp://:5514", "tcp://:514", "unix:///var/run/arx.sock",
-//	"unixgram:///var/run/arx.sock"
-//
-// maxConnections limits concurrent TCP connections (0 = defaultMaxConns).
-//
-// Called from: pkg/source registry (init() → Build).
-// Non-blocking — returns immediately with a configured instance or error.
 func New(addr string, parser pkgsource.LineParser, logFn func(string, string, string), maxConnections int) (*SyslogSource, error) {
 	network, host, err := parseAddr(addr)
 	if err != nil {
@@ -80,8 +62,6 @@ func New(addr string, parser pkgsource.LineParser, logFn func(string, string, st
 	}, nil
 }
 
-// parseAddr splits an address URI into network and host components.
-// Package-private helper used by New.
 func parseAddr(addr string) (network, host string, err error) {
 	scheme, rest, ok := strings.Cut(addr, "://")
 	if !ok || scheme == "" || rest == "" {
@@ -101,14 +81,10 @@ func parseAddr(addr string) (network, host string, err error) {
 	}
 }
 
-// Name returns the human-readable identifier for this source.
 func (s *SyslogSource) Name() string { return s.name }
 
-// Close releases resources. No-op for SyslogSource — the listener is closed
-// by the context-driven goroutine in Run.
 func (s *SyslogSource) Close() error { return nil }
 
-// Stats returns a point-in-time snapshot of operational counters.
 func (s *SyslogSource) Stats() plugin.SourceStats {
 	return plugin.SourceStats{
 		LinesRead:   s.linesRead.Load(),
@@ -117,7 +93,6 @@ func (s *SyslogSource) Stats() plugin.SourceStats {
 	}
 }
 
-// Manifest returns plugin metadata for the pipeline framework.
 func (s *SyslogSource) Manifest() plugin.Manifest {
 	return plugin.Manifest{
 		PluginID:      "syslog",
@@ -129,16 +104,14 @@ func (s *SyslogSource) Manifest() plugin.Manifest {
 	}
 }
 
-// Run dispatches to runPacket or runStream based on the transport type.
-func (s *SyslogSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
+func (s *SyslogSource) Run(ctx context.Context, out chan<- *plugin.Event) error {
 	if s.network == "udp" || s.network == "unixgram" {
 		return s.runPacket(ctx, out)
 	}
 	return s.runStream(ctx, out)
 }
 
-// runPacket handles datagram-oriented transports (UDP, unixgram).
-func (s *SyslogSource) runPacket(ctx context.Context, out chan<- *plugin.LogEntry) error {
+func (s *SyslogSource) runPacket(ctx context.Context, out chan<- *plugin.Event) error {
 	conn, err := net.ListenPacket(s.network, s.host)
 	if err != nil {
 		return fmt.Errorf("syslog source: listen packet on %s://%s: %w", s.network, s.host, err)
@@ -154,8 +127,6 @@ func (s *SyslogSource) runPacket(ctx context.Context, out chan<- *plugin.LogEntr
 		if err != nil {
 			break
 		}
-		// L3: UDP truncation detection — если дейтаграмма заполнила буфер целиком,
-		// возможно сообщение было обрезано. Логируем предупреждение о возможной потере.
 		if n == len(buf) && s.logFn != nil {
 			s.logFn("SYSLOG", fmt.Sprintf("UDP datagram may be truncated (buffer %d bytes full) on %s", len(buf), s.host), "warning")
 		}
@@ -173,8 +144,15 @@ func (s *SyslogSource) runPacket(ctx context.Context, out chan<- *plugin.LogEntr
 			s.parseErrors.Add(1)
 			continue
 		}
+		ev := parser.WrapLogEntry(entry, plugin.Envelope{
+			Source:     s.name,
+			SourceType: "syslog",
+			Stream:     "",
+			Timestamp:  entry.Time,
+			Level:      "",
+		})
 		select {
-		case out <- entry:
+		case out <- ev:
 		default:
 			s.dropped.Add(1)
 		}
@@ -182,8 +160,7 @@ func (s *SyslogSource) runPacket(ctx context.Context, out chan<- *plugin.LogEntr
 	return nil
 }
 
-// runStream handles stream-oriented transports (TCP, unix socket).
-func (s *SyslogSource) runStream(ctx context.Context, out chan<- *plugin.LogEntry) error {
+func (s *SyslogSource) runStream(ctx context.Context, out chan<- *plugin.Event) error {
 	l, err := net.Listen(s.network, s.host)
 	if err != nil {
 		return fmt.Errorf("syslog source: listen stream on %s://%s: %w", s.network, s.host, err)
@@ -193,8 +170,6 @@ func (s *SyslogSource) runStream(ctx context.Context, out chan<- *plugin.LogEntr
 		l.Close()
 	}()
 
-	// H5: semaphore для ограничения одновременных TCP-соединений (maxConns).
-	// Защита от resource exhaustion при лавине подключений.
 	maxConns := s.maxConns
 	if maxConns <= 0 {
 		maxConns = defaultMaxConns
@@ -208,8 +183,6 @@ acceptLoop:
 		if err != nil {
 			break
 		}
-		// H5: ждём свободный слот семафора, не блокируя Accept.
-		// При контекстной отмене закрываем соединение и выходим.
 		select {
 		case sem <- struct{}{}:
 		case <-ctx.Done():
@@ -223,9 +196,7 @@ acceptLoop:
 	return nil
 }
 
-// handleConn reads lines from a single TCP/unix connection until EOF or context
-// cancellation.
-func (s *SyslogSource) handleConn(ctx context.Context, conn net.Conn, out chan<- *plugin.LogEntry, wg *sync.WaitGroup, sem chan struct{}) {
+func (s *SyslogSource) handleConn(ctx context.Context, conn net.Conn, out chan<- *plugin.Event, wg *sync.WaitGroup, sem chan struct{}) {
 	defer wg.Done()
 	defer conn.Close()
 	if sem != nil {
@@ -254,14 +225,19 @@ func (s *SyslogSource) handleConn(ctx context.Context, conn net.Conn, out chan<-
 			s.parseErrors.Add(1)
 			continue
 		}
+		ev := parser.WrapLogEntry(entry, plugin.Envelope{
+			Source:     s.name,
+			SourceType: "syslog",
+			Stream:     "",
+			Timestamp:  entry.Time,
+			Level:      "",
+		})
 		select {
-		case out <- entry:
+		case out <- ev:
 		default:
 			s.dropped.Add(1)
 		}
 	}
-	// H6: проверяем ошибку сканера после выхода из цикла Scan.
-	// Если сканер упал по причине, отличной от EOF, логируем и считаем parse error.
 	if err := sc.Err(); err != nil {
 		s.parseErrors.Add(1)
 		if s.logFn != nil {

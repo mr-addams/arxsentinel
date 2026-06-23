@@ -57,7 +57,7 @@ func (d *bruteforceDetector) Name() string { return "bruteforce" }
 // Called from: pipeline.processEntries.
 //
 // Non-blocking.
-func (d *bruteforceDetector) Detect(sv plugin.IPView, _ *plugin.LogEntry) plugin.DetectResult {
+func (d *bruteforceDetector) Detect(sv plugin.IPView, _ *plugin.Event) plugin.DetectResult {
 	total := sv.GetTotalRequests()
 	if total < d.minRequests {
 		return plugin.DetectResult{}

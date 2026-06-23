@@ -150,13 +150,23 @@ func startExecutors(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup)
 				return fmt.Errorf("executor %q: source %q: %w", ec.Name, src.Name, err)
 			}
 
+			// Phase 2.2 (Flow 083 / Gate A — RESOLVED-D strategy II / OPEN-Q3b gray zone):
+			// queue.Queue operates on opaque []byte payloads (see
+			// pkg/executor/queue/queue.go) — the wire format is owned by the
+			// sink-side Formatter and the executor-side adapter. Until the
+			// proper adapter lands in Task 3.3, wrap the queue with a bytes→Event
+			// translator that JSON-decodes the payload into a generic
+			// *plugin.Event. Executors type-assert Event.Payload to their
+			// product-owned type (Gate A: *plugin.ThreatEvent) inside Run.
+			source := newQueueEventSource(q)
+
 			wg.Add(1)
-			go func(ex plugin.Executor, q plugin.EventSource) {
+			go func(ex plugin.Executor, src plugin.EventSource) {
 				defer wg.Done()
-				if err := ex.Run(ctx, q); err != nil && err != context.Canceled {
+				if err := ex.Run(ctx, src); err != nil && err != context.Canceled {
 					utils.Log("EXECUTOR", fmt.Sprintf("executor %s: %v", ex.Name(), err), "error")
 				}
-			}(ex, q)
+			}(ex, source)
 		}
 	}
 	return nil

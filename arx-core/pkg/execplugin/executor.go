@@ -82,13 +82,28 @@ func (e *ExecExecutor) Manifest() plugin.Manifest {
 // Called from: pipeline.runExecutor.
 //
 // Blocking — runs until ctx cancellation or source error.
+//
+// Phase 2.2 (Flow 083 / Gate A): the source delivers generic *plugin.Event.
+// Gate A keeps the executePlugin signature on plugin.ThreatEvent (so the
+// ThreatEvent payload contract with external plugin processes stays byte-
+// identical). We type-assert Event.Payload here — a wrong payload type is a
+// programmer error and is skipped (Gate B Task 3.3 replaces this with a
+// proper Formatter-driven contract).
 func (e *ExecExecutor) Run(ctx context.Context, source plugin.EventSource) error {
 	for {
 		event, err := source.Pop(ctx)
 		if err != nil {
 			return nil
 		}
-		if err := e.executePlugin(ctx, event); err != nil {
+		te, ok := event.Payload.(*plugin.ThreatEvent)
+		if !ok {
+			// Gate A: only ThreatEvent payloads are expected. A wrong payload
+			// type indicates a miswired pipeline — log and skip rather than
+			// crash the executor goroutine.
+			fmt.Fprintf(os.Stderr, "[%s] skipped non-ThreatEvent payload: %T\n", e.name, event.Payload)
+			continue
+		}
+		if err := e.executePlugin(ctx, *te); err != nil {
 			continue
 		}
 	}

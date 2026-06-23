@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 	"github.com/mr-addams/arx-core/pkg/source/http/adapters"
@@ -17,10 +18,10 @@ import (
 )
 
 // runPull polls the remote HTTP endpoint at cfg.pullInterval.
-// Decodes response with protocol-specific adapter, sends parsed entries to out channel.
+// Decodes response with protocol-specific adapter, sends parsed events to out channel.
 // Logs errors via logFn but continues polling (does not fail on transient errors).
 // Called from: HTTPSource.Run() when mode == "pull". Blocks until ctx is cancelled.
-func runPull(ctx context.Context, cfg *parsedConfig, adapter adapters.Adapter, out chan<- *plugin.LogEntry, par pkgsource.LineParser, logFn func(string, string, string), counters *sourceCounters) error {
+func runPull(ctx context.Context, cfg *parsedConfig, adapter adapters.Adapter, out chan<- *plugin.Event, par pkgsource.LineParser, logFn func(string, string, string), counters *sourceCounters) error {
 	ticker := time.NewTicker(cfg.pullInterval)
 	defer ticker.Stop()
 
@@ -77,8 +78,15 @@ func runPull(ctx context.Context, cfg *parsedConfig, adapter adapters.Adapter, o
 					atomic.AddInt64(&counters.parseErrors, 1)
 					continue
 				}
+				ev := parser.WrapLogEntry(entry, plugin.Envelope{
+					Source:     "http",
+					SourceType: "http",
+					Stream:     "",
+					Timestamp:  entry.Time,
+					Level:      "",
+				})
 				select {
-				case out <- entry:
+				case out <- ev:
 					atomic.AddInt64(&counters.linesRead, 1)
 				default:
 					// Non-blocking send — drop if channel is full.

@@ -26,14 +26,14 @@ import (
 // (после первого чтения из done-канала или при ctx.Done).
 type mockSource struct {
 	name    string
-	entries []*plugin.LogEntry
+	entries []*plugin.Event
 }
 
 func (s *mockSource) Name() string              { return s.name }
 func (s *mockSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *mockSource) Close() error              { return nil }
 func (s *mockSource) Stats() plugin.SourceStats { return plugin.SourceStats{} }
-func (s *mockSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
+func (s *mockSource) Run(ctx context.Context, out chan<- *plugin.Event) error {
 	for _, e := range s.entries {
 		select {
 		case out <- e:
@@ -47,14 +47,14 @@ func (s *mockSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 // blockingSource — отдаёт ОДИН entry, потом блокирует Run() до ctx.Done().
 // Используется для теста drain-on-shutdown: после cancel ctx Merge закрывает канал.
 type blockingSource struct {
-	entry *plugin.LogEntry
+	entry *plugin.Event
 }
 
 func (s *blockingSource) Name() string              { return "blocking" }
 func (s *blockingSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *blockingSource) Close() error              { return nil }
 func (s *blockingSource) Stats() plugin.SourceStats { return plugin.SourceStats{} }
-func (s *blockingSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
+func (s *blockingSource) Run(ctx context.Context, out chan<- *plugin.Event) error {
 	select {
 	case out <- s.entry:
 	case <-ctx.Done():
@@ -67,7 +67,7 @@ func (s *blockingSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) e
 // slowSource — отдаёт entries с задержкой между ними. Используется для drain-теста.
 type slowSource struct {
 	name    string
-	entries []*plugin.LogEntry
+	entries []*plugin.Event
 	delay   time.Duration
 }
 
@@ -75,7 +75,7 @@ func (s *slowSource) Name() string              { return s.name }
 func (s *slowSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *slowSource) Close() error              { return nil }
 func (s *slowSource) Stats() plugin.SourceStats { return plugin.SourceStats{} }
-func (s *slowSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
+func (s *slowSource) Run(ctx context.Context, out chan<- *plugin.Event) error {
 	for _, e := range s.entries {
 		select {
 		case <-time.After(s.delay):
@@ -105,10 +105,17 @@ func (s *mockSink) Name() string              { return s.name }
 func (s *mockSink) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *mockSink) Close() error              { return nil }
 func (s *mockSink) Stats() plugin.SinkStats   { return plugin.SinkStats{} }
-func (s *mockSink) Write(_ context.Context, ev plugin.ThreatEvent) error {
+func (s *mockSink) Write(_ context.Context, ev *plugin.Event) error {
+	// Gate A: the sink contract now carries generic *plugin.Event;
+	// the mockSink holds *plugin.ThreatEvent values extracted from
+	// the payload. Wrong payload type is a programmer error.
+	te, ok := ev.Payload.(*plugin.ThreatEvent)
+	if !ok {
+		return fmt.Errorf("mockSink: expected *plugin.ThreatEvent payload, got %T", ev.Payload)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.events = append(s.events, ev)
+	s.events = append(s.events, *te)
 	return nil
 }
 func (s *mockSink) Reload() error {
@@ -133,7 +140,7 @@ func (s *failingSink) Name() string              { return s.name }
 func (s *failingSink) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *failingSink) Close() error              { return nil }
 func (s *failingSink) Stats() plugin.SinkStats   { return plugin.SinkStats{} }
-func (s *failingSink) Write(_ context.Context, _ plugin.ThreatEvent) error {
+func (s *failingSink) Write(_ context.Context, _ *plugin.Event) error {
 	return errors.New("sink is intentionally failing")
 }
 

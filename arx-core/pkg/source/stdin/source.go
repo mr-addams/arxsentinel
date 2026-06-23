@@ -1,18 +1,10 @@
 // ========================== Module pkg/source/stdin =======================================
-//   StdinSource — reads log lines from os.Stdin and delivers parsed *plugin.LogEntry
+//   StdinSource — reads log lines from os.Stdin and delivers parsed *plugin.Event
 //   values to the pipeline. Designed for container / pipe mode:
 //     docker logs nginx | arxsentinel --input=stdin
 //
-//   WHAT IS HERE:
-//     - StdinSource — bufio.Scanner over os.Stdin; implements plugin.Source
-//
-//   WHAT IS NOT HERE:
-//     - File input (pkg/source/file/)
-//     - Parsing logic (internal/core/parser/)
-//
-//   NOTE: pkg/source/stdin no longer imports internal/sys/utils as of
-//   Flow 072 Task 1.2.5 — the legacy utils.Log fallback was replaced by
-//   a local no-op per the pkg/source.registry.BuildOptions.LogFn contract.
+//   Phase 2.2 (Flow 083 / RESOLVED-Q9): emits *plugin.Event with the parser-
+//   owned LogEntry as Payload (built via WrapLogEntry).
 
 package stdin
 
@@ -29,39 +21,28 @@ import (
 	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 )
 
-// nopLogFn is a no-op logFn implementation per the
-// pkg/source.registry.BuildOptions.LogFn contract: nil → no-op.
-// Replaces the legacy implicit fallback to internal/sys/utils.Log
-// (Flow 072 Task 1.2.5). The BuildOptions.LogFn type itself stays
-// `func(tag, msg, level string)` until Phase 1.4 — see
-// .opencode/flows/072/DECISIONS.md Decision 7.
 func nopLogFn(tag, msg, level string) {}
 
-// stdinScanBufSize — scanner buffer for stdin lines.
-// Matches maxLineSize in TailReader — both must handle the same maximum line length.
 const stdinScanBufSize = 64 * 1024 // 64 KB
 
-// defaultLinesBufSize — buffer size for scanned lines channel.
 const defaultLinesBufSize = 1000
 
 // StdinSource reads log lines from os.Stdin (or any io.Reader) and delivers
-// parsed *LogEntry values to the pipeline.
+// parsed *plugin.Event values to the pipeline.
 //
 // Run completes on EOF or ctx cancellation — whichever comes first.
-// In container / pipe mode EOF is the normal termination signal.
 type StdinSource struct {
 	name   string
-	parser parser.Parser                // parses raw log lines into *plugin.LogEntry
-	logFn  func(tag, msg, level string) // nil-safe; no-op when nil
-	r      io.Reader                    // injectable for tests; os.Stdin in production
+	parser parser.Parser
+	logFn  func(tag, msg, level string)
+	r      io.Reader
 
-	linesRead   atomic.Int64 // total lines read from stdin
-	parseErrors atomic.Int64 // lines that failed to parse
-	dropped     atomic.Int64 // lines dropped due to full channel buffer
+	linesRead   atomic.Int64
+	parseErrors atomic.Int64
+	dropped     atomic.Int64
 }
 
 // NewStdinSource creates a StdinSource reading from os.Stdin.
-// logFn — log function; pass nil for no-op logging.
 func NewStdinSource(p parser.Parser, logFn func(tag, msg, level string)) *StdinSource {
 	return NewStdinSourceWithReader(os.Stdin, p, logFn)
 }
@@ -83,10 +64,8 @@ func NewStdinSourceWithReader(r io.Reader, p parser.Parser, logFn func(tag, msg,
 
 func (s *StdinSource) Name() string { return s.name }
 
-// Close is a no-op — os.Stdin is not owned by StdinSource.
 func (s *StdinSource) Close() error { return nil }
 
-// Stats returns a point-in-time snapshot of operational counters.
 func (s *StdinSource) Stats() plugin.SourceStats {
 	return plugin.SourceStats{
 		LinesRead:   s.linesRead.Load(),
@@ -96,17 +75,13 @@ func (s *StdinSource) Stats() plugin.SourceStats {
 }
 
 // Run reads lines from stdin until EOF or ctx is cancelled.
-// EOF is a normal exit condition (pipe closed by the upstream producer).
-// Drop policy (D3): non-blocking send; full buffer increments Dropped counter.
-func (s *StdinSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
+func (s *StdinSource) Run(ctx context.Context, out chan<- *plugin.Event) error {
 	scanner := bufio.NewScanner(s.r)
 	scanner.Buffer(make([]byte, stdinScanBufSize), stdinScanBufSize)
 
 	scanCh := make(chan string, defaultLinesBufSize)
 	errCh := make(chan error, 1)
 
-	// Scanner is blocking — run it in a goroutine so we can also select on ctx.Done().
-	// On ctx cancellation we close os.Stdin to unblock the scanner goroutine.
 	go func() {
 		for scanner.Scan() {
 			scanCh <- scanner.Text()
@@ -120,8 +95,6 @@ func (s *StdinSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) erro
 	for {
 		select {
 		case <-ctx.Done():
-			// Unblock the scanner goroutine by closing stdin.
-			// Safe to call even if the goroutine already exited.
 			if f, ok := s.r.(*os.File); ok {
 				_ = f.Close()
 			}
@@ -129,7 +102,6 @@ func (s *StdinSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) erro
 
 		case line, ok := <-scanCh:
 			if !ok {
-				// EOF — drain complete, normal exit.
 				return nil
 			}
 			s.linesRead.Add(1)
@@ -139,8 +111,15 @@ func (s *StdinSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) erro
 				s.logFn("PARSER", fmt.Sprintf("stdin source: skipping malformed line: %.80s", line), "debug")
 				continue
 			}
+			ev := parser.WrapLogEntry(entry, plugin.Envelope{
+				Source:     "stdin",
+				SourceType: "stdin",
+				Stream:     "",
+				Timestamp:  entry.Time,
+				Level:      "",
+			})
 			select {
-			case out <- entry:
+			case out <- ev:
 			default:
 				s.dropped.Add(1)
 			}

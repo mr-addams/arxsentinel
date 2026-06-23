@@ -181,8 +181,8 @@ func TestMinLevelFilter(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	exec.Run(ctx, &testEventSource{ //nolint:errcheck
-		events: []plugin.ThreatEvent{
-			{IP: "1.2.3.4", Level: "WARN"},
+		events: []*plugin.Event{
+			{Payload: &plugin.ThreatEvent{IP: "1.2.3.4", Level: "WARN"}},
 		},
 	})
 	after := exec.stats.skipped.Load()
@@ -207,14 +207,14 @@ func TestMikroTikRegistration(t *testing.T) {
 
 // testEventSource is a simple EventSource that delivers pre-defined events.
 type testEventSource struct {
-	events []plugin.ThreatEvent
+	events []*plugin.Event
 	idx    int
 }
 
-func (s *testEventSource) Pop(ctx context.Context) (plugin.ThreatEvent, error) {
+func (s *testEventSource) Pop(ctx context.Context) (*plugin.Event, error) {
 	if s.idx >= len(s.events) {
 		<-ctx.Done()
-		return plugin.ThreatEvent{}, ctx.Err()
+		return nil, ctx.Err()
 	}
 	ev := s.events[s.idx]
 	s.idx++

@@ -81,7 +81,17 @@ func (s *ExecSink) Name() string {
 // not propagated: ManagedProcess.Send is a non-blocking stdin write and does
 // not accept a context today. Plumbed through the interface for forward
 // compatibility (cancellable in-flight send).
-func (s *ExecSink) Write(ctx context.Context, event plugin.ThreatEvent) error {
+//
+// Gate A (Flow 083 / Task 2.2): the Sink contract now carries generic
+// *plugin.Event. We type-assert Event.Payload to *plugin.ThreatEvent here —
+// the wire format with the external plugin stays byte-identical.
+func (s *ExecSink) Write(ctx context.Context, event *plugin.Event) error {
+	te, ok := event.Payload.(*plugin.ThreatEvent)
+	if !ok {
+		s.errors.Add(1)
+		return fmt.Errorf("Phase 2.2 Gate A: expected *plugin.ThreatEvent payload, got %T", event.Payload)
+	}
+
 	s.proc.Lock()
 	defer s.proc.Unlock()
 
@@ -89,7 +99,7 @@ func (s *ExecSink) Write(ctx context.Context, event plugin.ThreatEvent) error {
 	req := WriteRequest{
 		V:      ProtoVersion,
 		Action: "write",
-		Event:  threatEventToJSON(event),
+		Event:  threatEventToJSON(*te),
 	}
 
 	// Marshal to JSON

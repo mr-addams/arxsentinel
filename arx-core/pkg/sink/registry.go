@@ -35,20 +35,30 @@ import (
 
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/mr-addams/arx-core/pkg/pluginregistry"
+	"github.com/mr-addams/arx-core/pkg/sink/format"
 )
 
 // SinkConfig — runtime config for a single sink instance.
 //
 // Type field specifies the sink type (e.g. "file", "stdout").
 // Path is used by type="file"; ignored by other types.
-// Format specifies the output format (e.g. "fail2ban", "json").
+// Format is the human-readable format hint (e.g. "fail2ban", "json") used
+// by product code to pick a concrete Formatter. Formatter is the resolved
+// serializer injected at pipeline assembly; sinks that need serialization
+// (file, stdout, sentinel-threat) read Formatter and ignore Format.
+//
+// Phase 2.2 (Flow 083 / RESOLVED-Z12): Format stays as a hint for the
+// product to pick a Formatter. Sinks depend only on the Formatter
+// interface (pkg/sink/format), not on any concrete product type.
+//
 // This type is independent of internal/config to avoid import cycles.
 type SinkConfig struct {
-	Type   string // "file", "stdout", "sentinel-threat", etc.
-	Name   string // for type="sentinel-threat"; named channel binding
-	Path   string // for type="file"; ignored for others
-	Format string // "fail2ban", "json", etc.
-	Exec   string // path to exec plugin binary; used when type="exec"
+	Type      string          // "file", "stdout", "sentinel-threat", etc.
+	Name      string          // for type="sentinel-threat"; named channel binding
+	Path      string          // for type="file"; ignored for others
+	Format    string          // "fail2ban", "json", etc. — product hint.
+	Formatter format.Formatter // injected by product code; sinks read this, not Format.
+	Exec      string          // path to exec plugin binary; used when type="exec"
 }
 
 // Factory — constructor function for a named sink.

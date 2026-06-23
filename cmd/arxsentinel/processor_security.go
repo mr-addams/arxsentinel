@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	coreruntime "github.com/mr-addams/arx-core/pkg/runtime"
 	corechaincheck "github.com/mr-addams/arxsentinel/internal/core/chaincheck"
@@ -82,15 +83,15 @@ type securityProcessor struct {
 //
 // Контракт runtime.LineProcessor:
 //   - action.Skip=true → строка отбрасывается (не наш случай);
-//   - action.ThreatEvent != nil → engine пишет в sinks и считает eventCount
+//   - action.Payload != nil → engine пишет в sinks и считает eventCount
 //     (engine делает это сам, см. dispatchEntry).
-//   - action.ThreatEvent == nil → строка прошла штатно, событий нет.
+//   - action.Payload == nil → строка прошла штатно, событий нет.
 //
 // Метрики (RecordLine / RecordInputLine) engine вызывает сам ДО Process.
 // Наш долг — RecordThreat + RecordDetectorHit, которые Process знает семантически.
 func (p *securityProcessor) Process(
 	ctx context.Context,
-	entry *plugin.LogEntry,
+	event *plugin.Event,
 	ps coreruntime.ProcessorState,
 	evctx coreruntime.EventContext,
 ) coreruntime.Action {
@@ -99,6 +100,11 @@ func (p *securityProcessor) Process(
 	if !ok {
 		return coreruntime.Action{Skip: true}
 	}
+
+	// Phase 2.2 (Flow 083): the runtime contract carries *plugin.Event; the
+	// payload is parser-owned. We unwrap once here and reuse the LogEntry
+	// throughout the existing verbatim port.
+	entry := parser.UnwrapLogEntry(event)
 
 	// Снимаем копии полей чтобы избежать data race при Reload (engine подменяет ps).
 	// Использование локальных копий в Process — стандартный приём для in-place reload.
@@ -189,7 +195,7 @@ func (p *securityProcessor) Process(
 		}
 	}
 
-	event := plugin.ThreatEvent{
+	threat := plugin.ThreatEvent{
 		Timestamp:  time.Now().UTC(),
 		Level:      level,
 		Stream:     streamName,
@@ -205,7 +211,21 @@ func (p *securityProcessor) Process(
 
 	// Engine (dispatchEntry) сам сделает sink.Write + RecordOutputEvent;
 	// eventCount.Add(1) engine выполнит только если level == "THREAT".
-	return coreruntime.Action{ThreatEvent: &event}
+	// Phase 2.2 (Flow 083): Action carries a generic *plugin.Event whose
+	// Payload is the product-owned ThreatEvent. The engine reads
+	// Payload.Envelope.Level for metrics — we set it here.
+	return coreruntime.Action{
+		Payload: &plugin.Event{
+			Envelope: plugin.Envelope{
+				Source:     sourceName,
+				SourceType: sourceType,
+				Stream:     streamName,
+				Level:      level,
+				Timestamp:  threat.Timestamp,
+			},
+			Payload: &threat,
+		},
+	}
 }
 
 // Метрика RecordLine (на КАЖДОЙ строке, до Process) — engine зовёт сам (см.

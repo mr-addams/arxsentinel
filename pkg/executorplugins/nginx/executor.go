@@ -357,16 +357,26 @@ func (e *NginxExecutor) Run(ctx context.Context, source plugin.EventSource) erro
 	defer tickerSweep.Stop()
 
 	// Internal channel for events — Pop is not channel-based.
+	// Gate A (Flow 083 / Task 2.2): Pop now returns generic *plugin.Event;
+	// we extract the *plugin.ThreatEvent payload and forward ThreatEvent
+	// values down the same batch path. A wrong payload type is a programmer
+	// error and is dropped here (Gate B Task 3.3 replaces this with a
+	// proper Formatter-driven contract).
 	events := make(chan plugin.ThreatEvent, e.cfg.BatchSize)
 	go func() {
 		defer close(events)
 		for {
-			event, err := source.Pop(ctx)
+			ev, err := source.Pop(ctx)
 			if err != nil {
 				return
 			}
+			te, ok := ev.Payload.(*plugin.ThreatEvent)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "[nginx executor] skipped non-ThreatEvent payload: %T\n", ev.Payload)
+				continue
+			}
 			select {
-			case events <- event:
+			case events <- *te:
 			case <-ctx.Done():
 				return
 			}

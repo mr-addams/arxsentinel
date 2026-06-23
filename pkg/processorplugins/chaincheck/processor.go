@@ -16,6 +16,7 @@ package chaincheck
 import (
 	"context"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
@@ -44,7 +45,12 @@ func (p *ChainCheckProcessor) Name() string {
 // Cloudflare and bogon ranges. On match, fills entry.ChainIssue.
 // Always returns the entry — this processor never drops entries.
 // ctx is unused: Checker.Check is a pure function with no I/O or goroutines.
-func (p *ChainCheckProcessor) Process(_ context.Context, entry *plugin.LogEntry) (*plugin.LogEntry, error) {
+//
+// Phase 2.2 (Flow 083): the runtime contract carries *plugin.Event. We unwrap
+// the *parser.LogEntry payload, run the check, then rewrap the modified entry
+// back into the same *plugin.Event (Envelope is preserved).
+func (p *ChainCheckProcessor) Process(_ context.Context, event *plugin.Event) (*plugin.Event, error) {
+	entry := parser.UnwrapLogEntry(event)
 	ip := entry.RealIP
 	if ip == "" {
 		ip = entry.RemoteAddr
@@ -60,5 +66,5 @@ func (p *ChainCheckProcessor) Process(_ context.Context, entry *plugin.LogEntry)
 		}
 	}
 
-	return entry, nil
+	return event, nil
 }

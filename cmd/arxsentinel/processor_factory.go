@@ -94,11 +94,11 @@ var (
 // (1 поле shared pointer); GC-давления не создаёт (escape analysis inlines).
 func (f *securityFactory) Process(
 	ctx context.Context,
-	entry *plugin.LogEntry,
+	event *plugin.Event,
 	ps coreruntime.ProcessorState,
 	evctx coreruntime.EventContext,
 ) coreruntime.Action {
-	return (&securityProcessor{shared: f.shared}).Process(ctx, entry, ps, evctx)
+	return (&securityProcessor{shared: f.shared}).Process(ctx, event, ps, evctx)
 }
 
 // ── Build — построить per-pipeline ProcessorState ++++++++++++++++++++++++++++++++++++++++

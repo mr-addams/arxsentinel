@@ -1,6 +1,6 @@
 // ========================== pkg/source/file — FileSource =====================================
 //   Reads access log lines from a file using tail-like following.
-//   Parses each line with a Parser, sends *plugin.LogEntry to the pipeline.
+//   Parses each line with a Parser and sends *plugin.Event to the pipeline.
 //   Supports log rotation via inotify (TailReader).
 //
 //   WHAT IS HERE:
@@ -11,9 +11,10 @@
 //     manifest.go — PluginID, Role, DataType declarations
 //     arx-core/pkg/tail — platform-specific file tailing (inotify/FSEvents)
 //
-//   NOTE: pkg/source/file uses arx-core/pkg/tail (Tier 2 Core package).
-//   The tail reader is decoupled via injected logFn, same pattern as
-//   FileSource — no internal/ coupling remains on the read-path.
+//   Phase 2.2 (Flow 083 / RESOLVED-Q9): the source emits *plugin.Event with
+//   the parser-owned LogEntry as Payload (built via WrapLogEntry). Envelope
+//   fields Source / SourceType / Stream / Timestamp are filled by the source;
+//   Level is left empty (scorer fills later).
 
 package file
 
@@ -31,33 +32,26 @@ import (
 
 // nopLogFn is a no-op logFn implementation per the
 // pkg/source.registry.BuildOptions.LogFn contract: nil → no-op.
-// Replaces the legacy implicit fallback to internal/sys/utils.Log
-// (Flow 072 Task 1.2.5). The BuildOptions.LogFn type itself stays
-// `func(tag, msg, level string)` until Phase 1.4 — see
-// .opencode/flows/072/DECISIONS.md Decision 7.
 func nopLogFn(tag, msg, level string) {}
 
 // defaultLinesBufSize is the channel buffer between tail goroutine and parser.
-// Non-blocking send with drop policy: if buffer is full, entries are dropped
-// and Dropped counter is incremented. Larger buffer = less drops, more memory.
 const defaultLinesBufSize = 1000
 
-// FileSource tails a log file and delivers parsed LogEntry records.
+// FileSource tails a log file and delivers parsed *plugin.Event values
+// (carrying parser.LogEntry as Payload).
 type FileSource struct {
 	name          string
 	path          string
-	parser        parser.Parser // parses raw log lines into *plugin.LogEntry
-	retryInterval time.Duration // delay between retry attempts on file errors
+	parser        parser.Parser
+	retryInterval time.Duration
 	logFn         func(tag, msg, level string)
 
-	linesRead   atomic.Int64 // total lines received from the file
-	parseErrors atomic.Int64 // lines that failed to parse
-	dropped     atomic.Int64 // lines dropped due to full channel buffer
+	linesRead   atomic.Int64
+	parseErrors atomic.Int64
+	dropped     atomic.Int64
 }
 
 // NewFileSource creates a new file source.
-// Called from: pkg/source registry (init() → Build).
-// Non-blocking — returns immediately with a configured instance or error.
 func NewFileSource(path string, p parser.Parser, retryInterval time.Duration, logFn func(tag, msg, level string)) (*FileSource, error) {
 	if path == "" {
 		return nil, fmt.Errorf("file source: path must not be empty")
@@ -82,15 +76,12 @@ func NewFileSource(path string, p parser.Parser, retryInterval time.Duration, lo
 }
 
 // Name returns the source identifier.
-// Called from: pipeline (logging, metrics).
 func (s *FileSource) Name() string { return s.name }
 
 // Close releases resources.
-// Called from: pipeline shutdown. FileSource is stateless — nothing to close.
 func (s *FileSource) Close() error { return nil }
 
 // Stats returns operational counters.
-// Called from: pipeline (STATS log, Prometheus metrics).
 func (s *FileSource) Stats() plugin.SourceStats {
 	return plugin.SourceStats{
 		LinesRead:   s.linesRead.Load(),
@@ -99,13 +90,10 @@ func (s *FileSource) Stats() plugin.SourceStats {
 	}
 }
 
-// Run starts tailing the file and sends parsed entries to out.
-// Called from: pipeline goroutine.
+// Run starts tailing the file and sends parsed events to out.
 // Blocking — runs until ctx is cancelled.
-func (s *FileSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
+func (s *FileSource) Run(ctx context.Context, out chan<- *plugin.Event) error {
 	lines := make(chan string, defaultLinesBufSize)
-	// Local variable renamed from `tail` to `reader` to avoid a name clash
-	// with the `tail` package imported above.
 	reader := tail.NewTailReader(s.path, lines, s.retryInterval, s.logFn)
 	go reader.Run(ctx)
 
@@ -117,9 +105,15 @@ func (s *FileSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 			s.logFn("PARSER", fmt.Sprintf("file source %s: skipping malformed line: %.80s", s.path, line), "debug")
 			continue
 		}
-		// Non-blocking send: drop if pipeline is slow. D3 threshold protects memory.
+		ev := parser.WrapLogEntry(entry, plugin.Envelope{
+			Source:     s.name,
+			SourceType: "file",
+			Stream:     "", // engine fills Stream from EventContext
+			Timestamp:  entry.Time,
+			Level:      "", // scorer fills later
+		})
 		select {
-		case out <- entry:
+		case out <- ev:
 		default:
 			s.dropped.Add(1)
 		}

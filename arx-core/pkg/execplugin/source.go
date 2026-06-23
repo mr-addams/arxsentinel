@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -74,7 +75,14 @@ func (s *ExecSource) Name() string {
 // Called from: pipeline.runSource.
 //
 // Blocking — runs until ctx cancellation or plugin error.
-func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
+//
+// Phase 2.2 (Flow 083): the source-emitter channel now carries generic
+// *plugin.Event. We wrap each LogEntry into an Event with a transport
+// Envelope before forwarding. Source is the remote peer (as parsed by the
+// plugin); SourceType identifies the exec-plugin transport; Stream is empty
+// (pipeline stream is assigned downstream); Timestamp is the parsed request
+// time.
+func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.Event) error {
 	// Create the ManagedProcess for this Run() session
 	proc, err := NewManagedProcess(ctx, s.execPath)
 	if err != nil {
@@ -96,7 +104,7 @@ func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 	// Channel for forwarding entries from read goroutine.
 	// Larger buffer to ensure entries are delivered even if main loop is slow.
 	// WHY 256: accommodates burst parsing during initial sync while staying bounded.
-	entries := make(chan *plugin.LogEntry, 256)
+	entries := make(chan *plugin.Event, 256)
 	readErr := make(chan error, 2)
 
 	// Goroutine reads stdout and sends entries to internal channel
@@ -121,12 +129,18 @@ func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 
 			entry := logEntryFromJSON(se.Entry)
 			s.linesRead.Add(1)
+			// Wrap into a generic *plugin.Event for the runtime contract.
+			event := parser.WrapLogEntry(entry, plugin.Envelope{
+				Source:     entry.RemoteAddr,
+				SourceType: "exec",
+				Timestamp:  entry.Time,
+			})
 			// Non-blocking send: if entries buffer is full (slow main loop),
 			// drop entry instead of blocking. Blocking send would stall proc.Recv()
 			// → plugin blocks on stdout write → whole pipeline deadlock.
 			// Monitor drop rate: Stats().Dropped / Stats().LinesRead ratio.
 			select {
-			case entries <- entry:
+			case entries <- event:
 			default:
 				s.dropped.Add(1)
 			}
@@ -142,7 +156,7 @@ func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 			_ = proc.Send(stopMsg)
 			return nil
 
-		case entry, ok := <-entries:
+		case event, ok := <-entries:
 			if !ok {
 				// Plugin exited cleanly (read goroutine closed entries channel)
 				return nil
@@ -150,7 +164,7 @@ func (s *ExecSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
 
 			// Non-blocking send to out channel
 			select {
-			case out <- entry:
+			case out <- event:
 				// Successfully sent
 
 			case <-ctx.Done():

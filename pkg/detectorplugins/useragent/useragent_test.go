@@ -50,7 +50,7 @@ func TestUADetector_ExtraPatternNormalization(t *testing.T) {
 			{"MYGRABBER/2.0", "mygrabber"}, // all-upper grabber → lowered → matches
 		}
 		for _, tc := range cases {
-			result := d.Detect(sv, &plugin.LogEntry{UserAgent: tc.ua})
+			result := d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{UserAgent: tc.ua}})
 			if result.Score == 0 {
 				t.Errorf("Detect(%q) should score, got 0", tc.ua)
 			}
@@ -66,7 +66,7 @@ func TestUADetector_ExtraPatternNormalization(t *testing.T) {
 		// If "MyBot" were stored as-is (not normalized), Reason would contain
 		// "MyBot". Since normalization happens in the factory, Reason contains
 		// the lowercased "mybot".
-		result := d.Detect(sv, &plugin.LogEntry{UserAgent: "MyBot/2.0"})
+		result := d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{UserAgent: "MyBot/2.0"}})
 		if strings.Contains(result.Reason, "MyBot") {
 			t.Errorf("Reason should NOT contain original-case 'MyBot', got %q",
 				result.Reason)
@@ -103,7 +103,7 @@ func TestUADetector_ExtraPatternNoMatchAfterNormalization(t *testing.T) {
 	sv := newStubView(0, 0, nil, 0)
 
 	// "RareBot" in the UA triggers detection because both are lowered.
-	result := d.Detect(sv, &plugin.LogEntry{UserAgent: "RareBot/1.0"})
+	result := d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{UserAgent: "RareBot/1.0"}})
 	if result.Score == 0 {
 		t.Error("Detect('RareBot/1.0') should score — input is lowered to 'rarebot/1.0' and matches 'rarebot'")
 	}
@@ -139,7 +139,7 @@ func TestUADetector_BuiltinPatterns(t *testing.T) {
 		{"Mozilla/5.0", false},
 	}
 	for _, tc := range cases {
-		result := d.Detect(sv, &plugin.LogEntry{UserAgent: tc.ua})
+		result := d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{UserAgent: tc.ua}})
 		if tc.want && result.Score == 0 {
 			t.Errorf("Detect(%q) should score, got 0", tc.ua)
 		}

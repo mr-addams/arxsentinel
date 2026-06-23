@@ -33,7 +33,7 @@ func TestBadBotDetector_ViaRegistry(t *testing.T) {
 	sv := newStubView(0, 0, nil, 0)
 
 	// Matching UA should trigger and include pattern in Reason.
-	result := d.Detect(sv, &plugin.LogEntry{UserAgent: "badbotua"})
+	result := 	d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{UserAgent: "badbotua"}})
 	if result.Score == 0 {
 		t.Error("badbot should score on matched UA, got 0")
 	}
@@ -42,7 +42,7 @@ func TestBadBotDetector_ViaRegistry(t *testing.T) {
 	}
 
 	// Non-matching UA should not trigger.
-	result2 := d.Detect(sv, &plugin.LogEntry{UserAgent: "Mozilla/5.0"})
+	result2 := 	d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{UserAgent: "Mozilla/5.0"}})
 	if result2.Score != 0 {
 		t.Errorf("badbot should not score on clean UA, got %d", result2.Score)
 	}
@@ -59,7 +59,7 @@ func TestBadBotDetector_NilShared(t *testing.T) {
 		t.Fatal("Build(badbot, nil shared) returned nil detector")
 	}
 	sv := newStubView(0, 0, nil, 0)
-	result := d.Detect(sv, &plugin.LogEntry{UserAgent: "some-bot/1.0"})
+	result := 	d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{UserAgent: "some-bot/1.0"}})
 	if result.Score != 0 {
 		t.Errorf("badbot with nil shared should not score, got %d", result.Score)
 	}
@@ -77,7 +77,7 @@ func TestBadBotDetector_Referrer(t *testing.T) {
 		t.Fatalf("Build(badbot, referrer) error: %v", err)
 	}
 	sv := newStubView(0, 0, nil, 0)
-	result := d.Detect(sv, &plugin.LogEntry{Referer: "badref"})
+	result := 	d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{Referer: "badref"}})
 	if result.Score != 42 {
 		t.Errorf("badbot should score on matched Referer, got %d", result.Score)
 	}

@@ -6,12 +6,12 @@ package cloudflare
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -75,11 +75,12 @@ func TestRun_SingleItem(t *testing.T) {
 	ex := newTestExecutor(mock, cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	q := queue.NewMemoryQueue(3)
-	_ = q.Push(ctx, plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"})
-	_ = q.Push(ctx, plugin.ThreatEvent{IP: "5.6.7.8", Level: "THREAT"})
-	_ = q.Push(ctx, plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"})
-	_ = ex.Run(ctx, q)
+	src := newTestEventSource([]*plugin.Event{
+		{Payload: &plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}},
+		{Payload: &plugin.ThreatEvent{IP: "5.6.7.8", Level: "THREAT"}},
+		{Payload: &plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}},
+	})
+	_ = ex.Run(ctx, src)
 
 	if len(mock.added) != 2 {
 		t.Errorf("expected 2 AddItems calls, got %d", len(mock.added))
@@ -93,12 +94,11 @@ func TestRun_Batch250(t *testing.T) {
 	cfg.MinLevel = "INFO"
 	ex := newTestExecutor(mock, cfg)
 
-	q := queue.NewMemoryQueue(250)
+	events := make([]*plugin.Event, 250)
 	for i := 0; i < 250; i++ {
-		_ = q.Push(context.Background(), plugin.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"})
+		events[i] = &plugin.Event{Payload: &plugin.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"}}
 	}
-	q.Close()
-	_ = ex.Run(context.Background(), q)
+	_ = ex.Run(context.Background(), newTestEventSource(events))
 	if len(mock.added) != 250 {
 		t.Errorf("expected 250 items added, got %d", len(mock.added))
 	}
@@ -111,10 +111,11 @@ func TestRun_LevelGate(t *testing.T) {
 	ex := newTestExecutor(mock, cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	q := queue.NewMemoryQueue(2)
-	_ = q.Push(ctx, plugin.ThreatEvent{IP: "10.0.0.1", Level: "INFO"})
-	_ = q.Push(ctx, plugin.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"})
-	_ = ex.Run(ctx, q)
+	src := newTestEventSource([]*plugin.Event{
+		{Payload: &plugin.ThreatEvent{IP: "10.0.0.1", Level: "INFO"}},
+		{Payload: &plugin.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"}},
+	})
+	_ = ex.Run(ctx, src)
 
 	if len(mock.added) != 1 {
 		t.Errorf("expected 1 AddItems call, got %d", len(mock.added))
@@ -135,12 +136,11 @@ func TestRun_Dedup(t *testing.T) {
 	ex.banned["10.0.0.1"] = banRecord{addedAt: time.Now()}
 	ex.mu.Unlock()
 
-	ctx := context.Background()
-	q := queue.NewMemoryQueue(2)
-	_ = q.Push(ctx, plugin.ThreatEvent{IP: "10.0.0.1", Level: "THREAT"})
-	_ = q.Push(ctx, plugin.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"})
-	q.Close()
-	_ = ex.Run(context.Background(), q)
+	src := newTestEventSource([]*plugin.Event{
+		{Payload: &plugin.ThreatEvent{IP: "10.0.0.1", Level: "THREAT"}},
+		{Payload: &plugin.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"}},
+	})
+	_ = ex.Run(context.Background(), src)
 
 	if len(mock.added) != 1 {
 		t.Errorf("expected 1 AddItems call (dedup), got %d", len(mock.added))
@@ -252,18 +252,17 @@ func TestRun_ConcurrentSafe(t *testing.T) {
 	ex := newTestExecutor(mock, cfg)
 
 	ctx := context.Background()
-	q := queue.NewMemoryQueue(100)
+	events := make([]*plugin.Event, 100)
+	for i := 0; i < 100; i++ {
+		events[i] = &plugin.Event{Payload: &plugin.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"}}
+	}
+	src := newTestEventSource(events)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = ex.Run(ctx, q)
+		_ = ex.Run(ctx, src)
 	}()
-
-	for i := 0; i < 100; i++ {
-		_ = q.Push(ctx, plugin.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"})
-	}
-	q.Close()
 	wg.Wait()
 
 	if len(mock.added) != 100 {
@@ -341,4 +340,32 @@ func TestFlush_429Retry(t *testing.T) {
 	if len(mock.added) != 1 {
 		t.Errorf("expected 1 item added, got %d", len(mock.added))
 	}
+}
+
+// testEventSource is a minimal plugin.EventSource for tests.
+// Phase 2.2 (Flow 083 / Gate A): queue.Queue still operates on opaque bytes
+// (see pkg/executor/queue/queue.go). This helper exists so tests can hand
+// the executor an EventSource directly while queue.EventSource adapter
+// lives in Task 3.3 (Flow 083 RESOLVED-D).
+//
+// On exhaustion, Pop returns io.EOF (not blocking on ctx.Done()) so Run can
+// flush any buffered batch and return cleanly even under context.Background().
+// Required by TestRun_Batch250 and TestRun_ConcurrentSafe, which cannot rely
+// on a ctx deadline to break Pop's wait.
+type testEventSource struct {
+	events []*plugin.Event
+	idx    int
+}
+
+func newTestEventSource(events []*plugin.Event) *testEventSource {
+	return &testEventSource{events: events}
+}
+
+func (s *testEventSource) Pop(_ context.Context) (*plugin.Event, error) {
+	if s.idx >= len(s.events) {
+		return nil, io.EOF
+	}
+	ev := s.events[s.idx]
+	s.idx++
+	return ev, nil
 }

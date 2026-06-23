@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	detector "github.com/mr-addams/arx-core/pkg/detector"
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -129,7 +130,8 @@ func (d *uaDetector) Name() string { return "ua" }
 // Called from: pipeline.processEntries.
 //
 // Non-blocking.
-func (d *uaDetector) Detect(_ plugin.IPView, entry *plugin.LogEntry) plugin.DetectResult {
+func (d *uaDetector) Detect(_ plugin.IPView, event *plugin.Event) plugin.DetectResult {
+	entry := parser.UnwrapLogEntry(event)
 	ua := entry.UserAgent
 
 	// ── Empty UA ──────────────────────────────────────────────────────────────────────

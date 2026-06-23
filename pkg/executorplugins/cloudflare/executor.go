@@ -207,16 +207,23 @@ func (e *CloudflareExecutor) Run(ctx context.Context, source plugin.EventSource)
 	defer sweepTicker.Stop()
 
 	// Pop is not a channel — feed events into an internal channel for select.
+	// Gate A (Flow 083 / Task 2.2): Pop now returns generic *plugin.Event;
+	// extract the *plugin.ThreatEvent payload and forward ThreatEvent values.
 	events := make(chan plugin.ThreatEvent, 64) // L5: буфер 64 — снижает блокировки Pop при всплесках
 	go func() {
 		defer close(events)
 		for {
-			event, err := source.Pop(ctx)
+			ev, err := source.Pop(ctx)
 			if err != nil {
 				return
 			}
+			te, ok := ev.Payload.(*plugin.ThreatEvent)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "[cloudflare executor] skipped non-ThreatEvent payload: %T\n", ev.Payload)
+				continue
+			}
 			select {
-			case events <- event:
+			case events <- *te:
 			case <-ctx.Done():
 				return
 			}

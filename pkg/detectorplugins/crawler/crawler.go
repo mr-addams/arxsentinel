@@ -73,7 +73,7 @@ func (d *crawlerDetector) Name() string { return "crawler" }
 // Called from: pipeline.processEntries.
 //
 // Non-blocking.
-func (d *crawlerDetector) Detect(sv plugin.IPView, _ *plugin.LogEntry) plugin.DetectResult {
+func (d *crawlerDetector) Detect(sv plugin.IPView, _ *plugin.Event) plugin.DetectResult {
 	paths := sv.RecentPaths()
 	if len(paths) < d.minSequential {
 		return plugin.DetectResult{}

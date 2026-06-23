@@ -35,6 +35,7 @@ import (
 	"strings"
 
 	detector "github.com/mr-addams/arx-core/pkg/detector"
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -81,7 +82,8 @@ func (d *badBotDetector) Name() string { return "badbot" }
 // Called from: pipeline.processEntries.
 //
 // Non-blocking.
-func (d *badBotDetector) Detect(_ plugin.IPView, entry *plugin.LogEntry) plugin.DetectResult {
+func (d *badBotDetector) Detect(_ plugin.IPView, event *plugin.Event) plugin.DetectResult {
+	entry := parser.UnwrapLogEntry(event)
 	if d.checkUA {
 		ua := strings.ToLower(entry.UserAgent)
 		if ua != "" && ua != "-" {

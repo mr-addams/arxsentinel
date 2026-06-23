@@ -18,6 +18,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -85,9 +86,15 @@ func (d *ExecDetector) Manifest() plugin.Manifest {
 // Called from: pipeline.processEntries.
 //
 // Non-blocking.
-func (d *ExecDetector) Detect(sv plugin.IPView, entry *plugin.LogEntry) plugin.DetectResult {
+//
+// Phase 2.2 (Flow 083): the Detector contract now takes *plugin.Event.
+// We unwrap the *parser.LogEntry payload here before sending it to the
+// external plugin (wire format is unchanged — still LogEntryJSON).
+func (d *ExecDetector) Detect(sv plugin.IPView, event *plugin.Event) plugin.DetectResult {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	entry := parser.UnwrapLogEntry(event)
 
 	// Build the request
 	req := DetectRequest{

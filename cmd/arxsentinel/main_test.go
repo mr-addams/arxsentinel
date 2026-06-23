@@ -18,6 +18,7 @@ import (
 	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	ncs "github.com/mr-addams/arx-core/pkg/ncs"
 	"github.com/mr-addams/arx-core/pkg/parser"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // TestStartupShutdownInvariants enforces the mandatory startup/shutdown specification
@@ -176,6 +177,17 @@ streams:
 	if !ok {
 		t.Fatal("test setup: CombinedParser failed to parse the test line")
 	}
+	// Phase 2.2 (Flow 083): Process now receives *plugin.Event; wrap the
+	// parsed LogEntry into the generic envelope before invoking the processor.
+	event := &plugin.Event{
+		Envelope: plugin.Envelope{
+			Source:     entry.RemoteAddr,
+			SourceType: "file",
+			Stream:     "test",
+			Timestamp:  entry.Time,
+		},
+		Payload: entry,
+	}
 
 	evctx := coreruntime.EventContext{
 		StreamName:   "test",
@@ -185,7 +197,7 @@ streams:
 	}
 
 	// Must not panic — ChainChecker/WarningsWriter are nil (chain_guard disabled).
-	action := processor.Process(context.Background(), entry, ps, evctx)
+	action := processor.Process(context.Background(), event, ps, evctx)
 
 	// Non-Skip result: the line was scored (even if level="" — Action{} means Skip=false).
 	if action.Skip {
@@ -725,6 +737,15 @@ streams:
 	if !ok {
 		b.Fatal("test setup: CombinedParser failed to parse the test line")
 	}
+	event := &plugin.Event{
+		Envelope: plugin.Envelope{
+			Source:     entry.RemoteAddr,
+			SourceType: "file",
+			Stream:     "test",
+			Timestamp:  entry.Time,
+		},
+		Payload: entry,
+	}
 
 	evctx := coreruntime.EventContext{
 		StreamName:   "test",
@@ -735,6 +756,6 @@ streams:
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		processor.Process(context.Background(), entry, ps, evctx)
+		processor.Process(context.Background(), event, ps, evctx)
 	}
 }

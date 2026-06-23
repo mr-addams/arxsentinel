@@ -45,7 +45,7 @@ type fixedDetector struct {
 func (d *fixedDetector) Name() string { return d.name }
 
 func (d *fixedDetector) Manifest() plugin.Manifest { return plugin.Manifest{} }
-func (d *fixedDetector) Detect(_ detector.IPView, _ *parser.LogEntry) detector.DetectResult {
+func (d *fixedDetector) Detect(_ detector.IPView, _ *plugin.Event) detector.DetectResult {
 	return d.result
 }
 

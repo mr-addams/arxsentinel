@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	detector "github.com/mr-addams/arx-core/pkg/detector"
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -74,7 +75,8 @@ func (d *overflowDetector) Name() string { return "overflow" }
 // Called from: pipeline.processEntries.
 //
 // Non-blocking.
-func (d *overflowDetector) Detect(_ plugin.IPView, entry *plugin.LogEntry) plugin.DetectResult {
+func (d *overflowDetector) Detect(_ plugin.IPView, event *plugin.Event) plugin.DetectResult {
+	entry := parser.UnwrapLogEntry(event)
 	fullURL := entry.Path
 	if entry.Query != "" {
 		fullURL = entry.Path + "?" + entry.Query

@@ -5,11 +5,18 @@
 //     - Source — interface any input implementation must satisfy
 //
 //   WHAT IS NOT HERE:
-//     - FileSource, StdinSource (arx-core/pkg/input/)
+//     - FileSource, StdinSource (arx-core/pkg/source/)
 //     - Merge fan-in (arx-core/pkg/input/merge.go)
 //
 //   DEPENDENCY RULE:
 //     pkg/plugin → stdlib only.
+//
+//   Phase 2.2 (Flow 083 / RESOLVED-Q9):
+//     Sources emit the generic *plugin.Event on their output channel. The
+//     parser-owned LogEntry lives inside Event.Payload; the source fills
+//     Envelope (Source/SourceType/Stream/Timestamp) at construction time.
+//     Level is left empty — the product scorer assigns it later.
+//     See pkg/parser.WrapLogEntry for the canonical conversion.
 
 package plugin
 
@@ -17,7 +24,8 @@ import "context"
 
 // Source — public interface for any log line input.
 //
-// Each Source owns its Parser and delivers fully-parsed *LogEntry values.
+// Each Source owns its Parser and delivers parsed *plugin.Event values
+// (wrapping the parser-owned LogEntry as Payload, with a transport Envelope).
 // Run blocks until ctx is cancelled or an unrecoverable error occurs.
 // Close releases file handles and other OS resources; it is always called
 // by the pipeline regardless of whether Run returned an error.
@@ -28,10 +36,10 @@ type Source interface {
 	// Convention: "file:/path/to/access.log", "stdin", "http://:9514".
 	Name() string
 
-	// Run starts reading and sends parsed entries to out.
+	// Run starts reading and sends events to out.
 	// Must return when ctx is Done. Must not close out — the Merge function owns it.
 	// Drop policy: non-blocking send; dropped entries increment Stats().Dropped.
-	Run(ctx context.Context, out chan<- *LogEntry) error
+	Run(ctx context.Context, out chan<- *Event) error
 
 	// Close releases resources. Called after Run returns.
 	Close() error

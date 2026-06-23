@@ -26,6 +26,7 @@ import (
 
 	corewhitelist "github.com/mr-addams/arxsentinel/internal/core/whitelist"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -72,11 +73,18 @@ func (p *WhitelistProcessor) Manifest() plugin.Manifest {
 //
 // ctx is used for the DNS verification deadline (derived timeout).
 // Respects cancellation: returns (nil, ctx.Err()) when ctx is done.
-func (p *WhitelistProcessor) Process(ctx context.Context, entry *plugin.LogEntry) (*plugin.LogEntry, error) {
+//
+// Phase 2.2 (Flow 083): the runtime contract carries *plugin.Event. We unwrap
+// the *parser.LogEntry payload, run the whitelist logic, and either drop
+// (return nil) or pass the original *plugin.Event back through with its
+// Envelope preserved.
+func (p *WhitelistProcessor) Process(ctx context.Context, event *plugin.Event) (*plugin.Event, error) {
 	// ── Respect cancellation ──────────────────────────────────────────────────────────
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+
+	entry := parser.UnwrapLogEntry(event)
 
 	// ── Custom whitelist: IP/CIDR ──────────────────────────────────────────────────────
 	if p.matcher.IsWhitelistedIP(entry.RealIP) {
@@ -95,5 +103,5 @@ func (p *WhitelistProcessor) Process(ctx context.Context, entry *plugin.LogEntry
 		p.verifier.Verify(vctx, entry.RealIP, botCfg)
 	}
 
-	return entry, nil
+	return event, nil
 }

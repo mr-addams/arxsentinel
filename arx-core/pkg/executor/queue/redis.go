@@ -7,26 +7,26 @@
 //     NewRedisQueue — create client from URL, validate connection
 //
 //   KEY SCHEMA: arxsentinel:queue:<executor_name> (passed by caller via EffectiveKey)
-//   SERIALIZATION: JSON marshal/unmarshal of plugin.ThreatEvent
+//   SERIALIZATION: opaque []byte — caller (Formatter on the sink side, executor
+//     on the consumer side) owns the wire schema.
 //
 //   CONCURRENCY:
 //     Push and Pop are safe for concurrent use (redis client is goroutine-safe).
 //     Close is idempotent via sync.Once. q.done signals shutdown to Pop loop.
+//
+//   Phase 2.2: payload is opaque []byte. See queue.go for rationale.
 // ================================================================================
 
 package queue
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-
-	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // RedisQueue implements Queue backed by a Redis list (LPUSH / BRPOP).
@@ -53,31 +53,24 @@ func NewRedisQueue(url string, key string) (*RedisQueue, error) {
 	}, nil
 }
 
-// Push serializes the event as JSON and pushes it onto the Redis list via LPUSH.
-// Returns ErrQueueClosed if Close has been called.
-func (q *RedisQueue) Push(ctx context.Context, event plugin.ThreatEvent) error {
+// Push stores the payload bytes onto the Redis list via LPUSH.
+func (q *RedisQueue) Push(ctx context.Context, payload []byte) error {
 	select {
 	case <-q.done:
 		return ErrQueueClosed
 	default:
 	}
-	data, err := json.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("queue: marshal threat event: %w", err)
-	}
-	return q.client.LPush(ctx, q.key, data).Err()
+	return q.client.LPush(ctx, q.key, payload).Err()
 }
 
-// Pop blocks until an event is available, the context is cancelled, or Close is called.
-// Internally it calls BRPOP with a 1-second timeout in a loop so that shutdown
-// and context cancellation are promptly detected.
-func (q *RedisQueue) Pop(ctx context.Context) (plugin.ThreatEvent, error) {
+// Pop blocks until a payload is available, the context is cancelled, or Close is called.
+func (q *RedisQueue) Pop(ctx context.Context) ([]byte, error) {
 	for {
 		select {
 		case <-q.done:
-			return plugin.ThreatEvent{}, ErrQueueClosed
+			return nil, ErrQueueClosed
 		case <-ctx.Done():
-			return plugin.ThreatEvent{}, ctx.Err()
+			return nil, ctx.Err()
 		default:
 		}
 
@@ -88,19 +81,15 @@ func (q *RedisQueue) Pop(ctx context.Context) (plugin.ThreatEvent, error) {
 		if err != nil {
 			select {
 			case <-q.done:
-				return plugin.ThreatEvent{}, ErrQueueClosed
+				return nil, ErrQueueClosed
 			case <-ctx.Done():
-				return plugin.ThreatEvent{}, ctx.Err()
+				return nil, ctx.Err()
 			default:
 			}
-			return plugin.ThreatEvent{}, fmt.Errorf("queue: brpop: %w", err)
+			return nil, fmt.Errorf("queue: brpop: %w", err)
 		}
 
-		var event plugin.ThreatEvent
-		if err := json.Unmarshal([]byte(result[1]), &event); err != nil {
-			return plugin.ThreatEvent{}, fmt.Errorf("queue: unmarshal threat event: %w", err)
-		}
-		return event, nil
+		return []byte(result[1]), nil
 	}
 }
 

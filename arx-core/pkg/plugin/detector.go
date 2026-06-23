@@ -49,13 +49,18 @@ type DetectResult struct {
 
 // Detector — public interface for threat detection logic.
 //
-// Each implementation analyzes a single (IP state + current request) pair
+// Each implementation analyzes a single (IP state + current event) pair
 // and returns a score contribution. Detectors are stateless — all per-IP
 // state lives in IPView (provided by the pipeline via state.Tracker).
+//
+// Phase 2.2 (Flow 083 / RESOLVED-Q9): Detect receives *plugin.Event; the
+// detector type-asserts event.Payload to its concrete parser-owned type
+// (typically *parser.LogEntry) inside the implementation. IPView stays as
+// a separate neutral argument because it is genuinely product-agnostic.
 //
 // Implement this interface to add a custom detector to arxsentinel.
 type Detector interface {
 	Name() string
-	Detect(sv IPView, entry *LogEntry) DetectResult
+	Detect(sv IPView, entry *Event) DetectResult
 	Manifest() Manifest
 }

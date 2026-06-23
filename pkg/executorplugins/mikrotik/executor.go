@@ -14,6 +14,7 @@ package mikrotik
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/dedup"
@@ -130,12 +131,17 @@ func (e *MikroTikExecutor) Run(ctx context.Context, source plugin.EventSource) e
 	go func() {
 		defer close(events)
 		for {
-			event, err := source.Pop(ctx)
+			ev, err := source.Pop(ctx)
 			if err != nil {
 				return
 			}
+			te, ok := ev.Payload.(*plugin.ThreatEvent)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "[mikrotik executor] skipped non-ThreatEvent payload: %T\n", ev.Payload)
+				continue
+			}
 			select {
-			case events <- event:
+			case events <- *te:
 			case <-ctx.Done():
 				return
 			}

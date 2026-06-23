@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 	"github.com/mr-addams/arx-core/pkg/source/http/adapters"
@@ -81,7 +82,7 @@ func bearerAuth(token string, next nethttp.Handler) nethttp.Handler {
 // buildPushHandler creates HTTP handler with protocol-specific processing.
 // Assembles middleware chain: cloudflare challenge → bearer auth → pubsub jwt → request handler.
 // Non-blocking. Called from: HTTPSource.Run().
-func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *plugin.LogEntry, par pkgsource.LineParser, logFn func(string, string, string), maxBodyBytes int64, counters *sourceCounters) nethttp.Handler {
+func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *plugin.Event, par pkgsource.LineParser, logFn func(string, string, string), maxBodyBytes int64, counters *sourceCounters) nethttp.Handler {
 	var h nethttp.Handler
 	h = nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		body, err := readLimited(r.Body, maxBodyBytes)
@@ -126,8 +127,19 @@ func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *p
 				atomic.AddInt64(&counters.parseErrors, 1)
 				continue
 			}
+			// Phase 2.2 (Flow 083): the source-emitter channel now carries
+			// *plugin.Event. We wrap the parsed LogEntry into an Event with
+			// a transport Envelope. Source is the remote peer (best signal of
+			// origin at this stage); SourceType identifies the HTTP transport;
+			// Stream is empty (pipeline stream is assigned downstream);
+			// Timestamp is the parsed request time.
+			event := parser.WrapLogEntry(entry, plugin.Envelope{
+				Source:     entry.RemoteAddr,
+				SourceType: "http",
+				Timestamp:  entry.Time,
+			})
 			select {
-			case out <- entry:
+			case out <- event:
 				atomic.AddInt64(&counters.linesRead, 1)
 			default:
 				// Non-blocking send — drop if channel is full.

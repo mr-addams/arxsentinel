@@ -238,12 +238,17 @@ func runPipeline(
 //
 // Контракт (важно для Product):
 //   - action.Skip=true  → строка отбрасывается (filter-семантика);
-//   - action.ThreatEvent != nil → пишем событие в КАЖДЫЙ sink (fan-out, порядок не важен);
-//   - nil event после non-Skip → строка прошла штатно, событий нет.
+//   - action.Payload != nil → пишем событие в КАЖДЫЙ sink (fan-out, порядок не важен);
+//   - nil payload после non-Skip → строка прошла штатно, событий нет.
+//
+// Phase 2.2 (Flow 083 / RESOLVED-Q9): action carries *plugin.Event (envelope
+// + opaque payload). The engine reads envelope.Level for metrics (P1) and
+// forwards the whole event to each sink. The engine never inspects the
+// payload — that is the owning plugin's responsibility.
 //
 // Метрики:
 //   - RecordLine: на КАЖДОЙ обработанной строке (включая Skip=true — это «line received»);
-//   - RecordThreat: только при ThreatEvent != nil (событийная метрика);
+//   - RecordThreat: только при Payload != nil (событийная метрика);
 //   - RecordOutputEvent: на каждом успешном sink.Write;
 //   - processedCount / eventCount — атомики, читаются stats-горутиной.
 //
@@ -251,7 +256,7 @@ func runPipeline(
 // Это намеренное решение: один упавший sink не должен отключать весь pipeline.
 func dispatchEntry(
 	ctx context.Context,
-	entry *plugin.LogEntry,
+	entry *plugin.Event,
 	processor LineProcessor,
 	ps ProcessorState,
 	evctx EventContext,
@@ -273,21 +278,22 @@ func dispatchEntry(
 		return
 	}
 
-	if action.ThreatEvent == nil {
+	if action.Payload == nil {
 		return
 	}
 
 	// Событие: пишем в каждый sink, считаем eventCount только на THREAT-уровне.
-	// Исходный processLine считал угрозой только "THREAT"; "WARN" не инкрементил.
-	// Engine не имеет знания о семантике level — использует ThreatEvent.Level из плагина.
-	if action.ThreatEvent.Level == "THREAT" {
+	// Engine читает envelope.Level — envelope is the only field the engine
+	// is allowed to interpret (P1); payload is opaque.
+	level := action.Payload.Level
+	if level == "THREAT" {
 		eventCount.Add(1)
 	}
 	if cb := shared.MetricsCallbacks; cb != nil && cb.RecordThreat != nil {
-		cb.RecordThreat(evctx.StreamName, evctx.PipelineName, action.ThreatEvent.Level)
+		cb.RecordThreat(evctx.StreamName, evctx.PipelineName, level)
 	}
 	for _, sink := range sinks {
-		if err := sink.Write(ctx, *action.ThreatEvent); err != nil {
+		if err := sink.Write(ctx, action.Payload); err != nil {
 			logFn("SINK", fmt.Sprintf("%s: sink %q write error: %v",
 				logTag(evctx.StreamName, evctx.PipelineName), sink.Name(), err), "error")
 			continue

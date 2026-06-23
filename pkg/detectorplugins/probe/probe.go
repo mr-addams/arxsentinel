@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/mr-addams/arx-core/pkg/detector"
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -69,7 +70,8 @@ func (d *probeDetector) Name() string { return "probe" }
 // Called from: pipeline.processEntries.
 //
 // Non-blocking.
-func (d *probeDetector) Detect(_ plugin.IPView, entry *plugin.LogEntry) plugin.DetectResult {
+func (d *probeDetector) Detect(_ plugin.IPView, event *plugin.Event) plugin.DetectResult {
+	entry := parser.UnwrapLogEntry(event)
 	path := entry.Path
 
 	// ── Exact match ───────────────────────────────────────────────────────────────────

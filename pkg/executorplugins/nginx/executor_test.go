@@ -22,21 +22,21 @@ import (
 
 // testEventSource is a simple EventSource that delivers pre-defined events.
 type testEventSource struct {
-	events []plugin.ThreatEvent
+	events []*plugin.Event
 	idx    int64
 	mu     sync.Mutex
 }
 
-func newTestEventSource(events []plugin.ThreatEvent) *testEventSource {
+func newTestEventSource(events []*plugin.Event) *testEventSource {
 	return &testEventSource{events: events}
 }
 
-func (s *testEventSource) Pop(ctx context.Context) (plugin.ThreatEvent, error) {
+func (s *testEventSource) Pop(ctx context.Context) (*plugin.Event, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if int(s.idx) >= len(s.events) {
 		<-ctx.Done()
-		return plugin.ThreatEvent{}, ctx.Err()
+		return nil, ctx.Err()
 	}
 	ev := s.events[s.idx]
 	s.idx++
@@ -353,9 +353,9 @@ func TestRunLoop(t *testing.T) {
 		"flush_interval": "50ms",
 	})
 
-	events := newTestEventSource([]plugin.ThreatEvent{
-		{IP: "1.2.3.4", Level: "THREAT"},
-		{IP: "5.6.7.8", Level: "THREAT"},
+	events := newTestEventSource([]*plugin.Event{
+		{Payload: &plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}},
+		{Payload: &plugin.ThreatEvent{IP: "5.6.7.8", Level: "THREAT"}},
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

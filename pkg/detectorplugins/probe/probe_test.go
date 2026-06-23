@@ -34,13 +34,13 @@ func TestProbeDetector_ViaRegistry(t *testing.T) {
 	}
 
 	// Sensitive path should trigger.
-	result := d.Detect(newStubView(0, 0, nil, 0), &plugin.LogEntry{Path: "/.env"})
+	result := 	d.Detect(newStubView(0, 0, nil, 0), &plugin.Event{Payload: &plugin.LogEntry{Path: "/.env"}})
 	if result.Score == 0 {
 		t.Error("probe should score on /.env, got 0")
 	}
 
 	// Normal path should not trigger.
-	result2 := d.Detect(newStubView(0, 0, nil, 0), &plugin.LogEntry{Path: "/index.html"})
+	result2 := 	d.Detect(newStubView(0, 0, nil, 0), &plugin.Event{Payload: &plugin.LogEntry{Path: "/index.html"}})
 	if result2.Score != 0 {
 		t.Errorf("probe should not score on /index.html, got %d", result2.Score)
 	}

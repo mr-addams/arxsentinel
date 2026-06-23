@@ -65,7 +65,7 @@ func (d *rateDetector) Name() string { return "rate" }
 // Called from: pipeline.processEntries.
 //
 // Non-blocking.
-func (d *rateDetector) Detect(sv plugin.IPView, _ *plugin.LogEntry) plugin.DetectResult {
+func (d *rateDetector) Detect(sv plugin.IPView, _ *plugin.Event) plugin.DetectResult {
 	if sv.ApproxRate(d.window) <= d.thresholdRPS {
 		return plugin.DetectResult{}
 	}

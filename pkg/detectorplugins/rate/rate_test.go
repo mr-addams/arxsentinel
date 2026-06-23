@@ -36,14 +36,14 @@ func TestRateDetector_ViaRegistry(t *testing.T) {
 
 	// 20 req/60s ≈ 0.333 rps — exceeds threshold of 10/60 ≈ 0.167 rps.
 	highRate := newStubView(0, 0, nil, 20.0/60.0)
-	result := d.Detect(highRate, &plugin.LogEntry{})
+	result := d.Detect(highRate, &plugin.Event{Payload: &plugin.LogEntry{}})
 	if result.Score == 0 {
 		t.Error("rate detector should trigger on high rate, got score=0")
 	}
 
 	// Low rate should not trigger.
 	lowRate := newStubView(0, 0, nil, 1.0/60.0)
-	result2 := d.Detect(lowRate, &plugin.LogEntry{})
+	result2 := d.Detect(lowRate, &plugin.Event{Payload: &plugin.LogEntry{}})
 	if result2.Score != 0 {
 		t.Errorf("rate detector should not trigger on low rate, got score=%d", result2.Score)
 	}
@@ -91,14 +91,14 @@ func TestRateDetector_ValidParams(t *testing.T) {
 
 	// Rate 0.5 req/s → no score
 	svLow := newStubView(0, 0, nil, 0.5)
-	result := d.Detect(svLow, &plugin.LogEntry{})
+	result := d.Detect(svLow, &plugin.Event{Payload: &plugin.LogEntry{}})
 	if result.Score != 0 {
 		t.Errorf("low rate should not score, got %d", result.Score)
 	}
 
 	// Rate 100 req/s → score 25
 	svHigh := newStubView(0, 0, nil, 100)
-	result = d.Detect(svHigh, &plugin.LogEntry{})
+	result = d.Detect(svHigh, &plugin.Event{Payload: &plugin.LogEntry{}})
 	if result.Score != 25 {
 		t.Errorf("high rate should score 25, got %d", result.Score)
 	}
