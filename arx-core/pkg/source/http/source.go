@@ -73,6 +73,18 @@ func (s *HTTPSource) Manifest() plugin.Manifest {
 		InputType:     plugin.TypeNone,
 		OutputType:    plugin.TypeStructured,
 		Tags:          []string{"http", "https", "push", "pull", "cloudflare", "firehose", "pubsub", "loki", "otlp", "azure", "splunk", "cloud"},
+		// Produces declares the Envelope fields this source guarantees to populate.
+		// Payload fields (Line, ...) are filled downstream by the parser and are NOT
+		// declared here — the source only owns the transport envelope (Flow 083 P1).
+		// Stream is filled by the engine from EventContext before downstream consumers
+		// observe the Event; Level is filled later by the product scorer, so neither
+		// is set at Wrap time but both are guaranteed by the time the Event flows on.
+		Produces: []plugin.FieldDecl{
+			{Name: "Timestamp", Required: true},
+			{Name: "Stream", Required: true},
+			{Name: "Source", Required: true},
+			{Name: "SourceType", Required: true},
+		},
 	}
 }
 
