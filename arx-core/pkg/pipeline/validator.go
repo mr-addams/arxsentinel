@@ -308,6 +308,15 @@ func itoa(n int) string {
 // Validate checks type compatibility between adjacent plugins in a pipeline.
 // Rule: chain[i].OutputType must equal chain[i+1].InputType.
 // TypeAny is compatible with any type on either side.
+//
+// On top of the coarse DataType check, Validate also performs a fine-grained
+// field-level check when both adjacent plugins declare field contracts:
+// chain[i].Produces must be a superset of chain[i+1].Consumes (by Name, with
+// the consumer's Required flag participating). The field check is silent when
+// either side declares no field contract (nil/empty Produces or Consumes) —
+// that path preserves back-compat with manifests written before the field
+// contract was introduced (Flow 083 Phase 1.3).
+//
 // Returns nil if chain has fewer than 2 elements.
 // Called from: ValidateSpine.
 //
@@ -338,5 +347,77 @@ func Validate(chain []plugin.Manifest) []SemanticError {
 		})
 	}
 
+	// Field-level pass (Flow 083 Phase 4, RESOLVED-Q4a). Runs in its own
+	// loop after the type pass so the original type-check logic stays
+	// untouched (back-compat gate) and so field errors carry the same
+	// StepIndex/StepAName/StepBName shape as type errors — ValidateSpine's
+	// enrichment path then adds StreamName/PipelineName/ConsumerType
+	// without special-casing.
+	//
+	// Activates ONLY when both adjacent plugins declare a non-empty field
+	// contract. Empty Produces OR empty Consumes => skip the pair and keep
+	// the type-only verdict (this is the back-compat gate that lets
+	// manifests without FieldDecl pass unchanged).
+	for i := 0; i < len(chain)-1; i++ {
+		if len(chain[i].Produces) == 0 || len(chain[i+1].Consumes) == 0 {
+			continue
+		}
+		if fieldErrs := validateFields(chain[i], chain[i+1], i); len(fieldErrs) > 0 {
+			errs = append(errs, fieldErrs...)
+		}
+	}
+
 	return errs
+}
+
+// validateFields checks the field-level contract between an adjacent pair
+// (producer, consumer) at the given chain step. It returns one SemanticError
+// per Required consumer field that the producer does not declare by Name.
+//
+// Match rule (per FieldDecl godoc in pkg/plugin/manifest.go):
+//   - Walk consumer.Consumes; skip entries with Required == false
+//     (optional accepts absence — see manifest.go FieldDecl.Required comment).
+//   - For each Required consumer field, the producer must list a FieldDecl
+//     with the same Name. The producer's own Required flag is ignored —
+//     a producer listing X by Name satisfies the contract regardless of
+//     whether the producer marks X as Required.
+//   - Producer-only fields (not in consumer.Consumes) are not an error:
+//     the consumer does not ask for them, so extra output is harmless.
+//
+// Callers must ensure both Manifests have non-empty Produces/Consumes
+// before calling (Validate gates on len(...) > 0 to preserve back-compat).
+// Returns nil when the contract is satisfied.
+//
+// stepIndex/StepAName/StepBName are populated so that the resulting
+// SemanticError flows through the same StreamName/PipelineName enrichment
+// path as type errors (see ValidateSpine).
+func validateFields(producer, consumer plugin.Manifest, stepIndex int) []SemanticError {
+	// Build a Name-keyed lookup over producer.Produces once. Producer
+	// counts are small (typically 4-8 envelope fields per plugin), so a
+	// per-pair map is cheaper than scanning the slice for every consumer
+	// field. Allocation is skipped entirely when producer.Produces is
+	// empty — but callers already filter that case (see Validate).
+	producedNames := make(map[string]struct{}, len(producer.Produces))
+	for _, f := range producer.Produces {
+		producedNames[f.Name] = struct{}{}
+	}
+
+	var fieldErrs []SemanticError
+	for _, want := range consumer.Consumes {
+		// Optional Consumes: absence is not an error (consumer "accepts
+		// but does not require"). Only Required:true Consumes can fail.
+		if !want.Required {
+			continue
+		}
+		if _, ok := producedNames[want.Name]; ok {
+			continue
+		}
+		fieldErrs = append(fieldErrs, SemanticError{
+			StepIndex: stepIndex,
+			StepAName: producer.PluginID,
+			StepBName: consumer.PluginID,
+			Note:      "producer '" + producer.PluginID + "' does not emit required field '" + want.Name + "' required by consumer '" + consumer.PluginID + "'",
+		})
+	}
+	return fieldErrs
 }
