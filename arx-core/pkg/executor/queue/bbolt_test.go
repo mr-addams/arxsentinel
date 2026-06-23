@@ -1,25 +1,49 @@
 // ========================== Module: queue/bbolt — tests ===================================
 //   Tests for BboltQueue covering push, pop, blocking, persistence, Len, and Close.
 //   All tests use t.TempDir() for temporary .db files — no external dependencies.
+//
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): payloads are opaque []byte;
+//   tests marshal a local jsonFields fixture before Push (mirror of what
+//   product-side Formatters do). Core tests do not import the product
+//   threat.ThreatEvent (boundary invariant).
 // ==========================================================================================
 
 package queue
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/logger"
-	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
-func testEvent(ip string) plugin.ThreatEvent {
-	return plugin.ThreatEvent{
-		IP: ip,
+// jsonFields mirrors the wire-format fixture the product-side Formatter
+// impls produce. Tests marshal to []byte before Push and unmarshal after
+// Pop to assert byte-preservation. Core does not import the product type.
+type jsonFields struct {
+	IP      string `json:"ip"`
+	Level   string `json:"level"`
+	Score   int    `json:"score"`
+	Reason  string `json:"reason"`
+	Modules []string `json:"modules"`
+}
+
+func testEvent(ip string) []byte {
+	b, _ := json.Marshal(jsonFields{IP: ip, Level: "THREAT"})
+	return b
+}
+
+func decodeEvent(t *testing.T, payload []byte) jsonFields {
+	t.Helper()
+	var f jsonFields
+	if err := json.Unmarshal(payload, &f); err != nil {
+		t.Fatalf("payload decode: %v (bytes: %q)", err, payload)
 	}
+	return f
 }
 
 func newTestBbolt(t *testing.T) *BboltQueue {
@@ -42,12 +66,13 @@ func TestBboltQueue_PushPop(t *testing.T) {
 		t.Fatalf("Push: %v", err)
 	}
 
-	event, err := q.Pop(ctx)
+	payload, err := q.Pop(ctx)
 	if err != nil {
 		t.Fatalf("Pop: %v", err)
 	}
-	if event.IP != "192.168.1.1" {
-		t.Fatalf("expected IP 192.168.1.1, got %s", event.IP)
+	got := decodeEvent(t, payload)
+	if got.IP != "192.168.1.1" {
+		t.Fatalf("expected IP 192.168.1.1, got %s", got.IP)
 	}
 }
 
@@ -124,20 +149,20 @@ func TestBboltQueue_Persistence(t *testing.T) {
 	}
 	defer q2.Close()
 
-	event, err := q2.Pop(ctx)
+	payload, err := q2.Pop(ctx)
 	if err != nil {
 		t.Fatalf("Pop: %v", err)
 	}
-	if event.IP != "10.0.0.1" {
-		t.Fatalf("expected IP 10.0.0.1, got %s", event.IP)
+	if got := decodeEvent(t, payload); got.IP != "10.0.0.1" {
+		t.Fatalf("expected IP 10.0.0.1, got %s", got.IP)
 	}
 
-	event, err = q2.Pop(ctx)
+	payload, err = q2.Pop(ctx)
 	if err != nil {
 		t.Fatalf("Pop: %v", err)
 	}
-	if event.IP != "10.0.0.2" {
-		t.Fatalf("expected IP 10.0.0.2, got %s", event.IP)
+	if got := decodeEvent(t, payload); got.IP != "10.0.0.2" {
+		t.Fatalf("expected IP 10.0.0.2, got %s", got.IP)
 	}
 }
 
@@ -186,14 +211,14 @@ func TestBboltQueue_ConcurrentCloseAndPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	event := plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}
+	payload := testEvent("1.2.3.4")
 
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_ = q.Push(ctx, event)
+			_ = q.Push(ctx, payload)
 		}()
 	}
 	// Close concurrently with pushes — must not panic

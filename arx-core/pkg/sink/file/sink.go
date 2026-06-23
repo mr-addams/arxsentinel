@@ -3,11 +3,12 @@
 //   an injected Formatter (pkg/sink/format.Formatter); the file sink owns
 //   only the I/O loop and the lifecycle (open / write / sync / close / reload).
 //
-//   Phase 2.2 (Flow 083 / RESOLVED-Q9 / RESOLVED-Z12): the sink no longer
-//   switches on a format string. The caller injects a Formatter that knows
-//   how to render Event bytes (typically a product-owned impl from
-//   cmd/arxsentinel/internal/threat/format). The sink itself is
-//   generic — it never inspects Event.Payload.
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the Gate A type-assert
+//   `event.Payload.(*plugin.ThreatEvent)` was removed. The sink now calls
+//   s.formatter.Format(event) directly on the generic *plugin.Event; the
+//   injected Formatter (a product-side implementation from
+//   cmd/arxsentinel/internal/threat/format) owns the type-assertion on its
+//   side. The core sink has no knowledge of the payload type.
 
 package file
 
@@ -110,22 +111,17 @@ func (s *FileSink) Stats() plugin.SinkStats {
 // unused: file I/O here is a single short syscall that is bounded by the
 // mutex, so cancellation is not meaningful.
 //
-// Gate A (Flow 083 / Task 2.2 / RESOLVED-D strategy II): the Sink contract
-// carries generic *plugin.Event; the Formatter still wants a concrete
-// *plugin.ThreatEvent because the byte format is ThreatEvent-shaped. We
-// type-assert here and surface a programmer error on a wrong payload type.
-// Replaced with Formatter-injection in Task 3.3 (Flow 083 RESOLVED-D).
+// Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the sink no longer inspects
+// Event.Payload. The injected Formatter takes the generic *plugin.Event
+// and renders the byte sequence; the Formatter impl owns the type-assertion
+// (FailbanFormatter / JSONFormatter / SentinelFormatter in product). This
+// replaces the Gate A `event.Payload.(*plugin.ThreatEvent)` pattern.
 func (s *FileSink) Write(ctx context.Context, event *plugin.Event) error {
 	if event == nil {
 		s.errors.Add(1)
 		return fmt.Errorf("file sink %s: nil event", s.path)
 	}
-	te, ok := event.Payload.(*plugin.ThreatEvent)
-	if !ok {
-		s.errors.Add(1)
-		return fmt.Errorf("file sink %s: Phase 2.2 Gate A: expected *plugin.ThreatEvent payload, got %T", s.path, event.Payload)
-	}
-	line, err := s.formatter.Format(te)
+	line, err := s.formatter.Format(event)
 	if err != nil {
 		s.errors.Add(1)
 		return fmt.Errorf("file sink %s: format: %w", s.path, err)

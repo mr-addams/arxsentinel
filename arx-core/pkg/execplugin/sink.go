@@ -82,24 +82,26 @@ func (s *ExecSink) Name() string {
 // not accept a context today. Plumbed through the interface for forward
 // compatibility (cancellable in-flight send).
 //
-// Gate A (Flow 083 / Task 2.2): the Sink contract now carries generic
-// *plugin.Event. We type-assert Event.Payload to *plugin.ThreatEvent here —
-// the wire format with the external plugin stays byte-identical.
+// Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the Sink contract now carries
+// generic *plugin.Event. Core no longer type-asserts Event.Payload — wire
+// conversion goes through threatEventToJSON which round-trips the opaque
+// payload (encoding/json field-name parity preserves byte-identical output
+// when the payload is a *threat.ThreatEvent).
 func (s *ExecSink) Write(ctx context.Context, event *plugin.Event) error {
-	te, ok := event.Payload.(*plugin.ThreatEvent)
-	if !ok {
-		s.errors.Add(1)
-		return fmt.Errorf("Phase 2.2 Gate A: expected *plugin.ThreatEvent payload, got %T", event.Payload)
-	}
-
 	s.proc.Lock()
 	defer s.proc.Unlock()
+
+	threatJSON, err := threatEventToJSON(event)
+	if err != nil {
+		s.errors.Add(1)
+		return fmt.Errorf("%w", err)
+	}
 
 	// Build the request
 	req := WriteRequest{
 		V:      ProtoVersion,
 		Action: "write",
-		Event:  threatEventToJSON(*te),
+		Event:  threatJSON,
 	}
 
 	// Marshal to JSON

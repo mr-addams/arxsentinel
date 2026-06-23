@@ -18,6 +18,11 @@
 //   decoder could not parse. The `sinkType == "sentinel-threat"` branch
 //   added in the fix is what locks the correct Formatter in regardless
 //   of the (absent) `format` hint.
+//
+//   Gate B (Flow 083 / Task 3.3): the Formatter impls (Failban / JSON /
+//   Sentinel) now live in internal/threat/format — the
+//   test imports threatformat for the concrete type assertions and
+//   sinkformat for the core interface type.
 
 package main
 
@@ -27,6 +32,8 @@ import (
 	"testing"
 
 	sinkformat "github.com/mr-addams/arx-core/pkg/sink/format"
+
+	threatformat "github.com/mr-addams/arxsentinel/internal/threat/format"
 )
 
 // TestFormatterForFormat_SentinelThreatIgnoresFormatHint is the regression
@@ -42,7 +49,7 @@ func TestFormatterForFormat_SentinelThreatIgnoresFormatHint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("formatterForFormat(sentinel-threat, \"\"): %v", err)
 	}
-	if _, ok := f.(*sinkformat.SentinelFormatter); !ok {
+	if _, ok := f.(*threatformat.SentinelFormatter); !ok {
 		t.Errorf("sentinel-threat sink with empty format: got %T, want *SentinelFormatter", f)
 	}
 
@@ -53,7 +60,7 @@ func TestFormatterForFormat_SentinelThreatIgnoresFormatHint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("formatterForFormat(sentinel-threat, fail2ban): %v", err)
 	}
-	if _, ok := f.(*sinkformat.SentinelFormatter); !ok {
+	if _, ok := f.(*threatformat.SentinelFormatter); !ok {
 		t.Errorf("sentinel-threat sink with fail2ban hint: got %T, want *SentinelFormatter", f)
 	}
 }

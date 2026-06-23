@@ -1,9 +1,16 @@
 // ========================== internal/core/output — parity_test.go ============================
-//   Parity guard: FormatFailban (pkg/sink/format) must produce byte-identical
-//   output to FormatThreatLine (logger.go) for Fail2Ban filter compatibility.
+//   Parity guard: FormatFailban (internal/threat/format) must
+//   produce byte-identical output to FormatThreatLine (logger.go) for Fail2Ban
+//   filter compatibility.
 //
-//   This test lives in internal/core/output (not in pkg/sink/format) because
-//   ADR-002 forbids pkg->internal imports even in test files. internal->pkg is allowed.
+//   This test lives in internal/core/output (not in internal/threat/format)
+//   because ADR-002 forbids pkg->internal imports even in test files, and the
+//   product-side FormatThreatLine (in this package) is the legacy reference
+//   for the wire format. internal->product is allowed.
+//
+//   Gate B (Flow 083 / Task 3.3): FormatFailban moved to product
+//   (internal/threat/format); this test now imports it from
+//   the new location. The byte-level invariant is preserved.
 
 package output_test
 
@@ -12,14 +19,14 @@ import (
 	"testing"
 	"time"
 
+	threatformat "github.com/mr-addams/arxsentinel/internal/threat/format"
 	"github.com/mr-addams/arxsentinel/internal/core/output"
-	"github.com/mr-addams/arx-core/pkg/plugin"
-	"github.com/mr-addams/arx-core/pkg/sink/format"
+	"github.com/mr-addams/arxsentinel/internal/threat"
 )
 
 func TestFormatFailban_IdenticalToFormatThreatLine(t *testing.T) {
 	ts := time.Date(2026, 4, 5, 14, 33, 12, 0, time.UTC)
-	testEvent := plugin.ThreatEvent{
+	testEvent := threat.ThreatEvent{
 		Timestamp:  ts,
 		Level:      "THREAT",
 		Stream:     "frontend",
@@ -31,7 +38,7 @@ func TestFormatFailban_IdenticalToFormatThreatLine(t *testing.T) {
 		Reason:     "probe:env:3,bad_bot:known",
 	}
 
-	failban := format.FormatFailban(testEvent)
+	failban := threatformat.FormatFailban(testEvent)
 	legacy := output.FormatThreatLine(testEvent.IP, testEvent.Score, testEvent.Level, testEvent.Modules, testEvent.Reason)
 
 	// Timestamps differ because FormatThreatLine uses time.Now() while FormatFailban

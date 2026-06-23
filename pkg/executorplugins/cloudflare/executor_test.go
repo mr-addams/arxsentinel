@@ -1,5 +1,9 @@
 // ========================== pkg/executor/cloudflare — executor_test.go ======
 //   Tests for CloudflareExecutor: rule management, API calls, error handling.
+//
+//   Gate B (Flow 083 / Task 3.3): ThreatEvent lives in
+//   internal/threat; tests construct *threat.ThreatEvent values for the
+//   Event.Payload.
 
 package cloudflare
 
@@ -13,6 +17,8 @@ import (
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/plugin"
+
+	"github.com/mr-addams/arxsentinel/internal/threat"
 )
 
 type mockCFClient struct {
@@ -76,9 +82,9 @@ func TestRun_SingleItem(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	src := newTestEventSource([]*plugin.Event{
-		{Payload: &plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}},
-		{Payload: &plugin.ThreatEvent{IP: "5.6.7.8", Level: "THREAT"}},
-		{Payload: &plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}},
+		{Payload: &threat.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}},
+		{Payload: &threat.ThreatEvent{IP: "5.6.7.8", Level: "THREAT"}},
+		{Payload: &threat.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}},
 	})
 	_ = ex.Run(ctx, src)
 
@@ -96,7 +102,7 @@ func TestRun_Batch250(t *testing.T) {
 
 	events := make([]*plugin.Event, 250)
 	for i := 0; i < 250; i++ {
-		events[i] = &plugin.Event{Payload: &plugin.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"}}
+		events[i] = &plugin.Event{Payload: &threat.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"}}
 	}
 	_ = ex.Run(context.Background(), newTestEventSource(events))
 	if len(mock.added) != 250 {
@@ -112,8 +118,8 @@ func TestRun_LevelGate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	src := newTestEventSource([]*plugin.Event{
-		{Payload: &plugin.ThreatEvent{IP: "10.0.0.1", Level: "INFO"}},
-		{Payload: &plugin.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"}},
+		{Payload: &threat.ThreatEvent{IP: "10.0.0.1", Level: "INFO"}},
+		{Payload: &threat.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"}},
 	})
 	_ = ex.Run(ctx, src)
 
@@ -137,8 +143,8 @@ func TestRun_Dedup(t *testing.T) {
 	ex.mu.Unlock()
 
 	src := newTestEventSource([]*plugin.Event{
-		{Payload: &plugin.ThreatEvent{IP: "10.0.0.1", Level: "THREAT"}},
-		{Payload: &plugin.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"}},
+		{Payload: &threat.ThreatEvent{IP: "10.0.0.1", Level: "THREAT"}},
+		{Payload: &threat.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"}},
 	})
 	_ = ex.Run(context.Background(), src)
 
@@ -254,7 +260,7 @@ func TestRun_ConcurrentSafe(t *testing.T) {
 	ctx := context.Background()
 	events := make([]*plugin.Event, 100)
 	for i := 0; i < 100; i++ {
-		events[i] = &plugin.Event{Payload: &plugin.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"}}
+		events[i] = &plugin.Event{Payload: &threat.ThreatEvent{IP: fmt.Sprintf("10.0.0.%d", i), Level: "THREAT"}}
 	}
 	src := newTestEventSource(events)
 	var wg sync.WaitGroup
@@ -296,7 +302,7 @@ func TestFlush_PollsPendingThenCompleted(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ex.flush(ctx, []plugin.ThreatEvent{{IP: "1.2.3.4", Level: "THREAT"}})
+	ex.flush(ctx, []threat.ThreatEvent{{IP: "1.2.3.4", Level: "THREAT"}})
 
 	if mock.pollCalls < 2 {
 		t.Errorf("expected at least 2 poll calls, got %d", mock.pollCalls)
@@ -332,7 +338,7 @@ func TestFlush_429Retry(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	ex.flush(ctx, []plugin.ThreatEvent{{IP: "1.2.3.4", Level: "THREAT"}})
+	ex.flush(ctx, []threat.ThreatEvent{{IP: "1.2.3.4", Level: "THREAT"}})
 
 	if mock.addCalls != 3 {
 		t.Errorf("expected 3 AddItems calls (2 fail + 1 success), got %d", mock.addCalls)

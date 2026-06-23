@@ -9,7 +9,12 @@
 //     - buildParserForInput()           — выбор парсера по profile/input-конфигурации
 //     - buildSources() / buildSinks()   — построение списка плагинов из pipeline-конфига
 //     - formatterForFormat()            — мост format-string → concrete format.Formatter
-//                                         (Phase 2.2, Flow 083 RESOLVED-Z12).
+//                                         (Gate B / Flow 083 RESOLVED-Q5b).
+//
+//   Gate B (Flow 083 / Task 3.3): the product-side Formatter impls (Failban /
+//   JSON / Sentinel) live in internal/threat/format. Core
+//   exposes only the Formatter interface in arx-core/pkg/sink/format.
+//   This wiring maps the YAML `format` hint onto a concrete Formatter.
 
 package main
 
@@ -20,14 +25,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
-	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgdetector "github.com/mr-addams/arx-core/pkg/detector"
 	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	pkgsink "github.com/mr-addams/arx-core/pkg/sink"
 	sinkformat "github.com/mr-addams/arx-core/pkg/sink/format"
 	pkgsource "github.com/mr-addams/arx-core/pkg/source"
+
+	threatformat "github.com/mr-addams/arxsentinel/internal/threat/format"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 
 	// Blank-import built-in sink plugins so their init() registers them with
 	// the global sink registry before buildSinks() looks them up by name
@@ -290,8 +297,8 @@ func buildSinks(ctx context.Context, streamName string, outputs []config.SinkCon
 //
 // The sink type takes precedence over the format string: a sentinel-threat
 // sink ALWAYS uses the SentinelFormatter because its wire format is owned
-// by the sentinel-threat transport (a JSON *plugin.ThreatEvent that the
-// queueEventSource adapter decodes back into a *plugin.ThreatEvent on the
+// by the sentinel-threat transport (a JSON *threat.ThreatEvent that the
+// queueEventSource adapter decodes back into a *threat.ThreatEvent on the
 // executor side — see cmd/arxsentinel/queue_event_source.go). Decoupling
 // the format from the sink type here was a regression of Task 2.2
 // (Flow 083, 2bcb354): when the YAML's `format` field was empty (the
@@ -312,15 +319,15 @@ func buildSinks(ctx context.Context, streamName string, outputs []config.SinkCon
 func formatterForFormat(sinkType, format, streamName string) (sinkformat.Formatter, error) {
 	// Sentinel-threat owns its own wire format — the sink type decides.
 	if sinkType == "sentinel-threat" {
-		return &sinkformat.SentinelFormatter{StreamName: streamName}, nil
+		return &threatformat.SentinelFormatter{StreamName: streamName}, nil
 	}
 	switch format {
 	case "", "fail2ban":
 		// Empty string falls back to fail2ban — matches the pre-Phase-2.2
 		// default and the Migrate() default in internal/sys/config.
-		return &sinkformat.FailbanFormatter{}, nil
+		return &threatformat.FailbanFormatter{}, nil
 	case "json":
-		return &sinkformat.JSONFormatter{}, nil
+		return &threatformat.JSONFormatter{}, nil
 	default:
 		return nil, fmt.Errorf("unknown format %q for sink type %q (want fail2ban or json)", format, sinkType)
 	}

@@ -1,10 +1,15 @@
 // ========================== pkg/ncs — channelswitch_test.go ===============
 //   Tests for NamedSwitch: named queue registration, lookup, lifecycle.
+//
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): queue payloads are opaque
+//   []byte; tests marshal a local jsonFields fixture before Push. Core
+//   tests do not import the product threat.ThreatEvent (boundary invariant).
 
 package ncs_test
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,8 +17,23 @@ import (
 	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	"github.com/mr-addams/arx-core/pkg/logger"
 	"github.com/mr-addams/arx-core/pkg/ncs"
-	"github.com/mr-addams/arx-core/pkg/plugin"
 )
+
+// jsonFields mirrors the wire-format fixture product-side Formatter impls
+// produce; tests marshal to []byte before Push.
+type jsonFields struct {
+	IP    string `json:"ip"`
+	Level string `json:"level"`
+}
+
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("test fixture marshal: %v", err)
+	}
+	return b
+}
 
 func TestNamedSwitch_SendReceive(t *testing.T) {
 	ctx := context.Background()
@@ -27,8 +47,8 @@ func TestNamedSwitch_SendReceive(t *testing.T) {
 		t.Fatalf("AttachReader error = %v, want nil", err)
 	}
 
-	event := plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}
-	if err := q.Push(ctx, event); err != nil {
+	payload := mustMarshal(t, jsonFields{IP: "1.2.3.4", Level: "THREAT"})
+	if err := q.Push(ctx, payload); err != nil {
 		t.Fatalf("Push error = %v, want nil", err)
 	}
 
@@ -36,11 +56,15 @@ func TestNamedSwitch_SendReceive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Pop error = %v, want nil", err)
 	}
-	if got.IP != event.IP {
-		t.Errorf("received IP = %q, want %q", got.IP, event.IP)
+	var decoded jsonFields
+	if err := json.Unmarshal(got, &decoded); err != nil {
+		t.Fatalf("decode: %v", err)
 	}
-	if got.Level != event.Level {
-		t.Errorf("received Level = %q, want %q", got.Level, event.Level)
+	if decoded.IP != "1.2.3.4" {
+		t.Errorf("received IP = %q, want %q", decoded.IP, "1.2.3.4")
+	}
+	if decoded.Level != "THREAT" {
+		t.Errorf("received Level = %q, want %q", decoded.Level, "THREAT")
 	}
 
 	ncs.DetachWriter("test-sr")
@@ -64,14 +88,17 @@ func TestNamedSwitch_DuplicateName(t *testing.T) {
 
 	// Both push through different handles; consumer sees all events.
 	src, _ := ncs.AttachReader("test-dup")
-	_ = q1.Push(ctx, plugin.ThreatEvent{IP: "1.1.1.1", Level: "THREAT"})
-	_ = q2.Push(ctx, plugin.ThreatEvent{IP: "2.2.2.2", Level: "THREAT"})
+	_ = q1.Push(ctx, mustMarshal(t, jsonFields{IP: "1.1.1.1", Level: "THREAT"}))
+	_ = q2.Push(ctx, mustMarshal(t, jsonFields{IP: "2.2.2.2", Level: "THREAT"}))
 
 	got1, _ := src.Pop(ctx)
 	got2, _ := src.Pop(ctx)
-	ips := map[string]bool{got1.IP: true, got2.IP: true}
+	var d1, d2 jsonFields
+	_ = json.Unmarshal(got1, &d1)
+	_ = json.Unmarshal(got2, &d2)
+	ips := map[string]bool{d1.IP: true, d2.IP: true}
 	if !ips["1.1.1.1"] || !ips["2.2.2.2"] {
-		t.Errorf("expected both IPs from fan-in, got %q and %q", got1.IP, got2.IP)
+		t.Errorf("expected both IPs from fan-in, got %q and %q", d1.IP, d2.IP)
 	}
 
 	// Ref count: first DetachWriter keeps queue alive.
@@ -97,7 +124,7 @@ func TestNamedSwitch_Unregister(t *testing.T) {
 		t.Fatalf("AttachReader error = %v, want nil", err)
 	}
 
-	_ = q.Push(ctx, plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"})
+	_ = q.Push(ctx, mustMarshal(t, jsonFields{IP: "1.2.3.4", Level: "THREAT"}))
 	ncs.DetachWriter("test-unreg")
 
 	// After DetachWriter the queue is closed, but a buffered event may still be in the channel.
@@ -144,16 +171,18 @@ func TestRegisterSinkFromConfig_NilCfg(t *testing.T) {
 
 	// The queue is functional: Push → Pop returns the same event.
 	ctx := context.Background()
-	evt := plugin.ThreatEvent{IP: "10.0.0.1", Level: "THREAT"}
-	if err := src.Push(ctx, evt); err != nil {
+	payload := mustMarshal(t, jsonFields{IP: "10.0.0.1", Level: "THREAT"})
+	if err := src.Push(ctx, payload); err != nil {
 		t.Fatalf("Push error = %v, want nil", err)
 	}
 	got, err := src.Pop(ctx)
 	if err != nil {
 		t.Fatalf("Pop error = %v, want nil", err)
 	}
-	if got.IP != evt.IP {
-		t.Errorf("Pop IP = %q, want %q", got.IP, evt.IP)
+	var decoded jsonFields
+	_ = json.Unmarshal(got, &decoded)
+	if decoded.IP != "10.0.0.1" {
+		t.Errorf("Pop IP = %q, want %q", decoded.IP, "10.0.0.1")
 	}
 
 	ncs.DetachWriter(name)
@@ -180,16 +209,18 @@ func TestRegisterSinkFromConfig_TypeMemory(t *testing.T) {
 	// Extra check: confirm that the registered queue is the in-memory variant —
 	// Push → Pop in the same process, without any serialization.
 	ctx := context.Background()
-	evt := plugin.ThreatEvent{IP: "10.0.0.2", Level: "THREAT"}
-	if err := src.Push(ctx, evt); err != nil {
+	payload := mustMarshal(t, jsonFields{IP: "10.0.0.2", Level: "THREAT"})
+	if err := src.Push(ctx, payload); err != nil {
 		t.Fatalf("Push error = %v, want nil", err)
 	}
 	got, err := src.Pop(ctx)
 	if err != nil {
 		t.Fatalf("Pop error = %v, want nil", err)
 	}
-	if got.IP != evt.IP {
-		t.Errorf("Pop IP = %q, want %q", got.IP, evt.IP)
+	var decoded jsonFields
+	_ = json.Unmarshal(got, &decoded)
+	if decoded.IP != "10.0.0.2" {
+		t.Errorf("Pop IP = %q, want %q", decoded.IP, "10.0.0.2")
 	}
 
 	ncs.DetachWriter(name)
@@ -220,8 +251,8 @@ func TestRegisterSinkFromConfig_TypeBbolt(t *testing.T) {
 	// the background writeLoop. After Close, a subsequent Push returns ErrQueueClosed —
 	// that is what we assert below to confirm the NCS entry is actually a BboltQueue.
 	ctx := context.Background()
-	evt := plugin.ThreatEvent{IP: "10.0.0.3", Level: "THREAT"}
-	if err := src.Push(ctx, evt); err != nil {
+	payload := mustMarshal(t, jsonFields{IP: "10.0.0.3", Level: "THREAT"})
+	if err := src.Push(ctx, payload); err != nil {
 		t.Fatalf("Push error = %v, want nil", err)
 	}
 

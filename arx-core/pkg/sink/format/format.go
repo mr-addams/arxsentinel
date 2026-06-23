@@ -1,99 +1,46 @@
-// ========================== pkg/sink/format =============================================
-//   ThreatEvent formatting: Fail2Ban line, JSON envelope, sentinel-threat line.
+// ========================== pkg/sink/format — Formatter interface ===========================
+//   Neutral serializer contract between core sinks and product code.
 //
 //   WHAT IS HERE:
-//     - FormatFailban       — formats ThreatEvent as a Fail2Ban-compatible line
-//     - FormatJSON          — formats ThreatEvent as a JSON envelope
-//     - FormatSentinelThreat — formats ThreatEvent as sentinel-threat transport line
-//     - Formatter interface  — minimal serializer surface (Decision 5 in DECISIONS.md)
+//     - Formatter — minimal interface; Format(event *plugin.Event) ([]byte, error)
 //
 //   WHAT IS NOT HERE:
-//     - FileSink, StdoutSink (file.go, stdout.go)
-//     - ThreatLogger / WarningsWriter — Product-side, stateful file-handling,
-//       live in internal/core/output (logger.go, warnings.go). ADR-002 constraint:
-//       warnings.go imports internal/core/chaincheck, so the package cannot move.
+//     - Concrete Format* impls (Failban / JSON / SentinelThreat): moved to
+//       product namespace cmd/arxsentinel/internal/threat/format in Gate B
+//       (Flow 083, Task 3.3, RESOLVED-Q5b / RESOLVED-Z12). They format
+//       product-shaped fields (Score / Modules / Reason) and therefore cannot
+//       live in core without leaking product knowledge into the boundary.
+//     - FormatFailban / FormatJSON / FormatSentinelThreat package-level
+//       functions: obsolete post-Gate B — concrete sinks wire Formatter impls
+//       from product. No core sink calls these directly anymore.
 //
-//   FAIL2BAN FORMAT (byte-compatible with FormatThreatLine in logger.go):
-//     2026-04-05T14:33:12Z THREAT 1.2.3.4 score=85 modules=probe,rate reason="..."
+//   DEPENDENCY RULE:
+//     pkg/sink/format → pkg/plugin (Event/Envelope types) + stdlib only.
+//     No product imports allowed (boundary invariant verified by rg).
 //
-//   JSON FORMAT (D7 in DECISIONS.md):
-//     {"timestamp":"...","level":"THREAT","stream":"frontend","source":"file:/path",
-//      "source_type":"file","ip":"1.2.3.4","score":85,"modules":["probe"],
-//      "reason":"...","raw_line":"..."(omit when empty)}
+//   WHY A STANDALONE INTERFACE FILE:
+//     Core sinks (pkg/sink/{file,stdout,sentinel}) hold a Formatter field and
+//     call s.formatter.Format(event) on every Write. The interface is the
+//     single point of contact between sink and serializer — keeping it
+//     isolated in this file documents the boundary and prevents accidental
+//     product imports.
 
 package format
 
-import (
-	"encoding/json"
-	"fmt"
-	"strings"
-	"time"
+import "github.com/mr-addams/arx-core/pkg/plugin"
 
-	"github.com/mr-addams/arx-core/pkg/plugin"
-)
-
-// FormatFailban formats a ThreatEvent as a Fail2Ban-compatible log line.
-// Byte-identical to FormatThreatLine() in logger.go — Fail2Ban filter must match all formats.
+// Formatter — minimal serializer contract. Implementations turn an opaque
+// *plugin.Event into the byte sequence the underlying sink writes out
+// (Fail2Ban line, JSON envelope, sentinel-threat transport, …).
 //
-// Called from: sink plugins (file.go, stdout.go), pipeline (main.go).
-// Non-blocking.
-func FormatFailban(e plugin.ThreatEvent) string {
-	timestamp := e.Timestamp.UTC().Format(time.RFC3339)
-	modulesStr := strings.Join(e.Modules, ",")
-	return fmt.Sprintf("%s %s %s score=%d modules=%s reason=%q",
-		timestamp, e.Level, e.IP, e.Score, modulesStr, e.Reason)
-}
-
-// jsonEnvelope mirrors the JSON structure defined in D7 (DECISIONS.md).
-// raw_line is omitted when empty via `omitempty`.
+// Single method on purpose: narrow surface, cheap to mock, lets product
+// code own every concrete byte format without touching core sink code.
 //
-// Internal — not in config. Consumer: FormatJSON.
-type jsonEnvelope struct {
-	Timestamp  string   `json:"timestamp"`             // Internal — RFC3339 timestamp. Consumer: FormatJSON.
-	Level      string   `json:"level"`                 // Internal — threat level. Consumer: FormatJSON.
-	Stream     string   `json:"stream,omitempty"`      // Internal — stream name. Consumer: FormatJSON.
-	Source     string   `json:"source,omitempty"`      // Internal — source path. Consumer: FormatJSON.
-	SourceType string   `json:"source_type,omitempty"` // Internal — source type. Consumer: FormatJSON.
-	IP         string   `json:"ip"`                    // Internal — IP address. Consumer: FormatJSON.
-	Score      int      `json:"score"`                 // Internal — accumulated score. Consumer: FormatJSON.
-	Modules    []string `json:"modules"`               // Internal — triggered detector names. Consumer: FormatJSON.
-	Reason     string   `json:"reason"`                // Internal — human-readable reason. Consumer: FormatJSON.
-	RawLine    string   `json:"raw_line,omitempty"`    // Internal — raw log line for debug. Consumer: FormatJSON.
-}
-
-// FormatSentinelThreat marshals a ThreatEvent to a sentinel-threat JSON line.
-//
-// Phase 2.2 wire format: JSON-encoded *plugin.ThreatEvent with Stream
-// overridden to streamName and RawLine cleared (sentinel-threat transport
-// never carries raw HTTP data — only the fields needed for re-ban). This
-// format is what cmd/arxsentinel/queue_event_source.Pop and
-// arx-core/pkg/source/sentinel decode back into a ThreatEvent on the
-// consumer side, so producer and consumer must agree byte-for-byte.
-//
-// Called from: sink plugins (sentinel-threat), pipeline (main.go).
-// Non-blocking.
-func FormatSentinelThreat(e plugin.ThreatEvent, streamName string) ([]byte, error) {
-	e.Stream = streamName
-	e.RawLine = ""
-	return json.Marshal(e)
-}
-
-// FormatJSON marshals a ThreatEvent to a JSON envelope (D7).
-//
-// raw_line is included only when e.RawLine is non-empty — omit it in production
-// to avoid leaking raw HTTP data into logs. Include it for debug mode analysis.
-func FormatJSON(e plugin.ThreatEvent) ([]byte, error) {
-	env := jsonEnvelope{
-		Timestamp:  e.Timestamp.UTC().Format(time.RFC3339),
-		Level:      e.Level,
-		Stream:     e.Stream,
-		Source:     e.Source,
-		SourceType: e.SourceType,
-		IP:         e.IP,
-		Score:      e.Score,
-		Modules:    e.Modules,
-		Reason:     e.Reason,
-		RawLine:    e.RawLine,
-	}
-	return json.Marshal(env)
+// Product code supplies concrete impls (see cmd/arxsentinel/internal/threat/format
+// for FailbanFormatter, JSONFormatter, SentinelFormatter). Core sinks accept
+// the interface via constructor injection and call Format on every Write —
+// they never inspect Event.Payload themselves (Gate B dissolved the Gate A
+// type-assert pattern).
+type Formatter interface {
+	Format(event *plugin.Event) ([]byte, error)
 }

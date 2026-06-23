@@ -11,12 +11,17 @@
 //   ISOLATION:
 //     Each test uses t.TempDir() for an isolated .db file. No port allocation,
 //     no Docker — only the local filesystem and bbolt itself.
+//
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): payloads are opaque []byte;
+//   tests marshal a local jsonFields fixture before Push. Core tests do
+//   not import the product threat.ThreatEvent (boundary invariant).
 // ================================================================================================
 
 package queue
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -26,21 +31,32 @@ import (
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/logger"
-	"github.com/mr-addams/arx-core/pkg/plugin"
 	"go.etcd.io/bbolt"
 )
 
-// bboltIntegrationEvent возвращает ThreatEvent с уникальными полями для каждого
-// индекса — IP содержит idx в последнем октете, что позволяет верифицировать,
-// что каждое событие дошло до reader'а ровно один раз.
-func bboltIntegrationEvent(ip string, idx int) plugin.ThreatEvent {
-	return plugin.ThreatEvent{
+// jsonFields mirrors the wire-format fixture product-side Formatter impls
+// produce; tests marshal to []byte before Push. Core does not import the
+// product type.
+type jsonFields struct {
+	IP      string   `json:"ip"`
+	Level   string   `json:"level"`
+	Score   int      `json:"score"`
+	Reason  string   `json:"reason"`
+	Modules []string `json:"modules"`
+}
+
+// bboltIntegrationEvent returns a JSON payload mirroring what the
+// product-side SentinelFormatter would emit — unique IP per idx so the
+// test can verify FIFO delivery of each event exactly once.
+func bboltIntegrationEvent(ip string, idx int) []byte {
+	b, _ := json.Marshal(jsonFields{
 		IP:      ip,
 		Level:   "THREAT",
 		Score:   idx,
 		Reason:  "stress:" + ip,
 		Modules: []string{"integration"},
-	}
+	})
+	return b
 }
 
 // TestBboltIntegration_PersistenceAcrossManyReopens проверяет, что данные
@@ -81,12 +97,16 @@ func TestBboltIntegration_PersistenceAcrossManyReopens(t *testing.T) {
 	defer q.Close()
 
 	for i, want := range expected {
-		event, err := q.Pop(ctx)
+		payload, err := q.Pop(ctx)
 		if err != nil {
 			t.Fatalf("pop %d: %v", i, err)
 		}
-		if event.IP != want {
-			t.Fatalf("pop %d: got IP %s, want %s", i, event.IP, want)
+		var f jsonFields
+		if err := json.Unmarshal(payload, &f); err != nil {
+			t.Fatalf("pop %d decode: %v", i, err)
+		}
+		if f.IP != want {
+			t.Fatalf("pop %d: got IP %s, want %s", i, f.IP, want)
 		}
 	}
 }
@@ -130,17 +150,21 @@ func TestBboltIntegration_FIFOUnderConcurrentPushers(t *testing.T) {
 
 	ctx := context.Background()
 	for i := 0; i < total; i++ {
-		event, err := q.Pop(ctx)
+		payload, err := q.Pop(ctx)
 		if err != nil {
 			t.Fatalf("pop %d: %v", i, err)
 		}
+		var f jsonFields
+		if err := json.Unmarshal(payload, &f); err != nil {
+			t.Fatalf("pop %d decode: %v", i, err)
+		}
 		// IP формата "10.1.0.<N>" — извлекаем N как int.
-		idx := extractIPOctet(event.IP)
+		idx := extractIPOctet(f.IP)
 		if idx < 1 || idx > total {
-			t.Fatalf("pop %d: out-of-range idx %d from IP %s", i, idx, event.IP)
+			t.Fatalf("pop %d: out-of-range idx %d from IP %s", i, idx, f.IP)
 		}
 		if seen[idx] {
-			t.Fatalf("pop %d: duplicate IP %s (idx %d)", i, event.IP, idx)
+			t.Fatalf("pop %d: duplicate IP %s (idx %d)", i, f.IP, idx)
 		}
 		seen[idx] = true
 	}
@@ -233,7 +257,6 @@ func TestBboltIntegration_LenAccuracyUnderMixedReadWrite(t *testing.T) {
 // крутятся в Run() и не должны ловить spurious wakeups.
 func TestBboltIntegration_PopBlocksOnEmptyQueue(t *testing.T) {
 	q := newTestBbolt(t)
-	defer q.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()

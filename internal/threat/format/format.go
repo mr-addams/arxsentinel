@@ -1,10 +1,8 @@
-//go:build ignore
-
-// ========================== cmd/arxsentinel/internal/threat/format =====================
-//   Product-side ThreatEvent formatters.
+// ========================== internal/threat/format =====================
+//   Product-side ThreatEvent formatters (Flow 083, Gate B).
 //
 //   WHAT IS HERE:
-//     - formatThreatPayload — extract *plugin.ThreatEvent from *plugin.Event.Payload
+//     - formatThreatPayload — extract *threat.ThreatEvent from *plugin.Event.Payload
 //       in one place, with fail-fast semantics on a wrong payload type.
 //     - FormatFailban / FormatJSON / FormatSentinelThreat — concrete serialization
 //       helpers, byte-compatible with the previous pkg/sink/format versions (so
@@ -15,17 +13,22 @@
 //
 //   WHAT IS NOT HERE:
 //     - The Formatter interface itself — that lives in pkg/sink/format (core).
-//     - ThreatEvent type — currently in pkg/plugin (legacy); will move to
-//       cmd/arxsentinel/internal/threat in Phase 3.3 (Flow 083). Until then,
-//       product code references plugin.ThreatEvent directly.
+//     - ThreatEvent type — owned by internal/threat (module-root internal/,
+//       reachable from pkg/executorplugins/*) since Gate B (Flow 083,
+//       Task 3.3, RESOLVED-Q2 product-ownership). The concrete payload
+//       lives in this product package, not in arx-core.
 //
-//   Phase 2.2 (Flow 083 / RESOLVED-Q12):
-//     These impls were moved out of arx-core/pkg/sink/format/ because they
-//     read product-shaped fields (Score / Modules / Reason) and therefore
-//     cannot live in core without leaking product knowledge. The contract
-//     (Formatter interface) stays in core; the implementations come from
-//     product and are wired at pipeline assembly (cmd/arxsentinel/builders.go
-//     and friends).
+//   Gate B (Flow 083 / RESOLVED-Z12 / RESOLVED-Q5b):
+//     These impls were activated in Gate B after ThreatEvent migrated from
+//     arx-core/pkg/plugin to internal/threat. The package-level Format*
+//     functions and the Formatter impls below own every byte of
+//     product-shaped output (Score / Modules / Reason / RawLine); the
+//     Formatter interface in pkg/sink/format stays neutral in core.
+//
+//   DEPENDENCY RULE:
+//     imports only arx-core/pkg/plugin (Event/Envelope) and the local
+//     internal/threat package (ThreatEvent). No boundary violations —
+//     verified by rg.
 
 package format
 
@@ -36,26 +39,33 @@ import (
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/plugin"
+
+	"github.com/mr-addams/arxsentinel/internal/threat"
 )
 
-// formatThreatPayload extracts the *plugin.ThreatEvent stored in
+// formatThreatPayload extracts the *threat.ThreatEvent stored in
 // Event.Payload and returns it by value (the wire formats are value-shaped).
+//
+// Why pointer-form Payload (engine pushes &threat.ThreatEvent{...}): the
+// canonical Event.Payload convention is *T (see pkg/plugin/event.go and the
+// Phase 2.2 generalised contracts). This is the only place we type-assert
+// it — core sinks no longer do so after Gate B.
 //
 // Why fail-fast on a type mismatch: the Payload convention is enforced by
 // the product scorer (the only producer of ThreatEvent). A wrong concrete
 // type at this sink boundary is a programming error — surfacing it here
 // keeps the failure mode local to the sink rather than producing empty
 // output. RESOLVED-Q3b-style "fail fast on mismatch".
-func formatThreatPayload(ev *plugin.Event) (plugin.ThreatEvent, error) {
+func formatThreatPayload(ev *plugin.Event) (threat.ThreatEvent, error) {
 	if ev == nil {
-		return plugin.ThreatEvent{}, fmt.Errorf("threat/format: nil event")
+		return threat.ThreatEvent{}, fmt.Errorf("threat/format: nil event")
 	}
-	te, ok := ev.Payload.(plugin.ThreatEvent)
+	te, ok := ev.Payload.(*threat.ThreatEvent)
 	if !ok {
-		return plugin.ThreatEvent{}, fmt.Errorf(
-			"threat/format: expected payload plugin.ThreatEvent, got %T", ev.Payload)
+		return threat.ThreatEvent{}, fmt.Errorf(
+			"threat/format: expected payload *threat.ThreatEvent, got %T", ev.Payload)
 	}
-	return te, nil
+	return *te, nil
 }
 
 // jsonEnvelope mirrors the JSON structure defined in D7 (DECISIONS.md of Flow 081).
@@ -74,7 +84,13 @@ type jsonEnvelope struct {
 }
 
 // sentinelThreatLine is the JSON format for sentinel-threat transport.
-// Used both by FormatSentinelThreat (output) and SentinelThreatSource (input).
+// Used both by FormatSentinelThreat (output) and the consumer side
+// (cmd/arxsentinel/queue_event_source.Pop and arx-core/pkg/source/sentinel).
+//
+// Wire format: JSON object with the same field names as the Go ThreatEvent
+// struct (no json tags needed — encoding/json uses Go field names by
+// default, and the consumer decodes back into threat.ThreatEvent with the
+// same field names).
 type sentinelThreatLine struct {
 	TS      string   `json:"ts"`
 	IP      string   `json:"ip"`
@@ -88,7 +104,7 @@ type sentinelThreatLine struct {
 // FormatFailban formats a ThreatEvent as a Fail2Ban-compatible log line.
 // Byte-identical to the previous FormatThreatLine in logger.go — Fail2Ban
 // filter must match all formats.
-func FormatFailban(e plugin.ThreatEvent) string {
+func FormatFailban(e threat.ThreatEvent) string {
 	timestamp := e.Timestamp.UTC().Format(time.RFC3339)
 	modulesStr := strings.Join(e.Modules, ",")
 	return fmt.Sprintf("%s %s %s score=%d modules=%s reason=%q",
@@ -99,7 +115,7 @@ func FormatFailban(e plugin.ThreatEvent) string {
 //
 // raw_line is included only when e.RawLine is non-empty — omit it in production
 // to avoid leaking raw HTTP data into logs. Include it for debug mode analysis.
-func FormatJSON(e plugin.ThreatEvent) ([]byte, error) {
+func FormatJSON(e threat.ThreatEvent) ([]byte, error) {
 	env := jsonEnvelope{
 		Timestamp:  e.Timestamp.UTC().Format(time.RFC3339),
 		Level:      e.Level,
@@ -117,7 +133,7 @@ func FormatJSON(e plugin.ThreatEvent) ([]byte, error) {
 
 // FormatSentinelThreat marshals a ThreatEvent to a sentinel-threat JSON line.
 // Minimal transport format — only fields needed for re-ban.
-func FormatSentinelThreat(e plugin.ThreatEvent, streamName string) ([]byte, error) {
+func FormatSentinelThreat(e threat.ThreatEvent, streamName string) ([]byte, error) {
 	ts := e.Timestamp.UTC().Format(time.RFC3339)
 	line := sentinelThreatLine{
 		TS:      ts,

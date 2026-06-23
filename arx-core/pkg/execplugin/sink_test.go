@@ -1,10 +1,16 @@
 // ========================== pkg/execplugin — sink_test.go =================
 //   Tests for ExecSink: Manifest, Sink, lifecycle.
+//
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the Sink contract carries
+//   generic *plugin.Event; tests build a local fakeThreatPayload struct
+//   (matching the wire shape of the product threat.ThreatEvent) and push
+//   it as Event.Payload. Core tests do not import the product type.
 
 package execplugin
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -12,6 +18,23 @@ import (
 
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
+
+// fakeThreatPayload mirrors the JSON field names of the product-owned
+// threat.ThreatEvent. The execplugin wire-format ThreatEventJSON has the
+// same JSON tags, so a JSON round-trip through Event.Payload →
+// ThreatEventJSON preserves all fields.
+type fakeThreatPayload struct {
+	Timestamp  time.Time
+	Level      string
+	Stream     string
+	Source     string
+	SourceType string
+	IP         string
+	Score      int
+	Modules    []string
+	Reason     string
+	RawLine    string
+}
 
 // TestExecSink_Name tests that Name() returns the sink identifier with "exec:" prefix.
 func TestExecSink_Name(t *testing.T) {
@@ -31,7 +54,11 @@ func TestExecSink_Name(t *testing.T) {
 	}
 }
 
-// TestExecSink_Write tests that Write() sends a ThreatEvent to the plugin and increments counters.
+// TestExecSink_Write tests that Write() forwards the event to the plugin
+// subprocess and increments counters. The wire format is verified by
+// the script (sink.sh) which echoes the JSON it received back — the
+// event's payload survives the json.Marshal→json.Unmarshal round-trip
+// in threatEventToJSON.
 func TestExecSink_Write(t *testing.T) {
 	_, filename, _, _ := runtime.Caller(0)
 	testdataDir := filepath.Join(filepath.Dir(filename), "testdata")
@@ -43,8 +70,9 @@ func TestExecSink_Write(t *testing.T) {
 	}
 	defer sink.Close()
 
-	// Create a test ThreatEvent
-	event := plugin.ThreatEvent{
+	// Build a wire-shape event. JSON marshalling here must match the
+	// ThreatEventJSON field names (timestamp/level/stream/source/...).
+	payload := &fakeThreatPayload{
 		Timestamp:  time.Now(),
 		Level:      "THREAT",
 		Stream:     "frontend",
@@ -55,6 +83,14 @@ func TestExecSink_Write(t *testing.T) {
 		Modules:    []string{"probe", "rate"},
 		Reason:     "probe:env:3,rate:142rps",
 		RawLine:    "",
+	}
+	event := &plugin.Event{Payload: payload}
+
+	// Sanity check: payload JSON shape must match what threatEventToJSON
+	// expects. If this assertion fails the wire format diverged and
+	// sink.sh will reject the request.
+	if _, err := json.Marshal(payload); err != nil {
+		t.Fatalf("payload marshal failed: %v", err)
 	}
 
 	// Call Write

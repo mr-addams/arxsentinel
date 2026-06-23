@@ -77,33 +77,25 @@ func (e *ExecExecutor) Manifest() plugin.Manifest {
 	}
 }
 
-// Run reads ThreatEvents from the source via Pop and delegates to executePlugin.
+// Run reads Events from the source via Pop and delegates to executePlugin.
 // Blocks until ctx is cancelled or the source returns a terminal error.
 // Called from: pipeline.runExecutor.
 //
 // Blocking — runs until ctx cancellation or source error.
 //
-// Phase 2.2 (Flow 083 / Gate A): the source delivers generic *plugin.Event.
-// Gate A keeps the executePlugin signature on plugin.ThreatEvent (so the
-// ThreatEvent payload contract with external plugin processes stays byte-
-// identical). We type-assert Event.Payload here — a wrong payload type is a
-// programmer error and is skipped (Gate B Task 3.3 replaces this with a
-// proper Formatter-driven contract).
+// Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the source delivers generic
+// *plugin.Event. The executor forwards the event directly to executePlugin
+// which round-trips it through threatEventToJSON to the wire-format. Core
+// no longer type-asserts Event.Payload — the executor treats the payload
+// as opaque and the wire-format conversion is owned by threatEventToJSON
+// (encoding/json field-name parity preserves byte-identical output).
 func (e *ExecExecutor) Run(ctx context.Context, source plugin.EventSource) error {
 	for {
 		event, err := source.Pop(ctx)
 		if err != nil {
 			return nil
 		}
-		te, ok := event.Payload.(*plugin.ThreatEvent)
-		if !ok {
-			// Gate A: only ThreatEvent payloads are expected. A wrong payload
-			// type indicates a miswired pipeline — log and skip rather than
-			// crash the executor goroutine.
-			fmt.Fprintf(os.Stderr, "[%s] skipped non-ThreatEvent payload: %T\n", e.name, event.Payload)
-			continue
-		}
-		if err := e.executePlugin(ctx, *te); err != nil {
+		if err := e.executePlugin(ctx, event); err != nil {
 			continue
 		}
 	}
@@ -113,6 +105,7 @@ func (e *ExecExecutor) Run(ctx context.Context, source plugin.EventSource) error
 // The request/response cycle is mutex-serialized for thread safety.
 //
 // Returns an error if:
+//   - threatEventToJSON fails (marshal/unmarshal into ThreatEventJSON)
 //   - JSON marshaling fails
 //   - Send/Recv fails (plugin crash, stdin/stdout closed)
 //   - Response parsing fails
@@ -122,14 +115,29 @@ func (e *ExecExecutor) Run(ctx context.Context, source plugin.EventSource) error
 // Called from: Run.
 //
 // Non-blocking.
-func (e *ExecExecutor) executePlugin(ctx context.Context, event plugin.ThreatEvent) error {
+//
+// Gate B (Flow 083 / Task 3.3 / RESOLVED-D): executePlugin now takes the
+// generic *plugin.Event (not a concrete ThreatEvent). Wire conversion goes
+// through threatEventToJSON which round-trips the opaque payload — core
+// has no type-assert and no knowledge of the product ThreatEvent.
+func (e *ExecExecutor) executePlugin(ctx context.Context, event *plugin.Event) error {
+	if event == nil {
+		e.errors.Add(1)
+		return fmt.Errorf("[%s] executePlugin: nil event", e.name)
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	threatJSON, err := threatEventToJSON(event)
+	if err != nil {
+		e.errors.Add(1)
+		return fmt.Errorf("[%s] %w", e.name, err)
+	}
 
 	req := ExecuteRequest{
 		V:      ProtoVersion,
 		Action: "execute",
-		Event:  threatEventToJSON(event),
+		Event:  threatJSON,
 	}
 
 	reqData, err := json.Marshal(req)

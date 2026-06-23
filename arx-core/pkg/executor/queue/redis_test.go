@@ -1,19 +1,22 @@
 // ========================== Module: queue/redis_test ============================
 //   Integration tests for RedisQueue. All tests skip when Redis is not available
 //   on localhost:6379.
+//
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): payloads are opaque []byte;
+//   tests marshal a local jsonFields fixture before Push. Core tests do not
+//   import the product threat.ThreatEvent.
 // ================================================================================
 
 package queue
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-
-	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 func redisAvailable() bool {
@@ -43,13 +46,16 @@ func TestRedisQueue_PushPop(t *testing.T) {
 	q := newRedisQueueForTest(t)
 	ctx := context.Background()
 
-	event := plugin.ThreatEvent{
+	payload, err := json.Marshal(jsonFields{
 		IP:    "192.0.2.1",
 		Score: 10,
 		Level: "WARN",
+	})
+	if err != nil {
+		t.Fatalf("test fixture marshal: %v", err)
 	}
 
-	if err := q.Push(ctx, event); err != nil {
+	if err := q.Push(ctx, payload); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -58,8 +64,12 @@ func TestRedisQueue_PushPop(t *testing.T) {
 		t.Fatalf("Pop: %v", err)
 	}
 
-	if got.IP != event.IP || got.Score != event.Score || got.Level != event.Level {
-		t.Errorf("Pop got %+v, want %+v", got, event)
+	var decoded jsonFields
+	if err := json.Unmarshal(got, &decoded); err != nil {
+		t.Fatalf("Pop payload decode: %v (bytes: %q)", err, got)
+	}
+	if decoded.IP != "192.0.2.1" || decoded.Score != 10 || decoded.Level != "WARN" {
+		t.Errorf("Pop got %+v, want IP=192.0.2.1 Score=10 Level=WARN", decoded)
 	}
 }
 
@@ -86,17 +96,17 @@ func TestRedisQueue_Len(t *testing.T) {
 	q := newRedisQueueForTest(t)
 	ctx := context.Background()
 
-	event := plugin.ThreatEvent{IP: "10.0.0.1", Score: 5, Level: "INFO"}
-	event2 := plugin.ThreatEvent{IP: "10.0.0.2", Score: 15, Level: "THREAT"}
+	payload1, _ := json.Marshal(jsonFields{IP: "10.0.0.1", Score: 5, Level: "INFO"})
+	payload2, _ := json.Marshal(jsonFields{IP: "10.0.0.2", Score: 15, Level: "THREAT"})
 
 	if l := q.Len(); l != 0 {
 		t.Errorf("Len before push: got %d, want 0", l)
 	}
 
-	if err := q.Push(ctx, event); err != nil {
+	if err := q.Push(ctx, payload1); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
-	if err := q.Push(ctx, event2); err != nil {
+	if err := q.Push(ctx, payload2); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -122,7 +132,8 @@ func TestRedisQueue_Close(t *testing.T) {
 	}
 
 	// Push after Close returns ErrQueueClosed
-	if err := q.Push(ctx, plugin.ThreatEvent{IP: "10.0.0.1"}); !errors.Is(err, ErrQueueClosed) {
+	closedPayload, _ := json.Marshal(jsonFields{IP: "10.0.0.1"})
+	if err := q.Push(ctx, closedPayload); !errors.Is(err, ErrQueueClosed) {
 		t.Errorf("Push after Close: expected ErrQueueClosed, got %v", err)
 	}
 

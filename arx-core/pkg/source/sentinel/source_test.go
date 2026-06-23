@@ -1,7 +1,14 @@
 // ========================== Tests: pkg/source/sentinel ===================================
-//   Unit tests for SentinelSource — покрывают: чтение ThreatEvent из NCS-очереди,
-//   конверсию ThreatEvent → LogEntry, обработку ctx-cancel и закрытия очереди,
-//   drop-policy при полном downstream-канале, обработку ThreatEvent без IP.
+//   Unit tests for SentinelSource — NCS queue reader that wraps each JSON
+//   payload as an opaque *plugin.Event and forwards it to the pipeline.
+//
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the source no longer
+//   type-asserts the payload to plugin.ThreatEvent (which migrated to
+//   product). It validates that the queue payload is valid JSON and
+//   wraps it as json.RawMessage in Event.Payload. Tests assert on
+//   Envelope fields and on payload byte-preservation — the product
+//   consumer (cmd/arxsentinel/queue_event_source) is responsible for
+//   JSON-decoding the payload into threat.ThreatEvent.
 //
 //   Тесты не зависят от глобального NCS singleton — канал инжектится через NewWithQueue
 //   и реальный queue.MemoryQueue, создаваемый в test setup.
@@ -9,29 +16,25 @@
 package sentinel_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/executor/queue"
-	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/mr-addams/arx-core/pkg/source/sentinel"
 )
 
-// validThreat — стандартный ThreatEvent с заполненным IP и Reason.
-var validThreat = plugin.ThreatEvent{
-	Timestamp: time.Date(2026, 6, 5, 12, 0, 0, 0, time.UTC),
-	Level:     "THREAT",
-	Stream:    "main",
-	Source:    "sentinel:other-pipeline",
-	IP:        "203.0.113.42",
-	Score:     85,
-	Modules:   []string{"probe", "rate"},
-	Reason:    "probe:env:3,rate:142rps",
-}
+// validThreatJSON is a wire-format fixture — bytes matching the
+// FormatSentinelThreat output. Tests push these bytes into the queue
+// and assert that the source forwards them verbatim in the
+// Event.Payload (json.RawMessage round-trip preserves the original
+// bytes).
+var validThreatJSON = []byte(`{"ts":"2026-06-05T12:00:00Z","ip":"203.0.113.42","score":85,"level":"THREAT","modules":["probe","rate"],"reason":"probe:env:3,rate:142rps","source":"sentinel:other-pipeline"}`)
 
 // nopLog — no-op logger для тестов, не проверяющих log output.
 func nopLog(_, _, _ string) {}
@@ -40,7 +43,7 @@ func nopLog(_, _, _ string) {}
 // с таймаутом 2s. Возвращает собранные entries и финальную ошибку Run.
 //
 // Используется в большинстве тестов — единая обёртка для читаемости.
-func runAndCollect(t *testing.T, src plugin.Source, wantCount int) ([]*parser.LogEntry, error) {
+func runAndCollect(t *testing.T, src plugin.Source, wantCount int) ([]*plugin.Event, error) {
 	t.Helper()
 	out := make(chan *plugin.Event, wantCount+2)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -49,11 +52,11 @@ func runAndCollect(t *testing.T, src plugin.Source, wantCount int) ([]*parser.Lo
 	errCh := make(chan error, 1)
 	go func() { errCh <- src.Run(ctx, out) }()
 
-	got := make([]*parser.LogEntry, 0, wantCount)
+	got := make([]*plugin.Event, 0, wantCount)
 	for i := 0; i < wantCount; i++ {
 		select {
 		case ev := <-out:
-			got = append(got, parser.UnwrapLogEntry(ev))
+			got = append(got, ev)
 		case <-time.After(2 * time.Second):
 			cancel()
 			t.Fatalf("timeout waiting for entry %d", i)
@@ -73,11 +76,12 @@ func runAndCollect(t *testing.T, src plugin.Source, wantCount int) ([]*parser.Lo
 }
 
 // ----------------------------------------------------------------------------------------
-// Test 1: ThreatEvent из очереди конвертируется в LogEntry с правильными полями.
+// Test 1: ThreatEvent bytes из очереди конвертируются в *plugin.Event с envelope-метаданными.
+// Payload остаётся json.RawMessage (opaque to core, decoded by product consumer).
 // ----------------------------------------------------------------------------------------
 func TestSentinelSource_ReadsThreats(t *testing.T) {
 	q := queue.NewMemoryQueue(8)
-	if err := q.Push(context.Background(), validThreat); err != nil {
+	if err := q.Push(context.Background(), validThreatJSON); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -91,20 +95,25 @@ func TestSentinelSource_ReadsThreats(t *testing.T) {
 		t.Fatalf("expected 1 entry, got %d", len(got))
 	}
 	e := got[0]
-	if e.RealIP != "203.0.113.42" {
-		t.Errorf("RealIP = %q, want %q", e.RealIP, "203.0.113.42")
+
+	// Envelope metadata is filled by the source.
+	if e.Source != "sentinel:test-stream" {
+		t.Errorf("Envelope.Source = %q, want %q", e.Source, "sentinel:test-stream")
 	}
-	if e.RemoteAddr != "203.0.113.42" {
-		t.Errorf("RemoteAddr = %q, want %q", e.RemoteAddr, "203.0.113.42")
+	if e.SourceType != "sentinel" {
+		t.Errorf("Envelope.SourceType = %q, want %q", e.SourceType, "sentinel")
 	}
-	if e.ChainIssue != "sentinel:event" {
-		t.Errorf("ChainIssue = %q, want %q", e.ChainIssue, "sentinel:event")
+	if e.Level != "" {
+		t.Errorf("Envelope.Level = %q, want empty (scorer fills later)", e.Level)
 	}
-	if e.UserAgent != "probe:env:3,rate:142rps" {
-		t.Errorf("UserAgent = %q, want %q", e.UserAgent, "probe:env:3,rate:142rps")
+
+	// Payload is json.RawMessage containing the original bytes verbatim.
+	raw, ok := e.Payload.(json.RawMessage)
+	if !ok {
+		t.Fatalf("Payload type = %T, want json.RawMessage", e.Payload)
 	}
-	if e.Time.IsZero() {
-		t.Error("Time is zero, want non-zero")
+	if !bytes.Equal(raw, validThreatJSON) {
+		t.Errorf("Payload bytes mismatch:\n got: %s\nwant: %s", raw, validThreatJSON)
 	}
 
 	if stats := src.Stats(); stats.LinesRead != 1 {
@@ -140,13 +149,11 @@ func TestSentinelSource_StopOnCtxCancel(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------------------------
-// Test 3: ThreatEvent с пустым IP считается parse-error и не доставляется в out.
+// Test 3: невалидный JSON считается parse-error и не доставляется в out.
 // ----------------------------------------------------------------------------------------
-func TestSentinelSource_ParseErrorOnEmptyIP(t *testing.T) {
+func TestSentinelSource_ParseErrorOnInvalidJSON(t *testing.T) {
 	q := queue.NewMemoryQueue(8)
-	emptyIP := validThreat
-	emptyIP.IP = "" // pipeline не сможет сматчить — отбрасываем
-	if err := q.Push(context.Background(), emptyIP); err != nil {
+	if err := q.Push(context.Background(), []byte("not-valid-json{")); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -168,13 +175,13 @@ func TestSentinelSource_ParseErrorOnEmptyIP(t *testing.T) {
 			t.Fatalf("Run returned %v, want nil", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("Run did not return within 2s after cancel")
+		t.Fatal("Run did not return within 2s after ctx cancel")
 	}
 
-	// out должен остаться пустым — пустой IP → parse error → нет LogEntry.
+	// out должен остаться пустым — invalid JSON → parse error → нет Event.
 	select {
 	case e := <-out:
-		t.Fatalf("out received entry with empty IP: %+v", e)
+		t.Fatalf("out received entry with invalid JSON: %+v", e)
 	default:
 	}
 
@@ -220,7 +227,7 @@ func TestSentinelSource_DropCounter(t *testing.T) {
 	q := queue.NewMemoryQueue(8)
 	// Кладём 3 события — Run попытается отправить каждое в unbuffered `out`.
 	for i := 0; i < 3; i++ {
-		if err := q.Push(context.Background(), validThreat); err != nil {
+		if err := q.Push(context.Background(), validThreatJSON); err != nil {
 			t.Fatalf("Push %d: %v", i, err)
 		}
 	}
@@ -254,13 +261,11 @@ func TestSentinelSource_DropCounter(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------------------------
-// Test 6: logFn вызывается с тегом "SENTINEL" при parse-error (пустой IP).
+// Test 6: logFn вызывается с тегом "SENTINEL" при parse-error (invalid JSON).
 // ----------------------------------------------------------------------------------------
 func TestSentinelSource_LogFnCalledOnParseError(t *testing.T) {
 	q := queue.NewMemoryQueue(8)
-	emptyIP := validThreat
-	emptyIP.IP = ""
-	_ = q.Push(context.Background(), emptyIP)
+	_ = q.Push(context.Background(), []byte("not-valid-json{"))
 
 	var calls atomic.Int32
 	var loggedTag atomic.Value

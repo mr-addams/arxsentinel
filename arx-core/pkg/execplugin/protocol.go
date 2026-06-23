@@ -1,6 +1,12 @@
 // ========================== pkg/execplugin — protocol messages =============================
-//   Wire representation of parser.LogEntry, plugin.ThreatEvent, and plugin.IPView
-//   for NDJSON transport between arxsentinel and external plugin processes.
+//   Wire representation of parser.LogEntry and plugin.IPView for NDJSON
+//   transport between arxsentinel and external plugin processes.
+//
+//   ThreatEventJSON is retained as the wire-format struct that matches the
+//   Go struct field names of the legacy plugin.ThreatEvent. After Gate B
+//   (Flow 083 / Task 3.3 / RESOLVED-D) the canonical ThreatEvent lives in
+//   cmd/arxsentinel/internal/threat/ — the wire shape is identical (same
+//   field names, same JSON encoding) so external plugins see no change.
 //
 //   WHAT IS HERE:
 //     - Protocol message types (Detect, Write, Source, Start/Stop control)
@@ -15,11 +21,19 @@
 //     Each message is a single-line JSON followed by \n.
 //     All timestamps use RFC3339 format.
 //     All action fields are lowercase strings.
+//
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the core wire protocol now
+//   converts a generic *plugin.Event (whose Payload holds a product-owned
+//   *threat.ThreatEvent) into ThreatEventJSON by JSON-round-tripping the
+//   payload. Field names match by construction (encoding/json uses Go
+//   field names by default), so wire bytes stay byte-identical to the
+//   pre-Gate-B format.
 
 package execplugin
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/parser"
@@ -60,8 +74,12 @@ type IPViewJSON struct {
 	ApproxRate    float64  `json:"approx_rate_1m"` // YAML: — requests/second over 1 minute window. Consumer: protocol.ipViewToJSON
 }
 
-// ThreatEventJSON is the wire representation of plugin.ThreatEvent for JSON transport.
-// Includes all fields needed to route the event to external systems.
+// ThreatEventJSON is the wire representation of the threat-scored event
+// payload for JSON transport. Mirrors the Go struct field names of the
+// product-owned threat.ThreatEvent (which moved out of arx-core in Gate B);
+// field names match so the wire format is byte-identical to the pre-Gate-B
+// ThreatEvent JSON. External plugin processes see no change.
+//
 // Consumer: protocol.go (WriteRequest.event, ExecuteRequest.event).
 type ThreatEventJSON struct {
 	Timestamp  string   `json:"timestamp"`          // YAML: — RFC3339 event timestamp. Consumer: protocol.threatEventToJSON
@@ -186,20 +204,42 @@ func logEntryFromJSON(j LogEntryJSON) *parser.LogEntry {
 	}
 }
 
-// threatEventToJSON converts a plugin.ThreatEvent to wire format.
-func threatEventToJSON(e plugin.ThreatEvent) ThreatEventJSON {
-	return ThreatEventJSON{
-		Timestamp:  e.Timestamp.Format(time.RFC3339),
-		Level:      e.Level,
-		Stream:     e.Stream,
-		Source:     e.Source,
-		SourceType: e.SourceType,
-		IP:         e.IP,
-		Score:      e.Score,
-		Modules:    e.Modules,
-		Reason:     e.Reason,
-		RawLine:    e.RawLine,
+// threatEventToJSON converts a generic *plugin.Event whose Payload holds a
+// product-owned threat event into the wire-format ThreatEventJSON.
+//
+// Gate B (Flow 083 / Task 3.3 / RESOLVED-D): core no longer references the
+// product ThreatEvent type directly (boundary invariant). Instead we
+// round-trip the opaque payload through encoding/json: marshal the
+// payload (which the product owns and whose JSON field names match the
+// ThreatEventJSON field names by default — encoding/json uses Go field
+// names), then unmarshal into ThreatEventJSON. Wire bytes are preserved
+// when the payload is a *threat.ThreatEvent whose field names match the
+// ThreatEventJSON struct — which they do by construction (same shape,
+// pre-migration name parity).
+//
+// Returns the decoded wire form and a non-nil error if marshalling the
+// payload fails or unmarshalling back into ThreatEventJSON fails (a
+// payload type whose JSON layout does not match ThreatEventJSON will
+// surface a non-nil error here rather than producing a malformed wire
+// request).
+//
+// Called from: executor.executePlugin, sink.Write. Non-blocking.
+func threatEventToJSON(ev *plugin.Event) (ThreatEventJSON, error) {
+	if ev == nil {
+		return ThreatEventJSON{}, fmt.Errorf("execplugin: threatEventToJSON: nil event")
 	}
+	if ev.Payload == nil {
+		return ThreatEventJSON{}, fmt.Errorf("execplugin: threatEventToJSON: nil payload")
+	}
+	body, err := json.Marshal(ev.Payload)
+	if err != nil {
+		return ThreatEventJSON{}, fmt.Errorf("execplugin: threatEventToJSON: marshal payload: %w", err)
+	}
+	var out ThreatEventJSON
+	if err := json.Unmarshal(body, &out); err != nil {
+		return ThreatEventJSON{}, fmt.Errorf("execplugin: threatEventToJSON: unmarshal into ThreatEventJSON: %w", err)
+	}
+	return out, nil
 }
 
 // ipViewToJSON captures a point-in-time snapshot of plugin.IPView state.

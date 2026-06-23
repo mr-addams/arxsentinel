@@ -94,12 +94,19 @@ func (s *slowSource) Run(ctx context.Context, out chan<- *plugin.Event) error {
 
 // mockSink — простой sink, собирает все записанные события в массив (потокобезопасно).
 // Имеет опциональный Reloader-метод (вызывается на SIGHUP).
+//
+// Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the mockSink now keeps
+// *plugin.Event values verbatim (no payload type-assert) — the engine
+// contract is generic and the sink must not know the payload shape.
+// Core tests cannot import the product threat.ThreatEvent (boundary
+// invariant), so Events() returns the raw *plugin.Event slice for
+// assertions.
 type mockSink struct {
-	name      string
-	mu        sync.Mutex
-	events    []plugin.ThreatEvent
-	reloaded  atomic.Int32 // счётчик reload-вызовов
-	loadError error        // если задан — Reload() вернёт эту ошибку
+	name     string
+	mu       sync.Mutex
+	events   []*plugin.Event
+	reloaded atomic.Int32 // счётчик reload-вызовов
+	loadError error       // если задан — Reload() вернёт эту ошибку
 }
 
 func (s *mockSink) Name() string              { return s.name }
@@ -107,26 +114,19 @@ func (s *mockSink) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *mockSink) Close() error              { return nil }
 func (s *mockSink) Stats() plugin.SinkStats   { return plugin.SinkStats{} }
 func (s *mockSink) Write(_ context.Context, ev *plugin.Event) error {
-	// Gate A: the sink contract now carries generic *plugin.Event;
-	// the mockSink holds *plugin.ThreatEvent values extracted from
-	// the payload. Wrong payload type is a programmer error.
-	te, ok := ev.Payload.(*plugin.ThreatEvent)
-	if !ok {
-		return fmt.Errorf("mockSink: expected *plugin.ThreatEvent payload, got %T", ev.Payload)
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.events = append(s.events, *te)
+	s.events = append(s.events, ev)
 	return nil
 }
 func (s *mockSink) Reload() error {
 	s.reloaded.Add(1)
 	return s.loadError
 }
-func (s *mockSink) Events() []plugin.ThreatEvent {
+func (s *mockSink) Events() []*plugin.Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]plugin.ThreatEvent, len(s.events))
+	out := make([]*plugin.Event, len(s.events))
 	copy(out, s.events)
 	return out
 }
@@ -147,7 +147,7 @@ func (s *failingSink) Write(_ context.Context, _ *plugin.Event) error {
 
 // mockFactory — реализует LineProcessorFactory И LineProcessor.
 // state (per-pipeline): *mockState с idx, buildCalls и processCalls (атомики).
-// Process эмитит ThreatEvent для entries, у которых IP = "evil.*".
+// Process эмитит Event для entries, у которых IP = "evil.*".
 type mockFactory struct {
 	buildCalls  atomic.Int32
 	reloadCalls atomic.Int32
@@ -173,6 +173,17 @@ func (f *mockFactory) Reload(old ProcessorState, _ context.Context) (ProcessorSt
 	return &mockState{idx: prev.idx, factory: f}, nil
 }
 
+// fakeThreatPayload is a local test-only struct that mirrors the wire-shape
+// of the product-owned threat.ThreatEvent. Core tests cannot import the
+// product type (boundary invariant), so the mock factory builds this
+// fixture as the Event.Payload. JSON encoding/decoding round-trips through
+// this struct identically to the production payload.
+type fakeThreatPayload struct {
+	Level string `json:"level"`
+	IP    string `json:"ip"`
+	Score int    `json:"score"`
+}
+
 func (f *mockFactory) Process(_ context.Context, ev *plugin.Event, state ProcessorState, _ EventContext) Action {
 	f.processed.Add(1)
 
@@ -188,9 +199,13 @@ func (f *mockFactory) Process(_ context.Context, ev *plugin.Event, state Process
 	}
 	f.events.Add(1)
 	// Phase 2.2: Action carries *plugin.Event as Payload; we preserve the
-	// threat-context envelope and replace the payload with a generic
-	// ThreatEvent that downstream sinks / scorers consume.
-	threatEvent := &plugin.ThreatEvent{
+	// threat-context envelope and replace the payload with a fake
+	// ThreatEvent that downstream sinks / scorers consume. The fake
+	// struct shape matches the wire bytes the real product-owned
+	// threat.ThreatEvent produces — a sink type-asserting
+	// ev.Payload.(*threat.ThreatEvent) would see the same JSON-encoded
+	// form after re-marshalling.
+	fakePayload := &fakeThreatPayload{
 		Level: "WARN",
 		IP:    entry.RealIP,
 	}
@@ -201,7 +216,7 @@ func (f *mockFactory) Process(_ context.Context, ev *plugin.Event, state Process
 	return Action{
 		Payload: &plugin.Event{
 			Envelope: envelope,
-			Payload:  threatEvent,
+			Payload:  fakePayload,
 		},
 	}
 }

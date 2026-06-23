@@ -8,51 +8,23 @@
 //   WHAT IS NOT HERE:
 //     - FileSink, StdoutSink (pkg/sink/{file,stdout})
 //     - Fan-out logic (engine in pkg/runtime)
+//     - ThreatEvent — migrated to cmd/arxsentinel/internal/threat/ in Gate B
+//       (Flow 083, Task 3.3, RESOLVED-Q2 product-ownership). The Sink contract
+//       here carries the generic *plugin.Event; concrete event shaping lives
+//       in a Formatter (interface in pkg/sink/format).
 //
 //   DEPENDENCY RULE:
 //     pkg/plugin → stdlib only.
-//
-//   Phase 2.2 (Flow 083 / RESOLVED-Q9 / RESOLVED-Z12):
-//     The Sink contract is generalized to a generic *plugin.Event. Concrete
-//     threat-event shaping lives in a Formatter (interface in pkg/sink/format);
-//     the engine NEVER inspects Event.Payload — that is the owning plugin's
-//     responsibility. Sinks dispatch to an injected Formatter that knows how
-//     to render the payload bytes.
 
 package plugin
 
-import (
-	"context"
-	"time"
-)
+import "context"
 
 // SinkStats — operational counters emitted by a Sink.
 type SinkStats struct {
 	EventsWritten int64 // events successfully written
 	Dropped       int64 // events dropped (e.g. buffer full for async sinks)
 	Errors        int64 // write errors
-}
-
-// ThreatEvent — fully-populated threat event delivered to all Sinks after scoring.
-//
-// GATE A (Flow 083 / Task 2.2 / RESOLVED-D strategy II):
-// ThreatEvent is a TEMPORARY resident of pkg/plugin. It remains here so that
-// pkg/sink/format/*.go and downstream callers compile under the new
-// *plugin.Event contract without forcing a full dissolution. The struct is
-// expected to migrate to the product namespace and be replaced with a
-// formatter-injected payload in Gate B (Task 3.3, Flow 083 RESOLVED-D).
-// Sinks must type-assert Event.Payload.(*ThreatEvent) during Gate A.
-type ThreatEvent struct {
-	Timestamp  time.Time
-	Level      string
-	Stream     string
-	Source     string
-	SourceType string
-	IP         string
-	Score      int
-	Modules    []string
-	Reason     string
-	RawLine    string
 }
 
 // Sink — public interface for any threat event destination.

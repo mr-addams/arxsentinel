@@ -1,6 +1,8 @@
 // ========================== Package nginx — tests ==========================
 //   Unit tests for the NginxExecutor: flush, sweep, dedup, min_level filter,
 //   state file persistence, reload command execution, and atomic writes.
+//
+//   Gate B (Flow 083 / Task 3.3): ThreatEvent lives in internal/threat.
 
 package nginx
 
@@ -18,6 +20,8 @@ import (
 	"github.com/mr-addams/arx-core/pkg/executor"
 	"github.com/mr-addams/arx-core/pkg/logger"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+
+	"github.com/mr-addams/arxsentinel/internal/threat"
 )
 
 // testEventSource is a simple EventSource that delivers pre-defined events.
@@ -354,8 +358,8 @@ func TestRunLoop(t *testing.T) {
 	})
 
 	events := newTestEventSource([]*plugin.Event{
-		{Payload: &plugin.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}},
-		{Payload: &plugin.ThreatEvent{IP: "5.6.7.8", Level: "THREAT"}},
+		{Payload: &threat.ThreatEvent{IP: "1.2.3.4", Level: "THREAT"}},
+		{Payload: &threat.ThreatEvent{IP: "5.6.7.8", Level: "THREAT"}},
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

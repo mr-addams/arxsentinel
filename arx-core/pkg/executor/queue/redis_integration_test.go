@@ -18,6 +18,10 @@
 //   ISOLATION:
 //     Each test uses a unique key (random hex suffix) to avoid cross-test pollution
 //     when go test runs tests in parallel or sequentially. Cleanup deletes the key.
+//
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): payloads are opaque []byte;
+//   tests marshal a local jsonFields fixture before Push. Core tests do
+//   not import the product threat.ThreatEvent (boundary invariant).
 // ================================================================================================
 
 package queue
@@ -26,6 +30,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"os"
@@ -36,9 +41,18 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-
-	"github.com/mr-addams/arx-core/pkg/plugin"
 )
+
+// jsonFields mirrors the wire-format fixture product-side Formatter impls
+// produce; tests marshal to []byte before Push. Core does not import the
+// product type.
+type jsonFields struct {
+	IP      string   `json:"ip"`
+	Level   string   `json:"level"`
+	Score   int      `json:"score"`
+	Reason  string   `json:"reason"`
+	Modules []string `json:"modules"`
+}
 
 // redisIntegrationURL возвращает Redis URL для интеграционных тестов:
 // берёт REDIS_URL из окружения, иначе localhost:6379/0. Возвращает URL и
@@ -113,17 +127,18 @@ func newRedisIntegrationQueue(t *testing.T) *RedisQueue {
 	return q
 }
 
-// redisIntegrationEvent возвращает ThreatEvent с уникальным IP для каждого
-// индекса — последний октет содержит idx, что позволяет верифицировать
-// полноту доставки без дублей.
-func redisIntegrationEvent(idx int) plugin.ThreatEvent {
-	return plugin.ThreatEvent{
+// redisIntegrationEvent возвращает JSON-payload с уникальным IP для
+// каждого индекса — последний октет содержит idx, что позволяет
+// верифицировать полноту доставки без дублей.
+func redisIntegrationEvent(idx int) []byte {
+	b, _ := json.Marshal(jsonFields{
 		IP:      "10.10.0." + strconv.Itoa(idx),
 		Level:   "THREAT",
 		Score:   idx,
 		Reason:  "stress:redis-integration",
 		Modules: []string{"integration"},
-	}
+	})
+	return b
 }
 
 // TestRedisIntegration_PushPopSmoke проверяет базовый happy path: Push
@@ -134,12 +149,15 @@ func TestRedisIntegration_PushPopSmoke(t *testing.T) {
 	q := newRedisIntegrationQueue(t)
 	ctx := context.Background()
 
-	want := plugin.ThreatEvent{
+	want, err := json.Marshal(jsonFields{
 		IP:      "192.0.2.42",
 		Level:   "WARN",
 		Score:   100,
 		Reason:  "smoke",
 		Modules: []string{"smoke"},
+	})
+	if err != nil {
+		t.Fatalf("test fixture marshal: %v", err)
 	}
 
 	if err := q.Push(ctx, want); err != nil {
@@ -153,8 +171,13 @@ func TestRedisIntegration_PushPopSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Pop: %v", err)
 	}
-	if got.IP != want.IP || got.Score != want.Score || got.Level != want.Level {
-		t.Errorf("Pop got %+v, want %+v", got, want)
+	var decoded jsonFields
+	if err := json.Unmarshal(got, &decoded); err != nil {
+		t.Fatalf("Pop payload decode: %v (bytes: %q)", err, got)
+	}
+	wantDecoded := jsonFields{IP: "192.0.2.42", Level: "WARN", Score: 100, Reason: "smoke"}
+	if decoded.IP != wantDecoded.IP || decoded.Score != wantDecoded.Score || decoded.Level != wantDecoded.Level {
+		t.Errorf("Pop got %+v, want %+v", decoded, wantDecoded)
 	}
 	if l := q.Len(); l != 0 {
 		t.Errorf("Len after Pop: got %d, want 0", l)
@@ -214,14 +237,18 @@ func TestRedisIntegration_SharedStateBetweenReplicas(t *testing.T) {
 	// Writer закрыт — но reader на другом инстансе читает все 50 событий.
 	seen := make(map[string]bool, total)
 	for i := 0; i < total; i++ {
-		event, err := reader.Pop(ctx)
+		payload, err := reader.Pop(ctx)
 		if err != nil {
 			t.Fatalf("reader.Pop %d: %v", i, err)
 		}
-		if seen[event.IP] {
-			t.Fatalf("reader.Pop %d: duplicate IP %s", i, event.IP)
+		var f jsonFields
+		if err := json.Unmarshal(payload, &f); err != nil {
+			t.Fatalf("reader.Pop %d decode: %v", i, err)
 		}
-		seen[event.IP] = true
+		if seen[f.IP] {
+			t.Fatalf("reader.Pop %d: duplicate IP %s", i, f.IP)
+		}
+		seen[f.IP] = true
 	}
 	if len(seen) != total {
 		t.Errorf("reader total unique IPs: got %d, want %d", len(seen), total)

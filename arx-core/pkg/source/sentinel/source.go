@@ -32,12 +32,21 @@
 //	  cfg.Addr имеет формата "ncs://<queue-name>" — имя зарегистрированной
 //	  в NCS очереди. Пустой или невалидный адрес → ошибка в New().
 //
-//	Phase 2.2 (Flow 083 / RESOLVED-Q9 / RESOLVED-Q3b):
-//	  - NCS payload is opaque []byte (Phase 2.2 generalisation). This source
-//	    JSON-decodes the bytes back into a product-owned ThreatEvent, then
-//	    wraps it as *plugin.Event{Envelope, Payload}. The envelope fields
-//	    that this source can fill at construction time are Source, SourceType,
-//	    Stream, Timestamp; Level is left empty (scorer fills it later).
+//	Gate B (Flow 083 / Task 3.3 / RESOLVED-D strategy II):
+//	  The source no longer JSON-decodes the wire payload into the core
+//	  (plugin.ThreatEvent was migrated to cmd/arxsentinel/internal/threat/).
+//	  Instead the raw queue bytes are wrapped as a json.RawMessage in
+//	  Event.Payload — opaque to core, decoded by the product-side
+//	  consumer (cmd/arxsentinel/queue_event_source.Pop and the threat
+//	  formatter impls). Boundary invariant: arx-core/pkg/source/sentinel
+//	  does NOT import cmd/arxsentinel/internal/threat.
+//
+//	  Wire shape (the JSON object layout emitted by FormatSentinelThreat):
+//	  {ts, ip, score, level, modules, reason, source}. Encoded into
+//	  json.RawMessage and carried verbatim into Event.Payload; the
+//	  envelope (Source / SourceType / Stream / Timestamp) is filled
+//	  from queue metadata and observation time. Level on the envelope
+//	  is left empty here — the product scorer assigns it later.
 package sentinel
 
 import (
@@ -135,15 +144,18 @@ func (s *SentinelSource) Stats() plugin.SourceStats {
 //   - На каждой итерации делается q.Pop(ctx). Если ctx отменён — выходим с nil.
 //   - Если очередь закрыта (ErrQueueClosed) — выходим с nil.
 //   - Другие ошибки Pop логируются (если logFn задан) и цикл продолжается.
-//   - Полученные JSON-байты декодируются в ThreatEvent (canonical product type),
-//     оборачиваются в *plugin.Event и отправляются в `out` неблокирующим send'ом.
+//   - Полученные JSON-байты оборачиваются как json.RawMessage и несутся в
+//     Event.Payload (core остаётся opaque — не type-asserts и не интерпретирует).
+//   - Envelope (Source/SourceType/Stream/Timestamp) заполняется из queue-метаданных.
+//     Level на envelope оставлен пустым — продуктовый скорер присваивает его
+//     после скоринга (RESOLVED-Q1a envelope ownership).
 //   - Если `out` полон — event отбрасывается и инкрементируется Dropped.
 //
-// Phase 2.2: payload is *plugin.Event (envelope + opaque ThreatEvent payload).
-// Level on the envelope is left empty here — the product scorer assigns it
-// later. Source/SourceType/Stream/Timestamp are filled from the queue name
-// and observation time; they are best-effort transport metadata, not audit-
-// quality provenance.
+// Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the wire payload is carried
+// opaquely as json.RawMessage; the product-side consumer
+// (cmd/arxsentinel/queue_event_source.Pop or a threat formatter impl)
+// JSON-decodes it into threat.ThreatEvent. Core has no knowledge of the
+// payload type (RESOLVED-Q3b — generic payload).
 func (s *SentinelSource) Run(ctx context.Context, out chan<- *plugin.Event) error {
 	for {
 		payload, err := s.q.Pop(ctx)
@@ -163,31 +175,26 @@ func (s *SentinelSource) Run(ctx context.Context, out chan<- *plugin.Event) erro
 
 		s.linesRead.Add(1)
 
-		var event plugin.ThreatEvent
-		if jerr := json.Unmarshal(payload, &event); jerr != nil {
+		// Gate B: opaque payload (json.RawMessage). The product consumer is
+		// responsible for decoding it into threat.ThreatEvent. We only validate
+		// that the bytes are valid JSON before passing them through, so a
+		// malformed payload does not silently corrupt downstream consumers.
+		if !json.Valid(payload) {
 			s.parseErrors.Add(1)
 			if s.logFn != nil {
-				s.logFn("SENTINEL", fmt.Sprintf("decode threat event: %v", jerr), "debug")
-			}
-			continue
-		}
-
-		if event.IP == "" {
-			s.parseErrors.Add(1)
-			if s.logFn != nil {
-				s.logFn("SENTINEL", "dropping threat event with empty IP", "debug")
+				s.logFn("SENTINEL", fmt.Sprintf("invalid JSON payload (%d bytes)", len(payload)), "debug")
 			}
 			continue
 		}
 
 		ev := &plugin.Event{
 			Envelope: plugin.Envelope{
-				Timestamp:  event.Timestamp,
+				Timestamp:  time.Now().UTC(),
 				Source:     "sentinel:" + s.name,
 				SourceType: "sentinel",
 				Level:      "", // scorer fills later
 			},
-			Payload: event,
+			Payload: json.RawMessage(payload),
 		}
 
 		select {

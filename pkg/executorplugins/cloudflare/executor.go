@@ -8,6 +8,11 @@
 //
 //   WHAT IS NOT HERE:
 //     CF API client (client.go), config parsing (config.go), registration (register.go)
+//
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
+//   product namespace cmd/arxsentinel/internal/threat; the executor
+//   type-asserts Event.Payload to *threat.ThreatEvent to extract the IP
+//   and level fields. Core has no knowledge of the payload shape.
 
 package cloudflare
 
@@ -26,6 +31,8 @@ import (
 	"github.com/mr-addams/arx-core/pkg/executor"
 	"github.com/mr-addams/arx-core/pkg/logger"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+
+	"github.com/mr-addams/arxsentinel/internal/threat"
 )
 
 type threatLevel int
@@ -195,7 +202,7 @@ func (e *CloudflareExecutor) Run(ctx context.Context, source plugin.EventSource)
 	}
 	startupCancel()
 
-	buffer := make([]plugin.ThreatEvent, 0, e.cfg.BatchSize)
+	buffer := make([]threat.ThreatEvent, 0, e.cfg.BatchSize)
 	ticker := time.NewTicker(e.cfg.FlushInterval)
 	defer ticker.Stop()
 
@@ -207,9 +214,9 @@ func (e *CloudflareExecutor) Run(ctx context.Context, source plugin.EventSource)
 	defer sweepTicker.Stop()
 
 	// Pop is not a channel — feed events into an internal channel for select.
-	// Gate A (Flow 083 / Task 2.2): Pop now returns generic *plugin.Event;
-	// extract the *plugin.ThreatEvent payload and forward ThreatEvent values.
-	events := make(chan plugin.ThreatEvent, 64) // L5: буфер 64 — снижает блокировки Pop при всплесках
+	// Gate B (Flow 083 / Task 3.3): Pop returns generic *plugin.Event;
+	// extract the *threat.ThreatEvent payload and forward ThreatEvent values.
+	events := make(chan threat.ThreatEvent, 64) // L5: буфер 64 — снижает блокировки Pop при всплесках
 	go func() {
 		defer close(events)
 		for {
@@ -217,7 +224,7 @@ func (e *CloudflareExecutor) Run(ctx context.Context, source plugin.EventSource)
 			if err != nil {
 				return
 			}
-			te, ok := ev.Payload.(*plugin.ThreatEvent)
+			te, ok := ev.Payload.(*threat.ThreatEvent)
 			if !ok {
 				fmt.Fprintf(os.Stderr, "[cloudflare executor] skipped non-ThreatEvent payload: %T\n", ev.Payload)
 				continue
@@ -367,7 +374,7 @@ type cfBatchItem struct {
 	Comment string `json:"comment"`
 }
 
-func (e *CloudflareExecutor) flush(ctx context.Context, events []plugin.ThreatEvent) {
+func (e *CloudflareExecutor) flush(ctx context.Context, events []threat.ThreatEvent) {
 	if len(events) == 0 {
 		return
 	}

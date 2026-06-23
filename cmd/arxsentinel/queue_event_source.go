@@ -1,21 +1,17 @@
-// ========================== Queue→EventSource adapter (Gate A) ============================
-//   Phase 2.2 (Flow 083 / Gate A / RESOLVED-D strategy II / OPEN-Q3b gray zone):
+// ========================== Queue→EventSource adapter (Gate B) ============================
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D):
 //
 //   pkg/executor/queue.Queue still operates on opaque []byte payloads (see
 //   pkg/executor/queue/queue.go — deliberate, so persistent backends serialize
 //   via JSON cleanly across process restarts). The Sink side (Formatter) owns
 //   the wire schema: today it produces Fail2Ban-line or JSON-serialized
-//   *plugin.ThreatEvent bytes.
+//   *threat.ThreatEvent bytes.
 //
-//   plugin.EventSource wants *plugin.Event from Pop. Until the proper
-//   adapter lands in Task 3.3 (Flow 083), this file provides a minimal
-//   bytes→Event adapter used only by the executor goroutine dispatcher
-//   in cmd/arxsentinel/executors.go. The wire format expected here is a
-//   JSON-encoded *plugin.ThreatEvent (matching what the sentinel-threat
+//   plugin.EventSource wants *plugin.Event from Pop. This file provides a
+//   bytes→Event adapter used only by the executor goroutine dispatcher in
+//   cmd/arxsentinel/executors.go. The wire format expected here is a
+//   JSON-encoded *threat.ThreatEvent (matching what the sentinel-threat
 //   sink pushes onto the queue today).
-//
-//   Replaced with a richer adapter in Task 3.3 — the long-term shape
-//   accepts arbitrary formatter-driven payloads, not just ThreatEvent JSON.
 
 package main
 
@@ -26,12 +22,14 @@ import (
 
 	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+
+	"github.com/mr-addams/arxsentinel/internal/threat"
 )
 
 // queueEventSource wraps a queue.Queue (bytes-oriented) into a
-// plugin.EventSource (Event-oriented). Gate A scope: decodes JSON
-// *plugin.ThreatEvent payloads; a wrong payload type is a programmer
-// error and is logged-and-skipped (the executor's own Gate A guard
+// plugin.EventSource (Event-oriented). Gate B scope: decodes JSON
+// *threat.ThreatEvent payloads; a wrong payload type is a programmer
+// error and is logged-and-skipped (the executor's own Gate B guard
 // handles type-assertion of Event.Payload).
 type queueEventSource struct {
 	q queue.Queue
@@ -43,13 +41,13 @@ func newQueueEventSource(q queue.Queue) *queueEventSource {
 
 // Pop implements plugin.EventSource by reading bytes from the underlying
 // queue and JSON-decoding them into a *plugin.Event whose Payload is the
-// recovered *plugin.ThreatEvent. Wire format is JSON *plugin.ThreatEvent.
+// recovered *threat.ThreatEvent. Wire format is JSON *threat.ThreatEvent.
 func (s *queueEventSource) Pop(ctx context.Context) (*plugin.Event, error) {
 	data, err := s.q.Pop(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var te plugin.ThreatEvent
+	var te threat.ThreatEvent
 	if jerr := json.Unmarshal(data, &te); jerr != nil {
 		return nil, fmt.Errorf("queueEventSource: decode ThreatEvent JSON: %w", jerr)
 	}

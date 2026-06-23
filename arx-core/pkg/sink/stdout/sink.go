@@ -3,9 +3,9 @@
 //   injected Formatter (pkg/sink/format.Formatter); the sink owns only the
 //   I/O loop and lifecycle.
 //
-//   Phase 2.2 (Flow 083 / RESOLVED-Q9 / RESOLVED-Z12): the sink no longer
-//   switches on a format string. Product code picks a Formatter at pipeline
-//   assembly time.
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the Gate A type-assert on
+//   Event.Payload was removed. The injected Formatter (product-side impl
+//   from cmd/arxsentinel/internal/threat/format) owns the type-assertion.
 
 package stdout
 
@@ -77,21 +77,15 @@ func (s *StdoutSink) Stats() plugin.SinkStats {
 // unused: stdout writes are short syscalls bounded by the mutex, so
 // cancellation is not meaningful.
 //
-// Gate A (Flow 083 / Task 2.2 / RESOLVED-D strategy II): the Sink contract
-// carries generic *plugin.Event; the Formatter still wants a concrete
-// *plugin.ThreatEvent. We type-assert here and surface a programmer error on
-// a wrong payload type. Replaced with Formatter-injection in Task 3.3.
+// Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the sink no longer inspects
+// Event.Payload. The injected Formatter takes the generic *plugin.Event
+// and renders the byte sequence; the Formatter impl owns the type-assertion.
 func (s *StdoutSink) Write(ctx context.Context, event *plugin.Event) error {
 	if event == nil {
 		s.errors.Add(1)
 		return fmt.Errorf("stdout sink: nil event")
 	}
-	te, ok := event.Payload.(*plugin.ThreatEvent)
-	if !ok {
-		s.errors.Add(1)
-		return fmt.Errorf("stdout sink: Phase 2.2 Gate A: expected *plugin.ThreatEvent payload, got %T", event.Payload)
-	}
-	line, err := s.formatter.Format(te)
+	line, err := s.formatter.Format(event)
 	if err != nil {
 		s.errors.Add(1)
 		return fmt.Errorf("stdout sink: format: %w", err)

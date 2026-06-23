@@ -11,6 +11,10 @@
 //   WHAT IS NOT HERE:
 //     - Configuration parsing (see config.go)
 //     - Registration (see register.go)
+//
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
+//   product namespace cmd/arxsentinel/internal/threat; the executor
+//   type-asserts Event.Payload to *threat.ThreatEvent.
 
 package nginx
 
@@ -30,6 +34,8 @@ import (
 	"github.com/mr-addams/arx-core/pkg/executor"
 	"github.com/mr-addams/arx-core/pkg/logger"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+
+	"github.com/mr-addams/arxsentinel/internal/threat"
 )
 
 const (
@@ -357,12 +363,11 @@ func (e *NginxExecutor) Run(ctx context.Context, source plugin.EventSource) erro
 	defer tickerSweep.Stop()
 
 	// Internal channel for events — Pop is not channel-based.
-	// Gate A (Flow 083 / Task 2.2): Pop now returns generic *plugin.Event;
-	// we extract the *plugin.ThreatEvent payload and forward ThreatEvent
+	// Gate B (Flow 083 / Task 3.3): Pop returns generic *plugin.Event;
+	// we extract the *threat.ThreatEvent payload and forward ThreatEvent
 	// values down the same batch path. A wrong payload type is a programmer
-	// error and is dropped here (Gate B Task 3.3 replaces this with a
-	// proper Formatter-driven contract).
-	events := make(chan plugin.ThreatEvent, e.cfg.BatchSize)
+	// error and is dropped here.
+	events := make(chan threat.ThreatEvent, e.cfg.BatchSize)
 	go func() {
 		defer close(events)
 		for {
@@ -370,7 +375,7 @@ func (e *NginxExecutor) Run(ctx context.Context, source plugin.EventSource) erro
 			if err != nil {
 				return
 			}
-			te, ok := ev.Payload.(*plugin.ThreatEvent)
+			te, ok := ev.Payload.(*threat.ThreatEvent)
 			if !ok {
 				fmt.Fprintf(os.Stderr, "[nginx executor] skipped non-ThreatEvent payload: %T\n", ev.Payload)
 				continue
@@ -383,7 +388,7 @@ func (e *NginxExecutor) Run(ctx context.Context, source plugin.EventSource) erro
 		}
 	}()
 
-	buffer := make([]plugin.ThreatEvent, 0, e.cfg.BatchSize)
+	buffer := make([]threat.ThreatEvent, 0, e.cfg.BatchSize)
 
 	for {
 		select {

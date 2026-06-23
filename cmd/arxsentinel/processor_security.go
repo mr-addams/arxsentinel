@@ -39,6 +39,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/core/state"
 	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
+	"github.com/mr-addams/arxsentinel/internal/threat"
 )
 
 // ── securityState — opaque ProcessorState, передаваемый из factory.Build в Process ++++++++
@@ -195,7 +196,7 @@ func (p *securityProcessor) Process(
 		}
 	}
 
-	threat := plugin.ThreatEvent{
+	threat := threat.ThreatEvent{
 		Timestamp:  time.Now().UTC(),
 		Level:      level,
 		Stream:     streamName,
@@ -211,9 +212,10 @@ func (p *securityProcessor) Process(
 
 	// Engine (dispatchEntry) сам сделает sink.Write + RecordOutputEvent;
 	// eventCount.Add(1) engine выполнит только если level == "THREAT".
-	// Phase 2.2 (Flow 083): Action carries a generic *plugin.Event whose
-	// Payload is the product-owned ThreatEvent. The engine reads
-	// Payload.Envelope.Level for metrics — we set it here.
+	// Gate B (Flow 083): Action carries a generic *plugin.Event whose
+	// Payload is the product-owned *threat.ThreatEvent (live in
+	// internal/threat). The engine reads Payload.Envelope.Level for
+	// metrics — we set it here.
 	return coreruntime.Action{
 		Payload: &plugin.Event{
 			Envelope: plugin.Envelope{

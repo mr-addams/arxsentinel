@@ -1,6 +1,8 @@
 // ========================== Package mikrotik — tests ==========================
 //   Unit tests for MikroTikExecutor: ban, safe unban, TTL conversion,
 //   min-level filtering, and registration.
+//
+//   Gate B (Flow 083 / Task 3.3): ThreatEvent lives in internal/threat.
 
 package mikrotik
 
@@ -17,6 +19,8 @@ import (
 	"github.com/mr-addams/arx-core/pkg/executor"
 	"github.com/mr-addams/arx-core/pkg/logger"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+
+	"github.com/mr-addams/arxsentinel/internal/threat"
 )
 
 // ++++++++++++++++++++++++++ Test helpers +++++++++++++++++++++++++++++++++++++
@@ -65,7 +69,7 @@ func TestBanAddsEntry(t *testing.T) {
 		t.Fatalf("syncExisting: %v", err)
 	}
 
-	exec.flush(context.Background(), []plugin.ThreatEvent{
+	exec.flush(context.Background(), []threat.ThreatEvent{
 		{IP: "1.2.3.4", Level: "THREAT"},
 	})
 
@@ -182,7 +186,7 @@ func TestMinLevelFilter(t *testing.T) {
 	defer cancel()
 	exec.Run(ctx, &testEventSource{ //nolint:errcheck
 		events: []*plugin.Event{
-			{Payload: &plugin.ThreatEvent{IP: "1.2.3.4", Level: "WARN"}},
+			{Payload: &threat.ThreatEvent{IP: "1.2.3.4", Level: "WARN"}},
 		},
 	})
 	after := exec.stats.skipped.Load()

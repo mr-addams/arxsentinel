@@ -8,6 +8,11 @@
 //
 //   WHAT IS NOT HERE:
 //     HTTP client (client.go), config parsing (config.go), registration (register.go)
+//
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
+//   product namespace cmd/arxsentinel/internal/threat; the executor
+//   type-asserts Event.Payload to *threat.ThreatEvent to extract the IP
+//   and level fields. Core has no knowledge of the payload shape.
 
 package mikrotik
 
@@ -21,6 +26,8 @@ import (
 	"github.com/mr-addams/arx-core/pkg/executor"
 	"github.com/mr-addams/arx-core/pkg/logger"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+
+	"github.com/mr-addams/arxsentinel/internal/threat"
 )
 
 const (
@@ -112,7 +119,7 @@ func (e *MikroTikExecutor) Run(ctx context.Context, source plugin.EventSource) e
 	if err := e.syncExisting(ctx); err != nil {
 		e.logger.Log("EXECUTOR", fmt.Sprintf("mikrotik: initial sync failed: %v", err), logger.LevelWarning)
 	}
-	buffer := make([]plugin.ThreatEvent, 0, e.cfg.BatchSize)
+	buffer := make([]threat.ThreatEvent, 0, e.cfg.BatchSize)
 	flushInterval := e.cfg.FlushInterval
 	if flushInterval <= 0 {
 		flushInterval = 30 * time.Second // guard against zero/negative value in tests
@@ -127,7 +134,7 @@ func (e *MikroTikExecutor) Run(ctx context.Context, source plugin.EventSource) e
 	sweepTicker := time.NewTicker(sweepInterval)
 	defer sweepTicker.Stop()
 
-	events := make(chan plugin.ThreatEvent, 1)
+	events := make(chan threat.ThreatEvent, 1)
 	go func() {
 		defer close(events)
 		for {
@@ -135,7 +142,7 @@ func (e *MikroTikExecutor) Run(ctx context.Context, source plugin.EventSource) e
 			if err != nil {
 				return
 			}
-			te, ok := ev.Payload.(*plugin.ThreatEvent)
+			te, ok := ev.Payload.(*threat.ThreatEvent)
 			if !ok {
 				fmt.Fprintf(os.Stderr, "[mikrotik executor] skipped non-ThreatEvent payload: %T\n", ev.Payload)
 				continue
@@ -191,7 +198,7 @@ func (e *MikroTikExecutor) Run(ctx context.Context, source plugin.EventSource) e
 // flush sends buffered events to the RouterOS address-list.
 // Each IP receives a comment matching the sentinel prefix + SentinelID.
 // Duplicates already in banned map are skipped.
-func (e *MikroTikExecutor) flush(ctx context.Context, events []plugin.ThreatEvent) {
+func (e *MikroTikExecutor) flush(ctx context.Context, events []threat.ThreatEvent) {
 	if len(events) == 0 {
 		return
 	}
@@ -204,7 +211,7 @@ func (e *MikroTikExecutor) flush(ctx context.Context, events []plugin.ThreatEven
 	addedIPs := make([]string, 0, len(events))
 
 	e.mu.Lock()
-	unique := make([]plugin.ThreatEvent, 0, len(events))
+	unique := make([]threat.ThreatEvent, 0, len(events))
 	for _, ev := range events {
 		if _, exists := e.banned[ev.IP]; exists {
 			e.stats.skipped.Add(1)

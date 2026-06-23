@@ -1,12 +1,12 @@
-//go:build ignore
-
-// ========================== cmd/arxsentinel/internal/threat/format/format_test =====
+// ========================== internal/threat/format/format_test =====
 //   Tests for ThreatEvent serialization in the product namespace.
 //
-//   Phase 2.2 (Flow 083 / RESOLVED-Q12): moved verbatim from
-//   arx-core/pkg/sink/format/format_test.go. The tests assert the same
-//   byte-level output as before, so existing Fail2Ban filters and JSON
-//   fixtures keep matching after the contract generalisation.
+//   Phase 2.2 (Flow 083 / RESOLVED-Q12) + Gate B (Task 3.3 / RESOLVED-D):
+//   Moved verbatim from arx-core/pkg/sink/format/format_test.go and switched
+//   from plugin.ThreatEvent (core-legacy) to threat.ThreatEvent (product-
+//   owned). The tests assert the same byte-level output as before, so
+//   existing Fail2Ban filters and JSON fixtures keep matching after the
+//   contract dissolution.
 
 package format_test
 
@@ -19,11 +19,12 @@ import (
 	"github.com/mr-addams/arx-core/pkg/plugin"
 
 	threatformat "github.com/mr-addams/arxsentinel/internal/threat/format"
+	"github.com/mr-addams/arxsentinel/internal/threat"
 )
 
 var (
 	ts        = time.Date(2026, 4, 5, 14, 33, 12, 0, time.UTC)
-	testEvent = plugin.ThreatEvent{
+	testEvent = threat.ThreatEvent{
 		Timestamp:  ts,
 		Level:      "THREAT",
 		Stream:     "frontend",
@@ -180,7 +181,7 @@ func TestFormatter_FormatThroughEnvelope(t *testing.T) {
 			Source:     "file:/var/log/nginx/access.log",
 			SourceType: "file",
 		},
-		Payload: testEvent,
+		Payload: &testEvent,
 	}
 
 	// JSONFormatter.

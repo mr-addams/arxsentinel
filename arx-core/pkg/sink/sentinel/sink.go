@@ -4,11 +4,13 @@
 //   for asynchronous processing by the SentinelHub executor.
 //   Implements back-pressure: drops events silently when the queue is full.
 //
-//   Phase 2.2 (Flow 083 / RESOLVED-Q9 / RESOLVED-Z12):
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D):
 //   - The sink consumes the generic *plugin.Event. It serializes via an
 //     injected Formatter (interface from pkg/sink/format) and pushes the
 //     resulting bytes onto the NCS queue. Core owns the bridge, the
 //     transport, and the lifecycle; product owns the wire format.
+//   - Gate A type-assert on Event.Payload was removed; the Formatter impl
+//     (SentinelFormatter in product) owns the type-assertion.
 
 package sentinel
 
@@ -62,19 +64,14 @@ func (s *SentinelThreatSink) Name() string {
 // bytes for the Sentinel Hub executor. Non-blocking: Push() uses a bounded
 // channel; blocks only if channel is full. Silent drop on ErrQueueFull.
 //
-// Gate A (Flow 083 / Task 2.2 / RESOLVED-D strategy II): the Sink contract
-// carries generic *plugin.Event; the Formatter still wants a concrete
-// *plugin.ThreatEvent. We type-assert here — a wrong payload type is a
-// programmer error and is reported via fmt.Errorf.
+// Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the sink no longer inspects
+// Event.Payload. The injected Formatter takes the generic *plugin.Event
+// and renders the byte sequence; the Formatter impl owns the type-assertion.
 func (s *SentinelThreatSink) Write(ctx context.Context, event *plugin.Event) error {
 	if event == nil {
 		return fmt.Errorf("sentinel-threat sink %s: nil event", s.name)
 	}
-	te, ok := event.Payload.(*plugin.ThreatEvent)
-	if !ok {
-		return fmt.Errorf("sentinel-threat sink %s: Phase 2.2 Gate A: expected *plugin.ThreatEvent payload, got %T", s.name, event.Payload)
-	}
-	line, err := s.formatter.Format(te)
+	line, err := s.formatter.Format(event)
 	if err != nil {
 		return fmt.Errorf("sentinel-threat sink %s: format: %w", s.name, err)
 	}

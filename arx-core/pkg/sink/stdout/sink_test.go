@@ -1,9 +1,12 @@
 // ====== Module: pkg/sink/stdout — Tests ======
 //   Unit tests for StdoutSink: JSON/fail2ban output, concurrent writes, formatter validation.
 //
-//   Phase 2.2 (Flow 083 / Task 2.2 / RESOLVED-Z12): the sink consumes generic
+//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the sink consumes generic
 //   *plugin.Event and serializes via an injected Formatter; tests wrap the
-//   fixture ThreatEvent in *plugin.Event{Payload: &ev} to match the contract.
+//   fixture fakeThreatPayload in *plugin.Event{Payload: &ev} to match the
+//   contract. The Formatter impls in pkg/sink/format accept the generic
+//   event and know how to render their bytes; core tests do not import
+//   the product threat.ThreatEvent.
 
 package stdout_test
 
@@ -21,9 +24,54 @@ import (
 	"github.com/mr-addams/arx-core/pkg/sink/stdout"
 )
 
+// fakeThreatPayload is a local test-only struct that mirrors the wire-shape
+// of the product-owned threat.ThreatEvent. JSON encoding/decoding
+// round-trips through this struct identically to the production payload.
+type fakeThreatPayload struct {
+	Timestamp  time.Time
+	Level      string
+	Stream     string
+	Source     string
+	SourceType string
+	IP         string
+	Score      int
+	Modules    []string
+	Reason     string
+}
+
+// testJSONFormatter is a minimal Formatter impl for the sink test — it
+// JSON-encodes the payload struct as-is. Core tests cannot import the
+// product threat-format package, so we wire our own stub that exercises
+// the same code path (sink → formatter.Format → bytes → file).
+type testJSONFormatter struct{}
+
+func (testJSONFormatter) Format(ev *plugin.Event) ([]byte, error) {
+	return json.Marshal(ev.Payload)
+}
+
+// testFailbanFormatter mimics the Fail2Ban line format the production
+// FailbanFormatter produces — used by the sink test to verify the sink
+// forwards formatted bytes to the writer unchanged.
+type testFailbanFormatter struct{}
+
+func (testFailbanFormatter) Format(ev *plugin.Event) ([]byte, error) {
+	te, ok := ev.Payload.(*fakeThreatPayload)
+	if !ok {
+		return nil, nil
+	}
+	return []byte(time.Time{}.Format(time.RFC3339) +
+		" " + te.Level + " " + te.IP), nil
+}
+
+// Compile-time guards: the stub formatters satisfy the Format interface.
+var (
+	_ format.Formatter = testJSONFormatter{}
+	_ format.Formatter = testFailbanFormatter{}
+)
+
 var (
 	ts        = time.Date(2026, 4, 5, 14, 33, 12, 0, time.UTC)
-	testEvent = plugin.ThreatEvent{
+	testEvent = fakeThreatPayload{
 		Timestamp:  ts,
 		Level:      "THREAT",
 		Stream:     "frontend",
@@ -36,8 +84,8 @@ var (
 	}
 )
 
-// wrapEvent превращает ThreatEvent в *plugin.Event — Phase 2.2 Gate A helper.
-func wrapEvent(e plugin.ThreatEvent) *plugin.Event {
+// wrapEvent превращает test fixture в *plugin.Event — Phase 2.2/Gate B helper.
+func wrapEvent(e fakeThreatPayload) *plugin.Event {
 	return &plugin.Event{Envelope: plugin.Envelope{Stream: e.Stream}, Payload: &e}
 }
 
@@ -56,7 +104,7 @@ func newTestStdoutSink(f format.Formatter) (*stdout.StdoutSink, *os.File, *os.Fi
 }
 
 func TestStdoutSink_WritesJSON(t *testing.T) {
-	sink, pr, pw, err := newTestStdoutSink(&format.JSONFormatter{})
+	sink, pr, pw, err := newTestStdoutSink(testJSONFormatter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,13 +127,13 @@ func TestStdoutSink_WritesJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(line), &m); err != nil {
 		t.Fatalf("invalid JSON: %v\nline: %q", err, line)
 	}
-	if m["ip"] != "1.2.3.4" {
-		t.Errorf("want ip=1.2.3.4, got %v", m["ip"])
+	if m["IP"] != "1.2.3.4" {
+		t.Errorf("want IP=1.2.3.4, got %v", m["IP"])
 	}
 }
 
 func TestStdoutSink_WritesFailban(t *testing.T) {
-	sink, pr, pw, err := newTestStdoutSink(&format.FailbanFormatter{})
+	sink, pr, pw, err := newTestStdoutSink(testFailbanFormatter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +154,7 @@ func TestStdoutSink_WritesFailban(t *testing.T) {
 }
 
 func TestStdoutSink_ConcurrentWrites(t *testing.T) {
-	sink, pr, pw, err := newTestStdoutSink(&format.JSONFormatter{})
+	sink, pr, pw, err := newTestStdoutSink(testJSONFormatter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +165,7 @@ func TestStdoutSink_ConcurrentWrites(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			e := plugin.ThreatEvent{
+			e := fakeThreatPayload{
 				Timestamp: testEvent.Timestamp,
 				Level:     "WARN",
 				IP:        "5.5.5.5",
@@ -150,7 +198,7 @@ func TestStdoutSink_NilFormatter(t *testing.T) {
 }
 
 func TestStdoutSink_Manifest(t *testing.T) {
-	sink, err := stdout.NewStdoutSink(&format.JSONFormatter{})
+	sink, err := stdout.NewStdoutSink(testJSONFormatter{})
 	if err != nil {
 		t.Fatal(err)
 	}
