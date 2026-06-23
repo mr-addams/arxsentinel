@@ -20,6 +20,27 @@ The contract is intentionally minimal and value-typed. Everything in this file i
 
 ---
 
+## Data model (`pkg/plugin`)
+
+The contract types below describe the runtime *control* surface. The *data*
+surface — what actually flows between plugins — lives in `pkg/plugin` and is
+documented in [`pkg/plugin/README.md`](../pkg/plugin/README.md):
+
+- **`Envelope`** — transport metadata (`Timestamp/Stream/Source/SourceType/Level`)
+  that the engine reads for metrics and routing. The only payload-shaped data
+  the engine inspects.
+- **`Event{Envelope; Payload any}`** — the generic event carrier. `Payload` is
+  opaque; the owning plugins agree on its concrete type, the engine never reads it.
+- **`FieldDecl` + `Manifest.Produces`/`Consumes`** — the field-level contract a
+  plugin declares so the pipeline can verify producer↔consumer compatibility at
+  startup.
+
+These types are the generic data model: the core defines the envelope it
+processes and the opaque carrier it transports, while concrete payload shapes
+belong to the plugins that produce and consume them.
+
+---
+
 ## Contract elements
 
 The elements below are ordered by the source file they live in.
