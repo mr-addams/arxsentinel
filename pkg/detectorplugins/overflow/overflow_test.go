@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/detector"
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -34,19 +35,19 @@ func TestOverflowDetector_ViaRegistry(t *testing.T) {
 
 	// URL longer than max_url_length → should trigger.
 	longURL := "/" + string(make([]byte, 30)) // 31 bytes > 20
-	result := d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{Path: longURL}})
+	result := d.Detect(sv, &plugin.Event{Payload: &parser.LogEntry{Path: longURL}})
 	if result.Score == 0 {
 		t.Error("overflow should trigger on long URL, got score=0")
 	}
 
 	// WAF bypass keyword → should trigger.
-	result2 := d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{Path: "/api", Query: "cmd=exec+bash"}})
+	result2 := d.Detect(sv, &plugin.Event{Payload: &parser.LogEntry{Path: "/api", Query: "cmd=exec+bash"}})
 	if result2.Score == 0 {
 		t.Error("overflow should trigger on suspicious param, got score=0")
 	}
 
 	// Normal short URL without keywords → should not trigger.
-	result3 := d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{Path: "/index.html"}})
+	result3 := d.Detect(sv, &plugin.Event{Payload: &parser.LogEntry{Path: "/index.html"}})
 	if result3.Score != 0 {
 		t.Errorf("overflow should not trigger on clean URL, got score=%d", result3.Score)
 	}

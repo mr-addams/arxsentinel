@@ -39,7 +39,7 @@ func unregisterForTest(names ...string) {
 type stubProcessor struct{}
 
 func (s *stubProcessor) Name() string { return "stub" }
-func (s *stubProcessor) Process(_ context.Context, _ *plugin.LogEntry) (*plugin.LogEntry, error) {
+func (s *stubProcessor) Process(_ context.Context, _ *plugin.Event) (*plugin.Event, error) {
 	return nil, nil
 }
 func (s *stubProcessor) Manifest() plugin.Manifest { return plugin.Manifest{} }

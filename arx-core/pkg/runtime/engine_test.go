@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -172,7 +173,7 @@ func (f *mockFactory) Reload(old ProcessorState, _ context.Context) (ProcessorSt
 	return &mockState{idx: prev.idx, factory: f}, nil
 }
 
-func (f *mockFactory) Process(_ context.Context, entry *plugin.LogEntry, state ProcessorState, _ EventContext) Action {
+func (f *mockFactory) Process(_ context.Context, ev *plugin.Event, state ProcessorState, _ EventContext) Action {
 	f.processed.Add(1)
 
 	// Контролируемая panic для теста recovery.
@@ -180,14 +181,27 @@ func (f *mockFactory) Process(_ context.Context, entry *plugin.LogEntry, state P
 		panic("mockFactory: intentional panic on Process")
 	}
 
+	// Достаём parser-owned LogEntry из payload-конверта и смотрим на RealIP.
+	entry := parser.UnwrapLogEntry(ev)
 	if !strings.HasPrefix(entry.RealIP, "evil") {
 		return Action{}
 	}
 	f.events.Add(1)
+	// Phase 2.2: Action carries *plugin.Event as Payload; we preserve the
+	// threat-context envelope and replace the payload with a generic
+	// ThreatEvent that downstream sinks / scorers consume.
+	threatEvent := &plugin.ThreatEvent{
+		Level: "WARN",
+		IP:    entry.RealIP,
+	}
+	envelope := ev.Envelope
+	if envelope.Level == "" {
+		envelope.Level = "WARN"
+	}
 	return Action{
-		ThreatEvent: &plugin.ThreatEvent{
-			Level: "WARN",
-			IP:    entry.RealIP,
+		Payload: &plugin.Event{
+			Envelope: envelope,
+			Payload:  threatEvent,
 		},
 	}
 }
@@ -211,9 +225,14 @@ func (f *factoryOnly) Reload(_ ProcessorState, _ context.Context) (ProcessorStat
 
 var _ LineProcessorFactory = (*factoryOnly)(nil)
 
-// makeEntry — конструктор LogEntry для тестов.
-func makeEntry(ip string) *plugin.LogEntry {
-	return &plugin.LogEntry{RealIP: ip, Time: time.Now()}
+// makeEntry — конструктор *plugin.Event (LogEntry, обёрнутый в Envelope) для тестов.
+func makeEntry(ip string) *plugin.Event {
+	le := &parser.LogEntry{RealIP: ip, Time: time.Now()}
+	return parser.WrapLogEntry(le, plugin.Envelope{
+		Source:     ip,
+		SourceType: "test",
+		Timestamp:  le.Time,
+	})
 }
 
 // ++++++++++++++++++++++++++ Tests +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -223,10 +242,10 @@ func makeEntry(ip string) *plugin.LogEntry {
 func TestRun_Basic(t *testing.T) {
 	t.Parallel()
 
-	src1 := &mockSource{name: "s1", entries: []*plugin.LogEntry{
+	src1 := &mockSource{name: "s1", entries: []*plugin.Event{
 		makeEntry("1.1.1.1"), makeEntry("evil.a"),
 	}}
-	src2 := &mockSource{name: "s2", entries: []*plugin.LogEntry{
+	src2 := &mockSource{name: "s2", entries: []*plugin.Event{
 		makeEntry("2.2.2.2"), makeEntry("evil.b"),
 	}}
 	sink := &mockSink{name: "out"}
@@ -331,7 +350,7 @@ func TestRun_DrainOnShutdown(t *testing.T) {
 	t.Parallel()
 
 	const totalEntries = 5
-	entries := make([]*plugin.LogEntry, totalEntries)
+	entries := make([]*plugin.Event, totalEntries)
 	for i := range entries {
 		entries[i] = makeEntry(fmt.Sprintf("evil.%d", i))
 	}
@@ -379,7 +398,7 @@ func TestRun_DrainOnShutdown(t *testing.T) {
 func TestRun_PanicRecovery(t *testing.T) {
 	t.Parallel()
 
-	entries := []*plugin.LogEntry{
+	entries := []*plugin.Event{
 		makeEntry("1.1.1.1"),
 		makeEntry("2.2.2.2"),
 		makeEntry("3.3.3.3"),
@@ -419,8 +438,8 @@ func TestRun_PanicRecovery(t *testing.T) {
 func TestRun_TwoPipelineConcurrency(t *testing.T) {
 	t.Parallel()
 
-	src1 := &mockSource{name: "s1", entries: []*plugin.LogEntry{makeEntry("1.1.1.1")}}
-	src2 := &mockSource{name: "s2", entries: []*plugin.LogEntry{makeEntry("2.2.2.2")}}
+	src1 := &mockSource{name: "s1", entries: []*plugin.Event{makeEntry("1.1.1.1")}}
+	src2 := &mockSource{name: "s2", entries: []*plugin.Event{makeEntry("2.2.2.2")}}
 	sink1 := &mockSink{name: "out1"}
 	sink2 := &mockSink{name: "out2"}
 	factory := &mockFactory{}
@@ -451,7 +470,7 @@ func TestRun_TwoPipelineConcurrency(t *testing.T) {
 func TestRun_FactoryNotALineProcessor(t *testing.T) {
 	t.Parallel()
 
-	src := &mockSource{name: "s1", entries: []*plugin.LogEntry{makeEntry("1.1.1.1")}}
+	src := &mockSource{name: "s1", entries: []*plugin.Event{makeEntry("1.1.1.1")}}
 	sink := &mockSink{name: "out"}
 	factory := &factoryOnly{}
 
@@ -478,7 +497,7 @@ func TestRun_FactoryNotALineProcessor(t *testing.T) {
 func TestRun_NilMetricsCallbacks(t *testing.T) {
 	t.Parallel()
 
-	src := &mockSource{name: "s1", entries: []*plugin.LogEntry{
+	src := &mockSource{name: "s1", entries: []*plugin.Event{
 		makeEntry("1.1.1.1"),
 		makeEntry("evil.x"), // → ThreatEvent
 	}}
@@ -510,7 +529,7 @@ func TestRun_NilMetricsCallbacks(t *testing.T) {
 func TestRun_SinkWriteErrorDoesNotCrashPipeline(t *testing.T) {
 	t.Parallel()
 
-	src := &mockSource{name: "s1", entries: []*plugin.LogEntry{
+	src := &mockSource{name: "s1", entries: []*plugin.Event{
 		makeEntry("evil.a"),
 		makeEntry("evil.b"),
 		makeEntry("evil.c"),
@@ -545,7 +564,7 @@ func TestRun_SinkWriteErrorDoesNotCrashPipeline(t *testing.T) {
 func TestRun_SkipAction(t *testing.T) {
 	t.Parallel()
 
-	src := &mockSource{name: "s1", entries: []*plugin.LogEntry{makeEntry("1.1.1.1")}}
+	src := &mockSource{name: "s1", entries: []*plugin.Event{makeEntry("1.1.1.1")}}
 	sink := &mockSink{name: "out"}
 	factory := &mockFactory{} // "1.1.1.1" НЕ evil → вернёт Action{} (Skip=false, ThreatEvent=nil)
 

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/executor/queue"
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/mr-addams/arx-core/pkg/source/sentinel"
 )
@@ -39,20 +40,20 @@ func nopLog(_, _, _ string) {}
 // с таймаутом 2s. Возвращает собранные entries и финальную ошибку Run.
 //
 // Используется в большинстве тестов — единая обёртка для читаемости.
-func runAndCollect(t *testing.T, src plugin.Source, wantCount int) ([]*plugin.LogEntry, error) {
+func runAndCollect(t *testing.T, src plugin.Source, wantCount int) ([]*parser.LogEntry, error) {
 	t.Helper()
-	out := make(chan *plugin.LogEntry, wantCount+2)
+	out := make(chan *plugin.Event, wantCount+2)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- src.Run(ctx, out) }()
 
-	got := make([]*plugin.LogEntry, 0, wantCount)
+	got := make([]*parser.LogEntry, 0, wantCount)
 	for i := 0; i < wantCount; i++ {
 		select {
-		case e := <-out:
-			got = append(got, e)
+		case ev := <-out:
+			got = append(got, parser.UnwrapLogEntry(ev))
 		case <-time.After(2 * time.Second):
 			cancel()
 			t.Fatalf("timeout waiting for entry %d", i)
@@ -117,7 +118,7 @@ func TestSentinelSource_ReadsThreats(t *testing.T) {
 func TestSentinelSource_StopOnCtxCancel(t *testing.T) {
 	q := queue.NewMemoryQueue(8)
 	src := sentinel.NewWithQueue("test-stream", q, nopLog)
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -150,7 +151,7 @@ func TestSentinelSource_ParseErrorOnEmptyIP(t *testing.T) {
 	}
 
 	src := sentinel.NewWithQueue("test-stream", q, nopLog)
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -192,7 +193,7 @@ func TestSentinelSource_ParseErrorOnEmptyIP(t *testing.T) {
 func TestSentinelSource_QueueClosed(t *testing.T) {
 	q := queue.NewMemoryQueue(8)
 	src := sentinel.NewWithQueue("test-stream", q, nopLog)
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -225,7 +226,7 @@ func TestSentinelSource_DropCounter(t *testing.T) {
 	}
 
 	src := sentinel.NewWithQueue("test-stream", q, nopLog)
-	out := make(chan *plugin.LogEntry, 0) // unbuffered — каждое сообщение отбрасывается
+	out := make(chan *plugin.Event, 0) // unbuffered — каждое сообщение отбрасывается
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -269,7 +270,7 @@ func TestSentinelSource_LogFnCalledOnParseError(t *testing.T) {
 	}
 
 	src := sentinel.NewWithQueue("test-stream", q, logFn)
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

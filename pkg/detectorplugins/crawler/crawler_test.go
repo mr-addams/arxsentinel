@@ -10,6 +10,7 @@ import (
 
 	detector "github.com/mr-addams/arx-core/pkg/detector"
 	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/crawler"
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -29,14 +30,14 @@ func TestCrawlerDetector_ViaRegistry(t *testing.T) {
 
 	// 3 consecutive pages → should trigger.
 	sv := newStubView(0, 0, []string{"/page/1", "/page/2", "/page/3"}, 0)
-	result := d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{}})
+	result := d.Detect(sv, &plugin.Event{Payload: &parser.LogEntry{}})
 	if result.Score == 0 {
 		t.Error("crawler should trigger on 3 sequential pages, got score=0")
 	}
 
 	// Non-sequential paths → should not trigger.
 	sv2 := newStubView(0, 0, []string{"/about", "/contact", "/blog"}, 0)
-	result2 := d.Detect(sv2, &plugin.Event{Payload: &plugin.LogEntry{}})
+	result2 := d.Detect(sv2, &plugin.Event{Payload: &parser.LogEntry{}})
 	if result2.Score != 0 {
 		t.Errorf("crawler should not trigger on non-sequential paths, got score=%d", result2.Score)
 	}

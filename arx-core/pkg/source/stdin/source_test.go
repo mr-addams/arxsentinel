@@ -30,19 +30,19 @@ func nopLog(_, _, _ string) {}
 // RemoteAddr = first word of the line. RealIP is left empty.
 type stubParser struct{}
 
-func (stubParser) Parse(line string) (*plugin.LogEntry, bool) {
+func (stubParser) Parse(line string) (*parser.LogEntry, bool) {
 	if line == "" {
 		return nil, false
 	}
 	parts := strings.SplitN(line, " ", 2)
-	return &plugin.LogEntry{RemoteAddr: parts[0]}, true
+	return &parser.LogEntry{RemoteAddr: parts[0]}, true
 }
 
 // rejectAllParser always rejects — used to deterministically trigger
 // the parse-error branch in logFn tests.
 type rejectAllParser struct{}
 
-func (rejectAllParser) Parse(string) (*plugin.LogEntry, bool) { return nil, false }
+func (rejectAllParser) Parse(string) (*parser.LogEntry, bool) { return nil, false }
 
 // readErrorImmediately returns a non-EOF error on the very first Read call,
 // simulating an I/O failure with no data buffered.
@@ -61,18 +61,18 @@ func TestStdinSource_ReadsLines(t *testing.T) {
 		&parser.CombinedParser{},
 		nopLog,
 	)
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- src.Run(ctx, out) }()
 
-	got := make([]*plugin.LogEntry, 0, 2)
+	got := make([]*parser.LogEntry, 0, 2)
 	for i := 0; i < 2; i++ {
 		select {
-		case e := <-out:
-			got = append(got, e)
+		case ev := <-out:
+			got = append(got, parser.UnwrapLogEntry(ev))
 		case <-time.After(2 * time.Second):
 			t.Fatalf("timeout waiting for entry %d", i)
 		}
@@ -91,7 +91,7 @@ func TestStdinSource_ReadsLines(t *testing.T) {
 		t.Fatalf("Run returned error: %v", err)
 	}
 	if stats := src.Stats(); stats.LinesRead != 2 {
-		t.Errorf("LinesRead = %d, want 2", stats.LinesRead)
+		t.Errorf("LinesRead = %d, want 2", stats)
 	}
 }
 
@@ -104,7 +104,7 @@ func TestStdinSource_StopOnCtxCancel(t *testing.T) {
 		&parser.CombinedParser{},
 		nopLog,
 	)
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -133,16 +133,17 @@ func TestStdinSource_ParseError(t *testing.T) {
 		&parser.CombinedParser{},
 		nopLog,
 	)
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- src.Run(ctx, out) }()
 
-	var got *plugin.LogEntry
+	var got *parser.LogEntry
 	select {
-	case got = <-out:
+	case ev := <-out:
+		got = parser.UnwrapLogEntry(ev)
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for entry")
 	}
@@ -174,7 +175,7 @@ func TestStdinSource_EmptyInput(t *testing.T) {
 		&parser.CombinedParser{},
 		nopLog,
 	)
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -199,7 +200,7 @@ func TestStdinSource_ScannerError(t *testing.T) {
 		stubParser{},
 		nopLog,
 	)
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -229,7 +230,7 @@ func TestStdinSource_DropCounter(t *testing.T) {
 		&parser.CombinedParser{},
 		nopLog,
 	)
-	out := make(chan *plugin.LogEntry, 0) // unbuffered — every send hits select default
+	out := make(chan *plugin.Event, 0) // unbuffered — every send hits select default
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -261,7 +262,7 @@ func TestStdinSource_LogFnCalled(t *testing.T) {
 		rejectAllParser{},
 		logFn,
 	)
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

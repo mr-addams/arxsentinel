@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/detector"
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -32,14 +33,14 @@ func TestBruteforceDetector_ViaRegistry(t *testing.T) {
 
 	// 9 of 10 requests are 404 → 90% → should trigger.
 	sv := newStubView(10, 9, nil, 0)
-	result := d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{}})
+	result := d.Detect(sv, &plugin.Event{Payload: &parser.LogEntry{}})
 	if result.Score == 0 {
 		t.Error("bruteforce should trigger on 90% 404 ratio, got score=0")
 	}
 
 	// Below min_requests — should not trigger.
 	sv2 := newStubView(5, 4, nil, 0)
-	result2 := d.Detect(sv2, &plugin.Event{Payload: &plugin.LogEntry{}})
+	result2 := d.Detect(sv2, &plugin.Event{Payload: &parser.LogEntry{}})
 	if result2.Score != 0 {
 		t.Errorf("bruteforce should not trigger below min_requests, got score=%d", result2.Score)
 	}

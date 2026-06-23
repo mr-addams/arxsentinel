@@ -24,12 +24,12 @@ import (
 // the first space-delimited token of the line.
 type stubParser struct{}
 
-func (stubParser) Parse(line string) (*plugin.LogEntry, bool) {
+func (stubParser) Parse(line string) (*parser.LogEntry, bool) {
 	if line == "" {
 		return nil, false
 	}
 	parts := strings.SplitN(line, " ", 2)
-	return &plugin.LogEntry{RemoteAddr: parts[0]}, true
+	return &parser.LogEntry{RemoteAddr: parts[0]}, true
 }
 
 func TestSyslogSource_UDP(t *testing.T) {
@@ -41,7 +41,7 @@ func TestSyslogSource_UDP(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	out := make(chan *plugin.LogEntry, 10)
+	out := make(chan *plugin.Event, 10)
 	go func() { _ = src.Run(ctx, out) }()
 	time.Sleep(20 * time.Millisecond)
 
@@ -53,8 +53,8 @@ func TestSyslogSource_UDP(t *testing.T) {
 	require.NoError(t, err)
 
 	select {
-	case entry := <-out:
-		assert.Equal(t, "1.2.3.4", entry.RemoteAddr)
+	case ev := <-out:
+		assert.Equal(t, "1.2.3.4", parser.UnwrapLogEntry(ev).RemoteAddr)
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("timeout: no entry received from UDP syslog source")
 	}
@@ -69,7 +69,7 @@ func TestSyslogSource_TCP(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	out := make(chan *plugin.LogEntry, 10)
+	out := make(chan *plugin.Event, 10)
 	go func() { _ = src.Run(ctx, out) }()
 	time.Sleep(20 * time.Millisecond)
 
@@ -81,8 +81,8 @@ func TestSyslogSource_TCP(t *testing.T) {
 	require.NoError(t, err)
 
 	select {
-	case entry := <-out:
-		assert.Equal(t, "1.2.3.4", entry.RemoteAddr)
+	case ev := <-out:
+		assert.Equal(t, "1.2.3.4", parser.UnwrapLogEntry(ev).RemoteAddr)
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("timeout: no entry received from TCP syslog source")
 	}
@@ -97,7 +97,7 @@ func TestSyslogSource_RFC5424(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	out := make(chan *plugin.LogEntry, 10)
+	out := make(chan *plugin.Event, 10)
 	go func() { _ = src.Run(ctx, out) }()
 	time.Sleep(20 * time.Millisecond)
 
@@ -109,8 +109,8 @@ func TestSyslogSource_RFC5424(t *testing.T) {
 	require.NoError(t, err)
 
 	select {
-	case entry := <-out:
-		assert.Equal(t, "1.2.3.4", entry.RemoteAddr)
+	case ev := <-out:
+		assert.Equal(t, "1.2.3.4", parser.UnwrapLogEntry(ev).RemoteAddr)
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("timeout: no entry received from RFC 5424 syslog source")
 	}
@@ -125,7 +125,7 @@ func TestSyslogSource_MalformedPacket(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	out := make(chan *plugin.LogEntry, 10)
+	out := make(chan *plugin.Event, 10)
 	go func() { _ = src.Run(ctx, out) }()
 	time.Sleep(20 * time.Millisecond)
 
@@ -156,7 +156,7 @@ func TestSyslogSource_RealParser(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	out := make(chan *plugin.LogEntry, 4)
+	out := make(chan *plugin.Event, 4)
 	go func() { _ = src.Run(ctx, out) }()
 	time.Sleep(20 * time.Millisecond)
 
@@ -171,7 +171,8 @@ func TestSyslogSource_RealParser(t *testing.T) {
 	require.NoError(t, err)
 
 	select {
-	case entry := <-out:
+	case ev := <-out:
+		entry := parser.UnwrapLogEntry(ev)
 		assert.Equal(t, "1.2.3.4", entry.RemoteAddr)
 		assert.Equal(t, "GET", entry.Method)
 		assert.Equal(t, "/index.html", entry.Path)
@@ -201,7 +202,7 @@ func TestSyslogSource_ConcurrentTCP(t *testing.T) {
 	defer cancel()
 
 	// Buffer large enough to never block senders — we drain it separately.
-	out := make(chan *plugin.LogEntry, connections*linesPerConn+10)
+	out := make(chan *plugin.Event, connections*linesPerConn+10)
 	go func() { _ = src.Run(ctx, out) }()
 	time.Sleep(20 * time.Millisecond)
 
@@ -259,7 +260,7 @@ func TestSyslogSource_UnixSocket(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	out := make(chan *plugin.LogEntry, 4)
+	out := make(chan *plugin.Event, 4)
 	go func() { _ = src.Run(ctx, out) }()
 	time.Sleep(20 * time.Millisecond)
 
@@ -271,8 +272,8 @@ func TestSyslogSource_UnixSocket(t *testing.T) {
 	require.NoError(t, err)
 
 	select {
-	case entry := <-out:
-		assert.Equal(t, "10.0.0.1", entry.RemoteAddr)
+	case ev := <-out:
+		assert.Equal(t, "10.0.0.1", parser.UnwrapLogEntry(ev).RemoteAddr)
 	case <-time.After(500 * time.Millisecond):
 		t.Fatalf("timeout: no entry from unix socket; parseErrors=%d", src.Stats().ParseErrors)
 	}
@@ -288,7 +289,7 @@ func TestSyslogSource_RFC5424_RealParser(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	out := make(chan *plugin.LogEntry, 4)
+	out := make(chan *plugin.Event, 4)
 	go func() { _ = src.Run(ctx, out) }()
 	time.Sleep(20 * time.Millisecond)
 
@@ -302,7 +303,8 @@ func TestSyslogSource_RFC5424_RealParser(t *testing.T) {
 	require.NoError(t, err)
 
 	select {
-	case entry := <-out:
+	case ev := <-out:
+		entry := parser.UnwrapLogEntry(ev)
 		assert.Equal(t, "5.6.7.8", entry.RemoteAddr)
 		assert.Equal(t, "POST", entry.Method)
 		assert.Equal(t, "/api/login", entry.Path)
@@ -324,7 +326,7 @@ func TestSyslogSource_DropCounter(t *testing.T) {
 	defer cancel()
 
 	// Capacity 0 — every send will be a drop.
-	out := make(chan *plugin.LogEntry, 0)
+	out := make(chan *plugin.Event, 0)
 	go func() { _ = src.Run(ctx, out) }()
 	time.Sleep(20 * time.Millisecond)
 
@@ -386,7 +388,7 @@ func TestSyslogSource_ContextCancel(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	out := make(chan *plugin.LogEntry, 1)
+	out := make(chan *plugin.Event, 1)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()

@@ -25,15 +25,15 @@ import (
 )
 
 type testParser struct {
-	parseFn func(line string) (*plugin.LogEntry, bool)
+	parseFn func(line string) (*parser.LogEntry, bool)
 }
 
-func (p *testParser) Parse(line string) (*plugin.LogEntry, bool) {
+func (p *testParser) Parse(line string) (*parser.LogEntry, bool) {
 	return p.parseFn(line)
 }
 
-func testEntry(line string) (*plugin.LogEntry, bool) {
-	return &plugin.LogEntry{RawURI: line}, true
+func testEntry(line string) (*parser.LogEntry, bool) {
+	return &parser.LogEntry{RawURI: line}, true
 }
 
 func freePort(t *testing.T) string {
@@ -102,7 +102,7 @@ func TestHTTPSourcePushPlain(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 100)
+	out := make(chan *plugin.Event, 100)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()
@@ -154,7 +154,7 @@ func TestHTTPSourcePushHTTPS(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 100)
+	out := make(chan *plugin.Event, 100)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()
@@ -199,7 +199,7 @@ func TestHTTPSourceBearerAuth(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 100)
+	out := make(chan *plugin.Event, 100)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()
@@ -253,7 +253,7 @@ func TestHTTPSourceBodyLimit(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 100)
+	out := make(chan *plugin.Event, 100)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()
@@ -301,7 +301,7 @@ func TestHTTPSourceMalformedInput(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 100)
+	out := make(chan *plugin.Event, 100)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()
@@ -326,7 +326,7 @@ func TestHTTPSourceMalformedInput(t *testing.T) {
 func TestHTTPSourceMalformedInputParseError(t *testing.T) {
 	port := freePort(t)
 
-	failParser := &testParser{parseFn: func(line string) (*plugin.LogEntry, bool) {
+	failParser := &testParser{parseFn: func(line string) (*parser.LogEntry, bool) {
 		return nil, false
 	}}
 
@@ -341,7 +341,7 @@ func TestHTTPSourceMalformedInputParseError(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 100)
+	out := make(chan *plugin.Event, 100)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()
@@ -381,7 +381,7 @@ func TestHTTPSourceContextCancel(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	out := make(chan *plugin.LogEntry, 100)
+	out := make(chan *plugin.Event, 100)
 
 	done := make(chan error, 1)
 	go func() {
@@ -416,7 +416,7 @@ func TestHTTPSourceDropCounter(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 2)
+	out := make(chan *plugin.Event, 2)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()
@@ -477,7 +477,7 @@ func TestHTTPSourcePull(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 100)
+	out := make(chan *plugin.Event, 100)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()
@@ -507,7 +507,7 @@ func TestHTTPSourceConcurrentPush(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 100)
+	out := make(chan *plugin.Event, 100)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()
@@ -553,7 +553,7 @@ func TestHTTPSourceRealParser(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 10)
+	out := make(chan *plugin.Event, 10)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()
@@ -574,7 +574,8 @@ func TestHTTPSourceRealParser(t *testing.T) {
 	}
 
 	select {
-	case entry := <-out:
+	case ev := <-out:
+		entry := parser.UnwrapLogEntry(ev)
 		if entry.Status != 200 {
 			t.Errorf("expected Status=200, got %d", entry.Status)
 		}
@@ -601,7 +602,7 @@ func TestHTTPSourcePushGzip(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 100)
+	out := make(chan *plugin.Event, 100)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()
@@ -664,7 +665,7 @@ func TestHTTPSourceProtobufRejected(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 100)
+	out := make(chan *plugin.Event, 100)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()
@@ -704,7 +705,7 @@ func TestHTTPSourcePubSubJWTRequired(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	out := make(chan *plugin.LogEntry, 100)
+	out := make(chan *plugin.Event, 100)
 
 	done := make(chan error, 1)
 	go func() { done <- src.Run(ctx, out) }()

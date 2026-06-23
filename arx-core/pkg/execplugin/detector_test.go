@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -66,17 +67,22 @@ func TestExecDetector_Detect(t *testing.T) {
 		approxRate1m:  2.5,
 	}
 
-	// Create a test LogEntry
-	logEntry := &plugin.LogEntry{
+	// Create a test LogEntry and wrap it into a plugin.Event
+	logEntry := &parser.LogEntry{
 		RemoteAddr: "1.2.3.4",
 		Method:     "GET",
 		Path:       "/admin",
 		Status:     403,
 		UserAgent:  "curl/7.68.0",
 	}
+	event := parser.WrapLogEntry(logEntry, plugin.Envelope{
+		Source:     "1.2.3.4",
+		SourceType: "exec",
+		Timestamp:  logEntry.Time,
+	})
 
 	// Call Detect
-	result := detector.Detect(ipView, logEntry)
+	result := detector.Detect(ipView, event)
 
 	// Verify the response
 	if result.Score != 42 {

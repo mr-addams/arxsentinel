@@ -1,5 +1,5 @@
 // ========================== pkg/execplugin — protocol messages =============================
-//   Wire representation of plugin.LogEntry, plugin.ThreatEvent, and plugin.IPView
+//   Wire representation of parser.LogEntry, plugin.ThreatEvent, and plugin.IPView
 //   for NDJSON transport between arxsentinel and external plugin processes.
 //
 //   WHAT IS HERE:
@@ -22,14 +22,15 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // ProtoVersion is the protocol version number. Used for future compatibility checks.
 const ProtoVersion = "1"
 
-// LogEntryJSON is the wire representation of plugin.LogEntry for JSON transport.
-// Flat struct mirrors plugin.LogEntry field-by-field to avoid requiring
+// LogEntryJSON is the wire representation of parser.LogEntry for JSON transport.
+// Flat struct mirrors parser.LogEntry field-by-field to avoid requiring
 // external plugin authors to import internal packages.
 // Consumer: protocol.go (DetectRequest.entry), source.go (SourceEntry.entry).
 type LogEntryJSON struct {
@@ -142,9 +143,9 @@ type SourceEntry struct {
 	Entry LogEntryJSON `json:"entry"`
 }
 
-// logEntryToJSON converts a plugin.LogEntry to wire format for JSON transport.
+// logEntryToJSON converts a parser.LogEntry to wire format for JSON transport.
 // Called from: Detector.SendRequest, Source.SendStart. Non-blocking.
-func logEntryToJSON(e *plugin.LogEntry) LogEntryJSON {
+func logEntryToJSON(e *parser.LogEntry) LogEntryJSON {
 	return LogEntryJSON{
 		RemoteAddr: e.RemoteAddr,
 		RemoteUser: e.RemoteUser,
@@ -162,13 +163,13 @@ func logEntryToJSON(e *plugin.LogEntry) LogEntryJSON {
 	}
 }
 
-// logEntryFromJSON converts wire format back to plugin.LogEntry.
+// logEntryFromJSON converts wire format back to parser.LogEntry.
 // Time parsing failure returns a zero-valued time with error suppression
 // to ensure robust recovery from malformed timestamps.
 // Called from: Detector.SendRequest, Source.run. Non-blocking.
-func logEntryFromJSON(j LogEntryJSON) *plugin.LogEntry {
+func logEntryFromJSON(j LogEntryJSON) *parser.LogEntry {
 	t, _ := time.Parse(time.RFC3339, j.Time)
-	return &plugin.LogEntry{
+	return &parser.LogEntry{
 		RemoteAddr: j.RemoteAddr,
 		RemoteUser: j.RemoteUser,
 		Time:       t,

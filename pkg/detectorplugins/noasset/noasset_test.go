@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/detector"
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -32,21 +33,21 @@ func TestNoAssetDetector_ViaRegistry(t *testing.T) {
 
 	// Only page requests (no assets) → should trigger.
 	sv := newStubView(0, 0, []string{"/", "/about", "/blog"}, 0)
-	result := d.Detect(sv, &plugin.Event{Payload: &plugin.LogEntry{}})
+	result := d.Detect(sv, &plugin.Event{Payload: &parser.LogEntry{}})
 	if result.Score == 0 {
 		t.Error("noasset should trigger when no assets loaded, got score=0")
 	}
 
 	// Mix of pages and assets (ratio above threshold) → should not trigger.
 	sv2 := newStubView(0, 0, []string{"/", "/style.css", "/app.js"}, 0)
-	result2 := d.Detect(sv2, &plugin.Event{Payload: &plugin.LogEntry{}})
+	result2 := d.Detect(sv2, &plugin.Event{Payload: &parser.LogEntry{}})
 	if result2.Score != 0 {
 		t.Errorf("noasset should not trigger with adequate asset ratio, got score=%d", result2.Score)
 	}
 
 	// Below min_page_requests → should not trigger.
 	sv3 := newStubView(0, 0, []string{"/only-one-page"}, 0)
-	result3 := d.Detect(sv3, &plugin.Event{Payload: &plugin.LogEntry{}})
+	result3 := d.Detect(sv3, &plugin.Event{Payload: &parser.LogEntry{}})
 	if result3.Score != 0 {
 		t.Errorf("noasset should not trigger below min_page_requests, got score=%d", result3.Score)
 	}

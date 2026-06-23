@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/mr-addams/arx-core/pkg/pluginregistry"
 )
@@ -63,14 +64,15 @@ type InputConfig struct {
 }
 
 // LineParser — read-only view of a log line parser.
-// Satisfied by *internal/core/parser.CombinedParser and similar implementations.
+// Satisfied by *parser.CombinedParser, *parser.JSONParser, *parser.RegexParser
+// and similar implementations living in pkg/parser.
 //
 // Defined here so pkg/source has no import dependency on internal/core/parser.
 // Actual parser implementations satisfy this interface implicitly (Go structural typing).
 type LineParser interface {
 	// Parse parses a single log line and returns the parsed LogEntry.
 	// ok=false if the line does not match the parser's expected format.
-	Parse(line string) (*plugin.LogEntry, bool)
+	Parse(line string) (*parser.LogEntry, bool)
 }
 
 // BuildOptions — external runtime dependencies injected into source factories.

@@ -13,6 +13,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -21,12 +22,12 @@ import (
 // mockLineProcessor — тестовая реализация LineProcessor. Реализует Process
 // через замыкание, чтобы тесты могли подменять логику без новых типов.
 type mockLineProcessor struct {
-	processFn func(ctx context.Context, entry *plugin.LogEntry, state ProcessorState, evctx EventContext) Action
+	processFn func(ctx context.Context, ev *plugin.Event, state ProcessorState, evctx EventContext) Action
 }
 
 func (m *mockLineProcessor) Process(
 	ctx context.Context,
-	entry *plugin.LogEntry,
+	ev *plugin.Event,
 	state ProcessorState,
 	evctx EventContext,
 ) Action {
@@ -34,7 +35,7 @@ func (m *mockLineProcessor) Process(
 		// дефолтная no-op реализация для compile-time гарантии интерфейса.
 		return Action{}
 	}
-	return m.processFn(ctx, entry, state, evctx)
+	return m.processFn(ctx, ev, state, evctx)
 }
 
 // Compile-time гарантия: mockLineProcessor удовлетворяет LineProcessor.
@@ -54,13 +55,13 @@ func TestLineProcessorInterfaceAcceptsMock(t *testing.T) {
 	proc := &mockLineProcessor{
 		processFn: func(
 			_ context.Context,
-			_ *plugin.LogEntry,
+			_ *plugin.Event,
 			state ProcessorState,
 			evctx EventContext,
 		) Action {
 			capturedState = state
 			capturedEvctx = evctx
-			return Action{Skip: false, ThreatEvent: nil}
+			return Action{}
 		},
 	}
 
@@ -74,15 +75,20 @@ func TestLineProcessorInterfaceAcceptsMock(t *testing.T) {
 		SourceType:   "file",
 		PipelineIdx:  0,
 	}
-	entry := &plugin.LogEntry{RemoteAddr: "1.2.3.4"}
+	entry := &parser.LogEntry{RemoteAddr: "1.2.3.4"}
+	event := parser.WrapLogEntry(entry, plugin.Envelope{
+		Source:     "1.2.3.4",
+		SourceType: "file",
+		Timestamp:  entry.Time,
+	})
 
-	action := proc.Process(context.Background(), entry, state, evctx)
+	action := proc.Process(context.Background(), event, state, evctx)
 
 	if action.Skip {
 		t.Fatalf("expected Skip=false, got Skip=true")
 	}
-	if action.ThreatEvent != nil {
-		t.Fatalf("expected ThreatEvent=nil, got %+v", action.ThreatEvent)
+	if action.Payload != nil {
+		t.Fatalf("expected Payload=nil, got %+v", action.Payload)
 	}
 	if capturedState != state {
 		t.Fatalf("Process did not receive the same state reference")

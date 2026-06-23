@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -41,7 +42,7 @@ func TestExecSource_Run(t *testing.T) {
 	defer src.Close()
 
 	// Create output channel and run source in a goroutine
-	out := make(chan *plugin.LogEntry, 256)
+	out := make(chan *plugin.Event, 256)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -53,7 +54,7 @@ func TestExecSource_Run(t *testing.T) {
 	}()
 
 	// Collect entries from out channel until Run completes
-	var entries []*plugin.LogEntry
+	var entries []*parser.LogEntry
 	entryCount := 0
 
 	// Wait for Run to complete or timeout
@@ -70,11 +71,11 @@ func TestExecSource_Run(t *testing.T) {
 	defer drainCancel()
 	for {
 		select {
-		case entry, ok := <-out:
+		case ev, ok := <-out:
 			if !ok {
 				t.Fatal("out channel closed unexpectedly (Run should not close out)")
 			}
-			entries = append(entries, entry)
+			entries = append(entries, parser.UnwrapLogEntry(ev))
 			entryCount++
 
 		case <-drainCtx.Done():
@@ -136,7 +137,7 @@ func TestExecSource_CancelStop(t *testing.T) {
 	}
 	defer src.Close()
 
-	out := make(chan *plugin.LogEntry, 10)
+	out := make(chan *plugin.Event, 10)
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
@@ -183,7 +184,7 @@ func TestExecSource_InvalidExec(t *testing.T) {
 	defer src.Close()
 
 	// Try to run with non-existent binary
-	out := make(chan *plugin.LogEntry, 10)
+	out := make(chan *plugin.Event, 10)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 

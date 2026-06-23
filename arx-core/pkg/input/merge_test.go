@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/input"
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -18,7 +19,7 @@ import (
 // staticSource sends a fixed slice of entries then returns.
 type staticSource struct {
 	name    string
-	entries []*plugin.LogEntry
+	entries []*parser.LogEntry
 }
 
 func (s *staticSource) Name() string { return s.name }
@@ -28,16 +29,20 @@ func (s *staticSource) Close() error              { return nil }
 func (s *staticSource) Stats() plugin.SourceStats {
 	return plugin.SourceStats{LinesRead: int64(len(s.entries))}
 }
-func (s *staticSource) Run(_ context.Context, out chan<- *plugin.LogEntry) error {
+func (s *staticSource) Run(_ context.Context, out chan<- *plugin.Event) error {
 	for _, e := range s.entries {
-		out <- e
+		out <- parser.WrapLogEntry(e, plugin.Envelope{
+			Source:     e.RemoteAddr,
+			SourceType: "static",
+			Timestamp:  e.Time,
+		})
 	}
 	return nil
 }
 
 // blockingSource sends one entry, then blocks until ctx is cancelled.
 type blockingSource struct {
-	entry *plugin.LogEntry
+	entry *parser.LogEntry
 }
 
 func (s *blockingSource) Name() string { return "blocking" }
@@ -45,15 +50,19 @@ func (s *blockingSource) Name() string { return "blocking" }
 func (s *blockingSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *blockingSource) Close() error              { return nil }
 func (s *blockingSource) Stats() plugin.SourceStats { return plugin.SourceStats{} }
-func (s *blockingSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
-	out <- s.entry
+func (s *blockingSource) Run(ctx context.Context, out chan<- *plugin.Event) error {
+	out <- parser.WrapLogEntry(s.entry, plugin.Envelope{
+		Source:     s.entry.RemoteAddr,
+		SourceType: "blocking",
+		Timestamp:  s.entry.Time,
+	})
 	<-ctx.Done()
 	return nil
 }
 
 // dropSource tries to send entries with a full buffer; drops are counted via non-blocking send.
 type dropSource struct {
-	entries []*plugin.LogEntry
+	entries []*parser.LogEntry
 	dropped int
 }
 
@@ -62,10 +71,15 @@ func (s *dropSource) Name() string { return "drop" }
 func (s *dropSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *dropSource) Close() error              { return nil }
 func (s *dropSource) Stats() plugin.SourceStats { return plugin.SourceStats{Dropped: int64(s.dropped)} }
-func (s *dropSource) Run(_ context.Context, out chan<- *plugin.LogEntry) error {
+func (s *dropSource) Run(_ context.Context, out chan<- *plugin.Event) error {
 	for _, e := range s.entries {
+		ev := parser.WrapLogEntry(e, plugin.Envelope{
+			Source:     e.RemoteAddr,
+			SourceType: "drop",
+			Timestamp:  e.Time,
+		})
 		select {
-		case out <- e:
+		case out <- ev:
 		default:
 			s.dropped++
 		}
@@ -73,21 +87,21 @@ func (s *dropSource) Run(_ context.Context, out chan<- *plugin.LogEntry) error {
 	return nil
 }
 
-func makeEntry(ip string) *plugin.LogEntry {
-	return &plugin.LogEntry{RealIP: ip, Time: time.Now()}
+func makeEntry(ip string) *parser.LogEntry {
+	return &parser.LogEntry{RealIP: ip, Time: time.Now()}
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────────────────
 
 func TestMerge_SingleSource(t *testing.T) {
-	entries := []*plugin.LogEntry{makeEntry("1.1.1.1"), makeEntry("2.2.2.2")}
+	entries := []*parser.LogEntry{makeEntry("1.1.1.1"), makeEntry("2.2.2.2")}
 	src := &staticSource{name: "test", entries: entries}
 
 	out := input.Merge(context.Background(), []plugin.Source{src}, 8, nil)
 
-	var got []*plugin.LogEntry
-	for e := range out {
-		got = append(got, e)
+	var got []*parser.LogEntry
+	for ev := range out {
+		got = append(got, parser.UnwrapLogEntry(ev))
 	}
 
 	if len(got) != 2 {
@@ -102,14 +116,14 @@ func TestMerge_SingleSource(t *testing.T) {
 }
 
 func TestMerge_MultipleSources(t *testing.T) {
-	src1 := &staticSource{name: "s1", entries: []*plugin.LogEntry{makeEntry("1.1.1.1"), makeEntry("2.2.2.2")}}
-	src2 := &staticSource{name: "s2", entries: []*plugin.LogEntry{makeEntry("3.3.3.3"), makeEntry("4.4.4.4")}}
+	src1 := &staticSource{name: "s1", entries: []*parser.LogEntry{makeEntry("1.1.1.1"), makeEntry("2.2.2.2")}}
+	src2 := &staticSource{name: "s2", entries: []*parser.LogEntry{makeEntry("3.3.3.3"), makeEntry("4.4.4.4")}}
 
 	out := input.Merge(context.Background(), []plugin.Source{src1, src2}, 8, nil)
 
 	ips := map[string]bool{}
-	for e := range out {
-		ips[e.RealIP] = true
+	for ev := range out {
+		ips[parser.UnwrapLogEntry(ev).RealIP] = true
 	}
 
 	expected := []string{"1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"}
@@ -160,7 +174,7 @@ func TestMerge_ChannelClosedOnCtxCancel(t *testing.T) {
 func TestMerge_DropOnFullBuffer(t *testing.T) {
 	const bufSize = 2
 	// 4 entries into buffer of 2: 2 make it, 2 are dropped.
-	entries := []*plugin.LogEntry{
+	entries := []*parser.LogEntry{
 		makeEntry("1.1.1.1"),
 		makeEntry("2.2.2.2"),
 		makeEntry("3.3.3.3"),
@@ -169,9 +183,9 @@ func TestMerge_DropOnFullBuffer(t *testing.T) {
 	src := &dropSource{entries: entries}
 	out := input.Merge(context.Background(), []plugin.Source{src}, bufSize, nil)
 
-	var got []*plugin.LogEntry
-	for e := range out {
-		got = append(got, e)
+	var got []*parser.LogEntry
+	for ev := range out {
+		got = append(got, parser.UnwrapLogEntry(ev))
 	}
 
 	// At least 2 made it (buf size); remainder may vary by scheduler timing.
@@ -197,7 +211,7 @@ func (s *panicSource) Name() string              { return "panic" }
 func (s *panicSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *panicSource) Close() error              { return nil }
 func (s *panicSource) Stats() plugin.SourceStats { return plugin.SourceStats{} }
-func (s *panicSource) Run(_ context.Context, _ chan<- *plugin.LogEntry) error {
+func (s *panicSource) Run(_ context.Context, _ chan<- *plugin.Event) error {
 	panic("test panic in source Run")
 }
 
@@ -236,7 +250,7 @@ func (s *errorReturningSource) Name() string              { return "error-return
 func (s *errorReturningSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
 func (s *errorReturningSource) Close() error              { return nil }
 func (s *errorReturningSource) Stats() plugin.SourceStats { return plugin.SourceStats{} }
-func (s *errorReturningSource) Run(_ context.Context, _ chan<- *plugin.LogEntry) error {
+func (s *errorReturningSource) Run(_ context.Context, _ chan<- *plugin.Event) error {
 	return fmt.Errorf("test error from source")
 }
 

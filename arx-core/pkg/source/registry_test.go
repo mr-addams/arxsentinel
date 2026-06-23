@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
@@ -26,7 +27,7 @@ func (m *mockSource) Name() string {
 
 func (m *mockSource) Manifest() plugin.Manifest { return plugin.Manifest{} }
 
-func (m *mockSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error {
+func (m *mockSource) Run(ctx context.Context, out chan<- *plugin.Event) error {
 	<-ctx.Done()
 	return ctx.Err()
 }
@@ -43,8 +44,8 @@ func (m *mockSource) Stats() plugin.SourceStats {
 
 type mockParser struct{}
 
-func (m *mockParser) Parse(line string) (*plugin.LogEntry, bool) {
-	return &plugin.LogEntry{
+func (m *mockParser) Parse(line string) (*parser.LogEntry, bool) {
+	return &parser.LogEntry{
 		RemoteAddr: "192.0.2.1",
 		Method:     "GET",
 		Path:       "/test",

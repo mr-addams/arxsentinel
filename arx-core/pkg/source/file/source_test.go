@@ -35,7 +35,7 @@ func TestFileSource_ReadsLines(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -52,13 +52,13 @@ func TestFileSource_ReadsLines(t *testing.T) {
 	_, _ = f2.WriteString(validLine + validLine)
 	f2.Close()
 
-	var got []*plugin.LogEntry
+	var got []*parser.LogEntry
 	deadline := time.After(2 * time.Second)
 loop:
 	for {
 		select {
-		case e := <-out:
-			got = append(got, e)
+		case ev := <-out:
+			got = append(got, parser.UnwrapLogEntry(ev))
 			if len(got) == 2 {
 				break loop
 			}
@@ -91,7 +91,7 @@ func TestFileSource_StopOnCtxCancel(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 
 	done := make(chan error, 1)
 	go func() {
@@ -127,7 +127,7 @@ func TestFileSource_ParseError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	out := make(chan *plugin.LogEntry, 8)
+	out := make(chan *plugin.Event, 8)
 	go func() { _ = src.Run(ctx, out) }()
 
 	time.Sleep(100 * time.Millisecond)
@@ -139,13 +139,13 @@ func TestFileSource_ParseError(t *testing.T) {
 	_, _ = f2.WriteString(invalidLine + validLine)
 	f2.Close()
 
-	var got []*plugin.LogEntry
+	var got []*parser.LogEntry
 	deadline := time.After(2 * time.Second)
 loop:
 	for {
 		select {
-		case e := <-out:
-			got = append(got, e)
+		case ev := <-out:
+			got = append(got, parser.UnwrapLogEntry(ev))
 			if len(got) == 1 {
 				break loop
 			}
