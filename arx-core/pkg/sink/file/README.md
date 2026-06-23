@@ -67,7 +67,7 @@ type FileSink struct{ /* unexported fields */ }
 
 func NewFileSink(path, format string) (*FileSink, error)
 func (s *FileSink) Name() string
-func (s *FileSink) Write(ctx context.Context, event plugin.ThreatEvent) error
+func (s *FileSink) Write(ctx context.Context, event *plugin.Event) error
 func (s *FileSink) Close() error
 func (s *FileSink) Reload() error
 func (s *FileSink) Stats() plugin.SinkStats
@@ -111,6 +111,6 @@ kill -HUP $(pidof myservice)
 ## Dependencies
 
 - Standard library — `os`, `sync`, `sync/atomic`.
-- `pkg/plugin` — `Manifest`, `ThreatEvent`, `SinkStats`.
+- `pkg/plugin` — `Manifest`, `Event`, `SinkStats`.
 - `pkg/sink` — sink registry helpers.
 - `pkg/sink/format` — `FormatJSON`, `FormatSentinelThreat`, `FormatFail2Ban`.

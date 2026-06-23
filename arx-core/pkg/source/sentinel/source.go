@@ -34,7 +34,8 @@
 //
 //	Gate B (Flow 083 / Task 3.3 / RESOLVED-D strategy II):
 //	  The source no longer JSON-decodes the wire payload into the core
-//	  (plugin.ThreatEvent was migrated to cmd/arxsentinel/internal/threat/).
+//	  (the product-owned ThreatEvent was migrated out of arx-core into
+//	  cmd/arxsentinel/internal/threat/).
 //	  Instead the raw queue bytes are wrapped as a json.RawMessage in
 //	  Event.Payload — opaque to core, decoded by the product-side
 //	  consumer (cmd/arxsentinel/queue_event_source.Pop and the threat
@@ -46,7 +47,7 @@
 //	  json.RawMessage and carried verbatim into Event.Payload; the
 //	  envelope (Source / SourceType / Stream / Timestamp) is filled
 //	  from queue metadata and observation time. Level on the envelope
-//	  is left empty here — the product scorer assigns it later.
+//	  is left empty here — the downstream scoring step assigns it later.
 package sentinel
 
 import (
@@ -192,7 +193,7 @@ func (s *SentinelSource) Run(ctx context.Context, out chan<- *plugin.Event) erro
 				Timestamp:  time.Now().UTC(),
 				Source:     "sentinel:" + s.name,
 				SourceType: "sentinel",
-				Level:      "", // scorer fills later
+				Level:      "", // downstream scoring fills later
 			},
 			Payload: json.RawMessage(payload),
 		}

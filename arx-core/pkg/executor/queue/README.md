@@ -1,6 +1,6 @@
 # `pkg/executor/queue` — NCS Queue Backends
 
-`plugin.ThreatEvent` values cross pipeline and executor boundaries through
+`*plugin.Event` values cross pipeline and executor boundaries through
 a **`queue.Queue`** — a small interface with four methods (`Push`, `Pop`,
 `Len`, `Close`). The queue itself is a storage primitive; it is *not* the
 Named Channel Switch. The NCS (`pkg/runtime/`) holds queues by name; the
@@ -29,8 +29,8 @@ below.
 ```go
 // pkg/executor/queue/queue.go
 type Queue interface {
-    Push(ctx context.Context, event plugin.ThreatEvent) error
-    Pop(ctx context.Context) (plugin.ThreatEvent, error)
+    Push(ctx context.Context, payload []byte) error
+    Pop(ctx context.Context) ([]byte, error)
     Len() int
     Close() error
 }
@@ -372,7 +372,7 @@ natural deployment location.
   bbolt get /var/lib/arx-core/a.db q <key> --format hex
   ```
 
-  The bucket is JSON-serialised `plugin.ThreatEvent`s
+  The bucket is JSON-serialised `*plugin.Event` records
   keyed by an internal `uint64` sequence. Iterating the page
   shows the full backlog.
 - **Redis observability.** `LLEN arx-core:queue:<name>` reports

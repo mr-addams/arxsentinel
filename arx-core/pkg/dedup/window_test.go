@@ -380,8 +380,8 @@ func TestWindow_FlakySafePattern(t *testing.T) {
 }
 
 // ── MarkBatch: одна mutex-блокировка для группы ключей. ──────────────────
-// Используется mikrotik flush — после успешного batch Add помечаем
-// все IP одним вызовом вместо N отдельных Mark.
+// Используется executor flush — после успешного batch Add помечаем
+// все ключи одним вызовом вместо N отдельных Mark.
 
 func TestWindow_MarkBatchBasic(t *testing.T) {
 	w := NewWindow(5 * time.Minute)

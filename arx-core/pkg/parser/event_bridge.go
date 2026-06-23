@@ -8,7 +8,7 @@
 //
 //   WHAT IS NOT HERE:
 //     - Parsing logic (combined.go, json.go)
-//     - Product-specific event construction (ThreatEvent wrappers, scorers)
+//     - Product-specific event construction (ThreatEvent wrappers, scoring step)
 //
 //   DEPENDENCY RULE:
 //     pkg/parser → pkg/plugin (Event/Envelope) + stdlib only.
@@ -29,9 +29,9 @@
 //       - Stream     — pipeline stream name (StreamSpec.Name)
 //       - Timestamp  — source observation time (NOT construction time)
 //     Level MUST be left empty at Wrap time. Level is an opaque severity tag
-//     populated later by the product scorer after scoring, so it is the
-//     scorer's responsibility to assign event.Envelope.Level on the wrapped
-//     Event, never WrapLogEntry's.
+//     populated later by the downstream scoring step, so it is the
+//     downstream scoring step's responsibility to assign
+//     event.Envelope.Level on the wrapped Event, never WrapLogEntry's.
 //
 //   Payload shape:
 //     Both Wrap and Unwrap agree on the single canonical form: Payload is
@@ -52,7 +52,7 @@ import (
 //
 // Callers MUST populate the Envelope's Source / SourceType / Stream / Timestamp
 // fields (see file-level godoc for ownership rules). Leave Envelope.Level empty;
-// the product scorer assigns it later based on scoring outcome.
+// the downstream scoring step assigns it later based on scoring outcome.
 //
 // The returned *plugin.Event is the only sanctioned form for moving LogEntry
 // across the runtime boundary; downstream stages that need LogEntry call

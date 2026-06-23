@@ -60,7 +60,7 @@ type SentinelThreatSink struct{ /* unexported fields */ }
 
 func NewSentinelThreatSink(name string, bufferSize int) (*SentinelThreatSink, error)
 func (s *SentinelThreatSink) Name() string
-func (s *SentinelThreatSink) Write(ctx context.Context, event plugin.ThreatEvent) error
+func (s *SentinelThreatSink) Write(ctx context.Context, event *plugin.Event) error
 func (s *SentinelThreatSink) Close() error
 func (s *SentinelThreatSink) Stats() plugin.SinkStats
 func (s *SentinelThreatSink) Manifest() plugin.Manifest
@@ -83,7 +83,7 @@ constructs the sink with `bufferSize = 0`, leaving queue sizing to NCS.
 ## Inter-component routing
 
 This sink is the **output half** of the Named Channel Switch bridge.
-Any `plugin.ThreatEvent` written here is consumed by whichever reader
+Any `*plugin.Event` written here is consumed by whichever reader
 attaches to the same name. There is no extra configuration knob —
 routing falls out of the NCS map. Three concrete topologies:
 
@@ -106,7 +106,7 @@ The sink's `name:` field must equal the source's `addr:` field
 A single pipeline can both write and read the NCS through this sink
 and its sibling source. Useful for routing threat events from one
 detector chain into a second, specialised chain (for example, only
-high-score events into a stricter scorer).
+high-score events into a stricter downstream scoring step).
 
 ### Plugin-only routing chain
 
@@ -133,5 +133,5 @@ is empty.
 
 - `pkg/executor/queue` — `Queue` interface, `ErrQueueFull`.
 - `pkg/ncs` — `AttachWriter`, `DetachWriter`.
-- `pkg/plugin` — `Manifest`, `ThreatEvent`, `SinkStats`.
+- `pkg/plugin` — `Manifest`, `Event`, `SinkStats`.
 - `pkg/sink` — sink registry helpers.

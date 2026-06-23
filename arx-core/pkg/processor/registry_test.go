@@ -35,7 +35,7 @@ func unregisterForTest(names ...string) {
 
 // stubProcessor is the minimal plugin.Processor implementation for tests.
 // We never call its methods; production code paths that exercise it are
-// covered by the existing per-processor smoke tests in chaincheck/ and whitelist/.
+// covered by the existing per-processor smoke tests.
 type stubProcessor struct{}
 
 func (s *stubProcessor) Name() string { return "stub" }

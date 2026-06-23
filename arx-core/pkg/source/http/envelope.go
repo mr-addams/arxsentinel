@@ -153,7 +153,7 @@ func decodeNDJSON(body []byte, field string) ([]string, error) {
 }
 
 // base64Decode decodes base64-encoded string to bytes.
-// Called from: adapters that receive base64-encoded log data (e.g., Cloudflare).
+// Called from: adapters that receive base64-encoded log data (e.g., base64-encoded logpush adapters).
 func base64Decode(s string) ([]byte, error) {
 	return base64.StdEncoding.DecodeString(s)
 }

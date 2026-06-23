@@ -1,12 +1,13 @@
 // ========================== pkg/execplugin — protocol messages =============================
 //   Wire representation of parser.LogEntry and plugin.IPView for NDJSON
-//   transport between arxsentinel and external plugin processes.
+//   transport between the host process and external plugin processes.
 //
-//   ThreatEventJSON is retained as the wire-format struct that matches the
-//   Go struct field names of the legacy plugin.ThreatEvent. After Gate B
+//   ThreatEventJSON is retained as the wire-format struct whose JSON field
+//   names match the product-owned ThreatEvent payload. After Gate B
 //   (Flow 083 / Task 3.3 / RESOLVED-D) the canonical ThreatEvent lives in
-//   cmd/arxsentinel/internal/threat/ — the wire shape is identical (same
-//   field names, same JSON encoding) so external plugins see no change.
+//   the product namespace (cmd/arxsentinel/internal/threat/) — the wire
+//   shape is identical (same field names, same JSON encoding) so external
+//   plugins see no change.
 //
 //   WHAT IS HERE:
 //     - Protocol message types (Detect, Write, Source, Start/Stop control)

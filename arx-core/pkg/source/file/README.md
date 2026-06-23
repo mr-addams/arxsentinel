@@ -4,7 +4,7 @@ File source for `arx-core`. Tails a local log file from its current
 end-of-file position, follows appended lines, and handles log rotation
 through the platform-specific `pkg/tail` reader (inotify on Linux,
 FSEvents on macOS). Each tailed line is handed to the configured
-`Parser` and the resulting `*plugin.LogEntry` is offered downstream via
+`Parser` and the resulting `*parser.LogEntry` is offered downstream via
 a non-blocking send — a full channel drops the entry and increments
 `Dropped`. The reader retries every `retryInterval` when the file is
 absent at startup or temporarily disappears mid-run (e.g. during
@@ -25,7 +25,7 @@ func NewFileSource(path string, p parser.Parser, retryInterval time.Duration, lo
 
 // plugin.Source interface — implemented by FileSource.
 func (s *FileSource) Name() string                       // returns "file:<path>"
-func (s *FileSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
+func (s *FileSource) Run(ctx context.Context, out chan<- *plugin.Event) error
 func (s *FileSource) Close() error                      // no-op: tailer lifetime is owned by the Run() context
 func (s *FileSource) Stats() plugin.SourceStats         // LinesRead / ParseErrors / Dropped
 ```

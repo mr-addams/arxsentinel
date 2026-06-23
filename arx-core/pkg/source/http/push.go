@@ -80,7 +80,7 @@ func bearerAuth(token string, next nethttp.Handler) nethttp.Handler {
 }
 
 // buildPushHandler creates HTTP handler with protocol-specific processing.
-// Assembles middleware chain: cloudflare challenge → bearer auth → pubsub jwt → request handler.
+// Assembles middleware chain: optional vendor-specific middleware → bearer auth → pubsub jwt → request handler.
 // Non-blocking. Called from: HTTPSource.Run().
 func buildPushHandler(cfg *parsedConfig, adapter adapters.Adapter, out chan<- *plugin.Event, par pkgsource.LineParser, logFn func(string, string, string), maxBodyBytes int64, counters *sourceCounters) nethttp.Handler {
 	var h nethttp.Handler

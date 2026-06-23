@@ -1,6 +1,6 @@
 # pkg/sink/exec — Exec Sink
 
-The `exec` sink delivers every scored `plugin.ThreatEvent` to an external
+The `exec` sink delivers every scored `*plugin.Event` to an external
 plugin binary running as a managed subprocess. The plugin communicates with
 arx-core over NDJSON on its stdin (fire-and-forget — no acknowledgement is
 read back), letting the plugin perform any side effect that must happen
@@ -99,5 +99,5 @@ attached to the same process for its entire lifetime.
 ## Dependencies
 
 - `pkg/execplugin` — `ExecSink`, `ManagedProcess`, NDJSON protocol types.
-- `pkg/plugin` — `Sink`, `SinkStats`, `ThreatEvent`, `Manifest`.
+- `pkg/plugin` — `Sink`, `SinkStats`, `Event`, `Manifest`.
 - `pkg/sink` — `Register`, `RegisterManifest`, `SinkConfig`.

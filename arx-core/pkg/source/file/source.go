@@ -14,7 +14,7 @@
 //   Phase 2.2 (Flow 083 / RESOLVED-Q9): the source emits *plugin.Event with
 //   the parser-owned LogEntry as Payload (built via WrapLogEntry). Envelope
 //   fields Source / SourceType / Stream / Timestamp are filled by the source;
-//   Level is left empty (scorer fills later).
+//   Level is left empty (downstream scoring fills later).
 
 package file
 
@@ -110,7 +110,7 @@ func (s *FileSource) Run(ctx context.Context, out chan<- *plugin.Event) error {
 			SourceType: "file",
 			Stream:     "", // engine fills Stream from EventContext
 			Timestamp:  entry.Time,
-			Level:      "", // scorer fills later
+			Level:      "", // downstream scoring fills later
 		})
 		select {
 		case out <- ev:

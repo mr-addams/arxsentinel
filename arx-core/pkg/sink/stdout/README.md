@@ -1,6 +1,6 @@
 # pkg/sink/stdout — Stdout Sink
 
-The `stdout` sink writes scored `plugin.ThreatEvent` records directly to
+The `stdout` sink writes scored `*plugin.Event` records directly to
 the arx-core process's standard output in one of three formats:
 `fail2ban`, `json`, or `sentinel-threat`. Use it for interactive
 debugging, piping scored events into shell tooling (`jq`, `grep`, log
@@ -43,7 +43,7 @@ func NewStdoutSink(format string) (*StdoutSink, error)
 func NewStdoutSinkWithWriter(w *os.File, format string) (*StdoutSink, error)
 
 func (s *StdoutSink) Name() string                       // always "stdout"
-func (s *StdoutSink) Write(ctx context.Context, event plugin.ThreatEvent) error
+func (s *StdoutSink) Write(ctx context.Context, event *plugin.Event) error
 func (s *StdoutSink) Close() error                       // no-op
 func (s *StdoutSink) Stats() plugin.SinkStats            // EventsWritten, Dropped, Errors
 func (s *StdoutSink) Manifest() plugin.Manifest
@@ -97,7 +97,7 @@ arx-core --config ./config.yaml >> /var/log/arx-core/threats.json
 
 ## Dependencies
 
-- `pkg/plugin` — `Sink`, `SinkStats`, `ThreatEvent`, `Manifest`.
+- `pkg/plugin` — `Sink`, `SinkStats`, `Event`, `Manifest`.
 - `pkg/sink` — `Register`, `RegisterManifest`, `SinkConfig`.
 - `pkg/sink/format` — `FormatFailban`, `FormatJSON`, `FormatSentinelThreat` helpers.
 - Standard library: `os`, `sync`, `sync/atomic`, `context`, `fmt`.

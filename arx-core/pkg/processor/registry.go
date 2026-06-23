@@ -34,8 +34,8 @@
 //   registry).
 //
 //   The public API is preserved byte-for-byte: every package-level function
-//   still has the same signature, so plugin init() call-sites (whitelist,
-//   chaincheck) compile unchanged.
+//   still has the same signature, so plugin init() call-sites compile
+//   unchanged.
 
 package processor
 

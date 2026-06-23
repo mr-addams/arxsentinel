@@ -4,7 +4,7 @@
 //   only the I/O loop and the lifecycle (open / write / sync / close / reload).
 //
 //   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the Gate A type-assert
-//   `event.Payload.(*plugin.ThreatEvent)` was removed. The sink now calls
+//   on the product-owned ThreatEvent payload was removed. The sink now calls
 //   s.formatter.Format(event) directly on the generic *plugin.Event; the
 //   injected Formatter (a product-side implementation from
 //   cmd/arxsentinel/internal/threat/format) owns the type-assertion on its
@@ -49,8 +49,8 @@ type FileSink struct {
 
 // NewFileSink creates a new FileSink instance and opens the target file.
 // formatter is required — the sink has no built-in default. Product code
-// injects a concrete Formatter (FailbanFormatter / JSONFormatter /
-// SentinelFormatter) at pipeline assembly time.
+// injects a concrete Formatter (a fail2ban line formatter, JSON formatter,
+// or sentinel-threat NDJSON formatter) at pipeline assembly time.
 //
 // Called from: sink/file/register.go (plugin factory), tests.
 // Returns: configured FileSink on success, or error if path/formatter invalid
@@ -114,8 +114,8 @@ func (s *FileSink) Stats() plugin.SinkStats {
 // Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the sink no longer inspects
 // Event.Payload. The injected Formatter takes the generic *plugin.Event
 // and renders the byte sequence; the Formatter impl owns the type-assertion
-// (FailbanFormatter / JSONFormatter / SentinelFormatter in product). This
-// replaces the Gate A `event.Payload.(*plugin.ThreatEvent)` pattern.
+// (any product-side formatter). This replaces the Gate A pattern of
+// asserting a concrete product-owned ThreatEvent on the payload.
 func (s *FileSink) Write(ctx context.Context, event *plugin.Event) error {
 	if event == nil {
 		s.errors.Add(1)

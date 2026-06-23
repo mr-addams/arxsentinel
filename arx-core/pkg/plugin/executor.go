@@ -7,7 +7,7 @@
 //     Executor      — public interface: Name, EventQueue, Close, Stats.
 //
 //   WHAT IS NOT HERE:
-//     Executor implementations (cloudflare/, exec fallback) — each lives in its own package.
+//     Executor implementations live in their own packages (with exec as the generic fallback).
 //     Registry (pkg/executor/registry.go) — separate package.
 //
 //   DISTINCTION FROM SINK:
@@ -45,7 +45,7 @@ type EventSource interface {
 // Errors:   Execute() calls that returned a non-nil error.
 // Swept:    automatically reversed actions (e.g., expired TTL bans removed by sweep).
 //
-//	Only executors with auto-reverse semantics (cloudflare, nginx) populate this.
+//	Only executors with auto-reverse semantics populate this.
 //
 // Implementation-specific counters (e.g., CF API retries, dedup hits) belong in
 // the executor's own log output, not here. Stats is for pipeline-level visibility.

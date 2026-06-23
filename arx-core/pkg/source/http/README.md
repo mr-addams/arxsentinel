@@ -3,11 +3,14 @@
 HTTP/HTTPS source for `arx-core`. Accepts log events from webhooks
 (push mode, the default) or polls a remote endpoint on a fixed interval
 (pull mode). The wire format is selected by `protocol` and decoded by a
-plugin-specific `Adapter` from `pkg/source/http/adapters/`: `plain`,
-`ndjson`, `cloudflare`, `firehose`, `pubsub`, `loki`, `otlp`, `azure`,
-`splunk`. The body is bounded by `max_body_bytes` (default 10 MB) and
-decompressed transparently when `Content-Encoding: gzip` is set, so
-the source is safe against both oversize requests and zip bombs.
+plugin-specific `Adapter` from `pkg/source/http/adapters/`: the
+built-in protocols (`plain`, `ndjson`, `firehose`, `pubsub`, `loki`,
+`otlp`, `azure`, `splunk`) cover the common cases; vendor logpush
+protocols (e.g. CDN ownership-challenge flows) are registered
+separately by their adapter package. The body is bounded by
+`max_body_bytes` (default 10 MB) and decompressed transparently when
+`Content-Encoding: gzip` is set, so the source is safe against both
+oversize requests and zip bombs.
 
 ## Public API
 
@@ -24,10 +27,10 @@ func New(cfg pkgsource.InputConfig, par pkgsource.LineParser, logFn func(tag, ms
 
 // plugin.Source interface — implemented by HTTPSource.
 func (s *HTTPSource) Name() string                       // returns "http"
-func (s *HTTPSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
+func (s *HTTPSource) Run(ctx context.Context, out chan<- *plugin.Event) error
 func (s *HTTPSource) Close() error                      // no-op: server/client lifetime is owned by the Run() context
 func (s *HTTPSource) Stats() plugin.SourceStats         // LinesRead / ParseErrors / Dropped
-func (s *HTTPSource) Manifest() plugin.Manifest         // PluginID "http", Tags include all nine protocols
+func (s *HTTPSource) Manifest() plugin.Manifest         // PluginID "http", Tags include the built-in protocols
 
 // Adapter — implemented by every protocol adapter under adapters/.
 // Decode turns a request body into records; WriteAck writes the
@@ -39,15 +42,16 @@ type Adapter interface {
 ```
 
 The source registers itself as `type: http` via `init()`. Push mode
-adds middleware: optional Bearer-token check, the Cloudflare
-`Ownership-Challenge` handler, and Pub/Sub OIDC JWT validation
-(activated only when `protocol: pubsub`). Pull mode skips middleware
-and trusts the remote endpoint.
+adds middleware: optional Bearer-token check, the vendor-specific
+ownership-challenge handler (when the protocol requires one), and
+Pub/Sub OIDC JWT validation (activated only when `protocol: pubsub`).
+Pull mode skips middleware and trusts the remote endpoint.
 
 ## Example
 
-Receive Cloudflare Logpush (gzip NDJSON) on port 8889 — the
-ownership-challenge handshake is handled automatically:
+Receive a vendor logpush stream (gzip NDJSON) on port 8889 — the
+ownership-challenge handshake is handled automatically when the
+protocol declares it:
 
 ```yaml
 inputs:

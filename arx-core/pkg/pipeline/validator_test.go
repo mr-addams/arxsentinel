@@ -380,7 +380,7 @@ func TestValidateExecutorWiring(t *testing.T) {
 	})
 
 	t.Run("multiple channels — only unpaired ones error", func(t *testing.T) {
-		// ch1 — ок (читается cf); ch2 — ок (читается mikrotik);
+		// ch1 — ок (читается reader-1); ch2 — ок (читается reader-2);
 		// ch3 и ch4 — orphan. Ожидаем две ошибки с правильными именами
 		// и в стабильном лексикографическом порядке.
 		bindings := []ExecutorBinding{

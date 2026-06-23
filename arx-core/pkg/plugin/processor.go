@@ -23,9 +23,10 @@ import "context"
 // Processor enriches or filters a pipeline event.
 //
 // Phase 2.2 (Flow 083 / RESOLVED-Q9): Process operates on the generic
-// *plugin.Event. The Payload may be replaced (e.g. a scorer that wraps
-// parser.LogEntry into a product-owned ThreatEvent); the Envelope may
-// also be updated (e.g. Envelope.Level set to "THREAT" after scoring).
+// *plugin.Event. The Payload may be replaced (e.g. a downstream scoring
+// step that wraps parser.LogEntry into a product-owned ThreatEvent);
+// the Envelope may also be updated (e.g. Envelope.Level set to "THREAT"
+// after scoring).
 // The returned *Event is the same value object the caller should propagate.
 type Processor interface {
 	// Name returns the plugin's human-readable name, used in logs and metrics.

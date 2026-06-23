@@ -26,7 +26,7 @@ func New(addr string, parser pkgsource.LineParser, logFn func(tag, msg, level st
 
 // plugin.Source interface — implemented by SyslogSource.
 func (s *SyslogSource) Name() string                       // returns "syslog:<addr>"
-func (s *SyslogSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
+func (s *SyslogSource) Run(ctx context.Context, out chan<- *plugin.Event) error
 func (s *SyslogSource) Close() error                      // no-op: listener lifetime is owned by the Run() context
 func (s *SyslogSource) Stats() plugin.SourceStats         // LinesRead / ParseErrors / Dropped
 func (s *SyslogSource) Manifest() plugin.Manifest         // PluginID "syslog", Tags include the four schemes
@@ -43,7 +43,7 @@ The source registers itself as `type: syslog` via `init()` and uses
 
 ## Example
 
-UDP syslog on port 5514 for a typical nginx access-log relay:
+UDP syslog on port 5514 for a typical web-server access-log relay:
 
 ```yaml
 inputs:

@@ -14,7 +14,7 @@
 //     Has           — boolean lookup (cheaper than Build for validation)
 //
 //   WHAT IS NOT HERE:
-//     Adapter implementations (generic.go, cloudflare.go, ...) — each self-registers
+//     Adapter implementations (generic, vendor-specific, ...) — each self-registers
 //     Source-specific glue (buildAdapter switch) — replaced by Build() call.
 //
 //   DEPENDENCY RULE:

@@ -200,7 +200,7 @@ func (f *mockFactory) Process(_ context.Context, ev *plugin.Event, state Process
 	f.events.Add(1)
 	// Phase 2.2: Action carries *plugin.Event as Payload; we preserve the
 	// threat-context envelope and replace the payload with a fake
-	// ThreatEvent that downstream sinks / scorers consume. The fake
+	// ThreatEvent that downstream sinks / scoring steps consume. The fake
 	// struct shape matches the wire bytes the real product-owned
 	// threat.ThreatEvent produces — a sink type-asserting
 	// ev.Payload.(*threat.ThreatEvent) would see the same JSON-encoded

@@ -25,8 +25,7 @@
 //     the execplugin fallback (unknown name + cfg.Exec set → execplugin.NewExecutor)
 //     is variadic logic per Decision 2 and lives in the wrapper, NOT in the generic
 //     core. The public API is preserved byte-for-byte: every package-level function
-//     still has the same signature, so plugin init() call-sites
-//     (cloudflare, mikrotik, nginx, sentinel, exec/) compile unchanged.
+//     still has the same signature, so plugin init() call-sites compile unchanged.
 //
 //   FLOW 073 TASK 1.3.1 — Logger injection (F1 closure):
 //     Factory now accepts a pkg/logger.Logger. Build() forwards its log argument

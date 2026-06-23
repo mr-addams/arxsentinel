@@ -2,7 +2,7 @@
 
 Stdin source for `arx-core`. Reads newline-delimited log lines from an
 `io.Reader` (production: `os.Stdin`), parses each line through the
-configured `Parser`, and forwards the resulting `*plugin.LogEntry` to
+configured `Parser`, and forwards the resulting `*parser.LogEntry` to
 the pipeline via a non-blocking send. Designed for pipe mode
 (`docker logs … | arx run --config …`) and for container deployments
 where an external orchestrator feeds logs through the process standard
@@ -31,7 +31,7 @@ func NewStdinSourceWithReader(r io.Reader, p parser.Parser, logFn func(tag, msg,
 
 // plugin.Source interface — implemented by StdinSource.
 func (s *StdinSource) Name() string                       // returns "stdin"
-func (s *StdinSource) Run(ctx context.Context, out chan<- *plugin.LogEntry) error
+func (s *StdinSource) Run(ctx context.Context, out chan<- *plugin.Event) error
 func (s *StdinSource) Close() error                      // no-op: os.Stdin is owned by the process
 func (s *StdinSource) Stats() plugin.SourceStats         // LinesRead / ParseErrors / Dropped
 ```

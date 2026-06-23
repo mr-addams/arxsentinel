@@ -15,7 +15,7 @@
 //     Sources emit the generic *plugin.Event on their output channel. The
 //     parser-owned LogEntry lives inside Event.Payload; the source fills
 //     Envelope (Source/SourceType/Stream/Timestamp) at construction time.
-//     Level is left empty — the product scorer assigns it later.
+//     Level is left empty — the downstream scoring step assigns it later.
 //     See pkg/parser.WrapLogEntry for the canonical conversion.
 
 package plugin

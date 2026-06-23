@@ -3,8 +3,9 @@
 //   payload as an opaque *plugin.Event and forwards it to the pipeline.
 //
 //   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): the source no longer
-//   type-asserts the payload to plugin.ThreatEvent (which migrated to
-//   product). It validates that the queue payload is valid JSON and
+//   type-asserts the payload to the product-owned ThreatEvent (which
+//   migrated out of arx-core). It validates that the queue payload is
+//   valid JSON and
 //   wraps it as json.RawMessage in Event.Payload. Tests assert on
 //   Envelope fields and on payload byte-preservation — the product
 //   consumer (cmd/arxsentinel/queue_event_source) is responsible for
@@ -104,7 +105,7 @@ func TestSentinelSource_ReadsThreats(t *testing.T) {
 		t.Errorf("Envelope.SourceType = %q, want %q", e.SourceType, "sentinel")
 	}
 	if e.Level != "" {
-		t.Errorf("Envelope.Level = %q, want empty (scorer fills later)", e.Level)
+		t.Errorf("Envelope.Level = %q, want empty (downstream scoring fills later)", e.Level)
 	}
 
 	// Payload is json.RawMessage containing the original bytes verbatim.

@@ -26,7 +26,7 @@ import "time"
 
 // LogEntry — structured record of a single access log line.
 // Shared DTO between Sources (parse line → LogEntry) and the pipeline
-// (whitelist → tracker → scorer).
+// (processor chain → scoring step).
 //
 // Canonical definition lives in pkg/parser. Source implementations and the
 // pipeline interact with the record through this type; pkg/plugin.Event
@@ -45,5 +45,5 @@ type LogEntry struct {
 	Referer    string    // $http_referer; "-" if absent
 	UserAgent  string    // $http_user_agent; "-" if absent
 	RealIP     string    // last IP from $real_ip; == RemoteAddr when real_ip field == "-"
-	ChainIssue string    // filled by chaincheck processor: "cloudflare:IP/CIDR" | "bogon:IP" | ""
+	ChainIssue string    // filled by chaincheck processor: "<proxy-tag>:IP/CIDR" | "bogon:IP" | ""
 }

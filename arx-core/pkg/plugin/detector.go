@@ -10,7 +10,8 @@
 //
 //   WHAT IS NOT HERE:
 //     - ScoreAccess (internal/core/detector) — extends IPView with score mutation;
-//       not public because it exposes scorer internals irrelevant to detector authors
+//       not public because it exposes downstream scoring internals irrelevant
+//       to detector authors
 //     - Detector implementations (internal/core/detector/*.go)
 //
 //   DEPENDENCY RULE:
