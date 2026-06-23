@@ -1,5 +1,9 @@
 // ====== Module: pkg/sink/stdout — Tests ======
-//   Unit tests for StdoutSink: JSON/fail2ban output, concurrent writes, format validation.
+//   Unit tests for StdoutSink: JSON/fail2ban output, concurrent writes, formatter validation.
+//
+//   Phase 2.2 (Flow 083 / Task 2.2 / RESOLVED-Z12): the sink consumes generic
+//   *plugin.Event and serializes via an injected Formatter; tests wrap the
+//   fixture ThreatEvent in *plugin.Event{Payload: &ev} to match the contract.
 
 package stdout_test
 
@@ -13,6 +17,7 @@ import (
 	"time"
 
 	"github.com/mr-addams/arx-core/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/sink/format"
 	"github.com/mr-addams/arx-core/pkg/sink/stdout"
 )
 
@@ -31,12 +36,17 @@ var (
 	}
 )
 
-func newTestStdoutSink(format string) (*stdout.StdoutSink, *os.File, *os.File, error) {
+// wrapEvent превращает ThreatEvent в *plugin.Event — Phase 2.2 Gate A helper.
+func wrapEvent(e plugin.ThreatEvent) *plugin.Event {
+	return &plugin.Event{Envelope: plugin.Envelope{Stream: e.Stream}, Payload: &e}
+}
+
+func newTestStdoutSink(f format.Formatter) (*stdout.StdoutSink, *os.File, *os.File, error) {
 	pr, pw, err := os.Pipe()
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	sink, err := stdout.NewStdoutSinkWithWriter(pw, format)
+	sink, err := stdout.NewStdoutSinkWithWriter(pw, f)
 	if err != nil {
 		pr.Close()
 		pw.Close()
@@ -46,12 +56,12 @@ func newTestStdoutSink(format string) (*stdout.StdoutSink, *os.File, *os.File, e
 }
 
 func TestStdoutSink_WritesJSON(t *testing.T) {
-	sink, pr, pw, err := newTestStdoutSink("json")
+	sink, pr, pw, err := newTestStdoutSink(&format.JSONFormatter{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := sink.Write(context.Background(), testEvent); err != nil {
+	if err := sink.Write(context.Background(), wrapEvent(testEvent)); err != nil {
 		t.Fatalf("Write() error: %v", err)
 	}
 	pw.Close()
@@ -75,12 +85,12 @@ func TestStdoutSink_WritesJSON(t *testing.T) {
 }
 
 func TestStdoutSink_WritesFailban(t *testing.T) {
-	sink, pr, pw, err := newTestStdoutSink("fail2ban")
+	sink, pr, pw, err := newTestStdoutSink(&format.FailbanFormatter{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := sink.Write(context.Background(), testEvent); err != nil {
+	if err := sink.Write(context.Background(), wrapEvent(testEvent)); err != nil {
 		t.Fatalf("Write() error: %v", err)
 	}
 	pw.Close()
@@ -96,7 +106,7 @@ func TestStdoutSink_WritesFailban(t *testing.T) {
 }
 
 func TestStdoutSink_ConcurrentWrites(t *testing.T) {
-	sink, pr, pw, err := newTestStdoutSink("json")
+	sink, pr, pw, err := newTestStdoutSink(&format.JSONFormatter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +125,7 @@ func TestStdoutSink_ConcurrentWrites(t *testing.T) {
 				Modules:   []string{"rate"},
 				Reason:    "rate:50rps",
 			}
-			_ = sink.Write(context.Background(), e)
+			_ = sink.Write(context.Background(), wrapEvent(e))
 		}()
 	}
 	wg.Wait()
@@ -131,15 +141,16 @@ func TestStdoutSink_ConcurrentWrites(t *testing.T) {
 	}
 }
 
-func TestStdoutSink_InvalidFormat(t *testing.T) {
-	_, err := stdout.NewStdoutSink("nope")
+func TestStdoutSink_NilFormatter(t *testing.T) {
+	// Phase 2.2: nil Formatter is a programmer error caught at New() time.
+	_, err := stdout.NewStdoutSink(nil)
 	if err == nil {
-		t.Fatal("want error for unknown format, got nil")
+		t.Fatal("want error for nil formatter, got nil")
 	}
 }
 
 func TestStdoutSink_Manifest(t *testing.T) {
-	sink, err := stdout.NewStdoutSink("json")
+	sink, err := stdout.NewStdoutSink(&format.JSONFormatter{})
 	if err != nil {
 		t.Fatal(err)
 	}

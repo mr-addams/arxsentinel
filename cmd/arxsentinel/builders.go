@@ -8,6 +8,8 @@
 //     - detectorShared                  — реализация pkgdetector.SharedResources
 //     - buildParserForInput()           — выбор парсера по profile/input-конфигурации
 //     - buildSources() / buildSinks()   — построение списка плагинов из pipeline-конфига
+//     - formatterForFormat()            — мост format-string → concrete format.Formatter
+//                                         (Phase 2.2, Flow 083 RESOLVED-Z12).
 
 package main
 
@@ -24,6 +26,7 @@ import (
 	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	pkgsink "github.com/mr-addams/arx-core/pkg/sink"
+	sinkformat "github.com/mr-addams/arx-core/pkg/sink/format"
 	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 
 	// Blank-import built-in sink plugins so their init() registers them with
@@ -244,18 +247,35 @@ func buildSources(cfg config.Config, inputs []config.InputConfig) ([]plugin.Sour
 // buildSinks constructs the Sink list from an explicit outputs slice.
 // Called from: runtime_adapter.adaptConfigToStreams.
 // Non-blocking.
-func buildSinks(ctx context.Context, outputs []config.SinkConfig) ([]plugin.Sink, error) {
+//
+// Phase 2.2 (Flow 083 / RESOLVED-Z12): sinks now consume a format.Formatter
+// interface (injected at wiring time) instead of a free-form format string.
+// This function is the product-side bridge: it maps the YAML's format hint
+// (cfg.outputs[].format) onto a concrete Formatter instance and threads it
+// into SinkConfig.Formatter. Without this bridge the registry-built sinks
+// receive a nil Formatter and fail with "formatter must not be nil" at
+// stream-adaptation time — the regression fixed in Task 2.2 follow-up.
+//
+// streamName is required only for sentinel-threat formatters (they stamp
+// the source stream into the wire format); it is ignored by file/stdout
+// formatters but accepted unconditionally for signature symmetry.
+func buildSinks(ctx context.Context, streamName string, outputs []config.SinkConfig) ([]plugin.Sink, error) {
 	if len(outputs) == 0 {
 		return nil, fmt.Errorf("no outputs configured")
 	}
 	sinks := make([]plugin.Sink, 0, len(outputs))
 	for _, out := range outputs {
+		formatter, err := formatterForFormat(out.Format, streamName)
+		if err != nil {
+			return nil, fmt.Errorf("sink %q: %w", out.Type, err)
+		}
 		sink, err := pkgsink.Build(ctx, pkgsink.SinkConfig{
-			Type:   out.Type,
-			Name:   out.Name,
-			Path:   out.Path,
-			Format: out.Format,
-			Exec:   out.Exec,
+			Type:      out.Type,
+			Name:      out.Name,
+			Path:      out.Path,
+			Format:    out.Format,
+			Formatter: formatter,
+			Exec:      out.Exec,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("sink %q: %w", out.Type, err)
@@ -263,4 +283,28 @@ func buildSinks(ctx context.Context, outputs []config.SinkConfig) ([]plugin.Sink
 		sinks = append(sinks, sink)
 	}
 	return sinks, nil
+}
+
+// formatterForFormat maps the YAML format hint to a concrete format.Formatter
+// implementation. Returns nil (not an error) when the sink type does not
+// need serialization (e.g. exec sinks that own their own Formatter) — in
+// that case out.Type != "" and the caller skips the nil check. Unknown
+// format strings produce an error so misconfiguration fails fast at startup
+// instead of silently producing empty threat logs.
+//
+// streamName is required for "sentinel-threat" format (the wire format
+// embeds it); it is otherwise unused.
+func formatterForFormat(format, streamName string) (sinkformat.Formatter, error) {
+	switch format {
+	case "", "fail2ban":
+		// Empty string falls back to fail2ban — matches the pre-Phase-2.2
+		// default and the Migrate() default in internal/sys/config.
+		return &sinkformat.FailbanFormatter{}, nil
+	case "json":
+		return &sinkformat.JSONFormatter{}, nil
+	case "sentinel-threat":
+		return &sinkformat.SentinelFormatter{StreamName: streamName}, nil
+	default:
+		return nil, fmt.Errorf("unknown format %q (want fail2ban, json, or sentinel-threat)", format)
+	}
 }

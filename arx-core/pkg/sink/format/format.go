@@ -61,37 +61,21 @@ type jsonEnvelope struct {
 	RawLine    string   `json:"raw_line,omitempty"`    // Internal — raw log line for debug. Consumer: FormatJSON.
 }
 
-// sentinelThreatLine is the JSON format for sentinel-threat transport.
-// Used both by FormatSentinelThreat (output) and SentinelThreatSource (input).
-//
-// Internal — not in config. Consumer: FormatSentinelThreat, SentinelThreatSource.
-type sentinelThreatLine struct {
-	TS      string   `json:"ts"`      // Internal — RFC3339 timestamp. Consumer: FormatSentinelThreat.
-	IP      string   `json:"ip"`      // Internal — IP address. Consumer: FormatSentinelThreat.
-	Score   int      `json:"score"`   // Internal — accumulated score. Consumer: FormatSentinelThreat.
-	Level   string   `json:"level"`   // Internal — threat level. Consumer: FormatSentinelThreat.
-	Modules []string `json:"modules"` // Internal — triggered detector names. Consumer: FormatSentinelThreat.
-	Reason  string   `json:"reason"`  // Internal — human-readable reason. Consumer: FormatSentinelThreat.
-	Source  string   `json:"source"`  // Internal — source stream name. Consumer: FormatSentinelThreat.
-}
-
 // FormatSentinelThreat marshals a ThreatEvent to a sentinel-threat JSON line.
-// Minimal transport format — only fields needed for re-ban.
 //
-// Called from: sink plugins, pipeline (main.go).
+// Phase 2.2 wire format: JSON-encoded *plugin.ThreatEvent with Stream
+// overridden to streamName and RawLine cleared (sentinel-threat transport
+// never carries raw HTTP data — only the fields needed for re-ban). This
+// format is what cmd/arxsentinel/queue_event_source.Pop and
+// arx-core/pkg/source/sentinel decode back into a ThreatEvent on the
+// consumer side, so producer and consumer must agree byte-for-byte.
+//
+// Called from: sink plugins (sentinel-threat), pipeline (main.go).
 // Non-blocking.
 func FormatSentinelThreat(e plugin.ThreatEvent, streamName string) ([]byte, error) {
-	ts := e.Timestamp.UTC().Format(time.RFC3339)
-	line := sentinelThreatLine{
-		TS:      ts,
-		IP:      e.IP,
-		Score:   e.Score,
-		Level:   e.Level,
-		Modules: e.Modules,
-		Reason:  e.Reason,
-		Source:  streamName,
-	}
-	return json.Marshal(line)
+	e.Stream = streamName
+	e.RawLine = ""
+	return json.Marshal(e)
 }
 
 // FormatJSON marshals a ThreatEvent to a JSON envelope (D7).

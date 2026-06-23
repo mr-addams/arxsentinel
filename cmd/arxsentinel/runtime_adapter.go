@@ -53,7 +53,7 @@ func adaptConfigToStreams(ctx context.Context, cfg config.Config) ([]coreruntime
 			if err != nil {
 				return nil, nil, fmt.Errorf("stream %q pipeline %d sources: %w", streamCfg.Name, j, err)
 			}
-			sinks, err := buildSinks(ctx, pipeCfg.Outputs)
+			sinks, err := buildSinks(ctx, streamCfg.Name, pipeCfg.Outputs)
 			if err != nil {
 				return nil, nil, fmt.Errorf("stream %q pipeline %d sinks: %w", streamCfg.Name, j, err)
 			}

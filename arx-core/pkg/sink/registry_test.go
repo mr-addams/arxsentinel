@@ -1,5 +1,10 @@
 // ========================== pkg/sink — registry tests ===================================
 //   Tests: Register, Build (by name and unknown), Names, duplicate-panic.
+//
+//   Phase 2.2 (Flow 083 / Task 2.2 / RESOLVED-D strategy II): the Sink
+//   contract now carries generic *plugin.Event. mockSink below mirrors the
+//   production sinks (file/stdout/sentinel): it accepts *plugin.Event and
+//   never inspects Payload — Phase 2.2 Gate A.
 
 package sink
 
@@ -25,7 +30,7 @@ func (m *mockSink) Name() string {
 
 func (m *mockSink) Manifest() plugin.Manifest { return plugin.Manifest{} }
 
-func (m *mockSink) Write(ctx context.Context, event plugin.ThreatEvent) error {
+func (m *mockSink) Write(ctx context.Context, event *plugin.Event) error {
 	return nil
 }
 
