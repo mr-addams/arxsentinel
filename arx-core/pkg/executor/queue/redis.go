@@ -6,7 +6,7 @@
 //     RedisQueue — implements Queue via Redis list (LPUSH/BRPOP)
 //     NewRedisQueue — create client from URL, validate connection
 //
-//   KEY SCHEMA: arxsentinel:queue:<executor_name> (passed by caller via EffectiveKey)
+//   KEY SCHEMA: caller-provided string (product owns the namespace; core has no default).
 //   SERIALIZATION: opaque []byte — caller (Formatter on the sink side, executor
 //     on the consumer side) owns the wire schema.
 //

@@ -19,23 +19,29 @@ const (
 type QueueConfig struct {
 	Type   QueueType `yaml:"type"`             // YAML: type — backend selector: "memory" | "bbolt" | "redis". Required.
 	Path   string    `yaml:"path,omitempty"`   // YAML: path — bbolt: path to .db file (e.g. /data/queue.db). Required for bbolt.
-	Bucket string    `yaml:"bucket,omitempty"` // YAML: bucket — bbolt: bucket name. Default: "arxsentinel".
+	Bucket string    `yaml:"bucket,omitempty"` // YAML: bucket — bbolt: bucket name. Required — caller (product) must set explicitly; empty triggers fail-fast.
 	URL    string    `yaml:"url,omitempty"`    // YAML: url — redis: Redis URL (e.g. redis://localhost:6379). Required for redis.
-	Key    string    `yaml:"key,omitempty"`    // YAML: key — redis: Redis list key. Default: "arxsentinel:queue:<executor_name>".
+	Key    string    `yaml:"key,omitempty"`    // YAML: key — redis: Redis list key. Required — caller (product) must set explicitly; empty triggers fail-fast.
 }
 
+// EffectiveBucket returns Bucket and panics if it was not set. Phase 5 (Flow 083)
+// removed the hardcoded "arxsentinel" default — the caller (product) must pass the
+// namespace explicitly; an empty bucket surfaces as a fail-fast panic at registration.
 func (c QueueConfig) EffectiveBucket() string {
-	if c.Bucket != "" {
-		return c.Bucket
+	if c.Bucket == "" {
+		panic("queue: Bucket must be set explicitly by the product; empty default removed in Phase 5 (Flow 083)")
 	}
-	return "arxsentinel"
+	return c.Bucket
 }
 
+// EffectiveKey returns Key and panics if it was not set. Phase 5 (Flow 083) removed
+// the hardcoded "arxsentinel:queue:<name>" default — the caller (product) must pass
+// the namespace explicitly; an empty key surfaces as a fail-fast panic at registration.
 func (c QueueConfig) EffectiveKey(name string) string {
-	if c.Key != "" {
-		return c.Key
+	if c.Key == "" {
+		panic("queue: Key must be set explicitly by the product; empty default removed in Phase 5 (Flow 083)")
 	}
-	return "arxsentinel:queue:" + name
+	return c.Key
 }
 
 // ExecutorSourceRef — reference to a Named Channel Switch source.

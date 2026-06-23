@@ -194,9 +194,9 @@ with the default buffer.
 type QueueConfig struct {
     Type   QueueType `yaml:"type"`             // memory | bbolt | redis
     Path   string    `yaml:"path,omitempty"`   // bbolt: .db file path
-    Bucket string    `yaml:"bucket,omitempty"` // bbolt: bucket name (default "arxsentinel")
+    Bucket string    `yaml:"bucket,omitempty"` // bbolt: bucket name (Required — caller must set explicitly; core has no default, Phase 5)
     URL    string    `yaml:"url,omitempty"`    // redis: redis://[user:pass@]host:port[/db]
-    Key    string    `yaml:"key,omitempty"`    // redis: list key (default "arxsentinel:queue:<name>")
+    Key    string    `yaml:"key,omitempty"`    // redis: list key (Required — caller must set explicitly; core has no default, Phase 5)
 }
 ```
 

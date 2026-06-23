@@ -94,6 +94,10 @@ func AttachWriterWithQueue(name string, q queue.Queue) error {
 // misconfiguration (e.g. invalid path, unreachable Redis).
 // For memory (and nil cfg) the error path is unreachable — the function always returns nil.
 // The error return exists for bbolt/redis and for future backend types.
+//
+// For bbolt and redis, the caller MUST pre-populate cfg.Bucket / cfg.Key; an empty value
+// triggers a fail-fast panic from EffectiveBucket / EffectiveKey (Phase 5, Flow 083).
+// Core has no hardcoded default — the product owns its own namespace.
 func RegisterSinkFromConfig(name string, cfg *queue.QueueConfig, log logger.Logger) error {
 	// Nil cfg falls back to the legacy MemoryQueue path so the existing behaviour
 	// is preserved without changing the call-site code.

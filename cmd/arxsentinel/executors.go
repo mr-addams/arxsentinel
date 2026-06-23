@@ -16,12 +16,18 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgexecutor "github.com/mr-addams/arx-core/pkg/executor"
 	ncs "github.com/mr-addams/arx-core/pkg/ncs"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
+
+// productQueueNamespace — product-owned default for bbolt bucket and redis key prefix.
+// Core (arx-core/pkg/executor/queue) has no hardcoded default; the product is the only
+// legitimate owner of its own namespace. Phase 5 (Flow 083).
+const productQueueNamespace = "arxsentinel"
 
 // preRegisterExecutorQueues pre-registers each executor source that has a queue:
 // section with its declared backend (bbolt/redis) and verifies that every
@@ -72,6 +78,20 @@ func preRegisterExecutorQueues(cfg *config.Config) error {
 		for _, src := range ec.Sources {
 			if src.Queue == nil {
 				continue
+			}
+			// Phase 5 (Flow 083): core dropped hardcoded defaults; product applies its own
+			// namespace explicitly so cf/ros-ban and other queue-backed executors still
+			// receive events. Without this, EffectiveBucket/EffectiveKey would panic at
+			// RegisterSinkFromConfig. Core has no knowledge of this constant.
+			if src.Queue.Type == queue.QueueTypeBbolt && src.Queue.Bucket == "" {
+				copy := *src.Queue
+				copy.Bucket = productQueueNamespace
+				src.Queue = &copy
+			}
+			if src.Queue.Type == queue.QueueTypeRedis && src.Queue.Key == "" {
+				copy := *src.Queue
+				copy.Key = productQueueNamespace + ":queue:" + src.Name
+				src.Queue = &copy
 			}
 			if err := ncs.RegisterSinkFromConfig(src.Name, src.Queue, utils.AsLogger()); err != nil {
 				return fmt.Errorf("executor %q source %q: %w", ec.Name, src.Name, err)

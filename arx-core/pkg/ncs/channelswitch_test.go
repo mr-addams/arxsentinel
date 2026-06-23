@@ -231,7 +231,7 @@ func TestRegisterSinkFromConfig_TypeMemory(t *testing.T) {
 func TestRegisterSinkFromConfig_TypeBbolt(t *testing.T) {
 	name := t.Name()
 	dbPath := filepath.Join(t.TempDir(), "queue.db")
-	cfg := &queue.QueueConfig{Type: queue.QueueTypeBbolt, Path: dbPath}
+	cfg := &queue.QueueConfig{Type: queue.QueueTypeBbolt, Path: dbPath, Bucket: "test-bucket"}
 
 	err := ncs.RegisterSinkFromConfig(name, cfg, logger.Nop)
 	if err != nil {
@@ -267,6 +267,7 @@ func TestRegisterSinkFromConfig_TypeRedis_InvalidURL(t *testing.T) {
 	cfg := &queue.QueueConfig{
 		Type: queue.QueueTypeRedis,
 		URL:  "not-a-valid-redis-url", // redis.ParseURL expects the redis:// scheme
+		Key:  "test:queue:key",        // explicit key: required since Phase 5 (Flow 083) — EffectiveKey panics on empty
 	}
 
 	err := ncs.RegisterSinkFromConfig(name, cfg, logger.Nop)
