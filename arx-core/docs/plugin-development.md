@@ -69,14 +69,17 @@ event carrier: `Event{Envelope, Payload any}`). For HTTP/file/stdin/syslog
 sources the payload is typically `*parser.LogEntry` (see
 [`pkg/parser/event_bridge.go`](../pkg/parser/event_bridge.go) — `WrapLogEntry` /
 `UnwrapLogEntry`); for sentinel/exec sources the payload shape is owned by
-the source itself.
+the source itself (e.g. a `json.RawMessage` from the NCS bridge).
 `Run` blocks until `ctx` is cancelled or an unrecoverable error occurs;
 `Close` releases file handles and OS resources.
 
 The source fills the **transport** part of `Envelope`
 (`Timestamp` / `Stream` / `Source` / `SourceType`); `Level` is left empty
 until a downstream Product processor (scorer) sets it. The engine never
-inspects `Event.Payload` itself — only `Envelope` is a generic DTO.
+inspects `Event.Payload` itself — only `Envelope` is a generic DTO. The
+type assertion `entry.Payload.(*parser.LogEntry)` (or whatever the
+product-specific type is) lives inside the plugin that owns the payload
+and is never visible to `pkg/runtime` or other plugins.
 
 ### 2.2 Processor — enrich or filter
 
@@ -131,7 +134,8 @@ type Executor interface {
 
 ### 2.5 Sink — persist events
 
-Use `sink` when you need to deliver `ThreatEvent` records to an external
+Use `sink` when you need to deliver `*plugin.Event` records (or a
+product-specific subtype after type-assertion of `Payload`) to an external
 destination (file, stdout, syslog, HTTP webhook, Kafka). Sinks are passive —
 `Write` is called synchronously by the engine for every event that
 survives processing.
@@ -139,7 +143,7 @@ survives processing.
 ```go
 type Sink interface {
     Name() string
-    Write(ctx context.Context, event ThreatEvent) error
+    Write(ctx context.Context, event *Event) error
     Close() error
     Manifest() Manifest
     Stats() SinkStats
@@ -172,7 +176,7 @@ the code, the code wins.
 ```go
 type Source interface {
     Name() string
-    Run(ctx context.Context, out chan<- *LogEntry) error
+    Run(ctx context.Context, out chan<- *Event) error
     Close() error
     Manifest() Manifest
     Stats() SourceStats
@@ -191,12 +195,21 @@ Contract:
 - `Manifest` declares plugin identity and data contract.
 - `Stats` returns a point-in-time snapshot of operational counters.
 
+The element type sent on `out` is the generic `*plugin.Event`. The
+source fills the `Envelope` (Timestamp/Stream/Source/SourceType) at
+construction time. `Level` is left empty — the downstream scoring step
+assigns it. The `Payload` field carries the parser-owned record (typically
+`*parser.LogEntry` for HTTP/file/stdin sources, or a `json.RawMessage` for
+sentinel sources, or a product-specific type for custom transports). The
+type assertion happens inside the plugin that owns the payload — the
+engine never inspects it.
+
 ### 3.2 `Sink`
 
 ```go
 type Sink interface {
     Name() string
-    Write(ctx context.Context, event ThreatEvent) error
+    Write(ctx context.Context, event *Event) error
     Close() error
     Manifest() Manifest
     Stats() SinkStats
@@ -207,6 +220,12 @@ Contract:
 
 - `Write` is called synchronously per event; it must be safe for
   concurrent calls.
+- `event` is the generic `*plugin.Event`. The sink reads `event.Envelope`
+  (transport metadata) and `event.Payload` (opaque plugin-owned data).
+  Concrete byte-level serialisation is the sink's responsibility —
+  a product-side `Formatter` (interface in `pkg/sink/format`) renders
+  `Payload` to bytes; the sink writes the result. The engine does not
+  provide or require any specific wire format.
 - `ctx` allows the caller to cancel an in-flight delivery (e.g. shutdown).
 - `Close` flushes buffered data and releases resources.
 - `SinkStats`: `EventsWritten`, `Dropped`, `Errors`.
@@ -230,19 +249,21 @@ type DetectResult struct {
 
 type Detector interface {
     Name() string
-    Detect(sv IPView, entry *LogEntry) DetectResult
+    Detect(sv IPView, entry *Event) DetectResult
     Manifest() Manifest
 }
 ```
 
 Contract: detectors are stateless. Per-IP state lives in `IPView`, provided
-by the pipeline at call time.
+by the pipeline at call time. The detector reads `entry.Payload` (typically
+`*parser.LogEntry`) by type-asserting inside the implementation; it does
+NOT set `Envelope.Level` — that is the scorer's responsibility in Product.
 
 ### 3.4 `Executor`
 
 ```go
 type EventSource interface {
-    Pop(ctx context.Context) (ThreatEvent, error)
+    Pop(ctx context.Context) (*Event, error)
 }
 
 type ExecutorStats struct {
@@ -262,23 +283,28 @@ type Executor interface {
 ```
 
 Contract: `Run` is called as a goroutine and returns when `ctx` is
-cancelled. Implementations own startup sync, deduplication, TTL management,
-retry / circuit-breaker logic, and batch accumulation.
+cancelled. `EventSource.Pop` returns the generic `*plugin.Event`; the
+executor type-asserts `event.Payload` to its product-owned type
+(typically `*product.ThreatEvent`) inside `Run`. Implementations own
+startup sync, deduplication, TTL management, retry / circuit-breaker
+logic, and batch accumulation.
 
 ### 3.5 `Processor`
 
 ```go
 type Processor interface {
     Name() string
-    Process(ctx context.Context, entry *LogEntry) (*LogEntry, error)
+    Process(ctx context.Context, entry *Event) (*Event, error)
     Manifest() Manifest
 }
 ```
 
 Contract: return `(nil, nil)` to drop the entry; return an error only on
-actual processing failure, never for filter logic.
+actual processing failure, never for filter logic. The processor may
+inspect or replace `entry.Payload` and may update `entry.Envelope.Level`.
+The returned `*Event` is propagated to the next pipeline stage.
 
-### 3.6 `Manifest`, `Role`, `DataType`
+### 3.6 `Manifest`, `Role`, `DataType`, `FieldDecl`
 
 ```go
 type Role string
@@ -299,6 +325,11 @@ const (
     TypeNone        DataType = "none"
 )
 
+type FieldDecl struct {
+    Name     string
+    Required bool
+}
+
 type Manifest struct {
     PluginID      string
     PluginVersion string
@@ -306,48 +337,60 @@ type Manifest struct {
     InputType     DataType
     OutputType    DataType
     Tags          []string
+    Produces      []FieldDecl
+    Consumes      []FieldDecl
 }
 ```
 
 Every plugin exposes a `Manifest()` so the pipeline framework can verify
-compatibility of roles and data types before any data flows.
+compatibility of roles and data types before any data flows. The
+`Produces` and `Consumes` field-level declarations are optional; plugins
+that leave them nil declare "no field contract" and are treated as
+compatible with any field shape by the field-level validator.
 
 ### 3.7 Shared types
 
 ```go
-type LogEntry struct {
-    RemoteAddr string    // TCP peer (may be proxy or load balancer)
-    RemoteUser string    // Basic Auth user; "-" for anonymous
-    Time       time.Time // server-side request start time
-    Method     string
-    RawURI     string
-    Path       string
-    Query      string
-    Protocol   string
-    Status     int
-    BytesSent  int64
-    Referer    string
-    UserAgent  string
-    RealIP     string    // last IP from $real_ip; == RemoteAddr when real_ip == "-"
-    ChainIssue string    // optional upstream marker (filled by a chaincheck-style processor)
-}
-
-type ThreatEvent struct {
+type Envelope struct {
     Timestamp  time.Time
-    Level      string    // "WARN" or "THREAT"
-    Stream     string    // stream name; empty in single-stream mode
-    Source     string    // source name
-    SourceType string    // source kind
-    IP         string    // client IP that triggered the event
-    Score      int
-    Modules    []string
-    Reason     string
-    RawLine    string
+    Stream     string
+    Source     string
+    SourceType string
+    Level      string
 }
 
-type SourceStats struct{ LinesRead, ParseErrors, Dropped int64 }
-type SinkStats   struct{ EventsWritten, Dropped, Errors int64 }
+type Event struct {
+    Envelope
+    Payload any
+}
+
+type SourceStats struct {
+    LinesRead   int64
+    ParseErrors int64
+    Dropped     int64
+}
+type SinkStats struct {
+    EventsWritten int64
+    Dropped       int64
+    Errors        int64
+}
 ```
+
+Notes:
+
+- `Envelope` is the transport metadata the engine is allowed to read for
+  metrics and routing. Fields: `Timestamp`, `Stream`, `Source`,
+  `SourceType`, `Level`.
+- `Event` composes `Envelope` with an opaque `Payload any`. The runtime
+  never inspects `Payload`; the owning plugin type-asserts it to its own
+  type. For HTTP/file/stdin sources the canonical payload is
+  `*parser.LogEntry` (see `pkg/parser/event_bridge.go`).
+- `SourceStats` and `SinkStats` are the public operational counters for
+  sources and sinks respectively. Executor-specific counters live on
+  `ExecutorStats` (see 3.4). Product-shaped event types
+  (e.g. `*product.ThreatEvent`) are NOT in this package — they live in
+  the product namespace and are referenced only via type-assertion inside
+  plugin implementations.
 
 ---
 
@@ -622,7 +665,7 @@ func TestProcessDropsByPrefix(t *testing.T) {
 | Stage        | Source owns                                      | Pipeline owns                              |
 |--------------|---------------------------------------------------|---------------------------------------------|
 | Construct    | Allocate buffers, open files, parse config.       | Decide which `Source` to instantiate.       |
-| `Run`        | Read data, parse lines, send `*LogEntry` to `out`. | Call `coreinput.Merge(ctx, sources, bufSize, …)` to fan-in. |
+| `Run`        | Read data, parse lines, send `*plugin.Event` to `out` (with `Payload` = parser-owned record, e.g. `*parser.LogEntry`). | Call `coreinput.Merge(ctx, sources, bufSize, …)` to fan-in. |
 | Cancellation | Observe `ctx.Done()`, close file handles, exit.   | Cancel the context to signal shutdown.      |
 | `Close`      | Release OS resources.                              | Always call `Close()` after `Run` returns, even on error. |
 
@@ -634,7 +677,7 @@ and a source that ignores the context will block shutdown indefinitely.
 | Stage        | Sink owns                                         | Pipeline owns                              |
 |--------------|---------------------------------------------------|---------------------------------------------|
 | Construct    | Open file / connect socket / spawn subprocess.    | Decide which `Sink` to instantiate.        |
-| `Write`      | Serialize and emit one `ThreatEvent`.              | Call `Write` once per surviving event.      |
+| `Write`      | Serialize `*plugin.Event` (via a product-side `Formatter`) and emit one record. | Call `Write` once per surviving event.      |
 | `Close`      | Flush, close file handle, release resources.      | Call `Close()` once during shutdown.        |
 
 `Write` is called synchronously by the engine per event. Async sinks (e.g.
@@ -643,9 +686,12 @@ back-pressure through `Stats().Dropped`.
 
 ### 6.3 Detector lifecycle
 
-`Detect` is called once per `(IPView, LogEntry)` pair. It is stateless and
-must be safe to call concurrently across different IPs. Per-IP state lives
-in `IPView` and is owned by the pipeline.
+`Detect` is called once per `(IPView, *plugin.Event)` pair. It is stateless
+and must be safe to call concurrently across different IPs. Per-IP state lives
+in `IPView` and is owned by the pipeline. The detector reads
+`entry.Payload` (typically `*parser.LogEntry` after a type-assertion) and
+returns a `DetectResult`; it does NOT set `Envelope.Level` — that is the
+scorer's responsibility.
 
 ### 6.4 Executor lifecycle
 
