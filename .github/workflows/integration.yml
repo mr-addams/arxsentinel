@@ -50,13 +50,13 @@ jobs:
         # bbolt использует локальные .db файлы в t.TempDir() — никаких
         # внешних сервисов не требуется. -tags integration активирует
         # bbolt_integration_test.go; -run фильтрует только bbolt-тесты.
-        run: go test -tags integration -run TestBboltIntegration ./pkg/executor/queue/ -v -count=1
+        run: go test -tags integration -run TestBboltIntegration ./arx-core/pkg/executor/queue/ -v -count=1
 
       - name: Run redis integration tests
         # redis-тесты сами проверяют доступность Redis и t.Skip если
         # его нет, но service container гарантирует что REDIS_URL
         # реален. Тот же build tag и фильтр по имени теста.
-        run: go test -tags integration -run TestRedisIntegration ./pkg/executor/queue/ -v -count=1
+        run: go test -tags integration -run TestRedisIntegration ./arx-core/pkg/executor/queue/ -v -count=1
 
   integration:
     name: Integration tests (135 checks — 6×7 direct + 6 badbot + 6 blocklist + 4×6 proxy-chain + 6 CF-direct + 4×6 CF-chain + 2 chain-guard + 16 HTTP-source + 6 syslog-source)
