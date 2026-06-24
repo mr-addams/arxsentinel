@@ -2,7 +2,7 @@
 
 > **Generic build-profile mechanism (the `arx_tag` sentinel, schema, generator,
 > verifier, tree-shaking semantics) lives in
-> [`arx-core/docs/build-profiles.md`](../../arx-core/docs/build-profiles.md).**
+> [`arx-core/docs/build-profiles.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/build-profiles.md).**
 > Read that document first if you are new to profiles.
 >
 > This document is the **product-layer companion**: the three profiles
@@ -135,7 +135,7 @@ DECISIONS.md Decisions 12–14):
   included in `profiles/full.yaml`.
 
 For generic limitations and the `arx_tag` rationale, see
-[`arx-core/docs/build-profiles.md` §5, §8](../../arx-core/docs/build-profiles.md).
+[`arx-core/docs/build-profiles.md` §5, §8](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/build-profiles.md).
 
 ## 4. Build commands
 
@@ -174,8 +174,8 @@ bash scripts/check-build-profiles.sh
 
 ## 6. Cross-references
 
-- [`arx-core/docs/build-profiles.md`](../../arx-core/docs/build-profiles.md) — generic mechanism, schema, generator, verifier.
-- [`arx-core/docs/plugin-development.md`](../../arx-core/docs/plugin-development.md) — plugin role interfaces, init+blank-import pattern.
+- [`arx-core/docs/build-profiles.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/build-profiles.md) — generic mechanism, schema, generator, verifier.
+- [`arx-core/docs/plugin-development.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/plugin-development.md) — plugin role interfaces, init+blank-import pattern.
 - [ADR-003 — Build-time Modularity & Build Verifier](../architecture/adr/003-build-modularity.md)
 - [ADR-002 — TelemetryCore boundary (Core/Product split)](../architecture/adr/002-telemetrycore-boundary.md)
 - [Flow 075 decisions](../../../.opencode/flows/075_2026-06-22_build-modularity/DECISIONS.md)

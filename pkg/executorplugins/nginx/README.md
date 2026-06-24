@@ -1,4 +1,4 @@
-# `pkg/executor/nginx` — Nginx Executor
+# `pkg/executorplugins/nginx` — Nginx Executor
 
 Nginx executor plugin for ArxSentinel. Consumes scored threat events from the
 pipeline and writes their IP addresses into a flat, nginx-compatible blocklist
@@ -19,7 +19,7 @@ the natural choice for air-gapped or read-only environments.
 ## Module Layout
 
 ```
-pkg/executor/nginx/
+pkg/executorplugins/nginx/
 ├── config.go       # Config struct, DefaultConfig, parseConfig
 ├── executor.go     # NginxExecutor — main implementation
 ├── manifest.go     # Plugin metadata
@@ -277,11 +277,9 @@ initialised executor:
 `log` is the operational logger used for the `EXECUTOR` tag. If `nil`
 is passed, the constructor replaces it with `pkg/logger.Nop` — the
 executor never crashes on a log call. The registry-based factory
-(`newNginxFactory`) forwards the logger injected by `Build` (Flow 073 /
-Task 1.3.1 — this restores real EXECUTOR-tag diagnostics that were
-silently swallowed by `logger.Nop` before the closure of F1; pre-1.3
-this branch always passed `Nop`, see Flow 072 Task 1.2.7 for the deferred
-context that 1.3.1.5 formally confirms as closed for executors).
+(`newNginxFactory`) forwards the logger injected by `Build` (this restores
+real EXECUTOR-tag diagnostics that were previously silently swallowed by
+`logger.Nop`; the factory no longer passes `Nop` for this branch).
 Pre-1.2 callers that relied on the implicit `internal/sys/utils.Log`
 should pass `internal/sys/utils.AsLogger()` once that bridge exists.
 
@@ -307,10 +305,9 @@ func newNginxFactory(cfg executor.ExecutorConfig, log logger.Logger) (plugin.Exe
 
 The `init()` pattern is the same as for the other executors in the
 project — the factory forwards the generic `ExecutorConfig` and the
-logger injected by `Build` straight into `NewNginxExecutor`. Flow 073 /
-Task 1.3.1: the factory no longer adapts `ExecutorConfig` into a
-`config.ExecutorItem` (deprecated in Phase 1.3) and no longer
-hard-codes `logger.Nop` — `log` is what `cmd/arxsentinel` injects via
+logger injected by `Build` straight into `NewNginxExecutor`. The factory
+takes `executor.ExecutorConfig` directly (no `config.ExecutorItem` wrapping)
+and does not hard-code `logger.Nop` — `log` is what `cmd/arxsentinel` injects via
 `utils.AsLogger()`. The manifest is registered eagerly so the agent
 can report the plugin's metadata (ID, version, role, input/output
 types, tags) before any executor is instantiated.
@@ -426,7 +423,7 @@ Project:
 - `pkg/executor` — `ExecutorConfig` generic descriptor + registry
   (`Register`, `RegisterManifest`).
 
-> Note: as of Flow 073 / Task 1.3.1 this package no longer imports
+> Note: this package no longer imports
 > `internal/sys/config`. The legacy `config.ExecutorItem` shape is kept
 > only in `internal/sys/config` for YAML migrate compatibility and will
 > be removed by a later cleanup flow.

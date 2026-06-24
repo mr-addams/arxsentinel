@@ -118,7 +118,7 @@ Create a new package (recommended: `pkg/executorplugins/<name>/` for product exe
 and implement `plugin.Executor`:
 
 ```go
-// arx-core/pkg/plugin/executor.go (post-083 / Flow 082 / Flow 083)
+// github.com/mr-addams/arx-core/pkg/plugin/executor.go (post-083 / Flow 082 / Flow 083)
 type Executor interface {
     Name() string
     Type() string

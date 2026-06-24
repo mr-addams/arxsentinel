@@ -127,4 +127,4 @@ For site-specific logic in any language, use the exec+JSON plugin protocol — s
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing, you agree that your contributions will be licensed under the [Elastic License 2.0](LICENSE).

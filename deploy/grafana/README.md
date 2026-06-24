@@ -68,11 +68,11 @@ metrics:
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `arxsentinel_lines_processed_total` | Counter | Log lines processed |
-| `arxsentinel_threats_total{level}` | Counter | Threats by level (`THREAT` / `WARN`) |
-| `arxsentinel_detector_hits_total{detector}` | Counter | Hits per detector name |
-| `arxsentinel_tracked_ips` | Gauge | Currently tracked IPs |
-| `arxsentinel_suspicious_ips` | Gauge | IPs with score above alert threshold |
+| `arx_sentinel_lines_processed_total` | Counter | Log lines processed |
+| `arx_sentinel_threats_total{level}` | Counter | Threats by level (`THREAT` / `WARN`) |
+| `arx_sentinel_detector_hits_total{detector}` | Counter | Hits per detector name |
+| `arx_sentinel_tracked_ips` | Gauge | Currently tracked IPs |
+| `arx_sentinel_suspicious_ips` | Gauge | IPs with score above alert threshold |
 
 ---
 

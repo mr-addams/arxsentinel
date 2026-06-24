@@ -14,6 +14,15 @@
 
 > **Лицензия:** ArxSentinel распространяется по [Elastic License 2.0](LICENSE). Бесплатное использование для собственной инфраструктуры. Коммерческое использование в качестве управляемого сервиса безопасности или телеметрии, а также в составе управляемого сервиса, требует отдельного соглашения. Подробности — в файле [LICENSE](LICENSE).
 
+> **Построен на [arx-core](https://github.com/mr-addams/arx-core).** Движок пайплайна ArxSentinel,
+> система плагинов (Source/Sink/Detector/Processor/Executor) и NCS-мост работают на базе
+> [arx-core](https://github.com/mr-addams/arx-core/blob/v0.1.0/README.md) — универсального потоково-ориентированного
+> фреймворка телеметрии. Жизненный цикл движка, runtime-контракт и базовые интерфейсы плагинов
+> живут в [`arx-core/docs/`](https://github.com/mr-addams/arx-core/tree/v0.1.0/docs)
+> (`architecture.md`, `contract.md`, `plugin-development.md`). Этот README описывает
+> продуктовый слой ArxSentinel: детекторы безопасности, скоринг угроз, разводку NCS и
+> Cloudflare/MikroTik/nginx-экзекуторы. См. [Архитектура](docs/ARCHITECTURE.md) для разделения.
+
 ```
   ╔══════════════════════════════════════════════════════════════════╗
   ║  SOURCES                                                         ║
@@ -282,7 +291,7 @@ sudo systemctl enable --now arxsentinel
 
 ### Сборка из исходников
 
-Требуется Go 1.19+:
+Требуется Go 1.26+:
 
 ```bash
 git clone https://github.com/mr-addams/arxsentinel
@@ -315,7 +324,7 @@ helm install arxsentinel ./deploy/container/k8s/arxsentinel \
   --set threatLog.hostPath=/var/log/arxsentinel
 ```
 
-Подробнее: [README.helm.md](deploy/container/k8s/arxsentinel/README.md) — описание values, Prometheus Operator, деплой в облако.
+Подробнее: [Helm README](deploy/container/k8s/arxsentinel/README.md) — описание values, Prometheus Operator, деплой в облако.
 
 ## Поддерживаемые HTTP-серверы
 
@@ -521,7 +530,7 @@ ArxSentinel работает как sidecar рядом с HTTP-сервером,
 
 DaemonSet (один под на узел, читает логи хоста) или sidecar (читает из emptyDir, шарёного с контейнером приложения).
 Готовые манифесты: [`deploy/examples/kubernetes/`](deploy/examples/kubernetes/).
-Helm-чарт с описанием values: [README.helm.md](deploy/container/k8s/arxsentinel/README.md).
+Helm-чарт с описанием values: [Helm README](deploy/container/k8s/arxsentinel/README.md).
 
 ## Исполнители
 

@@ -11,6 +11,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INT_DIR="$REPO_ROOT/tests/integration"
+# Подгружаем общие хелперы (docker_pull_retry).
+# shellcheck source=lib.sh
+. "$INT_DIR/lib.sh"
 LOGS_DIR="$INT_DIR/logs"
 BIN="$REPO_ROOT/bin/arxsentinel"
 
@@ -72,7 +75,7 @@ echo "[run] fetching blocklist patterns from upstream..."
 # all ~685/7108 lines — SIGPIPE on grep is expected and benign.
 # Content is verified by checking the output file size afterward.
 # The same pattern is used in scenarios.sh for the LONG_PATH variable.
-(set +o pipefail; curl -fsSL --max-time 30 "$UA_URL" \
+(set +o pipefail; curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors --max-time 30 "$UA_URL" \
     | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' \
     | head -20) > "$BLOCKLIST_DIR/badbot-ua.list" 2>/dev/null || true
 if [ ! -s "$BLOCKLIST_DIR/badbot-ua.list" ]; then
@@ -80,7 +83,7 @@ if [ ! -s "$BLOCKLIST_DIR/badbot-ua.list" ]; then
     exit 1
 fi
 
-(set +o pipefail; curl -fsSL --max-time 30 "$REF_URL" \
+(set +o pipefail; curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors --max-time 30 "$REF_URL" \
     | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' \
     | head -20) > "$BLOCKLIST_DIR/badbot-ref.list" 2>/dev/null || true
 if [ ! -s "$BLOCKLIST_DIR/badbot-ref.list" ]; then
@@ -185,6 +188,28 @@ touch       "$LOGS_DIR/litespeed-proxy/localhost.access.log"
 # stale entries from earlier runs would cause false positives or false negatives.
 rm -f "$LOGS_DIR/threats"/*.log
 rm -f "$LOGS_DIR/warnings"/*.log
+
+# ── Step 3.5: pre-pull docker images with retry ───────────────────────────────────────
+# `docker compose up` сам не ретраит pull'ы образов при транзиентных сетевых сбоях
+# (TLS-handshake timeout, троттлинг registry) — единичный флейк абортит весь прогон.
+# Предварительно тянем все сервисы с `image:` из docker-compose.yml плюс образ
+# атакующего из scenarios.sh, каждый через docker_pull_retry (3 попытки, backoff 2/4/8с).
+# Сервисы на build-контексте (Caddy, litespeed-backend, cf-api-mock, ros-api-mock)
+# тянут свои base-образы во время `docker build` — у него своё поведение ретраев.
+echo "[run] pre-pulling compose images with retry..."
+COMPOSE_IMAGES=$(docker compose -f "$INT_DIR/docker-compose.yml" config --images 2>/dev/null || true)
+PRE_PULL_IMAGES="$COMPOSE_IMAGES
+curlimages/curl"
+for img in $PRE_PULL_IMAGES; do
+    [ -n "$img" ] || continue
+    # `|| true`: build-context сервисов (cf-api-mock, litespeed-backend, caddy,
+    # ros-api-mock) нет в registry — `docker pull` для них вернёт access-denied.
+    # Эти base-образы корректно подтянутся в `docker compose up --build` ниже.
+    # Реальные registry-образы уже закешированы на этом шаге — дальнейшему
+    # прогону оставшиеся ошибки не помешают.
+    docker_pull_retry "$img" || true
+done
+echo "[run] image pre-pull complete"
 
 # ── Step 4: start containers ──────────────────────────────────────────────────────────
 

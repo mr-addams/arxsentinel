@@ -68,11 +68,11 @@ metrics:
 
 | Метрика | Тип | Опис |
 |---------|-----|------|
-| `arxsentinel_lines_processed_total` | Counter | Оброблено рядків лога |
-| `arxsentinel_threats_total{level}` | Counter | Загрози за рівнем (`THREAT` / `WARN`) |
-| `arxsentinel_detector_hits_total{detector}` | Counter | Спрацювання за детектором |
-| `arxsentinel_tracked_ips` | Gauge | Поточна кількість відстежуваних IP |
-| `arxsentinel_suspicious_ips` | Gauge | IP зі score вище alert threshold |
+| `arx_sentinel_lines_processed_total` | Counter | Оброблено рядків лога |
+| `arx_sentinel_threats_total{level}` | Counter | Загрози за рівнем (`THREAT` / `WARN`) |
+| `arx_sentinel_detector_hits_total{detector}` | Counter | Спрацювання за детектором |
+| `arx_sentinel_tracked_ips` | Gauge | Поточна кількість відстежуваних IP |
+| `arx_sentinel_suspicious_ips` | Gauge | IP зі score вище alert threshold |
 
 ---
 
