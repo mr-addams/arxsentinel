@@ -1,6 +1,6 @@
 # ArxSentinel — Architecture
 
-Архитектура ArxSentinel в её текущей форме (post-081 / post-083): разделение core/product,
+Архитектура ArxSentinel в её текущей форме: разделение core/product,
 product-security-слой поверх generic runtime, что приходит из arx-core, что остаётся
 в ArxSentinel как product-specific код.
 
@@ -12,9 +12,10 @@ product-security-слой поверх generic runtime, что приходит 
 
 ## 1. Где проходит граница core/product
 
-ArxSentinel построен на [arx-core](https://github.com/mr-addams/arx-core/blob/v0.1.0/README.md) — generic line-oriented
-telemetry pipeline. Граница зафиксирована в [ADR-002](architecture/adr/002-telemetrycore-boundary.md)
-и пересмотрена после flows 081/083:
+ ArxSentinel построен на [arx-core](https://github.com/mr-addams/arx-core/blob/v0.1.0/README.md) — generic line-oriented
+telemetry pipeline. Граница core/product зафиксирована в архитектурном решении
+(см. также [arx-core contract](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/contract.md)
+и пересмотрена после разделения arx-core / ArxSentinel:
 
 - **arx-core** владеет: runtime (`pkg/runtime`), plugin-интерфейсами
   (`pkg/plugin` — `Source`, `Sink`, `Detector`, `Processor`, `Executor`),
@@ -32,7 +33,7 @@ telemetry pipeline. Граница зафиксирована в [ADR-002](archi
 
 `pkg/runtime` импортирует **только** stdlib + `github.com/mr-addams/arx-core/pkg/{plugin,input}`.
 Никаких `arxsentinel/...` импортов внутри `github.com/mr-addams/arx-core/pkg/runtime/` — это
-инвариант ADR-002. Score / detectors / threat-intel живут в product и
+ инвариант границы Core/Product. Score / detectors / threat-intel живут в product и
 достигают движка через opaque closures внутри `LineProcessorFactory.Build`.
 
 ---
@@ -361,7 +362,8 @@ executor-pipeline:
 ## 7. ThreatEvent — product-owned DTO
 
 `ThreatEvent` живёт в `internal/threat/threatevent.go` (НЕ в arx-core
-`pkg/plugin` — это post-083 изменение, см. ADR-002 boundary rule). Поля:
+`pkg/plugin` — это изменение после разделения arx-core / ArxSentinel,
+см. boundary rule в §1). Поля:
 
 ```go
 // internal/threat/threatevent.go
@@ -612,20 +614,20 @@ arx_sentinel_suspicious_ips{stream, pipeline}
 ### Source / sink activity
 
 ```
-arx_sentinel_input_lines_total{stream, pipeline, source, source_type}
+arxsentinel_input_lines_total{stream, pipeline, source, source_type}
   Counter. Прочитано строк per source.
 
-arx_sentinel_output_events_total{stream, pipeline, sink}
+arxsentinel_output_events_total{stream, pipeline, sink}
   Counter. Событий записанных per sink.
 
-arx_sentinel_output_dropped_total{stream, pipeline, sink}
+arxsentinel_output_dropped_total{stream, pipeline, sink}
   Counter. Событий отброшенных per sink (write error).
 ```
 
 ### Blocklist freshness
 
 ```
-arx_sentinel_blocklist_last_refresh_timestamp_seconds{list}
+arxsentinel_blocklist_last_refresh_timestamp_seconds{list}
   Gauge. Unix timestamp последнего успешного refresh per list.
   list = имя blocklist из config (e.g. "badbot-ua").
 ```
@@ -655,7 +657,7 @@ constant-time compare.
 `Sink.Write()` возвращает error:
 
 1. Log error with sink name and event summary.
-2. Increment `arx_sentinel_output_dropped_total` counter.
+2. Increment `arxsentinel_output_dropped_total` counter.
 3. **Продолжить** к следующему sink — broken sink не должен стопить pipeline.
 4. Engine-уровень: один failed sink в fan-out не убивает остальные sinks
    (см. [`arx-core/docs/architecture.md` §4](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/architecture.md#4-dispatchentry-one-row-processing)).
@@ -744,7 +746,7 @@ Multi-replica deployment: detector-pipeline в 10 pods, executor —
 
 Generic `*plugin.Event` отделяет engine от domain. Если ThreatEvent
 живёт в `github.com/mr-addams/arx-core/pkg/plugin`, то любое изменение ThreatEvent полей
-меняет core, что противоречит ADR-002. Теперь:
+ меняет core, что противоречит границе Core/Product. Теперь:
 
 - `github.com/mr-addams/arx-core/pkg/plugin` знает только `Event{Envelope, Payload any}`.
 - `internal/threat/threatevent.go` — product-owned. Поменял поля —
@@ -844,7 +846,7 @@ kill -HUP $(cat /var/run/arxsentinel.pid)
 - [`docs/PLUGIN_DEV.md`](PLUGIN_DEV.md) — product plugin examples (sentinel-source/sink, exec+JSON, full sink-vs-executor comparison).
 - [`docs/executors.md`](executors.md) — executor framework overview.
 - [`docs/developer/build-profiles.md`](developer/build-profiles.md) — build-time tree-shaking, arx_tag sentinel.
-- [`docs/architecture/adr/002-telemetrycore-boundary.md`](architecture/adr/002-telemetrycore-boundary.md) — Core/Product boundary (ADR-002, history).
+- [arx-core contract](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/contract.md) — symbol-level core/product boundary.
 - [`docs/architecture/pipeline.md`](architecture/pipeline.md) — product-pipeline specifics (securityProcessor wiring).
 - [`docs/executor-cloudflare.md`](executor-cloudflare.md), [`docs/executor-nginx.md`](executor-nginx.md), [`docs/providers/mikrotik/`](providers/mikrotik/) — per-executor config & troubleshooting.
 

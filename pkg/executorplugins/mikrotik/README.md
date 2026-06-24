@@ -1,4 +1,4 @@
-# `pkg/executor/mikrotik` — MikroTik Executor
+# `pkg/executorplugins/mikrotik` — MikroTik Executor
 
 MikroTik executor plugin for ArxSentinel. Consumes scored `ThreatEvent`
 records from the pipeline, batches them, and pushes the resulting IP
@@ -18,7 +18,7 @@ runs alongside RouterOS on the same device. Targets RouterOS v7.18.2+.
 ## Module Layout
 
 ```
-pkg/executor/mikrotik/
+pkg/executorplugins/mikrotik/
 ├── manifest.go    # Plugin metadata
 ├── config.go      # Config struct + defaults + validation
 ├── client.go      # Client interface + HTTPClient (RouterOS REST API)
@@ -257,11 +257,9 @@ underlying `Client`, and returns a fully initialized `*MikroTikExecutor`.
 `log` is the operational logger used for the `EXECUTOR` tag. If `nil`
 is passed, the constructor replaces it with `pkg/logger.Nop` — the
 executor never crashes on a log call. The registry-based factory
-(`newMikroTikFactory`) forwards the logger injected by `Build` (Flow 073
-/ Task 1.3.1 — this restores real EXECUTOR-tag diagnostics that were
-silently swallowed by `logger.Nop` before the closure of F1; pre-1.3
-this branch always passed `Nop`, see Flow 072 Task 1.2.7 for the deferred
-context that 1.3.1.5 formally confirms as closed for executors).
+(`newMikroTikFactory`) forwards the logger injected by `Build` (this
+restores real EXECUTOR-tag diagnostics that were previously silently swallowed
+by `logger.Nop`; the factory no longer passes `Nop` for this branch).
 Pre-1.2 callers that relied on the implicit `internal/sys/utils.Log`
 should pass `internal/sys/utils.AsLogger()` once that bridge exists.
 
@@ -286,9 +284,9 @@ func init() {
 
 `newMikroTikFactory` is the registry factory. It receives a
 stream-level `executor.ExecutorConfig` plus the logger forwarded by
-`Build`, and delegates to `NewMikroTikExecutor(cfg, log)`. Flow 073 /
-Task 1.3.1: the factory no longer wraps `cfg` into a `config.ExecutorItem`
-(deprecated in Phase 1.3) and no longer hard-codes `logger.Nop` —
+`Build`, and delegates to `NewMikroTikExecutor(cfg, log)`. The factory
+takes `executor.ExecutorConfig` directly (no `config.ExecutorItem` wrapping)
+and does not hard-code `logger.Nop` —
 `log` is what `cmd/arxsentinel` injects via `utils.AsLogger()`. The
 manifest is registered separately so the agent can introspect plugin
 metadata before instantiating the executor.
@@ -402,7 +400,7 @@ Project:
 - `pkg/plugin` — `Executor`, `ThreatEvent`, `EventSource`, `Manifest`, `ExecutorStats`.
 - `pkg/executor` — `ExecutorConfig` generic descriptor + registry (`Register`, `RegisterManifest`).
 
-> Note: as of Flow 073 / Task 1.3.1 this package no longer imports
+> Note: this package no longer imports
 > `internal/sys/config`. The legacy `config.ExecutorItem` shape is kept
 > only in `internal/sys/config` for YAML migrate compatibility and will
 > be removed by a later cleanup flow.
