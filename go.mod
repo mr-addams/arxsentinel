@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/fatih/color v1.19.0
 	github.com/moby/moby/client v0.5.0
-	github.com/mr-addams/arx-core v0.0.0-00010101000000-000000000000
+	github.com/mr-addams/arx-core v0.1.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/rrethy/ahocorasick v1.0.0
 	github.com/testcontainers/testcontainers-go v0.43.0
@@ -76,8 +76,3 @@ require (
 	golang.org/x/sys v0.46.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 )
-
-// arx-core is developed in-repo during the TelemetryCore split (Phase 2).
-// Local replace resolves it without a published version; go.work also uses it.
-// When arx-core is published (Phase 3), drop this replace and pin a real version.
-replace github.com/mr-addams/arx-core => ./arx-core

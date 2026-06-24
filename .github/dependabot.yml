@@ -10,13 +10,3 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
-  - package-ecosystem: gomod
-    directory: "/arx-core"
-    schedule:
-      interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: "Europe/Kiev"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"

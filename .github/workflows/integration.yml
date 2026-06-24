@@ -14,54 +14,6 @@ jobs:
     name: Container build & tests
     uses: ./.github/workflows/container.yml
 
-  queue-backends:
-    name: Queue backends (bbolt + redis integration tests)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    # redis-server запускается в виде service container — GitHub Actions
-    # гарантирует, что host:port будут видны всем step'ам job'ы через
-    # localhost. Используем redis:7 (LTS-compatible) с healthcheck'ом
-    # через redis-cli ping, чтобы job не стартовала до готовности Redis.
-    services:
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 5
-
-    env:
-      REDIS_URL: redis://localhost:6379/0
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
-      - name: Run bbolt integration tests
-        # bbolt использует локальные .db файлы в t.TempDir() — никаких
-        # внешних сервисов не требуется. Запуск в контексте модуля arx-core
-        # (отдельный go module — нужен working-directory: arx-core).
-        # -tags integration активирует bbolt_integration_test.go;
-        # -run фильтрует только bbolt-тесты.
-        working-directory: arx-core
-        run: go test -tags integration -run TestBboltIntegration ./pkg/executor/queue/ -v -count=1
-
-      - name: Run redis integration tests
-        # redis-тесты сами проверяют доступность Redis и t.Skip если
-        # его нет, но service container гарантирует что REDIS_URL
-        # реален. Запуск в контексте модуля arx-core.
-        working-directory: arx-core
-        run: go test -tags integration -run TestRedisIntegration ./pkg/executor/queue/ -v -count=1
-
   integration:
     name: Integration tests (135 checks — 6×7 direct + 6 badbot + 6 blocklist + 4×6 proxy-chain + 6 CF-direct + 4×6 CF-chain + 2 chain-guard + 16 HTTP-source + 6 syslog-source)
     runs-on: ubuntu-latest
@@ -236,8 +188,8 @@ jobs:
   # ────────────────────── Build profiles (Flow 075, ADR-003) ───────────────────
   # Static verifier runs once for all profiles; build/test jobs depend on it
   # so profile builds are skipped entirely if the verifier fails. The full
-  # profile is already covered by `queue-backends`/`integration`/`validate-cookbook`
-  # (default build, no tags) — not duplicated here.
+  # profile is already covered by `integration`/`validate-cookbook` (default
+  # build, no tags) — not duplicated here.
 
   build-profiles-verify:
     name: Build profiles static verifier
