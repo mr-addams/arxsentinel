@@ -2,7 +2,7 @@
 
 > **Core pipeline architecture (the five plugin roles, the DataType chain,
 > the engine dispatch model, the NCS fan-in) lives in
-> [`arx-core/docs/architecture.md`](../../arx-core/docs/architecture.md).**
+> [`arx-core/docs/architecture.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/architecture.md).**
 > Read that document first for the generic pipeline engine.
 >
 > This document is the **product-layer companion**: the **ArxSentinel
@@ -238,9 +238,9 @@ same group name. Each stream has its own `map[groupName]*state.Tracker`.
 
 ## 5. Cross-references
 
-- [`arx-core/docs/architecture.md`](../../arx-core/docs/architecture.md) — generic pipeline engine, NCS fan-in, lifecycle.
-- [`arx-core/docs/contract.md`](../../arx-core/docs/contract.md) — `Run`, `LineProcessor`, `Action`, `EventContext`, `SharedResources`, `MetricsCallbacks`.
-- [`arx-core/docs/plugin-development.md`](../../arx-core/docs/plugin-development.md) — plugin role interfaces, init+blank-import.
+- [`arx-core/docs/architecture.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/architecture.md) — generic pipeline engine, NCS fan-in, lifecycle.
+- [`arx-core/docs/contract.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/contract.md) — `Run`, `LineProcessor`, `Action`, `EventContext`, `SharedResources`, `MetricsCallbacks`.
+- [`arx-core/docs/plugin-development.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/plugin-development.md) — plugin role interfaces, init+blank-import.
 - [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) — full product-security architecture (top-level, includes executor / metrics / error handling).
 - [`docs/PLUGIN_DEV.md`](../PLUGIN_DEV.md) — Sink-vs-Executor, sentinel source/sink, Cloudflare/MikroTik executor walkthroughs.
 - [`docs/executors.md`](../executors.md) — executor framework overview.

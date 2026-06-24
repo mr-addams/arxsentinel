@@ -13,11 +13,11 @@
 
 > **License:** ArxSentinel is distributed under the [Elastic License 2.0](LICENSE). Free use for your own infrastructure. Commercial use as a managed security or telemetry service, or as part of a managed service, requires a separate agreement. See [LICENSE](LICENSE) for details.
 
-> **Built on [arx-core](arx-core/README.md).** ArxSentinel's pipeline engine, plugin
+> **Built on [arx-core](https://github.com/mr-addams/arx-core).** ArxSentinel's pipeline engine, plugin
 > system (Source/Sink/Detector/Processor/Executor) and NCS bridge are powered by
-> [arx-core](../arx-core/README.md) — a generic, line-oriented telemetry framework.
+> [arx-core](https://github.com/mr-addams/arx-core/blob/v0.1.0/README.md) — a generic, line-oriented telemetry framework.
 > Engine lifecycle, runtime contract, and core plugin interfaces live in
-> [`arx-core/docs/`](arx-core/docs/) (`architecture.md`, `contract.md`,
+> [`arx-core/docs/`](https://github.com/mr-addams/arx-core/tree/v0.1.0/docs) (`architecture.md`, `contract.md`,
 > `plugin-development.md`). This README documents the ArxSentinel product layer:
 > security detectors, threat scoring, NCS wiring, and Cloudflare/MikroTik/nginx
 > executors. See [Architecture](docs/ARCHITECTURE.md) for the split.

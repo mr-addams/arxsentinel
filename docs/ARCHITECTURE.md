@@ -5,14 +5,14 @@ product-security-слой поверх generic runtime, что приходит 
 в ArxSentinel как product-specific код.
 
 > **Движок** (`runtime.Run`, `LineProcessor`, `Action`, fan-in, NCS wiring) — в
-> [`arx-core/docs/architecture.md`](../arx-core/docs/architecture.md). Этот документ
+> [`arx-core/docs/architecture.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/architecture.md). Этот документ
 > описывает **только** product-security-слой ArxSentinel, который сидит поверх движка.
 
 ---
 
 ## 1. Где проходит граница core/product
 
-ArxSentinel построен на [arx-core](../arx-core/README.md) — generic line-oriented
+ArxSentinel построен на [arx-core](https://github.com/mr-addams/arx-core/blob/v0.1.0/README.md) — generic line-oriented
 telemetry pipeline. Граница зафиксирована в [ADR-002](architecture/adr/002-telemetrycore-boundary.md)
 и пересмотрена после flows 081/083:
 
@@ -30,8 +30,8 @@ telemetry pipeline. Граница зафиксирована в [ADR-002](archi
   noasset, overflow, badbot), whitelist/chaincheck/blocklist, всеми
   product-исполнителями (executors: cloudflare, mikrotik, nginx).
 
-`pkg/runtime` импортирует **только** stdlib + `arx-core/pkg/{plugin,input}`.
-Никаких `arxsentinel/...` импортов внутри `arx-core/pkg/runtime/` — это
+`pkg/runtime` импортирует **только** stdlib + `github.com/mr-addams/arx-core/pkg/{plugin,input}`.
+Никаких `arxsentinel/...` импортов внутри `github.com/mr-addams/arx-core/pkg/runtime/` — это
 инвариант ADR-002. Score / detectors / threat-intel живут в product и
 достигают движка через opaque closures внутри `LineProcessorFactory.Build`.
 
@@ -60,11 +60,11 @@ main()
 
 Долгое время шаги `for each stream: runStream()` → `for each pipeline:
 runPipeline()` → `main loop: processLine(entry)` жили в продуктовом коде.
-В flow 081 это целиком переехало в `arx-core/pkg/runtime/engine.go` —
+В flow 081 это целиком переехало в `github.com/mr-addams/arx-core/pkg/runtime/engine.go` —
 теперь продукт только собирает `StreamSpec`/`PipelineSpec` и передаёт
 в `runtime.Run` свой `LineProcessorFactory` (см. §3). Подробности
 lifecycle (Build / Reload / Process / dispatchEntry / fan-in) — в
-[`arx-core/docs/architecture.md`](../arx-core/docs/architecture.md#3-pipeline-lifecycle-runpipeline).
+[`arx-core/docs/architecture.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/architecture.md#3-pipeline-lifecycle-runpipeline).
 
 ---
 
@@ -275,7 +275,7 @@ Window-конфиг: `scoring.observation_window` (default 300s).
 
 ## 5. NCS (Named Channel Switch) — меж-pipeline маршрутизация
 
-NCS — generic queue-fanout primitive в `arx-core/pkg/ncs/`. **Не дёргается
+NCS — generic queue-fanout primitive в `github.com/mr-addams/arx-core/pkg/ncs/`. **Не дёргается
 из `pkg/runtime`** — это product-infrastructure. ArxSentinel использует
 NCS, чтобы отделить детектор-pipeline (читает access.log, скоры) от
 executor-pipeline (Cloudflare API call, MikroTik block, nginx blocklist).
@@ -310,7 +310,7 @@ Executor-pipeline (Cloudflare)
 > ```
 
 Backend-выбор: `memory` (single-process), `bbolt` (file-persisted),
-`redis` (multi-replica). См. `arx-core/pkg/ncs/README.md`.
+`redis` (multi-replica). См. [arx-core/pkg/ncs/README.md](https://github.com/mr-addams/arx-core/blob/v0.1.0/pkg/ncs/README.md).
 
 ---
 
@@ -381,13 +381,13 @@ type ThreatEvent struct {
 
 Wire-format (JSON) сериализуется через `internal/threat/format` —
 product-owned `Formatter` имплементация. `SentinelThreatSink`
-(arx-core/pkg/sink/sentinel) вызывает `formatter.Format(event)`,
+(github.com/mr-addams/arx-core/pkg/sink/sentinel) вызывает `formatter.Format(event)`,
 получает bytes, кладёт в NCS queue. На принимающей стороне
 `SentinelSource` достаёт bytes, оборачивает в `json.RawMessage` в
 `Event.Payload`, дальше `queue_event_source.Pop` делает JSON-decode
 в `*threat.ThreatEvent` для executor-а.
 
-`arx-core/pkg/runtime/` НЕ импортирует `internal/threat/`. Это
+`github.com/mr-addams/arx-core/pkg/runtime/` НЕ импортирует `internal/threat/`. Это
 граница — runtime знает только `*plugin.Event{Envelope, Payload}`,
 Payload type-assert происходит в product-имплементациях
 (`securityProcessor`, `SentinelSource`, executors).
@@ -407,7 +407,7 @@ Plugins регистрируются через `init()` + `Register(name, facto
 Tree-shaking управляется через `profiles/<name>.yaml` (build-time,
 `arx_tag` sentinel). Подробности — в
 [`docs/developer/build-profiles.md`](developer/build-profiles.md) и
-`arx-core/docs/build-profiles.md`.
+[`arx-core/docs/build-profiles.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/build-profiles.md).
 
 ### Multi-stream / multi-pipeline
 
@@ -457,7 +457,7 @@ Legacy pipelines (auto-wrapped из single-pipeline config) — `pipeline=""`.
    Cloudflare / bogon ranges. Готов к `ChainChecker.Check()` в Process.
 8. **`runtime.Run(...)`** — построить `StreamSpec`/`PipelineSpec`/factory,
    вызвать `runtime.Run`. Движок arx-core стартует pipelines (см.
-   `arx-core/docs/architecture.md#3-pipeline-lifecycle-runpipeline`).
+   [`arx-core/docs/architecture.md` §3](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/architecture.md#3-pipeline-lifecycle-runpipeline)).
 
 ---
 
@@ -568,8 +568,8 @@ Backward-compatible: legacy metrics с `pipeline=""` продолжают раб
 ## 11. Plugin system — arx-core
 
 Все Source/Sink/Detector/Processor/Executor интерфейсы живут в
-`arx-core/pkg/plugin/`. Контракт, лайфцикл, init+blank-import pattern —
-в [`arx-core/docs/plugin-development.md`](../arx-core/docs/plugin-development.md).
+`github.com/mr-addams/arx-core/pkg/plugin/`. Контракт, лайфцикл, init+blank-import pattern —
+в [`arx-core/docs/plugin-development.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/plugin-development.md).
 Product-специфика (sentinel source/sink, security-детекторы, cloudflare/mikrotik
 executors) — в `docs/PLUGIN_DEV.md` (этот документ) и `docs/executors.md`.
 
@@ -577,7 +577,7 @@ executors) — в `docs/PLUGIN_DEV.md` (этот документ) и `docs/exec
 - `pkg/detectorplugins/{probe,rate,useragent,bruteforce,crawler,noasset,overflow,badbot}`
 - `pkg/processorplugins/{whitelist,chaincheck}` (direct call, not registry)
 - `pkg/executorplugins/{cloudflare,mikrotik,nginx}`
-- Built-in sources/sinks — в `arx-core/pkg/source/`, `arx-core/pkg/sink/`.
+- Built-in sources/sinks — в `github.com/mr-addams/arx-core/pkg/source/`, `github.com/mr-addams/arx-core/pkg/sink/`.
 
 ---
 
@@ -658,7 +658,7 @@ constant-time compare.
 2. Increment `arx_sentinel_output_dropped_total` counter.
 3. **Продолжить** к следующему sink — broken sink не должен стопить pipeline.
 4. Engine-уровень: один failed sink в fan-out не убивает остальные sinks
-   (см. `arx-core/docs/architecture.md#4-dispatchentry-one-row-processing`).
+   (см. [`arx-core/docs/architecture.md` §4](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/architecture.md#4-dispatchentry-one-row-processing)).
 
 ### Executor failure
 
@@ -700,7 +700,7 @@ Timeout: если shutdown > 30s, daemon hard-exits.
 ## 14. SIGHUP reload
 
 `factory.Reload(old ProcessorState, ctx) → (new ProcessorState, error)` —
-обязательный метод `LineProcessorFactory` (см. arx-core/docs/contract.md).
+обязательный метод `LineProcessorFactory` (см. [arx-core/docs/contract.md](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/contract.md)).
 На SIGHUP:
 
 1. `appCtx` НЕ отменяется.
@@ -743,10 +743,10 @@ Multi-replica deployment: detector-pipeline в 10 pods, executor —
 ### Почему product-owned ThreatEvent
 
 Generic `*plugin.Event` отделяет engine от domain. Если ThreatEvent
-живёт в `arx-core/pkg/plugin`, то любое изменение ThreatEvent полей
+живёт в `github.com/mr-addams/arx-core/pkg/plugin`, то любое изменение ThreatEvent полей
 меняет core, что противоречит ADR-002. Теперь:
 
-- `arx-core/pkg/plugin` знает только `Event{Envelope, Payload any}`.
+- `github.com/mr-addams/arx-core/pkg/plugin` знает только `Event{Envelope, Payload any}`.
 - `internal/threat/threatevent.go` — product-owned. Поменял поля —
   движок не заметил. Можно заменить ThreatEvent на другую структуру
   (e.g. в graph-aggregation), engine остался generic.
@@ -800,7 +800,7 @@ Resource isolation: можно запускать в контейнере / с c
 - `internal/core/{scorer,state,whitelist,chaincheck,blocklist}/*_test.go`.
 - `internal/threat/*_test.go` — ThreatEvent, Formatter.
 - `cmd/arxsentinel/processor_security_test.go` — securityProcessor (mock tracker/scorer).
-- `arx-core/pkg/runtime/engine_test.go` — engine lifecycle (Build, Reload, dispatchEntry).
+- `github.com/mr-addams/arx-core/pkg/runtime/engine_test.go` — engine lifecycle (Build, Reload, dispatchEntry).
 
 Table-driven, focus on behavior, not implementation details.
 
@@ -812,7 +812,7 @@ Table-driven, focus on behavior, not implementation details.
 2. Подать log lines.
 3. Проверить что threat events записаны правильно в sink-и.
 
-Также есть `arx-core/examples/logaggregator/` — минимальный standalone
+Также есть [`github.com/mr-addams/arx-core/examples/logaggregator/`](https://github.com/mr-addams/arx-core/tree/v0.1.0/examples/logaggregator) — минимальный standalone
 пример (syslog source → filter detector → JSON sink), собирается
 отдельно, доказывает что arx-core self-contained (`go list -deps
 | grep arxsentinel` = пусто).
@@ -838,9 +838,9 @@ kill -HUP $(cat /var/run/arxsentinel.pid)
 
 ## 17. Cross-references
 
-- [`arx-core/docs/architecture.md`](../arx-core/docs/architecture.md) — engine lifecycle, NCS wiring, fan-in, runtime.Run.
-- [`arx-core/docs/contract.md`](../arx-core/docs/contract.md) — symbol-level contract (`Run`, `LineProcessor`, `Action`, `EventContext`, `SharedResources`, `MetricsCallbacks`).
-- [`arx-core/docs/plugin-development.md`](../arx-core/docs/plugin-development.md) — как писать plugin (Source/Sink/Detector/Processor/Executor).
+- [`arx-core/docs/architecture.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/architecture.md) — engine lifecycle, NCS wiring, fan-in, runtime.Run.
+- [`arx-core/docs/contract.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/contract.md) — symbol-level contract (`Run`, `LineProcessor`, `Action`, `EventContext`, `SharedResources`, `MetricsCallbacks`).
+- [`arx-core/docs/plugin-development.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/plugin-development.md) — как писать plugin (Source/Sink/Detector/Processor/Executor).
 - [`docs/PLUGIN_DEV.md`](PLUGIN_DEV.md) — product plugin examples (sentinel-source/sink, exec+JSON, full sink-vs-executor comparison).
 - [`docs/executors.md`](executors.md) — executor framework overview.
 - [`docs/developer/build-profiles.md`](developer/build-profiles.md) — build-time tree-shaking, arx_tag sentinel.

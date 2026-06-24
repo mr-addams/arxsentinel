@@ -2,7 +2,7 @@
 
 > **Core contract (Source / Sink / Detector / Processor / Executor interfaces,
 > lifecycle, init+blank-import pattern, exec+JSON protocol) lives in
-> [`arx-core/docs/plugin-development.md`](../arx-core/docs/plugin-development.md).**
+> [`arx-core/docs/plugin-development.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/plugin-development.md).**
 > This document is the **product-layer companion**: ArxSentinel-specific
 > examples and the things only an ArxSentinel contributor needs to know.
 > If you're writing a new plugin, read the core contract first, then come
@@ -85,16 +85,16 @@ Detector-pipeline
 
 ### Quick reference: which interface to implement
 
-- **Sink** → `plugin.Sink` from `arx-core/pkg/plugin/sink.go`. The sink receives
+- **Sink** → `plugin.Sink` from `github.com/mr-addams/arx-core/pkg/plugin/sink.go`. The sink receives
   `*plugin.Event`; concrete byte-level serialisation goes through a
-  product-side `Formatter` (interface in `arx-core/pkg/sink/format`).
-- **Executor** → `plugin.Executor` from `arx-core/pkg/plugin/executor.go`. The
+  product-side `Formatter` (interface in `github.com/mr-addams/arx-core/pkg/sink/format`).
+- **Executor** → `plugin.Executor` from `github.com/mr-addams/arx-core/pkg/plugin/executor.go`. The
   executor reads `*plugin.Event` from `EventSource.Pop` and type-asserts
   `event.Payload` to its product-owned type (typically `*threat.ThreatEvent`).
 
 ### See also
 
-- [`arx-core/docs/plugin-development.md`](../arx-core/docs/plugin-development.md) — interfaces, lifecycle, init+blank-import pattern.
+- [`arx-core/docs/plugin-development.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/plugin-development.md) — interfaces, lifecycle, init+blank-import pattern.
 - [`docs/executors.md`](executors.md) — full executor framework overview.
 - [`pkg/executorplugins/`](../pkg/executorplugins/) — reference implementations.
 
@@ -162,8 +162,8 @@ holds dedup/TTL state, and survives restarts (with `bbolt`/`redis` backend).
 
 ### See also
 
-- [`arx-core/pkg/source/sentinel/README.md`](../arx-core/pkg/source/sentinel/README.md)
-- [`arx-core/pkg/sink/sentinel/README.md`](../arx-core/pkg/sink/sentinel/README.md)
+- [`arx-core/pkg/source/sentinel/README.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/pkg/source/sentinel/README.md)
+- [`arx-core/pkg/sink/sentinel/README.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/pkg/sink/sentinel/README.md)
 - [`internal/threat/format/`](../internal/threat/format/) — `Formatter` impls.
 
 ---
@@ -263,8 +263,8 @@ in the file are preserved.
 
 The exec+JSON protocol lets you write plugins in any language. The
 host binary spawns the plugin as a subprocess and pipes NDJSON through
-`arx-core/pkg/execplugin/`. Protocol spec and message shapes are in
-`arx-core/docs/plugin-development.md#8-external-execjson-plugins`.
+`github.com/mr-addams/arx-core/pkg/execplugin/`. Protocol spec and message shapes are in
+[`arx-core/docs/plugin-development.md` §8](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/plugin-development.md#8-external-execjson-plugins).
 
 ### Detector example: Python ML classifier
 
@@ -337,7 +337,7 @@ outputs:
 
 ### Source example: Python CloudWatch reader
 
-See `arx-core/docs/plugin-development.md` §8 for a full CloudWatch
+See [`arx-core/docs/plugin-development.md` §8](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/plugin-development.md#8-external-execjson-plugins) for a full CloudWatch
 example using `boto3` and the `start`/`stop` reverse-stream protocol.
 
 ### Environment variables
@@ -493,6 +493,6 @@ to catch drift.
 
 ### See also
 
-- [`arx-core/docs/plugin-development.md`](../arx-core/docs/plugin-development.md) — full plugin contract.
+- [`arx-core/docs/plugin-development.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/plugin-development.md) — full plugin contract.
 - [`docs/developer/build-profiles.md`](developer/build-profiles.md) — tree-shaking, build tags.
 - [`docs/executors.md`](executors.md) — executor framework overview.

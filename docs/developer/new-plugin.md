@@ -2,7 +2,7 @@
 
 > **Core five-file pattern, registry / init+blank-import wiring, and
 > plugin role contracts live in
-> [`arx-core/docs/plugin-development.md`](../../arx-core/docs/plugin-development.md).**
+> [`arx-core/docs/plugin-development.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/plugin-development.md).**
 > Read the core contract first, then come back here for the **product-side
 > checklist** and the **MikroTik / Sentinel-source / Sentinel-sink
 > walkthroughs** that are specific to ArxSentinel.
@@ -20,7 +20,7 @@ Before opening a PR for a new product plugin:
       has a non-trivial field contract.
 - [ ] **Config** — struct with `yaml` tags and `DefaultConfig()`. `parseConfig`
       falls back safely on missing or wrongly-typed values.
-- [ ] **Impl** — implements the correct interface from `arx-core/pkg/plugin/`.
+- [ ] **Impl** — implements the correct interface from `github.com/mr-addams/arx-core/pkg/plugin/`.
       For detectors: `Detect(sv IPView, entry *plugin.Event) DetectResult`.
       For sinks: `Write(ctx, *plugin.Event) error`. For executors:
       `Run(ctx, EventSource) error` and type-asserts `event.Payload` to
@@ -34,7 +34,7 @@ Before opening a PR for a new product plugin:
       exported method. Detectors should test against a mock `IPView`.
       Sinks/executors should test against a real `*plugin.Event` (Envelope +
       a product-owned payload, e.g. `&threat.ThreatEvent{...}`).
-- [ ] **Boundary rule** — the package does NOT import `arx-core/pkg/plugin`
+- [ ] **Boundary rule** — the package does NOT import `github.com/mr-addams/arx-core/pkg/plugin`
       types that are not in the published contract (e.g. `plugin.LogEntry` /
       `plugin.ThreatEvent` — those types do not exist; payload is opaque).
 - [ ] **Build profile** — for any new source/sink/executor/processor, add
@@ -194,8 +194,8 @@ that uses `httptest.NewServer`.
 
 ## Walkthrough: Sentinel source/sink (NCS bridge)
 
-The sentinel source/sink pair (`arx-core/pkg/source/sentinel/`,
-`arx-core/pkg/sink/sentinel/`) wire two ArxSentinel pipelines together
+The sentinel source/sink pair (`github.com/mr-addams/arx-core/pkg/source/sentinel/`,
+`github.com/mr-addams/arx-core/pkg/sink/sentinel/`) wire two ArxSentinel pipelines together
 through NCS. The detector pipeline writes scored events into a named
 queue via `sentinel-threat` sink; another pipeline reads them via
 `sentinel` source and forwards to executors.
@@ -235,10 +235,10 @@ redis backend). The `sentinel` source emits `*plugin.Event` with
 
 ## See also
 
-- [`arx-core/docs/plugin-development.md`](../../arx-core/docs/plugin-development.md) — full plugin contract.
+- [`arx-core/docs/plugin-development.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/plugin-development.md) — full plugin contract.
 - [`docs/PLUGIN_DEV.md`](../PLUGIN_DEV.md) — Sink-vs-Executor, exec+JSON, product walkthroughs.
 - [`docs/executors.md`](../executors.md) — executor framework overview.
 - [`docs/developer/build-profiles.md`](build-profiles.md) — tree-shaking, `arx_tag` sentinel.
 - [`pkg/executorplugins/`](../../pkg/executorplugins/) — reference implementations (cloudflare, mikrotik, nginx).
-- [`arx-core/pkg/source/sentinel/README.md`](../../arx-core/pkg/source/sentinel/README.md),
-  [`arx-core/pkg/sink/sentinel/README.md`](../../arx-core/pkg/sink/sentinel/README.md) — NCS bridge.
+- [`arx-core/pkg/source/sentinel/README.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/pkg/source/sentinel/README.md),
+  [`arx-core/pkg/sink/sentinel/README.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/pkg/sink/sentinel/README.md) — NCS bridge.

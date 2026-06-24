@@ -14,6 +14,15 @@
 
 > **Ліцензія:** ArxSentinel поширюється за [Elastic License 2.0](LICENSE). Безкоштовне використання для власної інфраструктури. Комерційне використання як керованого сервісу безпеки або телеметрії, або як частини керованого сервісу, вимагає окремої угоди. Деталі — у файлі [LICENSE](LICENSE).
 
+> **Побудований на [arx-core](https://github.com/mr-addams/arx-core).** Рушій конвеєра ArxSentinel,
+> система плагінів (Source/Sink/Detector/Processor/Executor) та міст NCS працюють на базі
+> [arx-core](https://github.com/mr-addams/arx-core/blob/v0.1.0/README.md) — універсального потоково-орієнтованого
+> фреймворку телеметрії. Життєвий цикл рушія, runtime-контракт та базові інтерфейси плагінів
+> живуть у [`arx-core/docs/`](https://github.com/mr-addams/arx-core/tree/v0.1.0/docs)
+> (`architecture.md`, `contract.md`, `plugin-development.md`). Цей README описує
+> продуктовий шар ArxSentinel: детектори безпеки, скоринг загроз, розводку NCS та
+> Cloudflare/MikroTik/nginx-екзекутори. Див. [Архітектура](docs/ARCHITECTURE.md) для розділення.
+
 ```
   ╔══════════════════════════════════════════════════════════════════╗
   ║  SOURCES                                                         ║
