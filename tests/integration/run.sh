@@ -89,7 +89,29 @@ if [ ! -s "$BLOCKLIST_DIR/badbot-ref.list" ]; then
 fi
 
 # Save the first UA pattern so scenarios.sh can send a request we know will match.
-BADBOT_TEST_UA=$(head -1 "$BLOCKLIST_DIR/badbot-ua.list")
+# Берём ПЕРВЫЙ чистый литеральный UA из списка (без regex-спецсимволов).
+# Upstream regex-список может иметь regex-эскейпленные паттерны в начале
+# (например, `1h4x\.com`); голова списка не детерминирована относительно
+# перестановок upstream. Независимо от нормализации в parser.go, тест остаётся
+# герметичным: выбираем паттерн, который гарантированно совпадает с реальным
+# UA-токеном после лог-эскейпинга бэкендов.
+BADBOT_TEST_UA=""
+while IFS= read -r line; do
+    # Чистый буквенно-цифровой UA с дефисом/подчёркиванием/пробелом (без regex).
+    if [[ "$line" =~ ^[A-Za-z0-9_[:space:]-]+$ ]]; then
+        BADBOT_TEST_UA="$line"
+        break
+    fi
+done < "$BLOCKLIST_DIR/badbot-ua.list"
+
+# Fallback: если ни один из 20 не чистый — берём голову списка, но продолжаем
+# (не падаем) — нормализация в parser.go должна справиться с большинством
+# regex-паттернов, тестируем дальше.
+if [ -z "$BADBOT_TEST_UA" ]; then
+    BADBOT_TEST_UA=$(head -1 "$BLOCKLIST_DIR/badbot-ua.list")
+    echo "[run] WARNING: no clean literal UA found in first 20 patterns; using head: ${BADBOT_TEST_UA}" >&2
+fi
+
 if [ -z "$BADBOT_TEST_UA" ]; then
     echo "[run] ERROR: badbot-ua.list is empty after fetch" >&2
     exit 1
