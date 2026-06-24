@@ -23,3 +23,4 @@ func runLicenseSubcommand() {
 	fmt.Print(licenseText)
 	os.Exit(0)
 }
+
