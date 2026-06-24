@@ -50,7 +50,7 @@ main()
 ├─ writePID()                       [write daemon PID]
 ├─ signal.NotifyContext()           [bind SIGTERM/SIGINT]
 ├─ metrics.Init()                   [register Prometheus vectors]
-├─ HTTP metrics server              [goroutine, port 9999]
+├─ HTTP metrics server              [goroutine, port 9117]
 ├─ blocklist.NewManager()           [load UA/referer blocklist]
 ├─ chaincheck.NewChecker()          [init proxy chain validator]
 └─ runtime.Run(ctx, streamSpec, factory, shared, reloadCh, logFn)
@@ -535,7 +535,7 @@ executors:
 
 metrics:
   enabled: true
-  addr: ":9999"
+  listen_addr: ":9117"
 ```
 
 > `yaml.v3 limitation:` если секция присутствует в config.yaml (e.g.
@@ -632,7 +632,7 @@ arxsentinel_blocklist_last_refresh_timestamp_seconds{list}
   list = имя blocklist из config (e.g. "badbot-ua").
 ```
 
-**Scrape endpoint:** `http://<addr>/metrics` (default `:9999`).
+**Scrape endpoint:** `http://<addr>/metrics` (default `:9117`).
 **Auth (optional):** `metrics.auth: "user:pass"` — HTTP Basic Auth,
 constant-time compare.
 
@@ -824,13 +824,13 @@ Table-driven, focus on behavior, not implementation details.
 ```bash
 # Dev mode
 go build ./cmd/arxsentinel
-./arxsentinel -c test.yaml
+./arxsentinel -config test.yaml
 
 # Watch logs
 tail -f /var/log/arxsentinel/sentinel.log
 
 # Metrics
-curl http://localhost:9999/metrics
+curl http://localhost:9117/metrics
 
 # Reload without restart
 kill -HUP $(cat /var/run/arxsentinel.pid)

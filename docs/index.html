@@ -719,7 +719,7 @@
 
     <section class="hero">
         <div class="badge-container">
-            <span class="badge badge-version">v2.1.0</span>
+            <span class="badge badge-version">v2.1.1</span>
             <span class="badge">Source Available</span>
             <span class="badge">Go</span>
             <span class="badge">Linux</span>
@@ -765,7 +765,7 @@
         <div class="stat-card"><div class="stat-number">11</div><div class="stat-label">Verified bot families</div></div>
         <div class="stat-card"><div class="stat-number">5</div><div class="stat-label">Native outputs · Fail2Ban · CF WAF · MikroTik · nginx · exec+JSON</div></div>
         <div class="stat-card"><div class="stat-number">5</div><div class="stat-label">Architectures · amd64 · arm64 · arm · riscv64 · 386</div></div>
-        <div class="stat-card"><div class="stat-number js-binary-size" data-unit="MB">11 MB</div><div class="stat-label">Single binary · arm64 ready</div></div>
+        <div class="stat-card"><div class="stat-number">~16 MB</div><div class="stat-label">Single binary · arm64 ready</div></div>
     </section>
 
     <section class="servers-section">
@@ -919,13 +919,13 @@
     <section class="performance-section">
         <div class="section-header">
             <span class="section-tag">Resource footprint</span>
-            <h2 class="section-title">11 MB. Runs anywhere.</h2>
+            <h2 class="section-title">~16 MB. Runs anywhere.</h2>
         </div>
         <div class="perf-grid">
             <div class="perf-metrics-block">
                 <div class="perf-metrics-row">
                     <div class="perf-metric">
-                        <div class="p-num js-binary-size" data-unit="MB">11 MB</div>
+                        <div class="p-num">~16 MB</div>
                         <div class="p-label">Binary size · arm64</div>
                     </div>
                     <div class="perf-metric">
@@ -996,7 +996,7 @@
             </div>
 
             <div id="source-install" class="tab-content">
-                <pre><span class="comment"># Requires Go 1.19+</span>
+                <pre><span class="comment"># Requires Go 1.26+</span>
 <span class="command">git clone https://github.com/mr-addams/arxsentinel
 cd arxsentinel
 sudo ./scripts/install.sh
@@ -1014,7 +1014,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
                     Prometheus metrics available at <code>:9117/metrics</code> immediately after start.
                     For Docker Compose and Kubernetes (Helm DaemonSet) setup — see the full guides:
                     <a href="https://github.com/mr-addams/arxsentinel/blob/dev/README.docker.md" style="color: var(--accent-blue);">README.docker.md</a> ·
-                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/README.helm.md" style="color: var(--accent-blue);">README.helm.md</a>
+                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/deploy/container/k8s/arxsentinel/README.md" style="color: var(--accent-blue);">Kubernetes (Helm) README</a>
                 </p>
             </div>
         </div>
@@ -1047,7 +1047,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
 
 <section class="whitelist-section">
         <div class="section-header">
-            <span class="section-tag">v2.1.0 Capabilities</span>
+            <span class="section-tag">v2.1.1 Capabilities</span>
             <h2 class="section-title">One process. Any topology.</h2>
         </div>
         <div class="whitelist-grid">
@@ -1487,32 +1487,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
                 requestAnimationFrame(animate);
             }
 
-            animate();
-        })();
-
-        // Auto-update binary size from GitHub Releases API.
-        // Falls back to the hardcoded value if no releases exist or the API is unreachable.
-        (async function updateBinarySize() {
-            try {
-                const r = await fetch(
-                    'https://api.github.com/repos/mr-addams/arxsentinel/releases/latest',
-                    { headers: { Accept: 'application/vnd.github.v3+json' } }
-                );
-                if (!r.ok) return;
-                const release = await r.json();
-                if (!Array.isArray(release.assets) || release.assets.length === 0) return;
-                // Prefer arm64 .deb; fall back to any arm64 asset; last resort — any asset.
-                const asset =
-                    release.assets.find(a => a.name.includes('arm64') && a.name.endsWith('.deb')) ||
-                    release.assets.find(a => a.name.includes('arm64')) ||
-                    release.assets[0];
-                if (!asset || !asset.size) return;
-                const mb = (asset.size / 1048576).toFixed(1);
-                document.querySelectorAll('.js-binary-size').forEach(el => {
-                    const unit = el.dataset.unit || 'MB';
-                    el.textContent = mb + ' ' + unit;
-                });
-            } catch (_) { /* keep hardcoded fallback */ }
+animate();
         })();
     </script>
 </body>

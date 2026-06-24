@@ -296,7 +296,7 @@ sudo systemctl enable --now arxsentinel
 
 ### Build from source
 
-Requires Go 1.19+:
+Requires Go 1.26+:
 
 ```bash
 git clone https://github.com/mr-addams/arxsentinel
@@ -332,7 +332,7 @@ helm install arxsentinel ./deploy/container/k8s/arxsentinel \
   --set threatLog.hostPath=/var/log/arxsentinel
 ```
 
-See [README.helm.md](deploy/container/k8s/arxsentinel/README.md) for values reference, Prometheus Operator integration, and cloud deployment notes.
+See [Kubernetes README](deploy/container/k8s/arxsentinel/README.md) for values reference, Prometheus Operator integration, and cloud deployment notes.
 
 ## Supported HTTP servers
 
@@ -538,7 +538,7 @@ Full Docker guide: [README.docker.md](deploy/container/docker/README.md).
 
 DaemonSet (one pod per node, reads host logs) or sidecar (reads from an emptyDir shared with the app container).
 Ready-to-use manifests: [`deploy/examples/kubernetes/`](deploy/examples/kubernetes/).
-Helm chart with values reference: [README.helm.md](deploy/container/k8s/arxsentinel/README.md).
+Helm chart with values reference: [Kubernetes README](deploy/container/k8s/arxsentinel/README.md).
 
 ## Executors
 

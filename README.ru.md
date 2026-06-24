@@ -291,7 +291,7 @@ sudo systemctl enable --now arxsentinel
 
 ### Сборка из исходников
 
-Требуется Go 1.19+:
+Требуется Go 1.26+:
 
 ```bash
 git clone https://github.com/mr-addams/arxsentinel
@@ -324,7 +324,7 @@ helm install arxsentinel ./deploy/container/k8s/arxsentinel \
   --set threatLog.hostPath=/var/log/arxsentinel
 ```
 
-Подробнее: [README.helm.md](deploy/container/k8s/arxsentinel/README.md) — описание values, Prometheus Operator, деплой в облако.
+Подробнее: [Helm README](deploy/container/k8s/arxsentinel/README.md) — описание values, Prometheus Operator, деплой в облако.
 
 ## Поддерживаемые HTTP-серверы
 
@@ -530,7 +530,7 @@ ArxSentinel работает как sidecar рядом с HTTP-сервером,
 
 DaemonSet (один под на узел, читает логи хоста) или sidecar (читает из emptyDir, шарёного с контейнером приложения).
 Готовые манифесты: [`deploy/examples/kubernetes/`](deploy/examples/kubernetes/).
-Helm-чарт с описанием values: [README.helm.md](deploy/container/k8s/arxsentinel/README.md).
+Helm-чарт с описанием values: [Helm README](deploy/container/k8s/arxsentinel/README.md).
 
 ## Исполнители
 

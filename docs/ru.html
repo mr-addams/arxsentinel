@@ -569,7 +569,7 @@
 
     <section class="hero">
         <div class="badge-container">
-            <span class="badge badge-version">v2.1.0</span>
+            <span class="badge badge-version">v2.1.1</span>
             <span class="badge">Source Available</span>
             <span class="badge">Go</span>
             <span class="badge">Linux</span>
@@ -611,7 +611,7 @@
         <div class="stat-card"><div class="stat-number">11</div><div class="stat-label">Семейств ботов</div></div>
         <div class="stat-card"><div class="stat-number">∞</div><div class="stat-label">Плагины · любой язык · exec+JSON</div></div>
         <div class="stat-card"><div class="stat-number">2</div><div class="stat-label">Архитектуры (amd64 · arm64)</div></div>
-        <div class="stat-card"><div class="stat-number js-binary-size" data-unit="МБ">11 МБ</div><div class="stat-label">Один бинарь · arm64 готов</div></div>
+        <div class="stat-card"><div class="stat-number">~16 МБ</div><div class="stat-label">Один бинарь · arm64 готов</div></div>
     </section>
 
     <section class="servers-section">
@@ -765,13 +765,13 @@
     <section class="performance-section">
         <div class="section-header">
             <span class="section-tag">Потребление ресурсов</span>
-            <h2 class="section-title">11 МБ. Работает везде.</h2>
+            <h2 class="section-title">~16 МБ. Работает везде.</h2>
         </div>
         <div class="perf-grid">
             <div class="perf-metrics-block">
                 <div class="perf-metrics-row">
                     <div class="perf-metric">
-                        <div class="p-num js-binary-size" data-unit="МБ">11 МБ</div>
+                        <div class="p-num">~16 МБ</div>
                         <div class="p-label">Размер бинаря · arm64</div>
                     </div>
                     <div class="perf-metric">
@@ -842,7 +842,7 @@
             </div>
 
             <div id="source-install" class="tab-content">
-                <pre><span class="comment"># Требуется Go 1.19+</span>
+                <pre><span class="comment"># Требуется Go 1.26+</span>
 <span class="command">git clone https://github.com/mr-addams/arxsentinel
 cd arxsentinel
 sudo ./scripts/install.sh
@@ -860,7 +860,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
                     Метрики Prometheus доступны на <code>:9117/metrics</code> сразу после старта.
                     Docker Compose и Kubernetes (Helm DaemonSet) — подробные руководства:
                     <a href="https://github.com/mr-addams/arxsentinel/blob/dev/README.docker.md" style="color: var(--accent-blue);">README.docker.md</a> ·
-                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/README.helm.md" style="color: var(--accent-blue);">README.helm.md</a>
+                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/deploy/container/k8s/arxsentinel/README.md" style="color: var(--accent-blue);">Kubernetes (Helm) README</a>
                 </p>
             </div>
         </div>
@@ -893,7 +893,7 @@ sudo systemctl enable --now arxsentinel</span></pre>
 
 <section class="whitelist-section">
         <div class="section-header">
-            <span class="section-tag">Возможности v2.1.0</span>
+            <span class="section-tag">Возможности v2.1.1</span>
             <h2 class="section-title">Один процесс. Любая топология.</h2>
         </div>
         <div class="whitelist-grid">
@@ -1327,30 +1327,6 @@ sudo systemctl enable --now arxsentinel</span></pre>
             }
 
             animate();
-        })();
-
-        // Auto-update binary size from GitHub Releases API.
-        // Falls back to the hardcoded value if no releases exist or the API is unreachable.
-        (async function updateBinarySize() {
-            try {
-                const r = await fetch(
-                    'https://api.github.com/repos/mr-addams/arxsentinel/releases/latest',
-                    { headers: { Accept: 'application/vnd.github.v3+json' } }
-                );
-                if (!r.ok) return;
-                const release = await r.json();
-                if (!Array.isArray(release.assets) || release.assets.length === 0) return;
-                const asset =
-                    release.assets.find(a => a.name.includes('arm64') && a.name.endsWith('.deb')) ||
-                    release.assets.find(a => a.name.includes('arm64')) ||
-                    release.assets[0];
-                if (!asset || !asset.size) return;
-                const mb = (asset.size / 1048576).toFixed(1);
-                document.querySelectorAll('.js-binary-size').forEach(el => {
-                    const unit = el.dataset.unit || 'МБ';
-                    el.textContent = mb + ' ' + unit;
-                });
-            } catch (_) { /* keep hardcoded fallback */ }
         })();
     </script>
 </body>
