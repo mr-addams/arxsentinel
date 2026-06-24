@@ -167,6 +167,93 @@ severity, description, and proposed resolution.
 
 ---
 
+### [080-SG] Доменные реестры (executor/detector/processor) — глобальные синглтоны в arx-core
+
+- **Flow:** #080 — Core Migration Tier 2 (Decision 7, 2026-06-22)
+- **Severity:** medium
+- **Area:** `arx-core/pkg/{executor,detector,processor}/registry.go`
+  (после миграции Flow 080; до — `arxsentinel/pkg/<x>/registry.go`)
+- **Problem:** Доменные реестры (executor/detector/processor) — глобальные
+  синглтоны в arx-core. Для публикуемой библиотеки это smell: глобальное
+  mutable-состояние, нет изоляции инстанций (нельзя создать два независимых
+  пайплайна в одном бинаре), тест-загрязнение (тесты регистрируют плагины в
+  общем реестре без cleanup'а — см. [068-1], дубликаты при `-count>1`).
+- **Resolution (принято как P1):** Singleton сохранён ради tree-shaking
+  (init()+blank-import) и существующих профилей производительности.
+  Переход синглтон → instance-based реестр — это P2, отдельный ADR к
+  моменту реальной публикации arx-core как библиотеки (или при
+  необходимости мульти-пайплайн embedding в одном бинаре). P2 потребует:
+  - Реестр становится структурой: `type Registry[T,CFG] struct{...}` с
+    конструктором `NewRegistry()`.
+  - init()-регистрация заменяется на constructor-инъекцию: плагин
+    регистрируется через `registry.Register(...)` в момент сборки
+    пайплайна, не через глобальный `init()`.
+  - Профили пересматриваются: вместо blank-import + build-tag — явный
+    список плагинов в конфигурации или фабрике пайплайна.
+  - Тесты получают изоляцию (передают fresh registry каждому тесту),
+    что закрывает [068-1].
+- **Status:** open long-term — отложено до публикации arx-core или
+  мульти-пайплайн use case. Принятие P1 → P2 — отдельный ADR-009 (TBD).
+
+---
+
+### [083-PRQ] preRegisterExecutorQueues мутирует локальную копию, не конфиг (bbolt hot-reload)
+
+- **Flow:** #083 — Phase 5 product-owned queue namespace (Decision ..., 2026-...)
+- **Severity:** low
+- **Area:** `cmd/arxsentinel/executors.go`, функция `preRegisterExecutorQueues`,
+  Phase 2 (строки 77-100), особенно shallow-copy блок 86-95.
+- **Problem:** Phase 2 применяет product-namespace defaults (`productQueueNamespace`,
+  см. константу и комментарий Flow #083 на строках 27-30) к `src.Queue.Bucket`
+  (для `queue.QueueTypeBbolt`) и `src.Queue.Key` (для `queue.QueueTypeRedis`)
+  через shallow copy: `copy := *src.Queue; copy.Bucket/Key = ...; src.Queue = &copy`.
+  Но `src` — range-переменная внешнего цикла `for _, src := range ec.Sources`
+  (копия элемента слайса), а `ec` — тоже range-переменная `for _, ec := range cfg.Executors`
+  (копия элемента слайса). Поэтому мутация `src.Queue = &copy` действует только
+  локально для следующего в этом же теле цикла вызова
+  `ncs.RegisterSinkFromConfig(src.Name, src.Queue, ...)` — сам `cfg.Executors[*].Sources[*].Queue`
+  остаётся с пустыми `Bucket`/`Key`. Регистрация в NCS происходит с правильно
+  заполненными полями (на холодном старте всё работает), но конфиг этого не отражает.
+  На SIGHUP hot-reload любой код, читающий `cfg.Executors[*].Sources[*].Queue.Bucket`
+  после `preRegisterExecutorQueues`, увидит `""`, хотя defaults якобы применены —
+  неочевидный источник багов при будущей миграции/отладке или при добавлении
+  валидатора поверх `cfg`.
+- **Resolution:** мутировать `cfg` напрямую через индексы (`for i, ec := range cfg.Executors {
+  for j, src := range ec.Sources { ... cfg.Executors[i].Sources[j].Queue = ... } }`),
+  либо хранить резолвнутую очередь в отдельной структуре (например, `map[src.Name]*queue.QueueConfig`)
+  и передавать её в `RegisterSinkFromConfig`, не патча конфиг inline.
+- **Status:** open — функционально не ломает (defaults применяются до вызова
+  RegisterSinkFromConfig, NCS получает корректные значения), но cfg не отражает
+  применённые defaults. Чинить можно вместе с любым будущим изменением hot-reload
+  пути или при добавлении post-startup валидатора над `cfg`.
+
+---
+
+### [080-ID] config.go: смешение legacy и arx-core импортов (import-drift миграции)
+
+- **Flow:** #080 — Core Migration Tier 2 (Decision ..., 2026-06-22)
+- **Severity:** low
+- **Area:** `internal/sys/config/config.go`, блок import, строки 24-38
+  (особенно строки 34-37).
+- **Problem:** Блок импорта смешивает два домена в одном transitional файле:
+  legacy-пакеты из `arxsentinel/internal/core/*` (blocklist, chaincheck — строки
+  34-35) и мигрированные типы из `arx-core/*` (queue, parser — строки 36-37).
+  Это симптом незавершённой миграции в arx-core (Flow 080): Config ссылается
+  и на core-домены (`blocklist`, `chaincheck`), и на arx-core-типы
+  (`queue.QueueConfig`, `parser.Parser`). Сейчас смешение — необходимая
+  промежуточная стадия, т.к. не все legacy-пакеты переехали. Но как transitional
+  drift это усложняет чтение файла и скрывает, какие домены уже живут в arx-core,
+  а какие ещё ждут миграции.
+- **Resolution:** после завершения Tier 3+ миграции (когда `internal/core/blocklist`
+  и `chaincheck` переедут в arx-core или будут удалены) — пересмотреть блок импорта
+  и привести к одному домену: только `arx-core/*` (если всё мигрировало) или
+  только `arxsentinel/internal/*` (если что-то остаётся legacy). До тех пор —
+  оставить как есть и зафиксировать в этой записи как явное напоминание.
+- **Status:** open — отложено до завершения Tier 3+ миграции. Не баг, а
+  tracked transitional state.
+
+---
+
 ## Resolved
 
 ### [051-stdin] Unit tests for pkg/source/stdin
