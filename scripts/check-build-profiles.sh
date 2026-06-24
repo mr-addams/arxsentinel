@@ -146,21 +146,18 @@ pkg_relative_dir() {
   case "$kind" in
     processors)
       if [ "$name" = "processor" ]; then
-        # Registry package: special-case arx-core/pkg/processor | pkg/processor
-        # (no <suffix> suffix and no <kind>plugins/ split form for the bare
-        # registry itself).
+        # Registry package: special-case pkg/processor only (no <suffix>
+        # suffix and no <kind>plugins/ split form for the bare registry
+        # itself).
         #
-        # NOTE: Today only `pkg/processor` exists; `arx-core/pkg/processor`
-        # has not been created yet. The probe loop will pick whichever
-        # appears first. When arx-core/pkg/processor is materialised
-        # (Phase 1+), audit cmd/arxsentinel/plugins_*.go imports — they
-        # must switch from the legacy `pkg/processor` import to the
-        # arx-core path in lockstep, otherwise invariant (a) will report
-        # an immediate drift across all profiles.
-        candidates=( "arx-core/pkg/processor" "pkg/processor" )
+        # arx-core/pkg/processor candidate удалён: arx-core — внешний модуль
+        # post-split (Flow 084), и реестр процессоров живёт в arxsentinel.
+        # Если когда-нибудь вынос реестра в arx-core понадобится —
+        # одновременно править и blank-import в cmd/arxsentinel/plugins_*.go,
+        # иначе invariant (a) зафиксирует drift.
+        candidates=( "pkg/processor" )
       else
         candidates=(
-          "arx-core/pkg/${kdir}/$suffix"
           "arxsentinel/pkg/${kdir}plugins/$suffix"
           "pkg/${kdir}plugins/$suffix"
           "pkg/${kdir}/$suffix"
@@ -174,8 +171,13 @@ pkg_relative_dir() {
       # filesystem location after Phase 3 — module-name collision forced
       # dropping the redundant `arxsentinel/` prefix) are valid; the first
       # existing path wins.
+      #
+      # arx-core/pkg/<kind>/<suffix> candidate удалён: arx-core вынесен
+      # в отдельный публичный репо (Flow 084). Core-плагины теперь external
+      # (живут в github.com/mr-addams/arx-core/pkg/...) — вместо FS-probe
+      # synthetic external-path генерируется ниже post-fallback по
+      # blank-imports в cmd/arxsentinel/plugins_*.go (Decision 7).
       candidates=(
-        "arx-core/pkg/${kdir}/$suffix"
         "arxsentinel/pkg/${kdir}plugins/$suffix"
         "pkg/${kdir}plugins/$suffix"
         "pkg/${kdir}/$suffix"
@@ -195,8 +197,20 @@ pkg_relative_dir() {
     fi
   done
 
-  # None exist — return the legacy path so callers raise the same
-  # "package directory not found" diagnostic as before the migration.
+  # Ни один candidate не существует — проверяем, не external ли это
+  # core-плагин (arx-core). Сигнал: blank-import с префиксом
+  # github.com/mr-addams/arx-core/pkg/<kdir>/<suffix> в любом
+  # cmd/arxsentinel/plugins_*.go (Decision 7, Flow 084). Если да —
+  # возвращаем synthetic path, чтобы expected_import_path() корректно
+  # отмапил его на github.com/mr-addams/arx-core/pkg/<kdir>/<suffix>;
+  # invariant (b) затем skip'нет FS-проверку по префиксу import path.
+  local external_imp="github.com/mr-addams/arx-core/pkg/${kdir}/$suffix"
+  if grep -qE "_[[:space:]]*\"${external_imp}\"" cmd/arxsentinel/plugins_*.go 2>/dev/null; then
+    echo "arx-core/pkg/${kdir}/$suffix"
+    return
+  fi
+
+  # Не external и не найден локально — legacy fallback.
   echo "pkg/${kdir}/$suffix"
 }
 
@@ -237,6 +251,19 @@ expected_import_path() {
       # whole script under `set -e`.
       echo ""
       ;;
+  esac
+}
+
+# is_external_core_import <imp_path>
+#   Возвращает 0 (true), если imp_path указывает на external arx-core пакет
+#   (живущий в github.com/mr-addams/arx-core/pkg/...). Используется в
+#   invariant (b) для skip локальной FS-проверки Register-вызова: external
+#   core-плагины живут в отдельном публичном репо, их валидность гарантирует
+#   `go build ./...` (тянет arx-core@v0.1.0 из proxy). Decision 7, Flow 084.
+is_external_core_import() {
+  case "$1" in
+    github.com/mr-addams/arx-core/*) return 0 ;;
+    *) return 1 ;;
   esac
 }
 
@@ -365,6 +392,17 @@ while IFS= read -r profile_path; do
   for kind in sources sinks executors processors detectors; do
     while IFS= read -r n; do
       [ -z "$n" ] && continue
+
+      # External core-plugins живут в github.com/mr-addams/arx-core/pkg/...
+      # после Flow 084 (split arx-core в отдельный публичный репо). Skip
+      # локальной FS-проверки Register-вызова: валидность гарантирует
+      # `go build ./...` + `go list -deps` (тянет arx-core@v0.1.0 из proxy).
+      # Decision 7.
+      expected_imp="$(expected_import_path "$kind" "$n")"
+      if is_external_core_import "$expected_imp"; then
+        skip "profile '$pname': $kind/$n — external arx-core plugin (verified by go build)"
+        continue
+      fi
 
       pkg_dir="$(pkg_relative_dir "$kind" "$n")"
       if [ ! -d "$pkg_dir" ]; then
