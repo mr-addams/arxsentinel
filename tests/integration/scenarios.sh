@@ -17,6 +17,9 @@
 set -euo pipefail
 
 INT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Подгружаем общие хелперы (docker_pull_retry).
+# shellcheck source=lib.sh
+. "$INT_DIR/lib.sh"
 NETWORK="integration_default"
 # CF attacker containers use a separate subnet (10.88.0.0/24) that is outside the
 # trusted proxy CIDR (172.16.0.0/12). This prevents real_ip_recursive from exhausting
@@ -27,8 +30,9 @@ IMAGE="curlimages/curl"   # Alpine-based, tiny, has /bin/sh
 # Internal hostnames of the 6 servers (from inside the Docker network).
 SERVERS=(nginx apache traefik caddy haproxy litespeed)
 
-# Pull the attacker image once before the scenarios start.
-docker pull -q "$IMAGE"
+# Тянем образ атакующего один раз до старта сценариев, с ретраем — иначе
+# единичный транзиентный сбой Docker Hub/сети абортит весь прогон.
+docker_pull_retry "$IMAGE"
 
 # run_scenario NAME SCRIPT
 #   Runs SCRIPT inside a fresh container on the integration network.
