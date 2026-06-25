@@ -8,6 +8,11 @@ on:
       - 'README*.md'
       - 'VERSION'
       - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 2.2.0). Overrides dev-tag-based calculation.'
+        required: true
 
 # contents:write — create tag and GitHub Release.
 # pull-requests:write — open auto VERSION-bump PR to dev after stable release.
@@ -52,13 +57,19 @@ jobs:
 
       - name: Resolve stable version from last dev tag
         id: tag
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          LAST_DEV=$(git tag --list 'v*-dev.*' --sort=-version:refname | head -1)
-          if [ -z "$LAST_DEV" ]; then
-            echo "No dev tags found — cannot determine stable version" >&2
-            exit 1
+          if [ -n "$INPUT_VERSION" ]; then
+            TAG="v${INPUT_VERSION}"
+          else
+            LAST_DEV=$(git tag --list 'v*-dev.*' --sort=-version:refname | head -1)
+            if [ -z "$LAST_DEV" ]; then
+              echo "No dev tags found — cannot determine stable version" >&2
+              exit 1
+            fi
+            TAG="${LAST_DEV%-dev.*}"
           fi
-          TAG="${LAST_DEV%-dev.*}"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             # Tag exists — skip only if a real GitHub Release is already published.
             # An orphaned tag (goreleaser failed mid-run) must be removed so goreleaser
@@ -129,20 +140,27 @@ jobs:
       - name: Bump VERSION for next development cycle
         if: success() && steps.tag.outputs.skip != 'true'
         run: |
-          current=$(cat VERSION)
-          IFS='.' read -r major minor patch <<< "$current"
+          released="${{ steps.tag.outputs.tag }}"
+          released="${released#v}"
+          IFS='.' read -r major minor patch <<< "$released"
           next="${major}.${minor}.$((patch + 1))"
 
-          branch="chore/bump-version-${next}"
           git fetch origin dev
+          dev_version=$(git show origin/dev:VERSION 2>/dev/null || echo "")
+          if [ "$dev_version" = "$next" ]; then
+            echo "dev already at $next — skipping bump"
+            exit 0
+          fi
+
+          branch="chore/bump-version-${next}"
           git checkout -b "$branch" origin/dev
           git merge -X ours --no-edit origin/main
           echo "$next" > VERSION
 
           # Sync all version strings in landing pages to the just-released stable version.
-          sed -i -E "s|(softwareVersion\": \")[0-9]+\.[0-9]+\.[0-9]+(\")|\\1${current}\\2|g" docs/*.html
-          sed -i -E "s|(badge-version\">v)[0-9]+\.[0-9]+\.[0-9]+(<)|\\1${current}\\2|g" docs/*.html
-          sed -i -E "s|(section-tag\">[^v<]*v)[0-9]+\.[0-9]+\.[0-9]+|\\1${current}|g" docs/*.html
+          sed -i -E "s|(softwareVersion\": \")[0-9]+\.[0-9]+\.[0-9]+(\")|\\1${released}\\2|g" docs/*.html
+          sed -i -E "s|(badge-version\">v)[0-9]+\.[0-9]+\.[0-9]+(<)|\\1${released}\\2|g" docs/*.html
+          sed -i -E "s|(section-tag\">[^v<]*v)[0-9]+\.[0-9]+\.[0-9]+|\\1${released}|g" docs/*.html
 
           git add VERSION docs/*.html
           git commit -m "chore: bump VERSION to ${next}"
@@ -150,7 +168,7 @@ jobs:
 
           pr_url=$(gh pr create \
             --title "chore: bump VERSION to ${next}" \
-            --body "Automatic version bump after stable release v${current}. Next dev cycle: v${next}-dev.1" \
+            --body "Automatic version bump after stable release v${released}. Next dev cycle: v${next}-dev.1" \
             --base dev)
 
           # --admin bypasses required_signatures ruleset — bot commits are unsigned.
