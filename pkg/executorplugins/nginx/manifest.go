@@ -7,7 +7,7 @@ import "github.com/mr-addams/arx-core/pkg/plugin"
 func (e *NginxExecutor) Manifest() plugin.Manifest {
 	return plugin.Manifest{
 		PluginID:      "nginx",
-		PluginVersion: "1.0.0",
+		PluginVersion: "1.1.0",
 		Role:          plugin.RoleExecutor,
 		InputType:     plugin.TypeScoredEvent,
 		OutputType:    plugin.TypeNone,

@@ -10,7 +10,7 @@ command, which makes it the simplest of the three executors in the project and
 the natural choice for air-gapped or read-only environments.
 
 - **Plugin ID:** `nginx`
-- **Plugin version:** `1.0.0`
+- **Plugin version:** `1.1.0`
 - **Role:** `Executor`
 - **Input type:** `scored event`
 - **Output type:** `none`
@@ -38,6 +38,7 @@ knobs:
 | Field            | Type       | Default  | Required | Description                                                              |
 |------------------|------------|----------|----------|--------------------------------------------------------------------------|
 | `list_file`      | `string`   | —        | **yes**  | Path to the IP blocklist file. Format: `<ip> 1;` per line.               |
+| `file_format`    | `string`   | `geo`    | no       | On-disk line syntax: `geo` → `<ip> 1;` (for nginx `geo {}` map); `deny` → `deny <ip>;` (for nginx `allow`/`deny` directives). |
 | `state_file`     | `string`   | `""`     | no       | Optional path for JSON TTL persistence: `{"ip": "ISO8601-timestamp"}`.   |
 | `min_level`      | `string`   | `THREAT` | no       | Minimum threat level to act on: `INFO`, `WARN`, or `THREAT`.             |
 | `ttl`            | `duration` | `24h`    | no       | Auto-unban duration. Positive only.                                      |
@@ -60,6 +61,8 @@ values are recovered from a raw `map[string]any` during `parseConfig`.
 - `ttl` must be strictly positive (`> 0`). A zero or negative TTL is rejected
   by `NewNginxExecutor` because a non-positive TTL would either ban
   permanently or never ban at all.
+- `file_format` must be one of `geo` or `deny`. Unknown values are rejected
+  at startup. An empty value defaults to `geo` for backwards compatibility.
 - If `reload_cmd` is empty, the executor logs a `WARNING` at startup and
   switches to **passive mode** — the file is written, but no reload is
   triggered. The operator is expected to reload nginx by hand or by some
@@ -101,7 +104,8 @@ returns only when the source closes or `ctx` is cancelled.
 when the executor starts. The function performs three steps:
 
 1. Read `list_file` line by line with a `bufio.Scanner`. Each line that
-   matches the expected `<ip> 1;` shape is added to the `banned` map with a
+   matches the expected line shape for the configured `file_format`
+   (`geo`: `<ip> 1;`  `deny`: `deny <ip>;`) is added to the `banned` map with a
    timestamp of `time.Now()` — the executor does not know, at this point,
    when those IPs were originally banned.
 2. If `state_file` is configured and readable, decode the JSON map of
@@ -155,10 +159,19 @@ The file starts with a single header line:
 # managed by arxsentinel — do not edit manually
 ```
 
-After the header, every banned IP occupies exactly one line in the canonical
-`<ip> 1;` form, with a trailing newline. nginx `geo` and `map` blocks parse
-this format natively, and any tooling that already understands the format
-will continue to work without modification.
+The header is identical for both `file_format` values. After the header, every
+banned IP occupies exactly one line, with a trailing newline. The line shape
+depends on `file_format`:
+
+- `geo` (default): `<ip> 1;` — for use inside an nginx `geo {}` (or `map {}`)
+  block.
+- `deny`: `deny <ip>;` — for use inside an nginx `server {}` or `location {}`
+  block with the standard `allow`/`deny` directives.
+
+nginx `geo` and `map` blocks parse the `geo` format natively, and the `deny`
+format is recognised by the `allow`/`deny` access-module directives. Any
+tooling that already understands either format will continue to work without
+modification.
 
 ### Sweep
 
@@ -392,6 +405,30 @@ executors:
       list_file:  /etc/nginx/conf.d/arxsentinel-blocklist.conf
       state_file: /var/lib/arxsentinel/nginx-bans.json
       ttl:        48h
+```
+
+### deny format — direct per-location block
+
+Use when you want to include the blocklist with nginx `allow`/`deny` directives
+directly inside a `server {}` or `location {}` block, without a `geo` map.
+
+```yaml
+executors:
+  - name: nginx-blocklist
+    type: nginx
+    config:
+      list_file:      /etc/nginx/conf.d/arxsentinel-deny.conf
+      file_format:    deny
+      reload_cmd:     'nginx -s reload'
+      ttl:            24h
+```
+
+nginx config:
+```nginx
+location / {
+    include /etc/nginx/conf.d/arxsentinel-deny.conf;
+    deny all;
+}
 ```
 
 ---
