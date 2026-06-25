@@ -44,9 +44,9 @@ type cacheEntry struct {
 // Consumer: verifier.go (Get/Set), matcher.go (via Verifier).
 type IPCache struct {
 	mu          sync.RWMutex
-	entries     map[string]cacheEntry  // Internal — IP to cacheEntry map. Consumer: Get, Set.
-	positiveTTL time.Duration          // YAML: whitelist.dns_cache.positive_ttl, default 24h. Consumer: Set.
-	negativeTTL time.Duration          // YAML: whitelist.dns_cache.negative_ttl, default 5m. Consumer: Set.
+	entries     map[string]cacheEntry // Internal — IP to cacheEntry map. Consumer: Get, Set.
+	positiveTTL time.Duration         // YAML: whitelist.dns_cache.positive_ttl, default 24h. Consumer: Set.
+	negativeTTL time.Duration         // YAML: whitelist.dns_cache.negative_ttl, default 5m. Consumer: Set.
 }
 
 // NewIPCache creates an IPCache from config.

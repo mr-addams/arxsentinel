@@ -1,0 +1,59 @@
+name: Nightly deep-stress
+
+# TODO: Uncomment schedule after task 1.1.0 (idempotent registry tests — tech debt 068-1).
+# Reason: registry tests panic on -count>1 today. Until that is fixed, activating
+# this cron would break the nightly CI every night. The skeleton below exists so
+# the workflow syntax is fixed in git and can be manually smoke-tested via
+# `workflow_dispatch` (e.g. with -count=1) without waiting for the real nightly run.
+#
+#   schedule:
+#     - cron: '17 3 * * *'  # 03:17 UTC nightly
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: 'go test -count override (default 1 for manual smoke; flip to 3 after 1.1.0)'
+        required: false
+        default: '1'
+      reason:
+        description: 'Why this manual run is being triggered (audit trail)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deep-stress:
+    name: Deep-stress -race run (currently manual-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Audit manual trigger
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "Manual deep-stress run."
+          echo "  reason:  ${{ github.event.inputs.reason }}"
+          echo "  count:   ${{ github.event.inputs.count }}"
+          echo "  actor:   ${{ github.actor }}"
+
+      - name: Run deep-stress tests
+        run: |
+          # -count override comes from workflow_dispatch input (default 1).
+          # After task 1.1.0 lands, the schedule block above can be uncommented
+          # and this input-driven branch can be removed in favor of a fixed
+          # `-count=3`.
+          COUNT="${{ github.event.inputs.count || '1' }}"
+          if ! [[ "$COUNT" =~ ^[0-9]+$ ]] || [ "$COUNT" -lt 1 ]; then
+            echo "Invalid count value: $COUNT" >&2
+            exit 1
+          fi
+          go test -race -count="$COUNT" ./... -timeout 600s

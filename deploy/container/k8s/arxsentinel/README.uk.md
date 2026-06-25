@@ -164,6 +164,12 @@ helm upgrade arxsentinel ./deploy/container/k8s/arxsentinel -f values-production
 | `ARXSENTINEL_STATE_GC_INTERVAL` | duration | `60s` | Інтервал збирання сміття |
 | `ARXSENTINEL_STATE_MAX_TRACKED_IPS` | int | `100000` | Макс. відстежуваних IP |
 
+#### Джерело (syslog)
+
+| Змінна | Тип | Дефолт | Опис |
+|---|---|---|---|
+| `ARXSENTINEL_SYSLOG_MAX_CONNECTIONS` | int | `1000` | Макс. одночасних TCP-з'єднань syslog (H5) |
+
 #### Детектори — probe, bruteforce, crawler, no-asset
 
 | Змінна | Тип | Дефолт | Опис |

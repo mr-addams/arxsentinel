@@ -68,11 +68,11 @@ metrics:
 
 | Метрика | Тип | Описание |
 |---------|-----|----------|
-| `arxsentinel_lines_processed_total` | Counter | Обработано строк лога |
-| `arxsentinel_threats_total{level}` | Counter | Угрозы по уровню (`THREAT` / `WARN`) |
-| `arxsentinel_detector_hits_total{detector}` | Counter | Срабатывания по детектору |
-| `arxsentinel_tracked_ips` | Gauge | Текущее количество отслеживаемых IP |
-| `arxsentinel_suspicious_ips` | Gauge | IP с score выше alert threshold |
+| `arx_sentinel_lines_processed_total` | Counter | Обработано строк лога |
+| `arx_sentinel_threats_total{level}` | Counter | Угрозы по уровню (`THREAT` / `WARN`) |
+| `arx_sentinel_detector_hits_total{detector}` | Counter | Срабатывания по детектору |
+| `arx_sentinel_tracked_ips` | Gauge | Текущее количество отслеживаемых IP |
+| `arx_sentinel_suspicious_ips` | Gauge | IP с score выше alert threshold |
 
 ---
 

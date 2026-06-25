@@ -236,7 +236,7 @@ Two‑hop цепочка: CF-заголовки устанавливаются `
 
 **3 paths на пару (proxy, backend):** `/wp-login.php`, `.env`, `/xmlrpc.php`.
 
-**Инвариант:** Тот же, что в Case 1 — лог угроз показывает IP атакующего. **72 проверки** (4 прокси × 6 backends × 3 paths).
+**Инвариант:** Тот же, что в Case 1 — лог угроз показывает IP атакующего. **24 проверки** (4 прокси × 6 backends — 3 probe paths per pair, single assertion per pair).
 
 ---
 

@@ -114,22 +114,32 @@ Follow this checklist to add a new executor type:
 
 ### Step 1 — Implement the interface
 
-Create a new package (recommended: `internal/core/executor/<name>/` for internal executors)
+Create a new package (recommended: `pkg/executorplugins/<name>/` for product executors)
 and implement `plugin.Executor`:
 
 ```go
+// github.com/mr-addams/arx-core/pkg/plugin/executor.go (post-083 / Flow 082 / Flow 083)
 type Executor interface {
     Name() string
-    Execute(ctx context.Context, event plugin.ThreatEvent) error
-    Close() error
-    Stats() plugin.ExecutorStats
+    Type() string
+    Run(ctx context.Context, source EventSource) error
+    Manifest() Manifest
+    Stats() ExecutorStats
+}
+
+type EventSource interface {
+    Pop(ctx context.Context) (*plugin.Event, error)
 }
 ```
 
 - `Name` — returns the executor instance name (from config, not the type).
-- `Execute` — receives a fully scored `ThreatEvent`. Returns an error on failure.
-- `Close` — clean up resources (close connections, cancel timers).
-- `Stats` — returns `ExecutorStats{Executed, Skipped, Errors}` for pipeline-level metrics.
+- `Type` — returns the executor type identifier (e.g. `"cloudflare"`, `"mikrotik"`).
+- `Run` — called as a goroutine; receives events via `source.Pop(ctx)` and
+  performs the action. Returns when `ctx` is cancelled. Type-asserts
+  `event.Payload` to its product-owned type (typically `*threat.ThreatEvent`).
+- `Manifest` — declares the plugin's identity and data contract.
+- `Stats` — returns `ExecutorStats{Executed, Skipped, Errors, Swept}` for
+  pipeline-level metrics.
 
 ### Step 2 — Register via init()
 
@@ -139,8 +149,8 @@ In your package, add a `register.go` file that calls `executor.Register` from `i
 package myexecutor
 
 import (
-    "github.com/mr-addams/arxsentinel/pkg/executor"
-    "github.com/mr-addams/arxsentinel/pkg/plugin"
+    "github.com/mr-addams/arx-core/pkg/executor"
+    "github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 func init() {
@@ -184,8 +194,8 @@ package main
 import (
     // ... other imports ...
 
-    _ "github.com/mr-addams/arxsentinel/internal/core/executor/cloudflare"
-    _ "github.com/mr-addams/arxsentinel/internal/core/executor/myexecutor"
+    _ "github.com/mr-addams/arxsentinel/pkg/executorplugins/cloudflare"
+    _ "github.com/mr-addams/arxsentinel/pkg/executorplugins/myexecutor"
 )
 ```
 

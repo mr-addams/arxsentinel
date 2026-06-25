@@ -24,6 +24,9 @@ ARG TARGETARCH=amd64
 WORKDIR /src
 
 COPY go.mod go.sum ./
+# arx-core pinned at v0.1.0 в корневом go.mod — публичный модуль, тянется
+# напрямую с proxy.golang.org (goproxy по умолчанию), без локального replace.
+# Поэтому COPY arx-core/go.mod в контекст сборки больше не нужен.
 RUN go mod download
 
 COPY . .

@@ -17,6 +17,9 @@
 set -euo pipefail
 
 INT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Подгружаем общие хелперы (docker_pull_retry).
+# shellcheck source=lib.sh
+. "$INT_DIR/lib.sh"
 NETWORK="integration_default"
 # CF attacker containers use a separate subnet (10.88.0.0/24) that is outside the
 # trusted proxy CIDR (172.16.0.0/12). This prevents real_ip_recursive from exhausting
@@ -27,8 +30,9 @@ IMAGE="curlimages/curl"   # Alpine-based, tiny, has /bin/sh
 # Internal hostnames of the 6 servers (from inside the Docker network).
 SERVERS=(nginx apache traefik caddy haproxy litespeed)
 
-# Pull the attacker image once before the scenarios start.
-docker pull -q "$IMAGE"
+# Тянем образ атакующего один раз до старта сценариев, с ретраем — иначе
+# единичный транзиентный сбой Docker Hub/сети абортит весь прогон.
+docker_pull_retry "$IMAGE"
 
 # run_scenario NAME SCRIPT
 #   Runs SCRIPT inside a fresh container on the integration network.
@@ -486,6 +490,32 @@ run_executor_nginx_ban_scenario() {
 }
 run_executor_nginx_ban_scenario
 
+# ── executor-nginx-ban-deny: verify deny-format executor writes "deny <ip>;" lines ──
+# Appends probe attack lines to nginx access log; the nginx-executor-deny sentinel
+# (started in run.sh) picks them up, detects THREAT, and writes the IP to nginx-blocklist-deny.conf
+# using the "deny" directive form instead of the default "geo" form. Records result
+# to logs/executor-nginx-ban-deny.txt for verify.sh.
+
+run_executor_nginx_ban_deny_scenario() {
+    echo "[scenarios] running: executor-nginx-ban-deny"
+
+    mkdir -p "$INT_DIR/logs/threats"
+
+    local attack_ip="21.22.23.24"
+    local attack_line="${attack_ip} - - [01/Jan/2026:00:00:01 +0000] \"GET /.env HTTP/1.1\" 404 0 \"-\" \"curl/7.88\" \"${attack_ip}\""
+    for i in $(seq 1 5); do
+        echo "$attack_line" >> "$INT_DIR/logs/nginx/access.log"
+    done
+
+    sleep 5
+
+    local result=""
+    result=$(cat "$INT_DIR/logs/threats/nginx-blocklist-deny.conf" 2>/dev/null || true)
+    echo "$result" > "$INT_DIR/logs/executor-nginx-ban-deny.txt"
+    echo "[executor-nginx-ban-deny] blocklist content: $result" >&2
+}
+run_executor_nginx_ban_deny_scenario
+
 # ── 16. HTTP source: plain text push ─────────────────────────────────────────────
 run_http_plain_scenario() {
     echo "[scenarios/http-plain] testing HTTP push source (plain text)"
@@ -887,7 +917,7 @@ PYEOF
     sleep 0.5
     local ARX_BIN_JWKS="${TMPDIR}/arx-test-jwks"
     go build -ldflags \
-        "-X github.com/mr-addams/arxsentinel/pkg/source/http/adapters.jwksFetchURL=http://127.0.0.1:${JWKS_PORT}/certs" \
+        "-X github.com/mr-addams/arx-core/pkg/source/http/adapters.jwksFetchURL=http://127.0.0.1:${JWKS_PORT}/certs" \
         -o "$ARX_BIN_JWKS" ./cmd/arxsentinel 2>&1
 
     cat > "$TMPDIR/config.yaml" << YAML

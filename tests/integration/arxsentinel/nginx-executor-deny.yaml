@@ -1,0 +1,47 @@
+general:
+  pid_file: /tmp/arxsentinel-nginx-executor-deny.pid
+  tail_retry_interval: 2s
+
+parser:
+  log_format: combined
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 51
+  observation_window: 60s
+
+output:
+  operational_log: logs/threats/sentinel-nginx-executor-deny.log
+
+logging:
+  console_color: false
+
+streams:
+  - name: nginx-test
+    inputs:
+      - type: file
+        path: logs/nginx/access.log
+    outputs:
+      - type: file
+        path: logs/threats/nginx-executor-deny.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: nginx-ban-deny-queue
+
+executors:
+  - name: nginx-ban-deny
+    type: nginx
+    sources:
+      - name: nginx-ban-deny-queue
+    config:
+      list_file: logs/threats/nginx-blocklist-deny.conf
+      reload_cmd: ""
+      min_level: THREAT
+      ttl: 1h
+      batch_size: 1
+      flush_interval: 500ms
+      file_format: deny
+
+blocklist:
+  storage: ""
+  lists: []

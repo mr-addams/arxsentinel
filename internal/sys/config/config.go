@@ -33,7 +33,8 @@ import (
 
 	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
 	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
-	"github.com/mr-addams/arxsentinel/pkg/executor/queue"
+	"github.com/mr-addams/arx-core/pkg/executor/queue"
+	"github.com/mr-addams/arx-core/pkg/parser"
 )
 
 // ========================== Duration helper type =======================================
@@ -87,21 +88,22 @@ type Config struct {
 // New syntax: inputs: [{type: file, path: /var/log/nginx/access.log, parser: combined}]
 // Migration: general.log_file / streams[i].log_file → InputConfig automatically.
 type InputConfig struct {
-	Type          string `yaml:"type"`           // YAML: "file" | "stdin". Consumer: cmd/arxsentinel input.NewFileSource / input.NewStdinSource
-	Path          string `yaml:"path"`           // YAML: path to log file; required when type=file. Consumer: input.NewFileSource
-	Parser        string `yaml:"parser"`         // YAML: "combined" | "json" | "regex" | profile-name; default inherited from parser.log_format. Consumer: main.go buildParser
-	Exec          string `yaml:"exec"`           // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSource
-	Addr          string `yaml:"addr"`           // YAML: addr — network address for type=syslog: "udp://:5514", "tcp://:514", "unix:///var/run/arx.sock". Consumer: pkg/source/syslog.New
-	Mode          string `yaml:"mode"`           // YAML: mode — "push" (listen) or "pull" (poll), default "push". Consumer: pkg/source/http.New
-	URL           string `yaml:"url"`            // YAML: url — target URL for pull mode. Consumer: pkg/source/http.New
-	HTTPPath      string `yaml:"http_path"`      // YAML: http_path — push handler path, default "/". Consumer: pkg/source/http.New
-	Token         string `yaml:"token"`          // YAML: token — optional Bearer token for auth. Consumer: pkg/source/http.New
-	TLSCert       string `yaml:"tls_cert"`       // YAML: tls_cert — path to TLS cert file; required for https://. Consumer: pkg/source/http.New
-	TLSKey        string `yaml:"tls_key"`        // YAML: tls_key — path to TLS key file; required for https://. Consumer: pkg/source/http.New
-	Protocol      string `yaml:"protocol"`       // YAML: protocol — envelope format: plain|ndjson|cloudflare|firehose|pubsub|loki|otlp|azure|splunk. Consumer: pkg/source/http.New
-	EnvelopeField string `yaml:"envelope_field"` // YAML: envelope_field — field name for ndjson extraction; required when protocol=ndjson. Consumer: pkg/source/http.New
-	PullInterval  string `yaml:"pull_interval"`  // YAML: pull_interval — polling interval for pull mode, e.g. "30s". Consumer: pkg/source/http.New
-	MaxBodyBytes  int    `yaml:"max_body_bytes"` // YAML: max_body_bytes — max request body size, default 10485760. Consumer: pkg/source/http.New
+	Type           string `yaml:"type"`            // YAML: "file" | "stdin". Consumer: cmd/arxsentinel input.NewFileSource / input.NewStdinSource
+	Path           string `yaml:"path"`            // YAML: path to log file; required when type=file. Consumer: input.NewFileSource
+	Parser         string `yaml:"parser"`          // YAML: "combined" | "json" | "regex" | profile-name; default inherited from parser.log_format. Consumer: main.go buildParser
+	Exec           string `yaml:"exec"`            // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSource
+	Addr           string `yaml:"addr"`            // YAML: addr — network address for type=syslog: "udp://:5514", "tcp://:514", "unix:///var/run/arx.sock". Consumer: pkg/source/syslog.New
+	Mode           string `yaml:"mode"`            // YAML: mode — "push" (listen) or "pull" (poll), default "push". Consumer: pkg/source/http.New
+	URL            string `yaml:"url"`             // YAML: url — target URL for pull mode. Consumer: pkg/source/http.New
+	HTTPPath       string `yaml:"http_path"`       // YAML: http_path — push handler path, default "/". Consumer: pkg/source/http.New
+	Token          string `yaml:"token"`           // YAML: token — optional Bearer token for auth. Consumer: pkg/source/http.New
+	TLSCert        string `yaml:"tls_cert"`        // YAML: tls_cert — path to TLS cert file; required for https://. Consumer: pkg/source/http.New
+	TLSKey         string `yaml:"tls_key"`         // YAML: tls_key — path to TLS private key file; required for https://. Consumer: pkg/source/http.New
+	Protocol       string `yaml:"protocol"`        // YAML: protocol — envelope format: plain|ndjson|cloudflare|firehose|pubsub|loki|otlp|azure|splunk. Consumer: pkg/source/http.New
+	EnvelopeField  string `yaml:"envelope_field"`  // YAML: envelope_field — field name for ndjson extraction; required when protocol=ndjson. Consumer: pkg/source/http.New
+	PullInterval   string `yaml:"pull_interval"`   // YAML: pull_interval — polling interval for pull mode, e.g. "30s". Consumer: pkg/source/http.New
+	MaxBodyBytes   int    `yaml:"max_body_bytes"`  // YAML: max_body_bytes — max request body size, default 10485760. Consumer: pkg/source/http.New
+	MaxConnections int    `yaml:"max_connections"` // YAML: max_connections — max concurrent TCP connections; syslog only, default 1000. Consumer: pkg/source/syslog.New (H5)
 }
 
 // SinkConfig — configuration for a single threat event output.
@@ -129,33 +131,10 @@ type ExecutorItem struct {
 // New syntax: executors: [{name: my-action, type: cloudflare, sources: [{name: cf-stream}], config: {…}}]
 // Each executor reads ThreatEvents from Named Channel Switch sources listed in Sources.
 type ExecutorTopConfig struct {
-	Name    string              `yaml:"name"`    // YAML: unique name for this executor instance
-	Type    string              `yaml:"type"`    // YAML: executor type registered in pkg/executor
-	Sources []ExecutorSourceRef `yaml:"sources"` // YAML: named channels to read ThreatEvents from
-	Config  map[string]any      `yaml:"config"`  // YAML: executor-specific structured configuration
-}
-
-// ExecutorSourceRef — reference to a Named Channel Switch source.
-//
-// Queue — optional override of the queue backend for this named channel.
-// If nil (omitted from YAML), the default MemoryQueue with DefaultBufferSize
-// is used (legacy behaviour, identical to pre-QueueConfig state).
-//
-// When set, main.go pre-registers the queue with the chosen backend (memory/bbolt/redis)
-// BEFORE stream goroutines start, so the sentinel-threat sink picks it up via
-// Named Channel Switch fan-in (AttachWriter reuses an existing queue by name).
-//
-// YAML example:
-//
-//	sources:
-//	  - name: sentinel-cf
-//	    queue:
-//	      type: bbolt          # memory | bbolt | redis
-//	      path: /var/lib/arxsentinel/cf-queue.db
-//	      bucket: q            # optional, default "arxsentinel"
-type ExecutorSourceRef struct {
-	Name  string             `yaml:"name"`            // YAML: channel name registered by sentinel-threat sink
-	Queue *queue.QueueConfig `yaml:"queue,omitempty"` // YAML: optional per-source queue backend; nil → default MemoryQueue
+	Name    string                    `yaml:"name"`    // YAML: unique name for this executor instance
+	Type    string                    `yaml:"type"`    // YAML: executor type registered in pkg/executor
+	Sources []queue.ExecutorSourceRef `yaml:"sources"` // YAML: named channels to read ThreatEvents from
+	Config  map[string]any            `yaml:"config"`  // YAML: executor-specific structured configuration
 }
 
 // PipelineRuntimeConfig — tuning parameters for the Source→Merge→Pipeline channel.
@@ -246,19 +225,12 @@ type ParserConfig struct {
 	JSONFields   JSONFieldsConfig `yaml:"json_fields"`   // YAML: parser.json_fields — field name mapping for JSON log format. Consumer: JSONParser
 }
 
-// JSONFieldsConfig maps LogEntry fields to the actual JSON key names in the nginx log.
-// Allows users to customize nginx log_format json without changing sentinel config structure.
-// All fields default to standard nginx variable names.
-type JSONFieldsConfig struct {
-	RemoteAddr string `yaml:"remote_addr"` // default "remote_addr"
-	Time       string `yaml:"time"`        // default "time_iso8601"
-	Request    string `yaml:"request"`     // default "request" — "METHOD /uri PROTO" string
-	Status     string `yaml:"status"`      // default "status"
-	BytesSent  string `yaml:"bytes_sent"`  // default "bytes_sent"
-	Referer    string `yaml:"referer"`     // default "http_referer"
-	UserAgent  string `yaml:"user_agent"`  // default "http_user_agent"
-	RealIP     string `yaml:"real_ip"`     // default "real_ip"
-}
+// JSONFieldsConfig — alias to pkg/parser.JSONFieldsConfig.
+// Decision 9 (DECISIONS.md, Flow 074): DTO relocated to pkg/parser so json.go can move
+// to Core (pkg/) without internal/ dependencies. internal→pkg import is allowed by ADR-002.
+// Composite literals (JSONFieldsConfig{...}) and field declarations remain valid —
+// Go spec: alias types are interchangeable.
+type JSONFieldsConfig = parser.JSONFieldsConfig
 
 // ++++++++++++++++++++++++++ Section: scoring +++++++++++++++++++++++++++++++++++++++++++
 
@@ -543,6 +515,12 @@ func LoadConfig(path string) (Config, error) {
 		return cfg, fmt.Errorf("invalid config %q: %w", path, err)
 	}
 
+	// Предупреждение при высоком max_tracked_ips: каждый IP ведёт к аллокации
+	// entry в трекере + записи в bbolt. >1_000_000 IP может занять >1GB RSS.
+	if cfg.State.MaxTrackedIPs > 1_000_000 {
+		fmt.Fprintf(os.Stderr, "[CONFIG] warning: state.max_tracked_ips=%d exceeds 1,000,000 — memory usage may exceed 1GB RSS\n", cfg.State.MaxTrackedIPs)
+	}
+
 	return cfg, nil
 }
 
@@ -611,6 +589,24 @@ func applyEnvOverrides(cfg *Config) error {
 	}
 	if err := envInt("ARXSENTINEL_STATE_MAX_TRACKED_IPS", &cfg.State.MaxTrackedIPs); err != nil {
 		return err
+	}
+
+	// ── source ────────────────────────────────────────────────────────────────────────
+	// ARXSENTINEL_SYSLOG_MAX_CONNECTIONS — глобальный дефолт для всех syslog inputs.
+	// Применяем ко всем input-ам с type=syslog, у которых max_connections не задан (==0).
+	if v, ok := os.LookupEnv("ARXSENTINEL_SYSLOG_MAX_CONNECTIONS"); ok && v != "" {
+		val, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("env ARXSENTINEL_SYSLOG_MAX_CONNECTIONS: invalid int %q", v)
+		}
+		if val <= 0 {
+			return fmt.Errorf("env ARXSENTINEL_SYSLOG_MAX_CONNECTIONS must be > 0, got %d", val)
+		}
+		for i := range cfg.Inputs {
+			if cfg.Inputs[i].Type == "syslog" && cfg.Inputs[i].MaxConnections <= 0 {
+				cfg.Inputs[i].MaxConnections = val
+			}
+		}
 	}
 
 	// ── detectors.probe ───────────────────────────────────────────────────────────────
@@ -917,11 +913,26 @@ func envCIDRList(key string, dst *[]string) error {
 	return nil
 }
 
+// isIPLike checks if s looks like an IP address (dotted decimal or IPv6).
+// Used for sink name validation (C3) — IP-like names could bypass named channel routing.
+func isIPLike(s string) bool {
+	// Simple heuristic: ends with a digit, colon, or hex char after a dot.
+	return net.ParseIP(s) != nil
+}
+
 // validateConfig checks critical fields after yaml.Unmarshal.
 // Zero thresholds can occur if config.yaml specifies a scoring: section with
 // incomplete fields (yaml.v3 partial merge limitation) — protects against silent misconfiguration.
 func validateConfig(cfg *Config) error {
 	// Top-level executors: unique names required.
+	// Sink names must be static strings (not IP addresses — C3).
+	// IP-like names would bypass named channel routing logic.
+	for _, sink := range cfg.Outputs {
+		if sink.Name != "" && isIPLike(sink.Name) {
+			return fmt.Errorf("outputs: sink name %q looks like an IP address — use a descriptive name", sink.Name)
+		}
+	}
+
 	if len(cfg.Executors) > 0 {
 		seen := make(map[string]struct{}, len(cfg.Executors))
 		for _, ex := range cfg.Executors {
@@ -989,6 +1000,10 @@ func validateConfig(cfg *Config) error {
 		if cfg.Detectors.Rate.Threshold <= 0 {
 			return fmt.Errorf("detectors.rate.threshold must be > 0, got %d",
 				cfg.Detectors.Rate.Threshold)
+		}
+		if time.Duration(cfg.Detectors.Rate.Window) <= 0 {
+			return fmt.Errorf("detectors.rate.window must be > 0, got %v",
+				cfg.Detectors.Rate.Window)
 		}
 		if cfg.Detectors.Rate.Score <= 0 {
 			return fmt.Errorf("detectors.rate.score must be > 0, got %d",
@@ -1111,8 +1126,10 @@ func validateConfig(cfg *Config) error {
 func validateInputs(inputs []InputConfig) error {
 	seen := make(map[string]bool)
 	for i, in := range inputs {
-		if in.Type != "file" && in.Type != "stdin" && in.Type != "exec" && in.Type != "syslog" && in.Type != "http" {
-			return fmt.Errorf("inputs[%d]: unknown type %q (want file, stdin, exec, syslog, or http)", i, in.Type)
+		// Изменение (Flow 083): добавлен "sentinel" — легитимный top-level input,
+		// зарегистрированный в plugins_full (pkg/source/sentinel), читает из NCS.
+		if in.Type != "file" && in.Type != "stdin" && in.Type != "exec" && in.Type != "syslog" && in.Type != "http" && in.Type != "sentinel" {
+			return fmt.Errorf("inputs[%d]: unknown type %q (want file, stdin, exec, syslog, http, or sentinel)", i, in.Type)
 		}
 		if in.Type == "syslog" && in.Addr == "" {
 			return fmt.Errorf("inputs[%d]: type=syslog requires addr (e.g. \"udp://:5514\")", i)

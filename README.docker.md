@@ -129,7 +129,7 @@ ArxSentinel reopens its output file sinks on `SIGHUP`. Configure logrotate:
 
 Prometheus metrics are available on `:9117/metrics` when `metrics.enabled: true` in config.
 
-New Universal I/O counters (Flow #030):
+New Universal I/O counters:
 
 | Metric | Labels | Description |
 |--------|--------|-------------|

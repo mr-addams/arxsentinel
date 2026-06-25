@@ -46,8 +46,8 @@ type MockServer struct {
 }
 
 type RecordedRequest struct {
-	Method string `json:"method"`
-	Path   string `json:"path"`
+	Method string   `json:"method"`
+	Path   string   `json:"path"`
 	IPs    []string `json:"ips,omitempty"`
 }
 

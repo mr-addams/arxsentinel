@@ -11,6 +11,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INT_DIR="$REPO_ROOT/tests/integration"
+# Подгружаем общие хелперы (docker_pull_retry).
+# shellcheck source=lib.sh
+. "$INT_DIR/lib.sh"
 LOGS_DIR="$INT_DIR/logs"
 BIN="$REPO_ROOT/bin/arxsentinel"
 
@@ -34,7 +37,7 @@ cleanup() {
     done
     rm -f /tmp/arxsentinel-{nginx,apache,traefik,caddy,haproxy,litespeed}.pid
     rm -f /tmp/arxsentinel-{nginx-proxy,apache-proxy,traefik-proxy,caddy-proxy,haproxy-proxy,litespeed-proxy}.pid
-    rm -f /tmp/arxsentinel-{cf-broken,bogon-victim,cf-executor,ros-executor}.pid
+    rm -f /tmp/arxsentinel-{cf-broken,bogon-victim,cf-executor,ros-executor,nginx-executor,nginx-executor-deny}.pid
 
     # Stop HAProxy log capture (proxy and backend).
     kill "$HAPROXY_LOG_PID" 2>/dev/null || true
@@ -72,7 +75,7 @@ echo "[run] fetching blocklist patterns from upstream..."
 # all ~685/7108 lines — SIGPIPE on grep is expected and benign.
 # Content is verified by checking the output file size afterward.
 # The same pattern is used in scenarios.sh for the LONG_PATH variable.
-(set +o pipefail; curl -fsSL --max-time 30 "$UA_URL" \
+(set +o pipefail; curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors --max-time 30 "$UA_URL" \
     | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' \
     | head -20) > "$BLOCKLIST_DIR/badbot-ua.list" 2>/dev/null || true
 if [ ! -s "$BLOCKLIST_DIR/badbot-ua.list" ]; then
@@ -80,7 +83,7 @@ if [ ! -s "$BLOCKLIST_DIR/badbot-ua.list" ]; then
     exit 1
 fi
 
-(set +o pipefail; curl -fsSL --max-time 30 "$REF_URL" \
+(set +o pipefail; curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors --max-time 30 "$REF_URL" \
     | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' \
     | head -20) > "$BLOCKLIST_DIR/badbot-ref.list" 2>/dev/null || true
 if [ ! -s "$BLOCKLIST_DIR/badbot-ref.list" ]; then
@@ -89,7 +92,29 @@ if [ ! -s "$BLOCKLIST_DIR/badbot-ref.list" ]; then
 fi
 
 # Save the first UA pattern so scenarios.sh can send a request we know will match.
-BADBOT_TEST_UA=$(head -1 "$BLOCKLIST_DIR/badbot-ua.list")
+# Берём ПЕРВЫЙ чистый литеральный UA из списка (без regex-спецсимволов).
+# Upstream regex-список может иметь regex-эскейпленные паттерны в начале
+# (например, `1h4x\.com`); голова списка не детерминирована относительно
+# перестановок upstream. Независимо от нормализации в parser.go, тест остаётся
+# герметичным: выбираем паттерн, который гарантированно совпадает с реальным
+# UA-токеном после лог-эскейпинга бэкендов.
+BADBOT_TEST_UA=""
+while IFS= read -r line; do
+    # Чистый буквенно-цифровой UA с дефисом/подчёркиванием/пробелом (без regex).
+    if [[ "$line" =~ ^[A-Za-z0-9_[:space:]-]+$ ]]; then
+        BADBOT_TEST_UA="$line"
+        break
+    fi
+done < "$BLOCKLIST_DIR/badbot-ua.list"
+
+# Fallback: если ни один из 20 не чистый — берём голову списка, но продолжаем
+# (не падаем) — нормализация в parser.go должна справиться с большинством
+# regex-паттернов, тестируем дальше.
+if [ -z "$BADBOT_TEST_UA" ]; then
+    BADBOT_TEST_UA=$(head -1 "$BLOCKLIST_DIR/badbot-ua.list")
+    echo "[run] WARNING: no clean literal UA found in first 20 patterns; using head: ${BADBOT_TEST_UA}" >&2
+fi
+
 if [ -z "$BADBOT_TEST_UA" ]; then
     echo "[run] ERROR: badbot-ua.list is empty after fetch" >&2
     exit 1
@@ -163,6 +188,28 @@ touch       "$LOGS_DIR/litespeed-proxy/localhost.access.log"
 # stale entries from earlier runs would cause false positives or false negatives.
 rm -f "$LOGS_DIR/threats"/*.log
 rm -f "$LOGS_DIR/warnings"/*.log
+
+# ── Step 3.5: pre-pull docker images with retry ───────────────────────────────────────
+# `docker compose up` сам не ретраит pull'ы образов при транзиентных сетевых сбоях
+# (TLS-handshake timeout, троттлинг registry) — единичный флейк абортит весь прогон.
+# Предварительно тянем все сервисы с `image:` из docker-compose.yml плюс образ
+# атакующего из scenarios.sh, каждый через docker_pull_retry (3 попытки, backoff 2/4/8с).
+# Сервисы на build-контексте (Caddy, litespeed-backend, cf-api-mock, ros-api-mock)
+# тянут свои base-образы во время `docker build` — у него своё поведение ретраев.
+echo "[run] pre-pulling compose images with retry..."
+COMPOSE_IMAGES=$(docker compose -f "$INT_DIR/docker-compose.yml" config --images 2>/dev/null || true)
+PRE_PULL_IMAGES="$COMPOSE_IMAGES
+curlimages/curl"
+for img in $PRE_PULL_IMAGES; do
+    [ -n "$img" ] || continue
+    # `|| true`: build-context сервисов (cf-api-mock, litespeed-backend, caddy,
+    # ros-api-mock) нет в registry — `docker pull` для них вернёт access-denied.
+    # Эти base-образы корректно подтянутся в `docker compose up --build` ниже.
+    # Реальные registry-образы уже закешированы на этом шаге — дальнейшему
+    # прогону оставшиеся ошибки не помешают.
+    docker_pull_retry "$img" || true
+done
+echo "[run] image pre-pull complete"
 
 # ── Step 4: start containers ──────────────────────────────────────────────────────────
 
@@ -240,6 +287,13 @@ fi
 # Start nginx executor sentinel (reads nginx access log, writes IP blocklist file).
 (cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/nginx-executor.yaml" \
     "$BIN" >> "$LOGS_DIR/threats/sentinel-nginx-executor.log" 2>&1) &
+SENTINEL_PIDS+=($!)
+
+# Start nginx executor sentinel with deny-format output (writes "deny <ip>;" lines
+# instead of the default "<ip> 1;" geo form). Shares the same input access log and
+# sentinel-threat source as the geo sentinel, but writes to its own blocklist file.
+(cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/nginx-executor-deny.yaml" \
+    "$BIN" >> "$LOGS_DIR/threats/sentinel-nginx-executor-deny.log" 2>&1) &
 SENTINEL_PIDS+=($!)
 
 # Give sentinels time to open and begin tailing log files.

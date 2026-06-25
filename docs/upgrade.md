@@ -2,7 +2,7 @@
 
 ## Before you begin
 
-- This guide covers upgrading from v1.x to v2.x (current version: **2.0.1-dev.2**).
+- This guide covers upgrading from v1.x to v2.x (current development version: v2.x).
 - v2.x is backward-compatible — existing `config.yaml` files continue to work without changes.
 - Read the full [v2.0.0 release notes](https://github.com/mr-addams/arxsentinel/releases/tag/v2.0.0) for the complete changelog.
 
@@ -51,7 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/
 curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash -s -- --dev
 
 # Specific version/tag
-curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash -s -- --version v2.0.1-dev.2
+curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash -s -- --version <latest>
 ```
 
 **Option B — Debian / Ubuntu (manual):**
@@ -59,7 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/
 Download the `.deb` package for your architecture from the [Releases page](https://github.com/mr-addams/arxsentinel/releases) and install it:
 
 ```bash
-sudo apt install ./arxsentinel_2.0.1-dev.2_linux_amd64.deb
+sudo apt install ./arxsentinel_<version>_linux_amd64.deb
 ```
 
 Example output:
@@ -67,21 +67,21 @@ Example output:
 ```
 Selecting previously unselected package arxsentinel.
 (Reading database… 817847 files and directories currently installed.)
-Preparing to unpack arxsentinel_2.0.1-dev.2_linux_amd64.deb…
-Unpacking arxsentinel (2.0.1~dev.2)…
+Preparing to unpack arxsentinel_<version>_linux_amd64.deb…
+Unpacking arxsentinel (<version>)…
 Processing triggers for kali-menu (2026.2.5)…
 ```
 
 **Option C — Fedora / RHEL / AlmaLinux / Rocky Linux:**
 
 ```bash
-sudo dnf install ./arxsentinel_2.0.1-dev.2_linux_amd64.rpm
+sudo dnf install ./arxsentinel_<version>_linux_amd64.rpm
 ```
 
 **Option D — Arch Linux / Manjaro:**
 
 ```bash
-sudo pacman -U arxsentinel_2.0.1-dev.2_linux_amd64.pkg.tar.zst
+sudo pacman -U arxsentinel_<version>_linux_amd64.pkg.tar.zst
 ```
 
 > The v2 package **does not overwrite** your existing config. Package managers preserve `/etc/arxsentinel/config.yaml` during upgrade.
@@ -134,7 +134,7 @@ tail -f /var/log/arxsentinel/sentinel.log
 Expected:
 
 ```
-2026-05-28 16:55:07 [STARTUP] arxsentinel v2.0.1-dev.2 started
+2026-05-28 16:55:07 [STARTUP] arxsentinel v2.x started
 2026-05-28 16:55:07 [STATS] processed=0 tracked=0 threats=0 suspicious=0
 ```
 
@@ -280,7 +280,7 @@ curl -X DELETE "https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ru
 |---|---|---|---|---|
 | v1.3.9 (latest v1.x) | `/usr/local/bin/arxsentinel` | `/etc/arxsentinel/config.yaml` | No | Last v1.x release with all v1 features |
 | v2.0.0 | `/usr/bin/arxsentinel` | `/etc/arxsentinel/config.yaml` | Yes | First v2.x stable release |
-| v2.0.1-dev.2 | `/usr/bin/arxsentinel` | `/etc/arxsentinel/config.yaml` | Yes | Active development — see [Releases](https://github.com/mr-addams/arxsentinel/releases) |
+| latest dev | `/usr/bin/arxsentinel` | `/etc/arxsentinel/config.yaml` | Yes | Active development — see [Releases](https://github.com/mr-addams/arxsentinel/releases) |
 
 ---
 

@@ -43,6 +43,7 @@ import (
 	"github.com/rrethy/ahocorasick"
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/mr-addams/arxsentinel/internal/sys/metrics"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 )
 
@@ -70,10 +71,10 @@ type SourceConfig struct {
 // YAML: blocklist.lists[].name, blocklist.lists[].enabled, blocklist.lists[].refresh_interval, blocklist.lists[].sources.
 // Consumer: NewManager, startList, Update.
 type ListConfig struct {
-	Name            string         `yaml:"name"`              // Internal — list identifier. Consumer: startList, Match, MatchResult.
-	Enabled         *bool          `yaml:"enabled"`           // YAML: blocklist.lists[].enabled, default true. Consumer: listEnabled.
-	RefreshInterval Duration       `yaml:"refresh_interval"`  // YAML: blocklist.lists[].refresh_interval. Consumer: startList (ticker interval).
-	Sources         []SourceConfig `yaml:"sources"`           // YAML: blocklist.lists[].sources[]. Consumer: startList, fetchAndUpdate.
+	Name            string         `yaml:"name"`             // Internal — list identifier. Consumer: startList, Match, MatchResult.
+	Enabled         *bool          `yaml:"enabled"`          // YAML: blocklist.lists[].enabled, default true. Consumer: listEnabled.
+	RefreshInterval Duration       `yaml:"refresh_interval"` // YAML: blocklist.lists[].refresh_interval. Consumer: startList (ticker interval).
+	Sources         []SourceConfig `yaml:"sources"`          // YAML: blocklist.lists[].sources[]. Consumer: startList, fetchAndUpdate.
 }
 
 // Config is the top-level blocklist configuration embedded in the application config.
@@ -82,7 +83,7 @@ type ListConfig struct {
 // Consumer: NewManager, Update.
 type Config struct {
 	Storage string       `yaml:"storage"` // YAML: blocklist.storage, default "" (in-memory). Consumer: NewManager, Update.
-	Lists   []ListConfig `yaml:"lists"`    // YAML: blocklist.lists[]. Consumer: NewManager, Update.
+	Lists   []ListConfig `yaml:"lists"`   // YAML: blocklist.lists[]. Consumer: NewManager, Update.
 }
 
 // Duration is a time.Duration that unmarshals from YAML strings like "24h", "30m".
@@ -240,7 +241,7 @@ func (m *Manager) Match(list string, text string) bool {
 		return false
 	}
 
-	return len(matcher.FindAllString(text)) > 0
+	return len(matcher.FindAllByteSlice([]byte(text))) > 0
 }
 
 // MatchResult returns the first matched pattern from the named list, or ("", false) if no match.
@@ -263,7 +264,7 @@ func (m *Manager) MatchResult(list string, text string) (string, bool) {
 		return "", false
 	}
 
-	results := matcher.FindAllString(text)
+	results := matcher.FindAllByteSlice([]byte(text))
 	if len(results) > 0 {
 		return string(results[0].Word), true
 	}
@@ -390,6 +391,8 @@ func (m *Manager) fetchAndUpdate(ctx context.Context, cfg ListConfig, state *lis
 	}
 	state.setMatcher(matcher)
 	utils.Log("BLOCKLIST", fmt.Sprintf("list %q: automaton rebuilt (%d patterns)", cfg.Name, len(all)), "info")
+	// Record the refresh timestamp for monitoring (062/Task 4.1).
+	metrics.RecordBlocklistRefresh(cfg.Name)
 }
 
 // fetch downloads a URL and returns the body capped at fetchSizeLimit.

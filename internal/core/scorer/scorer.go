@@ -33,8 +33,9 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/internal/core/detector"
-	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arx-core/pkg/parser"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // ========================== Scorer ====================================================
@@ -44,10 +45,10 @@ import (
 // YAML: scorer.* — score thresholds and observation window.
 // Consumer: pipeline (main.go Evaluate call).
 type Scorer struct {
-	alertThreshold int                   // YAML: scorer.alert_threshold, default 50 — threshold for WARN level. Consumer: levelFor.
-	banThreshold   int                   // YAML: scorer.ban_threshold, default 80 — threshold for THREAT level. Consumer: levelFor.
-	window         time.Duration         // YAML: scorer.observation_window, default 5m — decay window. Consumer: Evaluate, applyDecay.
-	detectors      []detector.Detector   // YAML: detectors.* — active detector list. Consumer: Evaluate.
+	alertThreshold int                 // YAML: scorer.alert_threshold, default 50 — threshold for WARN level. Consumer: levelFor.
+	banThreshold   int                 // YAML: scorer.ban_threshold, default 80 — threshold for THREAT level. Consumer: levelFor.
+	window         time.Duration       // YAML: scorer.observation_window, default 5m — decay window. Consumer: Evaluate, applyDecay.
+	detectors      []detector.Detector // YAML: detectors.* — active detector list. Consumer: Evaluate.
 
 	logFn func(tag, msg, level string) // Internal — debug logger injected from main.go. Consumer: Evaluate.
 }
@@ -71,19 +72,42 @@ func NewScorer(cfg config.ScoringConfig, detectors []detector.Detector, logFn fu
 // Evaluate runs all detectors, updates the accumulated IP score with decay applied,
 // and returns the threat level.
 //
-//   Parameters:
-//     sv        — IP state (implements detector.ScoreAccess; typically *state.IPState)
-//     entry     — current log line
-//     exemptSet — detector names to skip (nil or empty = all detectors run)
+//	Parameters:
+//	  sv        — IP state (implements detector.ScoreAccess; typically *state.IPState)
+//	  entry     — current log line
+//	  exemptSet — detector names to skip (nil or empty = all detectors run)
 //
 // Returns:
-//   level   — "" / "WARN" / "THREAT"
-//   score   — final score after decay + new detector contributions
-//   modules — list of triggered detectors (only Score > 0)
-//   reason  — string "module1:reason1,module2:reason2"
+//
+//	level   — "" / "WARN" / "THREAT"
+//	score   — final score after decay + new detector contributions
+//	modules — list of triggered detectors (only Score > 0)
+//	reason  — string "module1:reason1,module2:reason2"
 //
 // Called from the main pipeline for each log line after Tracker.Update.
 // Non-blocking — all operations are synchronous in a single goroutine.
+// Evaluate runs all detectors, updates the accumulated IP score with decay applied,
+// and returns the threat level.
+//
+//	Parameters:
+//	  sv        — IP state (implements detector.ScoreAccess; typically *state.IPState)
+//	  entry     — current log line
+//	  exemptSet — detector names to skip (nil or empty = all detectors run)
+//
+// Returns:
+//
+//	level   — "" / "WARN" / "THREAT"
+//	score   — final score after decay + new detector contributions
+//	modules — list of triggered detectors (only Score > 0)
+//	reason  — string "module1:reason1,module2:reason2"
+//
+// Called from the main pipeline for each log line after Tracker.Update.
+// Non-blocking — all operations are synchronous in a single goroutine.
+//
+// Phase 2.2 (Flow 083): the Detectors contract now takes *plugin.Event, not
+// *parser.LogEntry. We wrap the entry here into a synthetic Event whose
+// Envelope carries the Source / SourceType / Stream / Timestamp (Level is
+// intentionally left empty — scoring happens AFTER this call and assigns it).
 func (s *Scorer) Evaluate(sv detector.ScoreAccess, entry *parser.LogEntry, exemptSet map[string]struct{}) (level string, score int, modules []string, reason string) {
 	// ── Step 1: decay of accumulated score ───────────────────────────────────────────────
 	// now is fixed once: decay and SetScore use the same point in time.
@@ -93,6 +117,16 @@ func (s *Scorer) Evaluate(sv detector.ScoreAccess, entry *parser.LogEntry, exemp
 	existing := sv.GetScore()
 	lastUpdate := sv.GetScoreUpdatedAt()
 	decayed := applyDecay(existing, lastUpdate, s.window, now)
+
+	// Wrap LogEntry → Event for the detector contract. Envelope.Source / Type /
+	// Stream / Timestamp are taken from the LogEntry's transport fields; Level
+	// is empty (scorer does not yet know the verdict — assigned in step 4).
+	detectorEvent := parser.WrapLogEntry(entry, plugin.Envelope{
+		Source:     entry.RemoteAddr,
+		SourceType: "scorer",
+		Stream:     "scorer",
+		Timestamp:  now,
+	})
 
 	// ── Step 2: collect detector results ─────────────────────────────────────────
 	var delta int
@@ -106,7 +140,7 @@ func (s *Scorer) Evaluate(sv detector.ScoreAccess, entry *parser.LogEntry, exemp
 				continue
 			}
 		}
-		res := d.Detect(sv, entry)
+		res := d.Detect(sv, detectorEvent)
 		if res.Score <= 0 {
 			continue
 		}

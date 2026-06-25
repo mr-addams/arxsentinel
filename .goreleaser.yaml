@@ -30,7 +30,7 @@ nfpms:
     homepage: https://github.com/mr-addams/arxsentinel
     maintainer: mr.addams <mr.addams@gmail.com>
     description: nginx access log analyzer with automatic Fail2Ban integration
-    license: MIT
+    license: Elastic-2.0
     formats:
       - deb
 
@@ -81,7 +81,7 @@ nfpms:
     homepage: https://github.com/mr-addams/arxsentinel
     maintainer: mr.addams <mr.addams@gmail.com>
     description: nginx access log analyzer with automatic Fail2Ban integration
-    license: MIT
+    license: Elastic-2.0
     formats:
       - rpm
 
@@ -130,7 +130,7 @@ nfpms:
     homepage: https://github.com/mr-addams/arxsentinel
     maintainer: mr.addams <mr.addams@gmail.com>
     description: nginx access log analyzer with automatic Fail2Ban integration
-    license: MIT
+    license: Elastic-2.0
     formats:
       - archlinux
 
@@ -198,7 +198,7 @@ dockers_v2:
       "org.opencontainers.image.version": "{{ .Version }}"
       "org.opencontainers.image.revision": "{{ .Commit }}"
       "org.opencontainers.image.source": "https://github.com/mr-addams/arxsentinel"
-      "org.opencontainers.image.licenses": "MIT"
+      "org.opencontainers.image.licenses": "Elastic-2.0"
 
 release:
   github:

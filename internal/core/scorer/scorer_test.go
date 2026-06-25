@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/mr-addams/arxsentinel/internal/core/detector"
-	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
-	"github.com/mr-addams/arxsentinel/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/parser"
+	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
 // ========================== Mock implementations ===========================================
@@ -26,14 +26,14 @@ type mockScoreState struct {
 	rate        float64
 }
 
-func (m *mockScoreState) GetIP() string                    { return m.ip }
-func (m *mockScoreState) GetTotalRequests() int            { return m.total }
-func (m *mockScoreState) GetRequests404() int              { return m.requests404 }
-func (m *mockScoreState) RecentPaths() []string            { return m.paths }
+func (m *mockScoreState) GetIP() string                      { return m.ip }
+func (m *mockScoreState) GetTotalRequests() int              { return m.total }
+func (m *mockScoreState) GetRequests404() int                { return m.requests404 }
+func (m *mockScoreState) RecentPaths() []string              { return m.paths }
 func (m *mockScoreState) ApproxRate(_ time.Duration) float64 { return m.rate }
-func (m *mockScoreState) GetScore() int                    { return m.score }
-func (m *mockScoreState) GetScoreUpdatedAt() time.Time     { return m.scoreAt }
-func (m *mockScoreState) SetScore(score int, at time.Time) { m.score = score; m.scoreAt = at }
+func (m *mockScoreState) GetScore() int                      { return m.score }
+func (m *mockScoreState) GetScoreUpdatedAt() time.Time       { return m.scoreAt }
+func (m *mockScoreState) SetScore(score int, at time.Time)   { m.score = score; m.scoreAt = at }
 
 // fixedDetector returns a fixed DetectResult regardless of input.
 // Allows precise control over score contribution when testing scorer.
@@ -45,14 +45,14 @@ type fixedDetector struct {
 func (d *fixedDetector) Name() string { return d.name }
 
 func (d *fixedDetector) Manifest() plugin.Manifest { return plugin.Manifest{} }
-func (d *fixedDetector) Detect(_ detector.IPView, _ *parser.LogEntry) detector.DetectResult {
+func (d *fixedDetector) Detect(_ detector.IPView, _ *plugin.Event) detector.DetectResult {
 	return d.result
 }
 
 // makeDetector creates a mock detector with specified score and reason.
 func makeDetector(name string, score int, reason string) detector.Detector {
 	return &fixedDetector{
-		name: name,
+		name:   name,
 		result: detector.DetectResult{Score: score, Module: name, Reason: reason},
 	}
 }
@@ -254,6 +254,28 @@ func TestApplyDecayZeroScore(t *testing.T) {
 	result := applyDecay(0, time.Now().Add(-10*time.Second), 300*time.Second, time.Now())
 	if result != 0 {
 		t.Errorf("decay of zero score: expected 0, got %d", result)
+	}
+}
+
+// ========================== Benchmarks =================================================
+
+// BenchmarkScorerEvaluate measures the throughput of Scorer.Evaluate with multiple detectors.
+// Simulates a realistic scoring path: 5 detectors, each contributing score.
+func BenchmarkScorerEvaluate(b *testing.B) {
+	detectors := []detector.Detector{
+		makeDetector("probe", 30, "env_probe"),
+		makeDetector("ua", 25, "curl"),
+		makeDetector("rate", 20, "rate:120rps"),
+		makeDetector("badbot", 15, "fake_bot"),
+		makeDetector("overflow", 10, "long_url"),
+	}
+	sc := makeScorer(detectors...)
+	sv := freshState()
+	entry := makeEntry()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		sc.Evaluate(sv, entry, nil)
 	}
 }
 

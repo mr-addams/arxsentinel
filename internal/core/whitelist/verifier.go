@@ -66,9 +66,9 @@ type Resolver interface {
 //
 // YAML: whitelist.* (via config.BotConfig). Consumer: pipeline (main.go).
 type Verifier struct {
-	cache    *IPCache                            // Internal — cache from ipcache.go. Consumer: Verify.
-	resolver Resolver                             // Internal — injected Resolver (*net.Resolver in prod). Consumer: verifyRDNS.
-	logFn    func(tag, msg, level string)        // Internal — debug logger from main.go. Consumer: Verify, verifyRDNS.
+	cache    *IPCache                     // Internal — cache from ipcache.go. Consumer: Verify.
+	resolver Resolver                     // Internal — injected Resolver (*net.Resolver in prod). Consumer: verifyRDNS.
+	logFn    func(tag, msg, level string) // Internal — debug logger from main.go. Consumer: Verify, verifyRDNS.
 }
 
 // NewVerifier creates a Verifier.

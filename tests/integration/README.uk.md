@@ -236,7 +236,7 @@ Two‑hop ланцюжок: CF-заголовки встановлюються `
 
 **3 paths на пару (proxy, backend):** `/wp-login.php`, `.env`, `/xmlrpc.php`.
 
-**Інваріант:** Той самий, що в Case 1 — лог загроз показує IP атакуючого. **72 перевірки** (4 проксі × 6 backends × 3 paths).
+**Інваріант:** Той самий, що в Case 1 — лог загроз показує IP атакуючого. **24 перевірки** (4 проксі × 6 backends — 3 probe paths per pair, single assertion per pair).
 
 ---
 

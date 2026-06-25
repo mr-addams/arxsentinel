@@ -1,0 +1,45 @@
+# ===================== cookbook/profiles/full.yaml =====================================
+#
+#   Reference config for the `full` build profile.
+#   Covers three plugin names from profiles/full.yaml to exercise invariant (c):
+#     - source/syslog   (type: syslog)
+#     - source/sentinel (type: sentinel)
+#     - sink/stdout     (type: stdout)
+#
+#   Not a deployable user config — cookbook/profiles/ exists only as the
+#   static reference set for scripts/check-build-profiles.sh invariant (c).
+#   For ready-to-use recipes see cookbook/<scenario>/.
+#
+# =======================================================================================
+
+# ── Streams ───────────────────────────────────────────────────────────────────────────
+#
+# Stream "main": syslog source → stdout sink. Demonstrates the smallest valid
+# two-plugin pipeline against the full profile.
+# Stream "enrich": sentinel source reads ThreatEvents from the in-process Named
+# Channel Switch and echoes them to stdout — exercises the sentinel source
+# transport and confirms the `sentinel` Register name is in the profile.
+streams:
+  - name: main
+    inputs:
+      - type: syslog
+        addr: udp://0.0.0.0:5514
+        parser: combined
+    outputs:
+      - type: stdout
+        format: json
+
+  - name: enrich
+    inputs:
+      - type: sentinel
+        addr: ncs://cookbook-full
+    outputs:
+      - type: stdout
+        format: json
+
+# ── Scoring (minimal valid set) ────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: "300s"
+  decay: "linear"

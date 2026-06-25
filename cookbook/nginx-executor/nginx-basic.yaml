@@ -102,6 +102,7 @@ executors:
     config:
       list_file: /etc/nginx/conf.d/arxsentinel_autoblock.list
       state_file: /var/lib/arxsentinel/nginx-state.json
+      file_format: geo            # on-disk line syntax; "geo" → "<ip> 1;" (nginx geo{} map), "deny" → "deny <ip>;" (nginx allow/deny), default: "geo"
       min_level: "THREAT"          # minimum threat level to act on; "INFO"|"WARN"|"THREAT", default: "THREAT"
       ttl: "24h"                   # auto-unban after this duration (0 = no auto-unban); duration, default: "24h"
       batch_size: 10               # IPs per batch write; int, ≥1, default: 10

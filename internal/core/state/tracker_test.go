@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/parser"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arx-core/pkg/parser"
 )
 
 // ========================== Helper functions ===================================
@@ -181,7 +181,7 @@ func TestGCEviction(t *testing.T) {
 	// Add a fresh IP
 	tr.Update(makeEntry("new.ip", "GET", "/", 200))
 
-	deleted, _ := tr.runGC()
+	deleted, _, _ := tr.runGC()
 
 	if deleted != 1 {
 		t.Errorf("GC: expected 1 deleted entry, got %d", deleted)
@@ -205,7 +205,7 @@ func TestGCNoEviction(t *testing.T) {
 	tr.Update(makeEntry("1.1.1.1", "GET", "/", 200))
 	tr.Update(makeEntry("2.2.2.2", "GET", "/", 200))
 
-	deleted, _ := tr.runGC()
+	deleted, _, _ := tr.runGC()
 
 	if deleted != 0 {
 		t.Errorf("GC: expected 0 deletions, got %d", deleted)
@@ -334,6 +334,32 @@ func TestRateCounterGapInOneToTwoWindows(t *testing.T) {
 
 	if st.rateCurrCount != 2 {
 		t.Errorf("after request 1s later: currCount=%d, expected 2", st.rateCurrCount)
+	}
+}
+
+// ========================== Benchmarks =================================================
+
+// BenchmarkTrackerUpdate measures the throughput of Tracker.Update with a single goroutine.
+// Creates a realistic LogEntry and cycles over 1000 distinct IPs to avoid excessive branching
+// and approach real-world usage patterns.
+func BenchmarkTrackerUpdate(b *testing.B) {
+	tr := NewTracker(makeConfig(10000), nil)
+
+	// Pre-generate entries with distinct IPs — realistic load: many unique visitors
+	entries := make([]*parser.LogEntry, 1000)
+	for i := range entries {
+		entries[i] = &parser.LogEntry{
+			RealIP: fmt.Sprintf("10.0.%d.%d", i/256, i%256),
+			Method: "GET",
+			Path:   "/index.html",
+			Status: 200,
+			Time:   time.Now(),
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tr.Update(entries[i%len(entries)])
 	}
 }
 
