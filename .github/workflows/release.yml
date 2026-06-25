@@ -17,10 +17,12 @@ on:
 # contents:write — create tag and GitHub Release.
 # pull-requests:write — open auto VERSION-bump PR to dev after stable release.
 # packages:write — push Docker images to ghcr.io.
+# actions:write — explicitly trigger the Pages deploy workflow (see last step).
 permissions:
   contents: write
   pull-requests: write
   packages: write
+  actions: write
 
 jobs:
   integration:
@@ -172,5 +174,15 @@ jobs:
 
           # --admin bypasses required_signatures ruleset — bot commits are unsigned.
           gh pr merge "$pr_url" --squash --delete-branch --admin
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pages does not auto-deploy after a workflow_dispatch release: the
+      # workflow_run trigger in pages.yml does not fire in the dispatch→run chain.
+      # Trigger the deploy explicitly so the landing page always reflects the new
+      # stable version (pages.yml self-patches version strings via gh release list).
+      - name: Trigger Pages deploy
+        if: success() && steps.tag.outputs.skip != 'true'
+        run: gh workflow run pages.yml --ref dev
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
