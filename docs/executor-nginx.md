@@ -26,6 +26,7 @@ based on a configurable TTL.
 | `flush_interval` | `duration` | `30s` | Max time before a partial batch is flushed |
 | `reload_cmd` | `string` | `""` (passive) | Shell command to reload nginx after write (e.g. `nginx -s reload`). Empty = no auto-reload |
 | `reload_timeout` | `duration` | `30s` | Timeout for the reload command |
+| `file_format` | `string` | `"geo"` | On-disk entry syntax. `"geo"` → `<ip> 1;` per line (for nginx `geo {}` map). `"deny"` → `deny <ip>;` per line (for nginx `allow`/`deny` directives) |
 
 ### Source wiring (`executors[].sources`)
 
@@ -92,6 +93,65 @@ executors:
 The executor writes banned IPs to `list_file` in the format `<ip> 1;` (one entry per line).
 How you include and apply this file in your nginx configuration is entirely up to you —
 arxsentinel does not prescribe a method.
+
+## List file formats
+
+The executor supports two on-disk line syntaxes, selected by `file_format`:
+
+### `geo` (default)
+
+```
+# managed by arxsentinel — do not edit manually
+1.2.3.4 1;
+5.6.7.8 1;
+```
+
+Consumed by an nginx `geo` map. Use it when you want to block IPs conditionally
+across multiple locations or pass the blocked flag to your application
+(via `$is_blocked`):
+
+```nginx
+geo $is_blocked {
+    default 0;
+    include /etc/nginx/conf.d/arxsentinel_autoblock.list;
+}
+if ($is_blocked) { return 403; }
+```
+
+This is the historical format and the default — existing setups keep working
+without any config change.
+
+### `deny`
+
+```
+# managed by arxsentinel — do not edit manually
+deny 1.2.3.4;
+deny 5.6.7.8;
+```
+
+Consumed directly by nginx `allow`/`deny` directives. Use it when you want a
+straightforward per-location block with no `geo` map plumbing:
+
+```nginx
+location / {
+    include /etc/nginx/conf.d/arxsentinel_autoblock.list;
+    deny all;
+}
+```
+
+### Choosing between them
+
+- Pick `geo` when you want to share the block flag with your backend
+  (`$is_blocked` as an upstream header) or apply different rules per
+  location.
+- Pick `deny` when the requirement is plain "block these IPs at the edge"
+  and you do not need the map flag.
+- `state_file` (TTL persistence) works identically with both formats —
+  it stores the IP and its addedAt timestamp in JSON, independent of the
+  on-disk syntax.
+
+The file header is the same for both formats. Mixing formats in the same
+file is not supported — pick one and stick with it across reloads.
 
 ---
 

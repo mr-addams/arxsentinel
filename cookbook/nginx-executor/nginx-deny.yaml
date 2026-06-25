@@ -1,10 +1,28 @@
-# ================== cookbook/nginx-executor/nginx-basic.yaml ============================
+# ================== cookbook/nginx-executor/nginx-deny.yaml ============================
 #
-#   nginx combined log + nginx blocklist executor.
-#   Threat IPs are written to a blocklist file and nginx is reloaded.
+#   nginx combined log + nginx blocklist executor (deny format).
+#   Threat IPs are written as `deny <ip>;` lines and nginx is reloaded.
 #
-#   Add to your nginx.conf:
-#     include /etc/nginx/conf.d/arxsentinel_autoblock.list;
+#   This is the deny-format variant of nginx-basic.yaml.
+#   Use it when you want a straightforward per-location block with no
+#   geo{} map plumbing (no $is_blocked variable shared with upstream).
+#
+#   Add to your nginx.conf — include the file INSIDE a server {} or
+#   location {} block, next to other allow/deny directives:
+#
+#     server {
+#         listen 80;
+#
+#         location / {
+#             include /etc/nginx/conf.d/arxsentinel_deny.list;
+#             deny all;
+#         }
+#     }
+#
+#   State file (TTL persistence) is independent of file_format and works
+#   identically — it stores IP and addedAt timestamp in JSON.
+#
+#   Do NOT mix geo and deny formats across reloads: pick one and stick to it.
 #
 # =======================================================================================
 
@@ -100,9 +118,9 @@ executors:
     sources:
       - name: sentinel-cf
     config:
-      list_file: /etc/nginx/conf.d/arxsentinel_autoblock.list
+      list_file: /etc/nginx/conf.d/arxsentinel_deny.list
       state_file: /var/lib/arxsentinel/nginx-state.json
-      file_format: geo            # on-disk line syntax; "geo" → "<ip> 1;" (nginx geo{} map), "deny" → "deny <ip>;" (nginx allow/deny), default: "geo"
+      file_format: deny           # on-disk line syntax; "geo" → "<ip> 1;" (nginx geo{} map), "deny" → "deny <ip>;" (nginx allow/deny), default: "geo"
       min_level: "THREAT"          # minimum threat level to act on; "INFO"|"WARN"|"THREAT", default: "THREAT"
       ttl: "24h"                   # auto-unban after this duration (0 = no auto-unban); duration, default: "24h"
       batch_size: 10               # IPs per batch write; int, ≥1, default: 10

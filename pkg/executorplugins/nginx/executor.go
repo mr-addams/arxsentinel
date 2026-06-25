@@ -189,6 +189,10 @@ func (e *NginxExecutor) saveState(banned map[string]time.Time) {
 // syncExisting reads the current list_file to populate the banned map,
 // and optionally reads the state_file to recover TTL timestamps.
 //
+// Line parsing is driven by cfg.FileFormat:
+//   - "geo"  — strips trailing " 1;" suffix, expects "<ip> 1;"
+//   - "deny" — strips leading "deny " prefix and trailing ";" suffix
+//
 // If a state_file exists and is valid JSON, its timestamps are used as addedAt.
 // IPs present in the list_file but missing from the state_file get addedAt = now.
 // A corrupted state_file is ignored with a WARNING — behaviour degrades to
@@ -225,11 +229,7 @@ func (e *NginxExecutor) syncExisting() {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if !strings.HasSuffix(line, "1;") {
-			continue
-		}
-		ip := strings.TrimSuffix(line, " 1;")
-		ip = strings.TrimSpace(ip)
+		ip := parseBannedLine(line, e.cfg.FileFormat)
 		if ip == "" {
 			continue
 		}
@@ -241,6 +241,39 @@ func (e *NginxExecutor) syncExisting() {
 	}
 	if err := scanner.Err(); err != nil {
 		e.logger.Log("EXECUTOR", fmt.Sprintf("nginx executor %q: syncExisting: read error: %v — banned map may be incomplete", e.name, err), logger.LevelWarning)
+	}
+}
+
+// parseBannedLine extracts the IP address from a list-file line according to
+// the active file_format. Returns an empty string when the line does not match
+// the expected syntax for the format.
+//
+//	"geo"   → expects "<ip> 1;",  strips " 1;" suffix
+//	"deny"  → expects "deny <ip>;", strips "deny " prefix and ";" suffix
+//
+// Any other file_format value is treated as malformed (returns ""). Unknown
+// formats should have been rejected by parseConfig, but we are defensive here
+// because the field is read at runtime from cfg.
+func parseBannedLine(line, fileFormat string) string {
+	switch fileFormat {
+	case FileFormatDeny:
+		if !strings.HasSuffix(line, ";") {
+			return ""
+		}
+		// Use Fields to handle space or tab between "deny" and the IP.
+		fields := strings.Fields(strings.TrimSuffix(line, ";"))
+		if len(fields) != 2 || fields[0] != "deny" {
+			return ""
+		}
+		return fields[1]
+	default:
+		// "geo" and any unrecognised format — keep the historical " 1;" suffix
+		// check so we don't accidentally load IPs from a malformed file.
+		if !strings.HasSuffix(line, " 1;") {
+			return ""
+		}
+		ip := strings.TrimSuffix(line, " 1;")
+		return strings.TrimSpace(ip)
 	}
 }
 
@@ -274,11 +307,13 @@ func (e *NginxExecutor) runReload(ctx context.Context) {
 // flush writes all currently banned IPs to the list file, saves state,
 // and calls the reload command.
 //
-// The data format is:
+// The line syntax is selected by cfg.FileFormat:
 //
-//	<ip> 1;
+//	"geo"  → "<ip> 1;"
+//	"deny" → "deny <ip>;"
 //
-// With a header line: "# managed by arxsentinel — do not edit manually\n"
+// The file header is the same for both formats — it only marks the file as
+// managed-by-arxsentinel, it does not declare a syntax.
 func (e *NginxExecutor) flush(ctx context.Context, banned map[string]time.Time) {
 	// L4: проверка отмены контекста перед началом flush — не начинаем запись
 	// если pipeline уже завершается. Избегаем лишней IO и reload при shutdown.
@@ -295,8 +330,17 @@ func (e *NginxExecutor) flush(ctx context.Context, banned map[string]time.Time) 
 	var sb strings.Builder
 	sb.WriteString(fileHeader)
 	for ip := range banned {
-		sb.WriteString(ip)
-		sb.WriteString(" 1;\n")
+		if e.cfg.FileFormat == FileFormatDeny {
+			// Nginx "deny" directive form — used with allow/deny at server/location.
+			sb.WriteString("deny ")
+			sb.WriteString(ip)
+			sb.WriteString(";\n")
+		} else {
+			// "geo" form — the default and the historical syntax; consumed by
+			// `geo $is_blocked { ... default 0; ... include ...; }`.
+			sb.WriteString(ip)
+			sb.WriteString(" 1;\n")
+		}
 	}
 
 	if err := writeFile(e.cfg.ListFile, sb.String()); err != nil {

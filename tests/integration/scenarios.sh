@@ -490,6 +490,32 @@ run_executor_nginx_ban_scenario() {
 }
 run_executor_nginx_ban_scenario
 
+# ── executor-nginx-ban-deny: verify deny-format executor writes "deny <ip>;" lines ──
+# Appends probe attack lines to nginx access log; the nginx-executor-deny sentinel
+# (started in run.sh) picks them up, detects THREAT, and writes the IP to nginx-blocklist-deny.conf
+# using the "deny" directive form instead of the default "geo" form. Records result
+# to logs/executor-nginx-ban-deny.txt for verify.sh.
+
+run_executor_nginx_ban_deny_scenario() {
+    echo "[scenarios] running: executor-nginx-ban-deny"
+
+    mkdir -p "$INT_DIR/logs/threats"
+
+    local attack_ip="21.22.23.24"
+    local attack_line="${attack_ip} - - [01/Jan/2026:00:00:01 +0000] \"GET /.env HTTP/1.1\" 404 0 \"-\" \"curl/7.88\" \"${attack_ip}\""
+    for i in $(seq 1 5); do
+        echo "$attack_line" >> "$INT_DIR/logs/nginx/access.log"
+    done
+
+    sleep 5
+
+    local result=""
+    result=$(cat "$INT_DIR/logs/threats/nginx-blocklist-deny.conf" 2>/dev/null || true)
+    echo "$result" > "$INT_DIR/logs/executor-nginx-ban-deny.txt"
+    echo "[executor-nginx-ban-deny] blocklist content: $result" >&2
+}
+run_executor_nginx_ban_deny_scenario
+
 # ── 16. HTTP source: plain text push ─────────────────────────────────────────────
 run_http_plain_scenario() {
     echo "[scenarios/http-plain] testing HTTP push source (plain text)"
