@@ -59,6 +59,7 @@ jobs:
         id: tag
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -n "$INPUT_VERSION" ]; then
             TAG="v${INPUT_VERSION}"
@@ -88,8 +89,6 @@ jobs:
           git push origin "$TAG"
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         if: steps.tag.outputs.skip != 'true'
