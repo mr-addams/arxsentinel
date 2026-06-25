@@ -37,7 +37,7 @@ cleanup() {
     done
     rm -f /tmp/arxsentinel-{nginx,apache,traefik,caddy,haproxy,litespeed}.pid
     rm -f /tmp/arxsentinel-{nginx-proxy,apache-proxy,traefik-proxy,caddy-proxy,haproxy-proxy,litespeed-proxy}.pid
-    rm -f /tmp/arxsentinel-{cf-broken,bogon-victim,cf-executor,ros-executor}.pid
+    rm -f /tmp/arxsentinel-{cf-broken,bogon-victim,cf-executor,ros-executor,nginx-executor,nginx-executor-deny}.pid
 
     # Stop HAProxy log capture (proxy and backend).
     kill "$HAPROXY_LOG_PID" 2>/dev/null || true
@@ -287,6 +287,13 @@ fi
 # Start nginx executor sentinel (reads nginx access log, writes IP blocklist file).
 (cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/nginx-executor.yaml" \
     "$BIN" >> "$LOGS_DIR/threats/sentinel-nginx-executor.log" 2>&1) &
+SENTINEL_PIDS+=($!)
+
+# Start nginx executor sentinel with deny-format output (writes "deny <ip>;" lines
+# instead of the default "<ip> 1;" geo form). Shares the same input access log and
+# sentinel-threat source as the geo sentinel, but writes to its own blocklist file.
+(cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/nginx-executor-deny.yaml" \
+    "$BIN" >> "$LOGS_DIR/threats/sentinel-nginx-executor-deny.log" 2>&1) &
 SENTINEL_PIDS+=($!)
 
 # Give sentinels time to open and begin tailing log files.

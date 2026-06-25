@@ -101,6 +101,54 @@ func TestFlushWritesFile(t *testing.T) {
 	}
 }
 
+// TestFlushWritesDenyFormat is the deny-format mirror of TestFlushWritesFile.
+// It verifies that with file_format="deny" the executor emits "deny <ip>;"
+// lines (one per banned IP) and that the file header is unchanged.
+func TestFlushWritesDenyFormat(t *testing.T) {
+	dir := t.TempDir()
+	listFile := filepath.Join(dir, "autoblock.list")
+
+	exec := newTestExecutor(t, map[string]any{
+		"list_file":   listFile,
+		"ttl":         "1h",
+		"file_format": "deny",
+	})
+
+	banned := map[string]time.Time{
+		"1.2.3.4":     time.Now(),
+		"5.6.7.8":     time.Now(),
+		"192.168.1.1": time.Now(),
+	}
+	exec.flush(context.Background(), banned)
+
+	data, err := os.ReadFile(listFile)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	content := string(data)
+
+	// Header must be unchanged across formats.
+	if !strings.HasPrefix(content, fileHeader) {
+		t.Errorf("expected deny-format file to start with %q, got:\n%s", fileHeader, content)
+	}
+
+	if !containsIPFormat(content, "1.2.3.4", FileFormatDeny) {
+		t.Errorf("expected \"deny 1.2.3.4;\" in output, got:\n%s", content)
+	}
+	if !containsIPFormat(content, "5.6.7.8", FileFormatDeny) {
+		t.Errorf("expected \"deny 5.6.7.8;\" in output, got:\n%s", content)
+	}
+	if !containsIPFormat(content, "192.168.1.1", FileFormatDeny) {
+		t.Errorf("expected \"deny 192.168.1.1;\" in output, got:\n%s", content)
+	}
+
+	// Sanity: the geo-format suffix must NOT appear when deny format is selected.
+	if containsIP(content, "1.2.3.4") {
+		t.Errorf("geo-format \"1.2.3.4 1;\" line must not appear in deny-format output:\n%s", content)
+	}
+}
+
 // TestSweepRemovesExpired verifies that expired IPs are removed from the file.
 func TestSweepRemovesExpired(t *testing.T) {
 	dir := t.TempDir()
@@ -345,6 +393,75 @@ func TestSyncExistingLoadsBanned(t *testing.T) {
 	}
 }
 
+// TestSyncExistingDenyFormat verifies that syncExisting correctly parses a
+// list file written in "deny" format and loads the IPs back into the banned
+// map. This is the deny-format counterpart of TestSyncExistingLoadsBanned
+// (which keeps checking the default geo-format path).
+func TestSyncExistingDenyFormat(t *testing.T) {
+	dir := t.TempDir()
+	listFile := filepath.Join(dir, "autoblock.list")
+	stateFile := filepath.Join(dir, "state.json")
+
+	// Pre-populate the list file in deny format — same header as geo, but
+	// each entry uses the "deny <ip>;" form.
+	listContent := "# managed by arxsentinel — do not edit manually\ndeny 1.2.3.4;\ndeny 5.6.7.8;\n"
+	if err := os.WriteFile(listFile, []byte(listContent), 0644); err != nil {
+		t.Fatalf("WriteFile list: %v", err)
+	}
+
+	// One entry with an explicit timestamp, one without — syncExisting should
+	// fall back to "now" for the second one.
+	stateContent := `{"1.2.3.4":"2026-06-01T12:00:00Z"}`
+	if err := os.WriteFile(stateFile, []byte(stateContent), 0644); err != nil {
+		t.Fatalf("WriteFile state: %v", err)
+	}
+
+	exec := newTestExecutor(t, map[string]any{
+		"list_file":   listFile,
+		"state_file":  stateFile,
+		"ttl":         "1h",
+		"file_format": "deny",
+	})
+
+	exec.syncExisting()
+
+	exec.mu.RLock()
+	_, has1 := exec.banned["1.2.3.4"]
+	_, has2 := exec.banned["5.6.7.8"]
+	exec.mu.RUnlock()
+
+	if !has1 {
+		t.Error("expected 1.2.3.4 to be loaded from deny-format list file")
+	}
+	if !has2 {
+		t.Error("expected 5.6.7.8 to be loaded from deny-format list file")
+	}
+}
+
+// TestParseBannedLineWhitespace verifies that parseBannedLine handles tab
+// separators and extra spaces in deny-format lines without losing the IP.
+func TestParseBannedLineWhitespace(t *testing.T) {
+	cases := []struct {
+		line   string
+		format string
+		want   string
+	}{
+		{"deny 1.2.3.4;", FileFormatDeny, "1.2.3.4"},
+		{"deny\t1.2.3.4;", FileFormatDeny, "1.2.3.4"},
+		{"1.2.3.4 1;", FileFormatGeo, "1.2.3.4"},
+		{"deny 1.2.3.4;", FileFormatGeo, ""},   // geo format ignores deny lines
+		{"1.2.3.4 1;", FileFormatDeny, ""},     // deny format ignores geo lines
+		{"", FileFormatDeny, ""},
+		{"# comment", FileFormatDeny, ""},
+	}
+	for _, tc := range cases {
+		got := parseBannedLine(tc.line, tc.format)
+		if got != tc.want {
+			t.Errorf("parseBannedLine(%q, %q) = %q, want %q", tc.line, tc.format, got, tc.want)
+		}
+	}
+}
+
 // TestRunLoop verifies the Run loop processes events and writes the list file.
 func TestRunLoop(t *testing.T) {
 	dir := t.TempDir()
@@ -384,6 +501,156 @@ func TestRunLoop(t *testing.T) {
 }
 
 // containsIP is a helper for checking IP presence in file content.
+// The format argument selects which line syntax is expected:
+//   - "geo"  → "<ip> 1;"
+//   - "deny" → "deny <ip>;"
+//
+// Any other value falls through to the "geo" suffix check to keep existing
+// callers (which previously called containsIP without a format) working.
 func containsIP(content, ip string) bool {
 	return strings.Contains(content, fmt.Sprintf("%s 1;", ip))
+}
+
+// TestParseConfigFileFormatDefault verifies that omitting the "file_format"
+// key falls back to the documented default "geo". This protects legacy configs
+// from breaking when the feature was introduced.
+func TestParseConfigFileFormatDefault(t *testing.T) {
+	cfg, err := parseConfig(map[string]any{
+		"list_file": "/tmp/autoblock.list",
+		"ttl":       "1h",
+	})
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.FileFormat != FileFormatGeo {
+		t.Errorf("expected default FileFormat=%q, got %q", FileFormatGeo, cfg.FileFormat)
+	}
+}
+
+// TestParseConfigFileFormatGeo verifies that an explicit "geo" value is
+// preserved through parseConfig.
+func TestParseConfigFileFormatGeo(t *testing.T) {
+	cfg, err := parseConfig(map[string]any{
+		"list_file":   "/tmp/autoblock.list",
+		"ttl":         "1h",
+		"file_format": "geo",
+	})
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.FileFormat != FileFormatGeo {
+		t.Errorf("expected FileFormat=%q, got %q", FileFormatGeo, cfg.FileFormat)
+	}
+}
+
+// TestParseConfigFileFormatDeny verifies that "deny" is accepted and stored
+// verbatim in Config.FileFormat.
+func TestParseConfigFileFormatDeny(t *testing.T) {
+	cfg, err := parseConfig(map[string]any{
+		"list_file":   "/tmp/autoblock.list",
+		"ttl":         "1h",
+		"file_format": "deny",
+	})
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.FileFormat != FileFormatDeny {
+		t.Errorf("expected FileFormat=%q, got %q", FileFormatDeny, cfg.FileFormat)
+	}
+}
+
+// TestParseConfigFileFormatInvalid verifies that any value outside {"geo","deny"}
+// is rejected with a parseConfig error that mentions the offending field name.
+// This is the single source of truth for the validation message — other layers
+// (HTTP API, GUI) rely on the field name being part of the error string.
+func TestParseConfigFileFormatInvalid(t *testing.T) {
+	_, err := parseConfig(map[string]any{
+		"list_file":   "/tmp/autoblock.list",
+		"ttl":         "1h",
+		"file_format": "unknown",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid file_format, got nil")
+	}
+	if !strings.Contains(err.Error(), "file_format") {
+		t.Errorf("expected error to mention %q, got: %v", "file_format", err)
+	}
+}
+
+// TestFlushGeoFormatLines exercises the geo-format write path directly:
+// flush() with a single banned IP must emit exactly "1.2.3.4 1;" —
+// not the deny directive form. The check is intentionally strict (==)
+// to catch any future drift between the two line styles.
+func TestFlushGeoFormatLines(t *testing.T) {
+	dir := t.TempDir()
+	listFile := filepath.Join(dir, "autoblock.list")
+
+	// No file_format key → falls back to default "geo".
+	exec := newTestExecutor(t, map[string]any{
+		"list_file": listFile,
+		"ttl":       "1h",
+	})
+
+	exec.flush(context.Background(), map[string]time.Time{
+		"1.2.3.4": time.Now(),
+	})
+
+	data, err := os.ReadFile(listFile)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	content := string(data)
+	wantLine := "1.2.3.4 1;"
+	if !strings.Contains(content, wantLine) {
+		t.Errorf("expected geo-format line %q in output, got:\n%s", wantLine, content)
+	}
+	if strings.Contains(content, "deny 1.2.3.4;") {
+		t.Errorf("deny-format line must not appear in geo-format output:\n%s", content)
+	}
+}
+
+// TestFlushDenyFormatLines is the deny-format counterpart of TestFlushGeoFormatLines.
+// It exists as a separate, focused test so a regression in either path is
+// localised to a single failing case (rather than overlapping with TestFlushWritesDenyFormat
+// which also asserts geo-format absence — kept here too for symmetry with the geo test).
+func TestFlushDenyFormatLines(t *testing.T) {
+	dir := t.TempDir()
+	listFile := filepath.Join(dir, "autoblock.list")
+
+	exec := newTestExecutor(t, map[string]any{
+		"list_file":   listFile,
+		"ttl":         "1h",
+		"file_format": "deny",
+	})
+
+	exec.flush(context.Background(), map[string]time.Time{
+		"1.2.3.4": time.Now(),
+	})
+
+	data, err := os.ReadFile(listFile)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	content := string(data)
+	wantLine := "deny 1.2.3.4;"
+	if !strings.Contains(content, wantLine) {
+		t.Errorf("expected deny-format line %q in output, got:\n%s", wantLine, content)
+	}
+	if strings.Contains(content, "1.2.3.4 1;") {
+		t.Errorf("geo-format line must not appear in deny-format output:\n%s", content)
+	}
+}
+
+// containsIPFormat is the format-aware variant of containsIP. Tests that
+// exercise the "deny" line syntax should use this directly; geo-format tests
+// can keep using containsIP for backwards compatibility.
+func containsIPFormat(content, ip, format string) bool {
+	switch format {
+	case FileFormatDeny:
+		return strings.Contains(content, fmt.Sprintf("deny %s;", ip))
+	default:
+		return strings.Contains(content, fmt.Sprintf("%s 1;", ip))
+	}
 }

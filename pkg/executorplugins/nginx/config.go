@@ -48,9 +48,21 @@ type Config struct {
 	ReloadCmd string `json:"reload_cmd" yaml:"reload_cmd"`
 	// ReloadTimeout limits how long the reload command may run. Default 30s.
 	ReloadTimeout time.Duration `json:"-" yaml:"reload_timeout"`
+	// FileFormat selects the on-disk entry syntax used by the list file.
+	// Valid values: "geo" (default — "<ip> 1;") or "deny" ("deny <ip>;").
+	// Used by flush() to emit lines and by syncExisting() to parse them back.
+	FileFormat string `json:"file_format" yaml:"file_format"`
 }
 
 // ++++++++++++++++++++++++++ Defaults ++++++++++++++++++++++++++++++++++++++++
+
+// File format constants for the list file. The values map to on-disk syntax:
+// "geo" emits "<ip> 1;" (consumed by nginx geo{} map); "deny" emits
+// "deny <ip>;" (consumed by nginx allow/deny directives).
+const (
+	FileFormatGeo  = "geo"
+	FileFormatDeny = "deny"
+)
 
 // DefaultConfig returns a Config with all defaults populated.
 func DefaultConfig() Config {
@@ -60,6 +72,7 @@ func DefaultConfig() Config {
 		BatchSize:     10,
 		FlushInterval: 30 * time.Second,
 		ReloadTimeout: 30 * time.Second,
+		FileFormat:    FileFormatGeo,
 	}
 }
 
@@ -156,6 +169,18 @@ func parseConfig(raw map[string]any) (Config, error) {
 	}
 	if _, ok := levelOrder[cfg.MinLevel]; !ok {
 		return Config{}, fmt.Errorf("nginx: parseConfig: invalid MinLevel %q, must be INFO, WARN or THREAT", cfg.MinLevel)
+	}
+
+	// ---- FileFormat validation ----
+	// An empty value falls back to the default ("geo") so legacy configs
+	// that don't know about file_format keep working unchanged.
+	switch cfg.FileFormat {
+	case "":
+		cfg.FileFormat = FileFormatGeo
+	case FileFormatGeo, FileFormatDeny:
+		// valid
+	default:
+		return Config{}, fmt.Errorf("nginx: parseConfig: invalid file_format %q, must be %q or %q", cfg.FileFormat, FileFormatGeo, FileFormatDeny)
 	}
 
 	return cfg, nil
