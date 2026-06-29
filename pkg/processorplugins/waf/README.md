@@ -1,12 +1,15 @@
 # pkg/processorplugins/waf — WAF Processor
 
-The WAF processor compiles a set of WAF rules from a YAML configuration into a typed
-`RuleSet` (via `github.com/mr-addams/arx-core/pkg/rule`) and, for every event reaching
-the processor stage, evaluates those rules against the event's `http.*` fields. The
-first matching rule's `action` decides the verdict: `drop` gates the event out of the
-pipeline, `tag` flags it for downstream scoring by stamping the Envelope `Level`, and
-`pass` is an explicit allowlist/logging path. This is the canonical Flow 001
-implementation of "engine returns the verdict, plugin decides the action" (DECISION D12).
+The WAF processor compiles a set of WAF rules from a YAML configuration into two typed
+`RuleSet`s (via `github.com/mr-addams/arx-core/pkg/rule`) and, for every event reaching
+the processor stage, evaluates those rules against the event's `http.*` fields using a
+**two-pass scheme**: pass-rules (whitelist, `action: pass`) run first and short-circuit
+on match; gate-rules (threat, `action: drop` or `action: tag[:<label>]`) run only if no
+pass-rule fired. The gate rule's `action` decides the verdict: `drop` gates the event
+out of the pipeline, `tag` flags it for downstream scoring by stamping the Envelope
+`Level`, and `tag:<label>` adds a score-signal delta through the `ScoreFunc` closure.
+This is the canonical Flow 001 implementation of "engine returns the verdict, plugin
+decides the action" (DECISION D12).
 
 The WAF processor is **not** a rate-limiter, not a geo-blocker, and not a regex-on-raw-line
 matcher. It is a stateless predicate gate over the already-parsed `parser.LogEntry`,
@@ -27,21 +30,27 @@ layer. Each rule is a name, an expression in the arx-core rule DSL, and an actio
 runtime the processor's only job is to:
 
 1. Receive a `*plugin.Event` whose `Payload` is a `*parser.LogEntry`.
-2. Resolve every compiled predicate against the event's `http.*` fields.
-3. On the first match, dispatch the rule's action (`drop` / `tag` / `pass`).
-4. On no match, pass the event through unchanged.
+2. Run the **pass-rules** `RuleSet` (whitelist, `action: pass`). On match — short-circuit
+   and pass the event through unchanged.
+3. If no pass-rule matched, run the **gate-rules** `RuleSet` (threat, `action: drop` or
+   `action: tag[:<label>]`). On the first match, dispatch that rule's action.
+4. On no match in either pass, pass the event through unchanged.
 
-The engine (arx-core) is responsible for compiling the rule expressions and answering
-"did anything match?" — the plugin owns the policy of what to do with that answer.
-That split is what makes the WAF rules live-reloadable in principle (replace a rule
-in the `RuleSet`) without re-instantiating the processor.
+The two-pass split is enforced at compile time by `NewRuleSetFromConfig`
+(`ruleset.go`): every rule is bucketed by its `action` field into either `passRules`
+or `gateRules`, and the wire-up code never inspects the bucket at evaluation time —
+each pass owns its own compiled `RuleSet`. That split is what makes the WAF rules
+live-reloadable in principle (replace a rule in either `RuleSet`) without
+re-instantiating the processor.
 
 Typical use cases:
 
-- Blocking scanner traffic by matching `http.user_agent matches "sqlmap.*"`.
-- Tagging admin-path probes for downstream scoring (`http.path contains "/admin"`).
-- Allowlisting internal health checks (`http.path eq "/healthz"` → `action: pass`).
-- Combining method and status: `http.method eq "POST" and http.status eq 405` → drop.
+- Blocking scanner traffic by matching `http.user_agent matches "sqlmap.*"` → `drop`.
+- Tagging admin-path probes for downstream scoring (`http.path contains "/admin"`)
+  → `tag` or `tag:<label>` to feed the score signal.
+- Allowlisting internal health checks (`http.path eq "/healthz"` → `action: pass`)
+  so they short-circuit before any gate rule can fire.
+- Combining method and status: `http.method eq "POST" and http.status eq 405` → `drop`.
 
 The plugin is part of Flow 001 of the WAF rule-engine work; the remaining Flow 001
 task is documentation polish (cookbook + config reference) which is tracked outside
@@ -57,16 +66,31 @@ this release.
                      └─ HttpResolver      (http.* namespace, type-asserts to *LogEntry)
           │
           ▼
-  WafProcessor.Process(ctx, event)
+    WafProcessor.Process(ctx, event)
           │
-          ▼
-  ruleset.RuleSet.Match(event, resolver)  →  (ruleName, matched)
+          ├──► Pass 1: passRules.Match(event, resolver)
+          │       ── match ──► (event, nil)         (event flows on, gate skipped)
+          │       ── miss  ──► continue ▼
           │
-          ▼
-  action dispatch  (drop / tag / pass / fail-closed drop)
+          └──► Pass 2: gateRules.Match(event, resolver)
+                  ── match ──► action dispatch
+                                  ├── drop       → (nil, nil)
+                                  ├── tag        → (event, Level="THREAT:<rule>")
+                                  ├── tag:<lbl>  → (event, Level="THREAT:<rule>:<lbl>")
+                                  │              + ScoreFunc(ip, "<lbl>", weight)
+                                  └── unknown    → fail-closed drop (nil, nil)
+                  ── miss  ──► (event, nil)         (event flows on)
 ```
 
 The architectural boundaries that matter for anyone reading or extending the plugin:
+
+- **Two-pass evaluation.** `NewRuleSetFromConfig` (`ruleset.go`) splits the configured
+  rules into two `RuleSet`s at compile time: `passRules` (every rule with
+  `action: pass`) and `gateRules` (every rule with `action: drop` or `action: tag`).
+  The runtime walks `passRules` first; on a hit the gate is skipped entirely. This
+  is *not* order-dependent within the gate pass — the bucket itself is the
+  declaration of intent. The two `RuleSet`s share the same resolver chain and the
+  same field catalog; only the bucket differs.
 
 - **Engine does not touch `Payload`** (DECISION D3). The rule engine sees only the
   `*plugin.Event` envelope and asks the resolver chain for typed `Value`s of any
@@ -75,16 +99,16 @@ The architectural boundaries that matter for anyone reading or extending the plu
   chain can answer the relevant fields.
 
 - **Engine does not execute actions** (DECISION D12). The engine returns a
-  `(ruleName, matched)` tuple. The plugin turns `matched=true` into one of three
-  outcomes: `(nil, nil)` for `drop`, `(event, nil)` for `tag` (with
-  `Level = "THREAT:<rule>"`), `(event, nil)` for `pass`, and a fail-closed
-  `(nil, nil)` for any unknown action.
+  `(ruleName, matched)` tuple per pass. The plugin turns `matched=true` into one
+  of four outcomes: `(nil, nil)` for `drop`, `(event, nil)` for `tag` (with
+  `Level = "THREAT:<rule>"`), `(event, nil)` for `tag:<label>` (same plus a score
+  signal), and a fail-closed `(nil, nil)` for any unknown action.
 
 - **Compile-once / eval-many** (DECISION D4). `NewWafProcessor` compiles the
-  configuration's rule expressions at Init time. A bad expression fails the entire
-  `NewWafProcessor` call (fail-fast, D13) — it never makes it into a partially
-  populated `RuleSet`. Once compiled, every `Process` call is a read-only walk
-  over the `RuleSet` under its internal `RWMutex`.
+  configuration's rule expressions at Init time into both `RuleSet`s. A bad
+  expression fails the entire `NewWafProcessor` call (fail-fast, D13) — it never
+  makes it into a partially populated `RuleSet`. Once compiled, every `Process`
+  call is a read-only walk over the two `RuleSet`s under its internal `RWMutex`.
 
 - **Stateless resolver chain.** `HttpResolver` carries no fields; the
   `chainedResolver` constructed in `processor.go` is shared across every event.
@@ -213,7 +237,16 @@ Each rule is a `RuleConfig` (in `ruleset.go`):
 |-------|----------|------|-------------|
 | `name` | yes | string | Unique rule name; appears in error messages, in the `THREAT:<rule>` tag, and as the `Match` return value. |
 | `expression` | yes | string | Rule DSL expression (see [Expression language reference](#4-expression-language-reference)). |
-| `action` | no | string | `"drop"` (default), `"tag"`, or `"pass"`. Case-insensitive. Unknown values fall back to `"drop"`. |
+| `action` | no | string | `"drop"` (default), `"tag"`, `"tag:<label>"`, or `"pass"`. Case-insensitive. Unknown values fall back to `"drop"`. |
+
+The action's **bucket** is determined by its prefix:
+
+| Action | Bucket | Effect |
+|--------|--------|--------|
+| `pass` | `passRules` | Whitelist short-circuit (see [Two-pass evaluation](#8-actions)) |
+| `drop` | `gateRules` | Gate the event out of the pipeline |
+| `tag` | `gateRules` | Stamp `Level = "THREAT:<rule>"` and pass through |
+| `tag:<label>` | `gateRules` | Stamp `Level = "THREAT:<rule>:<label>"` **and** call `ScoreFunc(ip, "<label>", weight)` |
 
 Example:
 
@@ -224,6 +257,12 @@ Example:
 - name: tag_admin_probes
   expression: 'http.path contains "/admin" and http.status ge 400'
   # action omitted — defaults to "drop" (fail-closed)
+- name: tag_4xx_flood
+  expression: 'http.status ge 400 and http.status lt 500'
+  action: 'tag:4xx-flood'    # feeds the score signal with label "4xx-flood"
+- name: pass_healthcheck
+  expression: 'http.path eq "/healthz"'
+  action: pass
 ```
 
 Empty `name` or empty `expression` is rejected at Init time with a descriptive
@@ -234,31 +273,138 @@ populated `RuleSet` (DECISION D13).
 ## 8. Actions
 
 The action is the WAF plugin's interpretation of a `Match` verdict (DECISION D12:
-the engine returns the verdict, the plugin decides). All three actions are
-reachable from a YAML config; the table is exhaustive (any other value falls
-back to `drop`):
+the engine returns the verdict, the plugin decides). The action's first token
+determines which pass owns the rule — see [Rule format](#7-rule-format) for the
+bucketing rule.
 
-| Action | Return value | Side-effect | Use case |
-|--------|--------------|-------------|----------|
-| `drop` | `(nil, nil)` | event gated out of pipeline | Block: 405/403 paths, scanner patterns |
-| `tag` | `(event, nil)` | `event.Envelope.Level = "THREAT:<rule>"` | Flag for downstream scoring/sink without blocking |
-| `pass` | `(event, nil)` | unchanged | Allowlist / healthcheck rules (logging-only) |
-| (default) | `(nil, nil)` | fail-closed drop | Unknown action value — safe default for WAFs |
+**Two-pass evaluation** (replaces the earlier first-match-wins contract). At Init
+time, every rule is classified by its action prefix into one of two compiled
+`RuleSet`s:
 
-**First-match-wins** (DECISION D12). The `RuleSet.Match` call returns the *first*
-rule that matches, in the order they were added to the `RuleSet` (which mirrors
-the order they appear in `Config.Rules`). Subsequent rules are not evaluated. In
-practice this means rule order matters: put more specific rules before more
-general ones, and put `pass` allowlist rules first if you want them to short-
-circuit other rules.
+- `passRules` — bucket for `action: pass` only. Run first.
+- `gateRules` — bucket for `action: drop` / `tag` / `tag:<label>`. Run only on
+  a `passRules` miss.
+
+On `passRules` match the event flows through unchanged and the gate is skipped
+entirely — *regardless* of what gate rules would have matched. On `passRules`
+miss, the gate pass runs to its first match (or to the end). The split is
+declared by action, not by rule position in `Config.Rules`, so the YAML order of
+pass and gate rules is free.
+
+The action dispatch table is exhaustive (any other value falls back to `drop`):
+
+| Action | Return value | Side-effect | Bucket | Use case |
+|--------|--------------|-------------|--------|----------|
+| `drop` | `(nil, nil)` | event gated out of pipeline | gate | Block: 405/403 paths, scanner patterns |
+| `tag` | `(event, nil)` | `event.Envelope.Level = "THREAT:<rule>"` | gate | Flag for downstream scoring/sink without blocking |
+| `tag:<label>` | `(event, nil)` | same as `tag` with `"THREAT:<rule>:<label>"` **plus** `ScoreFunc(ip, "<label>", weight)` | gate | Feed the score signal so a tagged rule contributes to ban decisions |
+| `pass` | `(event, nil)` | unchanged; gate is skipped | pass | Allowlist / healthcheck rules (short-circuit) |
+| (default) | `(nil, nil)` | fail-closed drop | gate | Unknown action value — safe default for WAFs |
 
 `tag` stamps the matched rule's name into the envelope's `Level` field as
-`"THREAT:<rule>"`. Downstream stages that already parse `Level` (the scorer, the
-sinks) can split on the colon to recover the rule name when they care to. The
-processor's signature guarantees that only one rule's name appears there per
-event (first-match-wins).
+`"THREAT:<rule>"`. The `tag:<label>` form appends the label after a second colon
+(`"THREAT:<rule>:<label>"`). Downstream stages that already parse `Level` (the
+scorer, the sinks) can split on the colon to recover the rule name (and, for the
+labeled form, the label) when they care to. The processor's signature guarantees
+that only one rule's name appears there per event.
 
-## 9. Auto-discovery via Builder.FromManifest()
+`tag:<label>` *also* calls the `ScoreFunc` closure (see
+[Scoring integration](#9-scoring-integration-scorefunc-dropscore-tagweights)).
+That call is what ties WAF hits into the same scoring pipeline the detectors
+already drive — a labelled tag is the WAF plugin's way of saying "this event
+should count against IP X's score, by `weight` points, attributed to `label`".
+
+## 9. Scoring integration — ScoreFunc, DropScore, TagWeights
+
+The WAF processor can feed the per-IP scoring pipeline that the rest of
+arxsentinel already drives. This is what makes `tag:<label>` rules more than a
+log marker — a labelled tag *contributes* to the ban decision by adding a
+configured delta to the offending IP's score.
+
+Three knobs control the integration. None of them are required; if `ScoreFunc`
+is `nil` (the default), the WAF processor still gates and tags as documented but
+the score signal is a no-op.
+
+### 9.1 ScoreFunc
+
+`ScoreFunc` is a closure the wire-up code (`buildWafProcessor` in
+`cmd/arxsentinel/processor_factory.go`) builds and injects into the WAF
+processor at Init time:
+
+```go
+type ScoreFunc func(ip string, label string, delta int)
+```
+
+- `ip` — the event's offending IP, taken from `http.real_ip` (falls back to
+  `http.remote_addr` if `real_ip` is empty).
+- `label` — the label from `action: tag:<label>`, passed verbatim.
+- `delta` — the resolved weight for that label (see `TagWeights` below); for the
+  bare `tag` form the call is not made at all.
+
+The closure captures the live `tracker` reference, so every `ScoreFunc` call
+ends up writing into the same `tracker.GetState(ip)` slot the detectors use.
+This is what makes WAF hits and detector hits stack against the same ban
+threshold.
+
+### 9.2 DropScore
+
+`DropScore` is the integer delta added to the score *implicitly* when a
+`drop`-action rule fires. It exists so that a single WAF drop is not a silent
+event — a banned source still pays the price it would have paid if a detector
+had flagged it.
+
+- **Default value:** `DropScore = cfg.Scoring.BanThreshold` (the configured
+  threshold for auto-banning). The rationale is "a hard drop should at least
+  *reach* the threshold, so the IP is banned on the way out". Wire-up in
+  `buildWafProcessor` sets this fallback automatically when the operator
+  doesn't override.
+- **Override:** pass `params["waf_drop_score"]: <int>` in the processor block.
+  Set it lower (e.g. half the ban threshold) to *contribute* rather than
+  *trigger*, or higher to make WAF drops dominate the score.
+- **Wire-up key:** the factory in `register.go` reads `waf_drop_score` (see
+  `ParamKeyDropScore`); missing key → fallback to `BanThreshold`.
+
+### 9.3 TagWeights
+
+`TagWeights map[string]int` is the per-label delta table for `tag:<label>`
+rules. The lookup is exact-match on the label string; a label not present in
+the map (or a `nil` map) resolves to a delta of `0`, which is a no-op against
+the score.
+
+```yaml
+processors:
+  - plugin: waf
+    params:
+      waf_config:
+        rules:
+          - name: tag_4xx_flood
+            expression: 'http.status ge 400 and http.status lt 500'
+            action: 'tag:4xx-flood'
+          - name: tag_admin_probe
+            expression: 'http.path contains "/admin"'
+            action: 'tag:admin-probe'
+      waf_tag_weights:
+        "4xx-flood":    10      # repeated 4xx contributes, but does not auto-ban
+        "admin-probe":  25      # admin-path probes are scored higher
+```
+
+- **Wire-up key:** `waf_tag_weights` (see `ParamKeyTagWeights`); missing key →
+  empty map, every labelled tag contributes `0`.
+- **Type:** `map[string]int`. Keys are label strings; values are integer deltas.
+- **Resolution:** `weights[label]` if present, otherwise `0`. The lookup never
+  errors — an unconfigured label is treated as a documentation oversight, not a
+  misconfiguration.
+- **The bare `tag` form does not call `ScoreFunc`.** Use `tag:<label>` if you
+  want the score signal; use `tag` for envelope-only marking.
+
+### 9.4 When the signal fires
+
+`ScoreFunc` is invoked once per gate-rule match (not per pass — the pass-rules
+short-circuit path never produces a score signal). The call happens after the
+rule's action dispatch has already resolved `drop` / `tag` / `tag:<label>`,
+so the IP that gets scored is the same IP that was just gated or tagged.
+
+## 10. Auto-discovery via Builder.FromManifest()
 
 `NewRuleSetFromConfig` (`ruleset.go`) uses `builder.New("http")` and iterates over
 `Manifest.Produces` to register every typed field automatically:
@@ -286,7 +432,7 @@ without compiling any rules. It is useful for config-validators that want to
 check "is this expression well-typed?" before sending the config to
 `NewWafProcessor`.
 
-## 10. Adding custom fields
+## 11. Adding custom fields
 
 To add a new `http.*` field — for example, a hypothetical `http.tls_version`
 exposing the TLS handshake's negotiated version — three steps are enough:
@@ -412,6 +558,7 @@ go test -bench=BenchmarkWafProcessor -benchmem -run=^$ ./pkg/processorplugins/wa
 
 ## 13. Changelog
 
-| Version | Date | Notes |
-|---------|------|-------|
-| `1.0.0` | 2026-06-29 | Initial release (Flow 001, Tasks H1–H5): Manifest, `HttpResolver`, `RuleSet` wiring, `Process` with action dispatch, integration tests, and this README. |
+| Date | Tasks | Notes |
+|------|-------|-------|
+| 2026-06-29 | H1–H5 | Initial implementation: Manifest, `HttpResolver`, `RuleSet` wiring, `Process` with action dispatch, integration tests. |
+| 2026-06-29 | H6–H11 | Two-pass evaluation (`passRules`/`gateRules`); `tag:<label>` syntax with `TagWeights`; `ScoreFunc` + `DropScore` + `clientIP`; `processors:` wire-up in pipeline with backward-compat nil-gate. |
