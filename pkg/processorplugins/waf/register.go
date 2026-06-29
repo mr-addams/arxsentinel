@@ -37,5 +37,11 @@ func factory(cfg processor.ProcessorConfig) (plugin.Processor, error) {
 	if !ok {
 		return nil, fmt.Errorf("waf: param %q missing or type-assert fails (got %T)", ParamKeyConfig, cfg.Params[ParamKeyConfig])
 	}
+	if ds, ok := cfg.Params["waf_drop_score"].(int); ok {
+		wc.DropScore = ds
+	}
+	if tw, ok := cfg.Params["waf_tag_weights"].(map[string]int); ok {
+		wc.TagWeights = tw
+	}
 	return NewWafProcessor(wc)
 }

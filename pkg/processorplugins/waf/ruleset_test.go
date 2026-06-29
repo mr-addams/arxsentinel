@@ -75,10 +75,10 @@ func TestBuildScheme_RejectsForeignManifest(t *testing.T) {
 func TestNewRuleSetFromConfig_OK(t *testing.T) {
 	cfg := Config{
 		Rules: []RuleConfig{
-			{Name: "r1", Expression: `http.status eq 200`, Action: ActionDrop},   // gate
-			{Name: "r2", Expression: `http.method eq "GET"`, Action: ActionTag},   // gate
-			{Name: "r3", Expression: `http.path eq "/x"`, Action: ActionPass},     // pass
-			{Name: "r4", Expression: `http.path eq "/y"`},                          // gate, default drop
+			{Name: "r1", Expression: `http.status eq 200`, Action: ActionDrop},  // gate
+			{Name: "r2", Expression: `http.method eq "GET"`, Action: ActionTag}, // gate
+			{Name: "r3", Expression: `http.path eq "/x"`, Action: ActionPass},   // pass
+			{Name: "r4", Expression: `http.path eq "/y"`},                       // gate, default drop
 		},
 	}
 	passRS, gateRS, actions, err := NewRuleSetFromConfig(cfg, Manifest)

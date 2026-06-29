@@ -480,6 +480,26 @@ processors:
   - plugin: waf
     params:
       waf_config:
+        # Score delta added to an IP when a drop-rule fires. 0 = silent gate
+        # (no score signal — WAF gates events without affecting the scorer).
+        # Wire-up code (cmd/arxsentinel) reads this and builds the ScoreFunc closure.
+        # Счёт-дельта, добавляемая к IP при срабатывании drop-правила.
+        # 0 = тихая блокировка (без сигнала скорингу — WAF гасит событие,
+        # не влияя на скорер). Используется wire-up кодом (cmd/arxsentinel)
+        # для построения замыкания ScoreFunc.
+        drop_score: 100
+        # Tag weights: label → score delta. The label comes from "tag:<label>"
+        # actions on rules; the value is the score added when that tag fires.
+        # Missing label at runtime → score 0 (tag still fires, no score signal).
+        # Веса тегов: метка → счёт-дельта. Метка берётся из action "tag:<label>",
+        # значение — прибавка к счёту при срабатывании тега.
+        # Отсутствующая метка в рантайме → счёт 0 (тег срабатывает, сигнала нет).
+        tag_weights:
+          waf_sqli: 80
+          waf_xss: 60
+          waf_traversal: 60
+          waf_bad_ua: 20
+          waf_suspicious: 10
         rules:
           # SQL injection: union select / drop table / OR 1=1 in raw URI / path / query
           # SQL-инъекция: union select / drop table / OR 1=1 в raw URI / path / query

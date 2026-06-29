@@ -39,7 +39,7 @@ func makeLogEvent(e *parser.LogEntry) *plugin.Event {
 //   - block_post_405 — drops POST requests that returned 405
 //   - tag_admin_path — tags any request whose path contains "/admin"
 //   - pass_healthcheck — passes through GET /healthz (no-op rule, used to verify
-//                        pass action preserves the event unchanged)
+//     pass action preserves the event unchanged)
 func defaultConfig() Config {
 	return Config{
 		Rules: []RuleConfig{
@@ -370,6 +370,57 @@ func TestWafProcessor_PassShortCircuit(t *testing.T) {
 	}
 	if got.Envelope.Level != "" {
 		t.Errorf("Process: Level=%q, want empty (pass must not set Level)", got.Envelope.Level)
+	}
+}
+
+// ========================== Config: TagWeights =============================================
+
+// TestWafProcessor_Config_TagWeights verifies that Config.TagWeights survives
+// construction: NewWafProcessor accepts the field, the resulting processor is
+// non-nil, and the weights are accessible. This test does NOT verify score
+// dispatch (that's wire-up code's job in cmd/arxsentinel) — only that the
+// plumbing doesn't drop the field on the floor.
+func TestWafProcessor_Config_TagWeights(t *testing.T) {
+	cfg := Config{
+		TagWeights: map[string]int{
+			"waf_sqli": 80,
+			"waf_xss":  60,
+		},
+	}
+	p, err := NewWafProcessor(cfg)
+	if err != nil {
+		t.Fatalf("NewWafProcessor: %v", err)
+	}
+	if p == nil {
+		t.Fatal("NewWafProcessor: want non-nil processor")
+	}
+	if got, want := len(cfg.TagWeights), 2; got != want {
+		t.Errorf("cfg.TagWeights length: got %d, want %d", got, want)
+	}
+	if got, want := cfg.TagWeights["waf_sqli"], 80; got != want {
+		t.Errorf("cfg.TagWeights[\"waf_sqli\"]: got %d, want %d", got, want)
+	}
+}
+
+// ========================== Config: DropScore ==============================================
+
+// TestWafProcessor_Config_DropScore verifies that Config.DropScore is preserved
+// at construction time. Wire-up code (cmd/arxsentinel) reads this to build a
+// ScoreFunc closure; the WAF plugin itself never applies the score, so this
+// test only confirms the field is carried through without loss.
+func TestWafProcessor_Config_DropScore(t *testing.T) {
+	cfg := Config{
+		DropScore: 100,
+	}
+	p, err := NewWafProcessor(cfg)
+	if err != nil {
+		t.Fatalf("NewWafProcessor: %v", err)
+	}
+	if p == nil {
+		t.Fatal("NewWafProcessor: want non-nil processor")
+	}
+	if got, want := cfg.DropScore, 100; got != want {
+		t.Errorf("cfg.DropScore: got %d, want %d", got, want)
 	}
 }
 

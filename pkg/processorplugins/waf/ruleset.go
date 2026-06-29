@@ -39,7 +39,6 @@ import (
 	"github.com/mr-addams/arx-core/pkg/rule/ruleset"
 )
 
-
 // ========================== Config / RuleConfig =============================================
 
 // Action identifiers. They live as untyped strings on RuleConfig so YAML/JSON config
@@ -71,6 +70,17 @@ type RuleConfig struct {
 // directly to exercise fail-fast compile paths.
 type Config struct {
 	Rules []RuleConfig `yaml:"rules"`
+
+	// DropScore is the score delta applied to an IP when a drop-rule fires.
+	// Wire-up code (cmd/arxsentinel) reads this and builds the ScoreFunc closure.
+	// Zero means no score signal (WAF gates silently without affecting scorer).
+	// Нулевое значение = WAF гасит событие без влияния на скорер.
+	DropScore int
+
+	// TagWeights maps tag labels to score deltas.
+	// Key: label from "tag:<label>" action. Value: score delta.
+	// Missing label at runtime → score 0 (tag still fires, no score signal).
+	TagWeights map[string]int
 }
 
 // ========================== BuildScheme =====================================================
@@ -112,7 +122,10 @@ func BuildScheme(manifest plugin.Manifest) (*rule.Scheme, error) {
 	cat := rule.NewCatalog()
 	// core namespace is implicit in every Scheme (see pkg/rule/ruleset.New),
 	// so register the envelope fields here to make the Scheme self-contained.
-	for _, fn := range []struct{ name string; t rule.FieldType }{
+	for _, fn := range []struct {
+		name string
+		t    rule.FieldType
+	}{
 		{"timestamp", rule.TypeTimestamp},
 		{"stream", rule.TypeString},
 		{"source", rule.TypeString},
@@ -275,20 +288,20 @@ const (
 // Rules:
 //
 //   - empty action        → gate bucket, normalised = ActionDrop (the default — see
-//                            defaultAction). An unconfigured rule falls through to
-//                            the safe WAF behaviour: gate the event out.
+//     defaultAction). An unconfigured rule falls through to
+//     the safe WAF behaviour: gate the event out.
 //   - "pass" (any case)   → pass bucket, normalised = ActionPass. The rule never
-//                            appears in the action map (passRS short-circuits before
-//                            WafProcessor consults the map).
+//     appears in the action map (passRS short-circuits before
+//     WafProcessor consults the map).
 //   - "drop" (any case)   → gate bucket, normalised = ActionDrop.
 //   - "tag" (any case)    → gate bucket, normalised = ActionTag.
 //   - "tag:<suffix>"      → gate bucket, normalised = original action. The suffix
-//                            is preserved so downstream consumers (e.g. metrics
-//                            tags, executor routing) can read the rule's intent
-//                            without losing information.
+//     is preserved so downstream consumers (e.g. metrics
+//     tags, executor routing) can read the rule's intent
+//     without losing information.
 //   - anything else       → error: an unknown action would otherwise silently fall
-//                            through the gate and re-introduce the silent-pass bug
-//                            that D12 was designed to prevent.
+//     through the gate and re-introduce the silent-pass bug
+//     that D12 was designed to prevent.
 func classifyAction(ruleName, action string) (actionBucket, string, error) {
 	normalised := strings.ToLower(strings.TrimSpace(action))
 	switch {

@@ -74,8 +74,8 @@ const httpPrefix = "http."
 //   - *LogEntry, known field             → (typed Value, true) — see resolveHTTP
 //   - *LogEntry, ip field with invalid   → (Value{}, false) — toIPValue rejects
 //     text in RealIP/RemoteAddr             malformed IP literals rather than substituting
-//                                           the zero IP, because "match against 0.0.0.0"
-//                                           is never the operator's intent
+//     the zero IP, because "match against 0.0.0.0"
+//     is never the operator's intent
 type HttpResolver struct{}
 
 // Compile-time assertion: HttpResolver satisfies the FieldResolver interface.
