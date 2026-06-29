@@ -1027,6 +1027,31 @@ sudo systemctl enable --now arxsentinel</span></pre>
 
         <section class="whitelist-section">
         <div class="section-header">
+            <span class="section-tag">WAF</span>
+            <h2 class="section-title">Block known attacks before they reach your detectors</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">✓</span> pass — explicit allowlist</h3>
+                <p>Rules evaluated first. A matching pass rule short-circuits the entire pipeline — health checks, internal IPs and known-good bots bypass all further processing with zero overhead.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⊘</span> drop — hard block</h3>
+                <p>SQLi, path traversal, scanner signatures — matched requests are gated out at line rate and never reach the scorer. No state allocated, no detector CPU spent on known-bad traffic.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">◈</span> tag — score and continue</h3>
+                <p>Suspicious but ambiguous traffic gets a label and a score delta, then flows into the regular detection pipeline. Combine WAF signals with behavioural detectors for correlated ban decisions.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⚙</span> Custom fields</h3>
+                <p>Extend the rule namespace with your own <code>http.*</code> fields — two Go changes, no recompilation of core logic. Add TLS version, request body length, or any field your log source exposes.</p>
+            </div>
+        </div>
+    </section>
+
+        <section class="whitelist-section">
+        <div class="section-header">
             <span class="section-tag">Enforcement</span>
             <h2 class="section-title">Ban at the layer that fits your stack</h2>
         </div>

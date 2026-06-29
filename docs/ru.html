@@ -873,6 +873,31 @@ sudo systemctl enable --now arxsentinel</span></pre>
 
         <section class="whitelist-section">
         <div class="section-header">
+            <span class="section-tag">WAF</span>
+            <h2 class="section-title">Блокируй известные атаки до детекторов</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">✓</span> pass — явный белый список</h3>
+                <p>Правила вычисляются первыми. Совпавшее pass-правило обрывает весь пайплайн — healthcheck'и, внутренние IP и доверенные боты пропускаются мгновенно, без лишних проверок.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⊘</span> drop — жёсткая блокировка</h3>
+                <p>SQLi, path traversal, сигнатуры сканеров — совпавшие запросы отсекаются на входе и не доходят до скорера. Состояние не выделяется, детекторы заведомо плохой трафик не обрабатывают.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">◈</span> tag — маркировка и продолжение</h3>
+                <p>Подозрительный, но неоднозначный трафик получает метку и прибавку к счёту, затем идёт дальше в pipeline. Комбинируй WAF-сигналы с поведенческими детекторами для коррелированных решений о бане.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⚙</span> Пользовательские поля</h3>
+                <p>Расширяй пространство правил собственными полями <code>http.*</code> — два изменения в Go, без перекомпиляции ядра. Добавь версию TLS, длину тела запроса или любое поле из своего источника логов.</p>
+            </div>
+        </div>
+    </section>
+
+        <section class="whitelist-section">
+        <div class="section-header">
             <span class="section-tag">Защита</span>
             <h2 class="section-title">Блокировка на нужном уровне</h2>
         </div>

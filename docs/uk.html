@@ -872,6 +872,31 @@ sudo systemctl enable --now arxsentinel</span></pre>
 
         <section class="whitelist-section">
         <div class="section-header">
+            <span class="section-tag">WAF</span>
+            <h2 class="section-title">Блокуй відомі атаки до детекторів</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">✓</span> pass — явний білий список</h3>
+                <p>Правила обчислюються першими. Правило pass, що збіглося, обриває весь пайплайн — healthcheck'и, внутрішні IP та довірені боти пропускаються миттєво, без зайвих перевірок.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⊘</span> drop — жорстке блокування</h3>
+                <p>SQLi, path traversal, сигнатури сканерів — запити, що збіглися, відсікаються на вході і не доходять до скорера. Стан не виділяється, детектори не обробляють заздалегідь поганий трафік.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">◈</span> tag — маркування та продовження</h3>
+                <p>Підозрілий, але неоднозначний трафік отримує мітку та додавання до рахунку, потім іде далі у pipeline. Комбінуй WAF-сигнали з поведінковими детекторами для корельованих рішень про бан.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⚙</span> Власні поля</h3>
+                <p>Розширяй простір правил власними полями <code>http.*</code> — дві зміни в Go, без перекомпіляції ядра. Додай версію TLS, довжину тіла запиту або будь-яке поле з твого джерела логів.</p>
+            </div>
+        </div>
+    </section>
+
+        <section class="whitelist-section">
+        <div class="section-header">
             <span class="section-tag">Примусові дії</span>
             <h2 class="section-title">Блокування на потрібному рівні</h2>
         </div>
