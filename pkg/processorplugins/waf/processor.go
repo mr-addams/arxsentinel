@@ -108,11 +108,11 @@ var _ plugin.Processor = (*WafProcessor)(nil)
 // (nil, error) with the rule name and parser/compiler stage in the message
 // (fail-fast — never silently skips a misconfigured rule).
 func NewWafProcessor(cfg Config) (*WafProcessor, error) {
-	if cfg.Rules == nil {
-		// Empty config is legal (plugin passes through every event) — but
-		// using a typed empty slice keeps the action map non-nil for caller
-		// simplicity.
-		cfg.Rules = []RuleConfig{}
+	if len(cfg.Rules) == 0 {
+		// Пустой rules — ошибка конфигурации, а не легальный кейс: WAF без правил
+		// пропускает весь трафик и создаёт ложное ощущение защиты. Fail-fast
+		// помогает поймать опечатку при деплое раньше, чем instance примет трафик.
+		return nil, fmt.Errorf("waf: rules list is empty — WAF plugin requires at least one rule")
 	}
 
 	passRS, gateRS, actions, err := NewRuleSetFromConfig(cfg, Manifest)

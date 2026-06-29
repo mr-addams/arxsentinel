@@ -265,22 +265,12 @@ func TestWafProcessor_CtxCancellation(t *testing.T) {
 // ========================== 8. Empty config ==================================================
 
 // TestWafProcessor_EmptyConfig verifies that constructing the processor with zero
-// rules still yields a usable instance — every event passes through unchanged.
+// rules is rejected with an error — an empty ruleset silently passes all traffic,
+// which would give a false sense of protection (fail-fast at startup).
 func TestWafProcessor_EmptyConfig(t *testing.T) {
-	p, err := NewWafProcessor(Config{})
-	if err != nil {
-		t.Fatalf("NewWafProcessor(empty): %v", err)
-	}
-	if p == nil {
-		t.Fatal("NewWafProcessor(empty): want non-nil processor")
-	}
-	ev := makeLogEvent(&parser.LogEntry{Method: "POST", Status: 405})
-	got, err := p.Process(context.Background(), ev)
-	if err != nil {
-		t.Fatalf("Process: %v", err)
-	}
-	if got != ev {
-		t.Errorf("Process: want passthrough (same pointer), got different")
+	_, err := NewWafProcessor(Config{})
+	if err == nil {
+		t.Fatal("NewWafProcessor(empty): want error for empty rules, got nil")
 	}
 }
 
@@ -548,6 +538,7 @@ func TestWafProcessor_ScoreFunc_Nil(t *testing.T) {
 // plumbing doesn't drop the field on the floor.
 func TestWafProcessor_Config_TagWeights(t *testing.T) {
 	cfg := Config{
+		Rules:      []RuleConfig{{Name: "dummy", Expression: `http.path eq "/"`, Action: "drop"}},
 		TagWeights: map[string]int{
 			"waf_sqli": 80,
 			"waf_xss":  60,
@@ -576,6 +567,7 @@ func TestWafProcessor_Config_TagWeights(t *testing.T) {
 // test only confirms the field is carried through without loss.
 func TestWafProcessor_Config_DropScore(t *testing.T) {
 	cfg := Config{
+		Rules:     []RuleConfig{{Name: "dummy", Expression: `http.path eq "/"`, Action: "drop"}},
 		DropScore: 100,
 	}
 	p, err := NewWafProcessor(cfg)

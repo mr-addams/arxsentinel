@@ -136,3 +136,76 @@ func TestWAFIntegration_DropAndTag(t *testing.T) {
 func loadMinimalPipelineCfg() config.PipelineConfig {
 	return config.PipelineConfig{}
 }
+
+// TestWAFIntegration_NoProcessors_BackwardCompat verifies that a securityState
+// with Waf == nil (the pre-H11 default) processes multiple legitimate requests from
+// the same IP without panic and without unexpected WAF side-effects. It is a
+// lightweight multi-request stability check complementing the existing
+// "nil_waf_skips_gate" subtest.
+func TestWAFIntegration_NoProcessors_BackwardCompat(t *testing.T) {
+	if err := utils.Init(false, false, "", ""); err != nil {
+		t.Fatalf("utils.Init: %v", err)
+	}
+	t.Cleanup(utils.Close)
+
+	cfg := loadMinimalConfig(t)
+	cfg.Scoring.BanThreshold = 100
+	cfg.Scoring.AlertThreshold = 50
+
+	nopLog := func(_, _, _ string) {}
+	tracker := state.NewTracker(cfg, nopLog)
+
+	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
+	if err != nil {
+		t.Fatalf("whitelist.NewMatcher: %v", err)
+	}
+	detectors := buildPipelineDetectors(context.Background(), cfg, loadMinimalPipelineCfg(), SharedResources{})
+	sc := scorer.NewScorer(cfg.Scoring, detectors, nopLog)
+	verifier := whitelist.NewVerifier(whitelist.NewIPCache(cfg.Whitelist.DNSCache), nil, nopLog)
+
+	// Pre-heat tracker so the IP has state before the processor runs.
+	_ = tracker.Update(&parser.LogEntry{RealIP: "1.2.3.4", Path: "/warmup", Status: 200, Time: time.Now()})
+
+	st := &securityState{
+		StreamName:       "test",
+		PipelineName:     "default",
+		Tracker:          tracker,
+		Scorer:           sc,
+		Matcher:          matcher,
+		Verifier:         verifier,
+		Waf:              nil, // backward-compatible: no processors block
+		FakeBotScore:     cfg.Scoring.BanThreshold,
+		DNSVerifyTimeout: 2 * time.Second,
+	}
+	proc := &securityProcessor{shared: coreruntime.SharedResources{}}
+
+	p := &parser.CombinedParser{}
+	evctx := coreruntime.EventContext{SourceName: "test", SourceType: "nginx"}
+
+	paths := []string{
+		"/healthz",
+		"/index.html",
+		"/api/v1/users",
+		"/static/app.css",
+		"/static/app.js",
+		"/robots.txt",
+		"/favicon.ico",
+		"/api/v1/login",
+		"/about",
+		"/contact",
+	}
+
+	for _, path := range paths {
+		rawLine := `1.2.3.4 - - [01/Jan/2025:00:00:00 +0000] "GET ` + path + ` HTTP/1.1" 200 512 "-" "curl/7.0" "1.2.3.4"`
+		entry, ok := p.Parse(rawLine)
+		if !ok {
+			t.Fatalf("parse failed for path %q", path)
+		}
+		event := parser.WrapLogEntry(entry, plugin.Envelope{})
+
+		action := proc.Process(context.Background(), event, st, evctx)
+		// The contract is that every call returns an Action (possibly empty)
+		// and never panics. With Waf == nil no WAF drop can occur.
+		_ = action
+	}
+}
