@@ -160,6 +160,14 @@ type DetectorConfig struct {
 	Params  map[string]interface{} `yaml:",inline"` // detector-specific params; deserialized by each factory
 }
 
+// ProcessorConfig holds the name and generic parameters for a processor plugin.
+// Params is a string→any map — wire-up code type-asserts the values it needs.
+// No import of pkg/processorplugins/* here: module boundary between config and plugins.
+type ProcessorConfig struct {
+	Plugin string         `yaml:"plugin"` // registered plugin name, e.g. "waf"
+	Params map[string]any `yaml:"params"` // plugin-specific parameters
+}
+
 // PipelineConfig — one isolated processing unit within a stream.
 // Each pipeline owns its Sources, Detectors, Sinks, and Tracker (or a shared Tracker group).
 // Multiple pipelines within a stream run concurrently and are fully isolated by default.
@@ -172,6 +180,7 @@ type PipelineConfig struct {
 	Inputs       []InputConfig             `yaml:"inputs"`        // YAML: pipelines[].inputs — log sources for this pipeline
 	Outputs      []SinkConfig              `yaml:"outputs"`       // YAML: pipelines[].outputs — threat sinks for this pipeline
 	Detectors    map[string]DetectorConfig `yaml:"detectors"`     // YAML: pipelines[].detectors — per-detector config; nil → all registered with defaults
+	Processors   []ProcessorConfig         `yaml:"processors"`    // YAML: pipelines[].processors — ordered list of processor plugins; nil → no processors. Consumer: processor_factory.Build
 	Pipeline     PipelineRuntimeConfig     `yaml:"pipeline"`      // YAML: pipelines[].pipeline — buffer_size, shutdown_timeout
 }
 
@@ -189,6 +198,7 @@ type StreamConfig struct {
 	Inputs    []InputConfig         `yaml:"inputs"`    // YAML: streams[].inputs — Deprecated in favour of pipelines[].inputs; auto-wrapped by Migrate()
 	Outputs   []SinkConfig          `yaml:"outputs"`   // YAML: streams[].outputs — Deprecated in favour of pipelines[].outputs; auto-wrapped by Migrate()
 	Executors []ExecutorItem        `yaml:"executors"` // YAML: streams[].executors — shorthand; Migrate() propagates to pipelines with Executors==nil. Consumer: config.Migrate
+	Processors []ProcessorConfig    `yaml:"processors"` // YAML: streams[].processors — stream-level processor list; Migrate() propagates to pipelines with nil Processors. Consumer: config.Migrate
 	Pipeline  PipelineRuntimeConfig `yaml:"pipeline"`  // YAML: streams[].pipeline — per-stream pipeline tuning; overrides top-level
 
 	// Deprecated: use inputs/outputs instead. Kept for backward compatibility and

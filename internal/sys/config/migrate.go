@@ -150,5 +150,21 @@ func Migrate(cfg *Config) []string {
 		}}
 	}
 
+	// ── Propagate stream-level Processors into pipelines with nil Processors ─────────────
+	// Mirrors the per-stream default pattern used for Inputs/Outputs/Executors at the
+	// stream→pipeline boundary. A pipeline that explicitly sets `processors:` keeps its
+	// own list; an auto-wrapped pipeline (Processors left nil) inherits from the stream.
+	for i := range cfg.Streams {
+		stream := &cfg.Streams[i]
+		if len(stream.Processors) == 0 {
+			continue
+		}
+		for j := range stream.Pipelines {
+			if stream.Pipelines[j].Processors == nil {
+				stream.Pipelines[j].Processors = stream.Processors
+			}
+		}
+	}
+
 	return warnings
 }
