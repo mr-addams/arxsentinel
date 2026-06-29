@@ -36,6 +36,7 @@
   ║                                                                  ║
   ║  Whitelist ── свои IP/CIDR/UA · DNS-верификация ботов            ║
   ║  ChainGuard ─ проверка целостности цепочки IP за прокси          ║
+  ║  WAF rule-engine (processors: · pass / drop / tag)               ║
   ║                                                                  ║
   ║  Детекторы (встроенные)   Детекторы (плагины)                    ║
   ║  ├─ probe      score 25  └─ exec+JSON detector (любой язык)      ║
@@ -514,6 +515,16 @@ output:
 
 Score накапливается с линейным decay за `observation_window`. При достижении `alert_threshold` — запись WARN, при `ban_threshold` — THREAT + Fail2Ban.
 
+## Процессор-плагины
+
+Процессоры запускаются до цепочки детекторов. Они могут коротко замкнуть pipeline (пропустить), полностью отбросить событие или пометить его для последующего скоринга.
+
+| Плагин | Описание |
+|--------|----------|
+| `whitelist` | IP/CIDR/path/UA allowlist — коротко замыкает pipeline |
+| `chaincheck` | Проверяет целостность цепочки IP за обратным прокси |
+| `waf` | Правило-движок — pass / drop / tag с интеграцией в scorer |
+
 ## Развёртывание
 
 ### systemd — bare metal
@@ -581,6 +592,8 @@ ArxSentinel предоставляет автоматическую верифи
                               │
                   whitelist.Verifier ──→ bot UA? → rDNS/fDNS → verified? → skip
                               │                              → fake bot? → +FakeBotScore
+                  waf.RuleEngine ──→ signature match? → pass / drop / tag
+                              │
                   tracker.Update(*IPState)
                     ├── TotalRequests, Requests404
                     ├── pathBuf (ring buffer, последние 64 пути)
@@ -649,6 +662,14 @@ streams:
         inputs:
           - type: file
             path: /var/log/nginx/api.log
+        processors:                           # плагины rule-engine, выполняются по порядку в массиве
+          - plugin: waf                       # сигнатурный шлюз: отбрасывает SQLi/scanner до детекторов
+            params:
+              waf_config:
+                rules:
+                  - name: sqli_drop
+                    expression: 'http.path contains "OR 1=1"'
+                    action: drop
         detectors:
           probe:
             enabled: true
