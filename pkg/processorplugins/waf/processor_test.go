@@ -373,6 +373,172 @@ func TestWafProcessor_PassShortCircuit(t *testing.T) {
 	}
 }
 
+// ========================== ScoreFunc callback ============================================
+
+// recordingScorer captures every (ip, delta) tuple scoreFn is invoked with, so
+// the tests can assert what was actually signalled to the scorer without
+// coupling to whatever closure cmd/arxsentinel wires up in production.
+type recordingScorer struct {
+	mu    sync.Mutex
+	calls []scorerCall
+}
+
+type scorerCall struct {
+	ip    string
+	delta int
+}
+
+func (r *recordingScorer) fn() ScoreFunc {
+	return func(ip string, delta int) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.calls = append(r.calls, scorerCall{ip: ip, delta: delta})
+	}
+}
+
+func (r *recordingScorer) snapshot() []scorerCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]scorerCall, len(r.calls))
+	copy(out, r.calls)
+	return out
+}
+
+// TestWafProcessor_ScoreFunc_Drop verifies that a drop-rule firing triggers
+// scoreFn(ip, dropScore) where ip comes from LogEntry.RealIP (preferred over
+// RemoteAddr when both are populated).
+func TestWafProcessor_ScoreFunc_Drop(t *testing.T) {
+	scorer := &recordingScorer{}
+	cfg := Config{
+		Rules: []RuleConfig{
+			{Name: "block_post_405", Expression: `http.method eq "POST" and http.status eq 405`, Action: ActionDrop},
+		},
+		DropScore: 100,
+		ScoreFn:   scorer.fn(),
+	}
+	p, err := NewWafProcessor(cfg)
+	if err != nil {
+		t.Fatalf("NewWafProcessor: %v", err)
+	}
+
+	ev := makeLogEvent(&parser.LogEntry{
+		Method:     "POST",
+		Status:     405,
+		Path:       "/api/users",
+		RealIP:     "203.0.113.7",
+		RemoteAddr: "10.0.0.1:54321",
+	})
+	got, err := p.Process(context.Background(), ev)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if got != nil {
+		t.Errorf("Process: want nil event (drop), got %+v", got)
+	}
+
+	calls := scorer.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("scoreFn calls: got %d, want 1 (%+v)", len(calls), calls)
+	}
+	if got := calls[0]; got.ip != "203.0.113.7" || got.delta != 100 {
+		t.Errorf("scoreFn call: got {ip=%q, delta=%d}, want {ip=%q, delta=%d}",
+			got.ip, got.delta, "203.0.113.7", 100)
+	}
+}
+
+// TestWafProcessor_ScoreFunc_Tag verifies that a tag:<label> rule firing
+// triggers scoreFn(ip, tagWeight) where the weight comes from TagWeights keyed
+// by the action's label (not the rule name).
+func TestWafProcessor_ScoreFunc_Tag(t *testing.T) {
+	scorer := &recordingScorer{}
+	cfg := Config{
+		Rules: []RuleConfig{
+			{Name: "sqli_detect", Expression: `http.path contains "union"`, Action: "tag:waf_sqli"},
+		},
+		TagWeights: map[string]int{
+			"waf_sqli": 80,
+			"waf_xss":  60,
+		},
+		ScoreFn: scorer.fn(),
+	}
+	p, err := NewWafProcessor(cfg)
+	if err != nil {
+		t.Fatalf("NewWafProcessor: %v", err)
+	}
+
+	ev := makeLogEvent(&parser.LogEntry{
+		Method: "GET", Status: 200, Path: "/search?q=union+select",
+		RemoteAddr: "198.51.100.42",
+	})
+	got, err := p.Process(context.Background(), ev)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if got == nil {
+		t.Fatal("Process: want non-nil event (tag path), got nil")
+	}
+	if got.Envelope.Level != "THREAT:sqli_detect:waf_sqli" {
+		t.Errorf("Process: Level=%q, want %q", got.Envelope.Level, "THREAT:sqli_detect:waf_sqli")
+	}
+
+	calls := scorer.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("scoreFn calls: got %d, want 1 (%+v)", len(calls), calls)
+	}
+	if got := calls[0]; got.ip != "198.51.100.42" || got.delta != 80 {
+		t.Errorf("scoreFn call: got {ip=%q, delta=%d}, want {ip=%q, delta=%d}",
+			got.ip, got.delta, "198.51.100.42", 80)
+	}
+}
+
+// TestWafProcessor_ScoreFunc_Nil verifies nil-ScoreFn safety: a drop-rule
+// firing with no scoreFn configured must not panic, must still gate the event,
+// and must not crash subsequent Process calls.
+func TestWafProcessor_ScoreFunc_Nil(t *testing.T) {
+	cfg := Config{
+		Rules: []RuleConfig{
+			{Name: "block_post_405", Expression: `http.method eq "POST" and http.status eq 405`, Action: ActionDrop},
+		},
+		DropScore: 100,
+		// ScoreFn intentionally nil — must be nil-safe.
+	}
+	p, err := NewWafProcessor(cfg)
+	if err != nil {
+		t.Fatalf("NewWafProcessor: %v", err)
+	}
+
+	ev := makeLogEvent(&parser.LogEntry{
+		Method: "POST", Status: 405, Path: "/api/users",
+		RealIP: "203.0.113.7",
+	})
+	got, err := p.Process(context.Background(), ev)
+	if err != nil {
+		t.Fatalf("Process: want no error, got %v", err)
+	}
+	if got != nil {
+		t.Errorf("Process: want nil event (drop), got %+v", got)
+	}
+
+	// Second call with a tag-rule: also nil-safe.
+	scorer := &recordingScorer{}
+	_ = scorer // keep the recorder type referenced; not used here.
+	cfg2 := Config{
+		Rules: []RuleConfig{
+			{Name: "sqli", Expression: `http.path contains "union"`, Action: "tag:waf_sqli"},
+		},
+		TagWeights: map[string]int{"waf_sqli": 80},
+		// ScoreFn nil again.
+	}
+	p2, err := NewWafProcessor(cfg2)
+	if err != nil {
+		t.Fatalf("NewWafProcessor #2: %v", err)
+	}
+	ev2 := makeLogEvent(&parser.LogEntry{Method: "GET", Status: 200, Path: "/q?union", RealIP: "203.0.113.8"})
+	if _, err := p2.Process(context.Background(), ev2); err != nil {
+		t.Fatalf("Process #2: want no error, got %v", err)
+	}
+}
+
 // ========================== Config: TagWeights =============================================
 
 // TestWafProcessor_Config_TagWeights verifies that Config.TagWeights survives

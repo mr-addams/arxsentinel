@@ -27,10 +27,16 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/mr-addams/arx-core/pkg/rule"
 	"github.com/mr-addams/arx-core/pkg/rule/ruleset"
 )
+
+// ScoreFunc is called after a rule fires to signal a score delta to the scorer.
+// ip is the client IP string. delta is the score to add.
+// Nil-safe: if ScoreFunc is nil, no score signal is sent.
+type ScoreFunc func(ip string, delta int)
 
 // ========================== WafProcessor ===================================================
 
@@ -86,10 +92,13 @@ func newChainedResolver() *chainedResolver {
 // parallelise them. Today they run sequentially because the second Match only
 // happens on a passRules miss (so it's not on the production-hot path).
 type WafProcessor struct {
-	passRules *ruleset.RuleSet
-	gateRules *ruleset.RuleSet
-	actions   map[string]string
-	resolver  *chainedResolver
+	passRules  *ruleset.RuleSet
+	gateRules  *ruleset.RuleSet
+	actions    map[string]string
+	resolver   *chainedResolver
+	scoreFn    ScoreFunc
+	dropScore  int
+	tagWeights map[string]int
 }
 
 // Ensure WafProcessor satisfies plugin.Processor at compile time.
@@ -112,10 +121,13 @@ func NewWafProcessor(cfg Config) (*WafProcessor, error) {
 	}
 
 	return &WafProcessor{
-		passRules: passRS,
-		gateRules: gateRS,
-		actions:   actions,
-		resolver:  newChainedResolver(),
+		passRules:  passRS,
+		gateRules:  gateRS,
+		actions:    actions,
+		resolver:   newChainedResolver(),
+		scoreFn:    cfg.ScoreFn,
+		dropScore:  cfg.DropScore,
+		tagWeights: cfg.TagWeights,
 	}, nil
 }
 
@@ -124,6 +136,19 @@ func (p *WafProcessor) Name() string { return "waf" }
 
 // Manifest returns the plugin manifest.
 func (p *WafProcessor) Manifest() plugin.Manifest { return Manifest }
+
+// clientIP extracts the client IP from the event payload.
+// Returns empty string for non-LogEntry payloads (score signal skipped).
+func clientIP(event *plugin.Event) string {
+	le, ok := event.Payload.(*parser.LogEntry)
+	if !ok || le == nil {
+		return ""
+	}
+	if le.RealIP != "" {
+		return le.RealIP
+	}
+	return le.RemoteAddr
+}
 
 // ========================== Process ============================================================
 
@@ -192,6 +217,11 @@ func (p *WafProcessor) Process(ctx context.Context, event *plugin.Event) (*plugi
 	action := p.actions[name]
 	switch {
 	case action == ActionDrop:
+		if p.scoreFn != nil && p.dropScore > 0 {
+			if ip := clientIP(event); ip != "" {
+				p.scoreFn(ip, p.dropScore)
+			}
+		}
 		return nil, nil
 	case action == ActionTag:
 		event.Envelope.Level = "THREAT:" + name
@@ -199,15 +229,16 @@ func (p *WafProcessor) Process(ctx context.Context, event *plugin.Event) (*plugi
 	case strings.HasPrefix(action, "tag:"):
 		// tag:<suffix> — preserve the suffix so downstream sinks / executors
 		// can route on the rule's intent (e.g. "tag:rate-limit" vs
-		// "tag:ban"). Falls back to bare "THREAT:<rule>" if the suffix is
-		// empty (shouldn't happen — classifyAction rejects empty tag:""
-		// because normalised "" wouldn't match the prefix, but the guard
-		// below keeps Level well-formed even on a future contract change).
-		suffix := strings.TrimPrefix(action, "tag:")
-		if suffix == "" {
-			event.Envelope.Level = "THREAT:" + name
-		} else {
-			event.Envelope.Level = "THREAT:" + name + ":" + suffix
+		// "tag:ban"). Signal the scorer with the label's weight from
+		// tagWeights; missing label → no score signal (tag still fires).
+		label := strings.TrimPrefix(action, "tag:")
+		event.Envelope.Level = "THREAT:" + name + ":" + label
+		if p.scoreFn != nil {
+			if w := p.tagWeights[label]; w > 0 {
+				if ip := clientIP(event); ip != "" {
+					p.scoreFn(ip, w)
+				}
+			}
 		}
 		return event, nil
 	default:

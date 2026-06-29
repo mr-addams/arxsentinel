@@ -81,6 +81,12 @@ type Config struct {
 	// Key: label from "tag:<label>" action. Value: score delta.
 	// Missing label at runtime → score 0 (tag still fires, no score signal).
 	TagWeights map[string]int
+
+	// ScoreFn is the closure called after a rule fires to signal a score delta
+	// to the scorer. The wire-up code in cmd/arxsentinel builds it from
+	// DropScore / TagWeights. Nil is allowed — without ScoreFn the WAF still
+	// gates traffic, it just doesn't notify the scorer.
+	ScoreFn ScoreFunc
 }
 
 // ========================== BuildScheme =====================================================
