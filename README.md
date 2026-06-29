@@ -35,6 +35,7 @@
   ║                                                                  ║
   ║  Whitelist ── custom IPs/CIDRs/UA · bot DNS verification         ║
   ║  ChainGuard ─ proxy-chain IP integrity check                     ║
+  ║  WAF rule-engine (processors: · pass / drop / tag)               ║
   ║                                                                  ║
   ║  Detectors (core)        Detectors (plugins)                     ║
   ║  ├─ probe      score 25  └─ exec+JSON detector (any language)    ║
@@ -522,6 +523,16 @@ output:
 
 Score accumulates with linear decay over `observation_window`. Reaching `alert_threshold` writes a WARN; reaching `ban_threshold` writes a THREAT and triggers Fail2Ban.
 
+## Processor Plugins
+
+Processors run before the detector chain. They short-circuit the pipeline (skip), drop the event outright, or tag it for downstream scoring.
+
+| Plugin | Description |
+|--------|-------------|
+| `whitelist` | IP/CIDR/path/UA allowlist — short-circuits pipeline |
+| `chaincheck` | Validates reverse-proxy IP chain integrity |
+| `waf` | Rule-engine gate — pass / drop / tag with scorer integration |
+
 ## Deployment
 
 ### systemd — bare metal
@@ -602,6 +613,8 @@ See [README.whitelist.md](deploy/examples/README.whitelist.md) for configuration
                               │
                   whitelist.Verifier ──→ bot UA? → rDNS/fDNS → verified? → skip
                               │                              → fake bot? → +FakeBotScore
+                  waf.RuleEngine ──→ signature match? → pass / drop / tag
+                              │
                   tracker.Update(*IPState)
                     ├── TotalRequests, Requests404
                     ├── pathBuf (ring buffer, last 64 paths)
@@ -683,6 +696,14 @@ streams:
         inputs:
           - type: file
             path: /var/log/nginx/api.log
+        processors:                           # rule-engine plugins evaluated in array order
+          - plugin: waf                       # signature gate: drops SQLi/scanner before detectors
+            params:
+              waf_config:
+                rules:
+                  - name: sqli_drop
+                    expression: 'http.path contains "OR 1=1"'
+                    action: drop
         detectors:
           probe:
             enabled: true
@@ -705,6 +726,8 @@ streams:
         outputs:
           - type: file
             path: /var/log/arxsentinel/admin-threats.log
+
+# see cookbook/rule-engine/ for full examples
 ```
 
 **TrackerGroup rules:**

@@ -1,0 +1,247 @@
+# ====================== cookbook/waf/waf-multi-profile.yaml ===================
+#
+#   WAF recipe with TWO streams, each running a different ruleset profile.
+#   Pipeline:
+#     Stream "strict"     — admin surface: aggressive WAF, no UA tolerance.
+#     Stream "permissive" — public surface: only high-confidence attacks blocked.
+#
+#   Use case: a single nginx instance serves two contexts (e.g. /admin/* and /).
+#   The strict stream blocks anything that looks like a probe; the permissive
+#   stream only blocks signatures with near-zero false-positive risk. Both
+#   streams share the same detectors but operate on different log files.
+#
+#   Each stream has its own processors[] block with its own waf_config.rules[].
+#   The first-match-wins semantic (DECISION D12) is per-stream: rule A in the
+#   strict stream does not influence rule B in the permissive stream.
+#
+#   Два контекста nginx (например /admin/* и /). Strict блокирует всё подозри-
+#   тельное; permissive — только сигнатуры с near-zero FP. Общие детекторы,
+#   но разные лог-файлы и разные rule-наборы. First-match-wins (D12) per-stream.
+#
+# =======================================================================================
+
+# ── Streams ───────────────────────────────────────────────────────────────────────────
+streams:
+
+  # ── STRICT PROFILE: admin / API surface ──────────────────────────────────────────
+  # Anything that looks like a probe or scanner is dropped at the WAF layer.
+  # Тут всё подозрительное дропается на уровне WAF.
+  - name: strict
+    inputs:
+      - type: file
+        path: /var/log/nginx/admin.access.log
+        parser: combined
+
+    processors:
+      - plugin: waf
+        params:
+          waf_config:
+            rules:
+
+              # 1. Pass internal monitoring.
+              # Внутренний мониторинг проходит.
+              - name: pass_internal_monitoring
+                expression: 'http.path starts_with "/admin/_monitor" or http.path eq "/admin/healthz"'
+                action: pass
+
+              # 2. SQL injection — broad pattern, zero tolerance.
+              # SQL-инъекция — широкий паттерн, нулевая толерантность.
+              # Note: literal parens use the RE2 character class [(] (no backslash
+              # escapes — the rule engine's lexer only recognises \n \t \r \" \\,
+              # so backslash-paren is rejected at parse time).
+              # Примечание: литеральные скобки через char class [(] (без backslash-
+              # escapes — лексер rule-engine распознаёт только \n \t \r \" \\,
+              # backslash-paren отвергается на этапе parse).
+              - name: block_sql_injection
+                expression: 'http.raw_uri matches "(?i)(union[^+]*select|drop[^+]+table|--[^+]+$|or[^+]+1=1|and[^+]+1=1|sleep[(]|benchmark[(]|extractvalue|updatexml)"'
+                action: drop
+
+              # 3. Path traversal — broad pattern.
+              # Path traversal — широкий паттерн.
+              - name: block_path_traversal
+                expression: 'http.path matches "(?i)([.]+[/]|%2e%2e[/%]|/etc/passwd|/proc/self)"'
+                action: drop
+
+              # 4. Scanner / grabber UA — zero tolerance on admin surface.
+              # Сканер / grabber UA — нулевая толерантность на admin.
+              - name: block_scanner_ua
+                expression: 'http.user_agent matches "(?i)(sqlmap|nikto|nuclei(/[0-9.]+)?|httrack|masscan|zgrab|nmap|dirbuster|gobuster|wpscan)"'
+                action: drop
+
+              # 5. Empty / missing User-Agent on admin surface — drop.
+              # Пустой / отсутствующий User-Agent на admin — drop.
+              - name: block_empty_ua
+                expression: 'http.user_agent eq "" or http.user_agent eq "-"'
+                action: drop
+
+              # 6. Non-authenticated GET on sensitive admin endpoints.
+              # Неаутентифицированный GET на чувствительные admin-эндпоинты.
+              - name: block_unauth_admin
+                expression: 'http.method eq "GET" and http.path starts_with "/admin/" and http.remote_user eq ""'
+                action: drop
+
+              # 7. Any 4xx — tag for downstream.
+              # Любой 4xx — пометка для downstream.
+              - name: tag_4xx
+                expression: 'http.status ge 400 and http.status lt 500'
+                action: tag
+
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/strict-threats.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: sentinel-strict
+
+  # ── PERMISSIVE PROFILE: public surface ──────────────────────────────────────────
+  # Only signatures with near-zero false-positive risk are blocked. The detector
+  # chain takes care of soft signals (rate, scanner UA, low-confidence probes).
+  # Блокируются только сигнатуры с near-zero FP. Мягкие сигналы (rate, scanner
+  # UA, low-confidence probes) — за цепочкой детекторов.
+  - name: permissive
+    inputs:
+      - type: file
+        path: /var/log/nginx/public.access.log
+        parser: combined
+
+    processors:
+      - plugin: waf
+        params:
+          waf_config:
+            rules:
+
+              # 1. Pass well-known paths.
+              # Известные пути проходят.
+              - name: pass_well_known
+                expression: 'http.path starts_with "/.well-known/" or http.path eq "/favicon.ico" or http.path eq "/robots.txt"'
+                action: pass
+
+              # 2. SQL injection — high-confidence patterns only (e.g. SLEEP-based
+              # blind, stacked statements, MySQL-specific extracts).
+              # SQL-инъекция — только high-confidence паттерны.
+              - name: block_sql_injection_high_conf
+                expression: 'http.raw_uri matches "(?i)(union[^+]*select[^+]+from|drop[^+]+table[^+]+(if|where)|benchmark[(][0-9]+,|sleep[(][0-9]+[)]|extractvalue[(])"'
+                action: drop
+
+              # 3. Path traversal — direct /etc/passwd or /proc/self attempts only.
+              # Path traversal — только прямые попытки /etc/passwd или /proc/self.
+              - name: block_path_traversal_direct
+                expression: 'http.path contains "/etc/passwd" or http.path contains "/proc/self" or http.path contains "/etc/shadow"'
+                action: drop
+
+              # 4. Tag 5xx for ops — the permissive profile does not block on 4xx.
+              # 5xx помечается для ops; 4xx на пермиссивном профиле не блокируется.
+              - name: tag_5xx
+                expression: 'http.status ge 500 and http.status lt 600'
+                action: tag
+
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/permissive-threats.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: sentinel-permissive
+
+# ── Scoring ──────────────────────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: "300s"
+  decay: "linear"
+
+# ── Detectors ────────────────────────────────────────────────────────────────────────
+detectors:
+
+  probe:
+    enabled: true
+    score: 25
+    paths:
+      - "/.env"
+      - "/.git/config"
+      - "/wp-config.php"
+      - "/administrator/"
+      - "/admin/"
+
+  bruteforce:
+    enabled: true
+    min_requests: 10
+    ratio_threshold: 0.6
+    score: 30
+
+  crawler:
+    enabled: true
+    min_sequential: 5
+    score: 20
+
+  noasset:
+    enabled: true
+    min_page_requests: 3
+    asset_ratio_threshold: 0.1
+    score: 20
+
+  rate:
+    enabled: true
+    window: "60s"
+    threshold: 100
+    score: 25
+
+  useragent:
+    enabled: true
+    scanner_score: 40
+    grabber_score: 20
+    automation_score: 15
+    empty_ua_score: 30
+    extra_scanner_patterns: []
+    extra_grabber_patterns: []
+    extra_automation_patterns: []
+
+  overflow:
+    enabled: true
+    max_url_length: 2048
+    score: 30
+
+  badbot:
+    enabled: true
+    score: 60
+    check_ua: true
+    check_referrer: false
+
+# ── Whitelist ────────────────────────────────────────────────────────────────────────
+whitelist:
+  custom:
+    ips: []      # trusted individual IPs; list of strings
+    cidrs: []    # trusted IP ranges; list of strings
+    ua_substrings: []  # trusted UA substrings; list of strings
+    paths: ["/.well-known/", "/favicon.ico", "/robots.txt"]
+
+# ── Executors (optional — one per stream) ──────────────────────────────────────────
+# Each stream has its own sentinel-threat sink, so two executors can react
+# differently (e.g. permanent ban for admin surface, short TTL for public).
+# У каждого стрима свой sentinel-threat sink, поэтому два executor'а реагируют
+# по-разному (например, permanent ban для admin, короткий TTL для public).
+executors:
+  - name: strict-ban
+    type: cloudflare
+    sources:
+      - name: sentinel-strict
+    config:
+      api_token: "YOUR_CF_API_TOKEN"
+      account_id: "YOUR_CF_ACCOUNT_ID"
+      list_name: "arxsentinel_strict_blocklist"
+      min_level: "THREAT"
+      ttl: "168h"           # 7 days; longer TTL for admin-surface hits
+      batch_size: 100
+      flush_interval: "10s"
+
+  - name: permissive-ban
+    type: cloudflare
+    sources:
+      - name: sentinel-permissive
+    config:
+      api_token: "YOUR_CF_API_TOKEN"
+      account_id: "YOUR_CF_ACCOUNT_ID"
+      list_name: "arxsentinel_permissive_blocklist"
+      min_level: "THREAT"
+      ttl: "1h"             # short TTL — public surface has noisier signals
+      batch_size: 100
+      flush_interval: "10s"

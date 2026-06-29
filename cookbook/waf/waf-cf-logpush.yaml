@@ -1,0 +1,183 @@
+# ====================== cookbook/waf/waf-cf-logpush.yaml ======================
+#
+#   WAF recipe for Cloudflare Logpush ingestion.
+#   Pipeline: Cloudflare Logpush (HTTP push, gzip NDJSON) → WAF → file sink.
+#
+#   Use case: you run Cloudflare in front of an origin server. Logpush streams
+#   every request to ArxSentinel as NDJSON over HTTPS. The WAF rule engine gates
+#   before scoring so high-confidence attacks (SQLi, scanners) never pollute the
+#   rate detector state.
+#
+#   Cloudflare-specific notes:
+#     - http.real_ip is populated from CF-Connecting-IP automatically by the parser.
+#     - http.user_agent is the original client UA, not Cloudflare's egress UA.
+#     - http.bytes_sent counts body bytes the EDGE served, not the origin.
+#   Cloudflare-специфика:
+#     - http.real_ip заполняется из CF-Connecting-IP автоматически парсером.
+#     - http.user_agent — оригинальный клиентский UA, не Cloudflare egress.
+#     - http.bytes_sent — байты тела, отданные EDGE, не origin'ом.
+#
+# =======================================================================================
+
+# ── Streams ───────────────────────────────────────────────────────────────────────────
+streams:
+  - name: waf-cf-gate
+    inputs:
+      # Cloudflare Logpush endpoint. Set the ownership-challenge token in
+      # Cloudflare's UI; ownership is verified automatically by the parser.
+      # Endpoint Logpush. Токен подтверждения ownership указывается в UI Cloudflare,
+      # ownership проверяется парсером автоматически.
+      - type: http
+        addr: "http://0.0.0.0:8889"
+        protocol: cloudflare
+
+    processors:
+      - plugin: waf
+        params:
+          waf_config:
+            rules:
+
+              # 1. Allowlist: known-good automation (Googlebot, status monitoring).
+              # Разрешающее правило: доверенная автоматизация.
+              - name: pass_known_good_bots
+                expression: 'http.user_agent matches "(?i)(googlebot|bingbot|cloudflare healthcheck|statuscake)"'
+                action: pass
+
+              # 2. Cloudflare-attack-score shortcut: drop when edge scored the
+              # request as a definite attack (Cloudflare's `clientRequest.cf.clientTrustScore`
+              # is not in the http.* namespace; this rule approximates via the
+              # well-known challenge response status 403 or 503).
+              # Cloudflare-attack-score shortcut: drop, если edge пометил запрос
+              # как определённую атаку.
+              - name: drop_cf_blocked
+                expression: 'http.status eq 403 or http.status eq 503'
+                action: drop
+
+              # 3. SQL injection on the public-facing surface.
+              # SQL-инъекция на публичной поверхности.
+              - name: block_sql_injection
+                expression: 'http.raw_uri matches "(?i)(union[^+]*select|drop[^+]+table|--[^+]+$|or[^+]+1=1|and[^+]+1=1)"'
+                action: drop
+
+              # 4. Path traversal.
+              - name: block_path_traversal
+                expression: 'http.path contains "../" or http.path contains "..%2f" or http.path contains "%2e%2e/"'
+                action: drop
+
+              # 5. Scanner UA on the edge.
+              # Сканер-UA на edge.
+              - name: block_scanner_ua
+                expression: 'http.user_agent matches "(?i)(sqlmap|nikto|nuclei(/[0-9.]+)?|httrack|masscan|zgrab)"'
+                action: drop
+
+              # 6. High-rate tag: 5xx from origin in burst.
+              # High-rate тег: 5xx с origin всплеском.
+              - name: tag_origin_5xx
+                expression: 'http.status ge 500 and http.status lt 600'
+                action: tag
+
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/cf-threats.log
+        format: fail2ban    # fail2ban | json; default: fail2ban
+
+      # Also forward THREAT events to the Cloudflare IP Lists executor via
+      # the in-process Named Channel Switch. The executor (`sentinel-cf`)
+      # must be declared in executors: below.
+      # Также пробрасываем THREAT-события в Cloudflare IP Lists executor через
+      # in-process Named Channel Switch. Executor (`sentinel-cf`) должен быть
+      # объявлен в executors: ниже.
+      - type: sentinel-threat
+        name: sentinel-cf
+
+# ── Scoring ──────────────────────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: "300s"
+  decay: "linear"
+
+# ── Detectors ────────────────────────────────────────────────────────────────────────
+detectors:
+
+  probe:
+    enabled: true
+    score: 25
+    paths:
+      - "/.env"
+      - "/.git/config"
+      - "/wp-config.php"
+      - "/xmlrpc.php"
+      - "/phpmyadmin/"
+      - "/administrator/"
+
+  bruteforce:
+    enabled: true
+    min_requests: 10
+    ratio_threshold: 0.6
+    score: 30
+
+  crawler:
+    enabled: true
+    min_sequential: 5
+    score: 20
+
+  noasset:
+    enabled: true
+    min_page_requests: 3
+    asset_ratio_threshold: 0.1
+    score: 20
+
+  rate:
+    enabled: true
+    window: "60s"
+    threshold: 200           # higher threshold — CF absorbs DDoS, residual is application-layer
+    score: 25
+
+  useragent:
+    enabled: true
+    scanner_score: 40
+    grabber_score: 20
+    automation_score: 15
+    empty_ua_score: 30
+    extra_scanner_patterns: []
+    extra_grabber_patterns: []
+    extra_automation_patterns: []
+
+  overflow:
+    enabled: true
+    max_url_length: 2048
+    score: 30
+
+  badbot:
+    enabled: true
+    score: 60
+    check_ua: true
+    check_referrer: false
+
+# ── Whitelist ────────────────────────────────────────────────────────────────────────
+whitelist:
+  custom:
+    ips: []      # trusted individual IPs; list of strings
+    cidrs: []    # trusted IP ranges; list of strings
+    ua_substrings: []  # trusted UA substrings; list of strings
+    paths: ["/.well-known/", "/favicon.ico"]
+
+# ── Executors: Cloudflare IP Lists ──────────────────────────────────────────────────
+# Receives THREAT events from the `sentinel-cf` sink (NCS queue) and bans the
+# offending IP via the Cloudflare API. ttl=24h auto-unbans.
+# Получает THREAT-события из sink'а `sentinel-cf` (NCS-очередь) и банит IP через
+# Cloudflare API. ttl=24h автоматически разбанивает.
+executors:
+  - name: cf-ban
+    type: cloudflare
+    sources:
+      - name: sentinel-cf
+    config:
+      api_token: "YOUR_CF_API_TOKEN"      # Cloudflare API token with Lists:Edit
+      account_id: "YOUR_CF_ACCOUNT_ID"
+      list_name: "arxsentinel_blocklist"  # auto-created if absent
+      min_level: "THREAT"                  # INFO | WARN | THREAT; default: "THREAT"
+      ttl: "24h"                           # auto-unban; 0 = no auto-unban; default: "24h"
+      batch_size: 100
+      flush_interval: "10s"

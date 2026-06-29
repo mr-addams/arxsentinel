@@ -40,6 +40,7 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	"github.com/mr-addams/arxsentinel/internal/threat"
+	"github.com/mr-addams/arxsentinel/pkg/processorplugins/waf"
 )
 
 // ── securityState — opaque ProcessorState, передаваемый из factory.Build в Process ++++++++
@@ -52,13 +53,17 @@ import (
 // Sinks и SourceName/SourceType НЕ хранятся: sinks живут в engine.StreamSpec;
 // SourceName/SourceType engine передаёт через EventContext.
 type securityState struct {
-	StreamName       string
-	PipelineName     string
-	PipelineIdx      int
-	Tracker          *state.Tracker
-	Scorer           *scorer.Scorer
-	Matcher          *whitelist.Matcher
-	Verifier         *whitelist.Verifier
+	StreamName   string
+	PipelineName string
+	PipelineIdx  int
+	Tracker      *state.Tracker
+	Scorer       *scorer.Scorer
+	Matcher      *whitelist.Matcher
+	Verifier     *whitelist.Verifier
+	// Waf — optional rule-engine plugin. nil → WAF gate is skipped (default
+	// behaviour for pipelines without a `processors:` block). Built once in
+	// securityFactory.Build; rebuilt on Reload (mirrors Scorer rebuild).
+	Waf              *waf.WafProcessor
 	FakeBotScore     int
 	DNSVerifyTimeout time.Duration
 	// shared (runtime.SharedResources any) — читается через processor.shared, не в state.
@@ -146,6 +151,24 @@ func (p *securityProcessor) Process(
 	if matcher.IsWhitelistedIP(entry.RealIP) || matcher.IsWhitelistedUA(entry.UserAgent) || matcher.IsWhitelistedPath(entry.Path) {
 		utils.Log("WHITELIST", "skipping via custom whitelist: "+entry.RealIP, "debug")
 		return coreruntime.Action{}
+	}
+
+	// ── Step 1b: WAF rule-engine gate (signature-based, pre-state) ──────────────────
+	// Runs AFTER whitelist (operator-explicit whitelist cannot be overridden by WAF)
+	// and BEFORE bot verify (cheap signature check before expensive DNS verify).
+	// WAF acts on the raw request signature — tracker.Update hasn't run yet, so
+	// the IP-state hasn't accumulated history. WAF-tag sets event.Envelope.Level,
+	// which is later overwritten by securityProcessor's own threat event below —
+	// the tag's *score signal* via ScoreFn is the persistent contribution.
+	if st.Waf != nil {
+		wafEv, wafErr := st.Waf.Process(ctx, event)
+		if wafErr != nil || wafEv == nil {
+			// wafErr: ctx cancellation (skip); wafEv == nil: drop-rule fired (gate event out).
+			// Either way — do not emit a threat event; engine drops the line.
+			return coreruntime.Action{}
+		}
+		// tag or pass — replace event with WAF-returned (Level may be set for tag).
+		event = wafEv
 	}
 
 	// ── Steps 2–3: bot detection and verification ────────────────────────────────────

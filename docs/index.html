@@ -751,6 +751,7 @@
                 <div class="pipeline-node">TailReader × N streams (inotify · logrotate-aware)</div>
                 <div class="pipeline-node">Parser (ngx_http_realip · CF-Connecting-IP · XFF chain)</div>
                 <div class="pipeline-node">Whitelist (IP · CIDR · UA · bot DNS verify)</div>
+                <div class="pipeline-node">WAF (rule-engine · pass / drop / tag)</div>
                 <div class="pipeline-node">Tracker (per-IP state · ring buffer · rate counters)</div>
                 <div class="pipeline-node">Scorer (8 detectors · linear decay)</div>
                 <div class="pipeline-node">threats.log / Named Channel Switch</div>
@@ -1021,6 +1022,31 @@ sudo systemctl enable --now arxsentinel</span></pre>
 
         <div class="install-note">
             <strong>After installation:</strong> open <code>/etc/arxsentinel/config.yaml</code> and set your log path. nginx works without any profile. For Apache, Traefik, Caddy, HAProxy or LiteSpeed — set <code>parser.profile</code> to the server name. Config reloads on <code>SIGHUP</code> — no restart needed.
+        </div>
+    </section>
+
+        <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">WAF</span>
+            <h2 class="section-title">Block known attacks before they reach your detectors</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">✓</span> pass — explicit allowlist</h3>
+                <p>Rules evaluated first. A matching pass rule short-circuits the entire pipeline — health checks, internal IPs and known-good bots bypass all further processing with zero overhead.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⊘</span> drop — hard block</h3>
+                <p>SQLi, path traversal, scanner signatures — matched requests are gated out at line rate and never reach the scorer. No state allocated, no detector CPU spent on known-bad traffic.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">◈</span> tag — score and continue</h3>
+                <p>Suspicious but ambiguous traffic gets a label and a score delta, then flows into the regular detection pipeline. Combine WAF signals with behavioural detectors for correlated ban decisions.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⚙</span> Custom fields</h3>
+                <p>Extend the rule namespace with your own <code>http.*</code> fields — two Go changes, no recompilation of core logic. Add TLS version, request body length, or any field your log source exposes.</p>
+            </div>
         </div>
     </section>
 

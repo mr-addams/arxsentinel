@@ -274,6 +274,33 @@ pipeline:
   buffer_size: 8192
   shutdown_timeout: "15s"
 
+# ── processors: rule-engine plugin chain / цепочка плагинов rule-engine ───────────────────
+# Attach rule-engine plugins to the stream (e.g. WAF). Empty list (default) → no rule
+# engine runs; events flow through the detector chain unchanged.
+# Подключение плагинов rule-engine к стриму (например WAF). Пустой список (дефолт) →
+# rule-engine не запускается, события идут через цепочку детекторов без изменений.
+#
+# Uncomment and edit to enable the WAF rule engine. See cookbook/rule-engine/ for full
+# recipes and cookbook/config.reference.yaml for the complete field list.
+# Раскомментируйте и отредактируйте, чтобы включить WAF rule-engine. Полные рецепты:
+# cookbook/rule-engine/, полный список полей: cookbook/config.reference.yaml.
+#
+# processors:
+#   - plugin: waf
+#     params:
+#       waf_config:
+#         rules:
+#           - name: block_sql_injection
+#             expression: 'http.raw_uri matches "(?i)(union[^+]*select|drop[^+]*table|or[^+]+1=1)"'
+#             action: drop
+#           - name: block_path_traversal
+#             expression: 'http.path contains "../" or http.path contains "..%2f"'
+#             action: drop
+#           - name: block_scanner_ua
+#             expression: 'http.user_agent matches "(?i)(sqlmap|nikto|nuclei|httrack)"'
+#             action: drop
+processors: []   # default: no rule-engine plugins / нет плагинов rule-engine
+
 # ── output ────────────────────────────────────────────────────────────────────────────────
 # Mount /var/log/arxsentinel as a writable volume.
 # For Fail2Ban integration: host Fail2Ban reads threats.log via bind-mount or hostPath.

@@ -450,6 +450,85 @@ pipeline:
   buffer_size: 8192        # channel buffer depth for burst traffic; int, ≥1, default: 8192
   shutdown_timeout: "15s"  # graceful shutdown drain window; duration: "5s"|"15s"|"30s", default: "15s"
 
+# ── processors: rule-engine plugin chain / цепочка плагинов rule-engine ───────────────────
+#
+# The `processors:` block attaches rule-engine plugins to a stream. Each entry is a
+# plugin registration call: the `plugin` key matches the registry name (e.g. `waf`),
+# and `params` is the plugin's typed config payload. Plugins are evaluated in array
+# order; the first plugin to gate the event stops further processing.
+#
+# Блок `processors:` подключает плагины rule-engine к стриму. Каждый элемент — вызов
+# регистрации плагина: ключ `plugin` соответствует имени в реестре (например `waf`),
+# а `params` — типизированный конфиг плагина. Плагины выполняются в порядке массива;
+# первый плагин, заблокировавший событие, останавливает дальнейшую обработку.
+#
+# Available rule-engine plugins:
+# Доступные плагины rule-engine:
+#   - waf     — Web Application Firewall (http.* field namespace)
+#
+# Placed at top level for the implicit single-stream mode, or inside streams[].
+# Размещается на верхнем уровне (для implicit single-stream) или внутри streams[].
+#
+# Full cookbook with multiple recipes: cookbook/rule-engine/.
+# Полный cookbook с рецептами: cookbook/rule-engine/.
+#
+# Example — WAF processor with 4 typical rules (SQL injection, path traversal,
+# bad User-Agent, status 4xx flood):
+# Пример — WAF-процессор с 4 типичными правилами (SQL-инъекция, path traversal,
+# плохой User-Agent, флуд 4xx-ответами):
+processors:
+  - plugin: waf
+    params:
+      waf_config:
+        # Score delta added to an IP when a drop-rule fires. 0 = silent gate
+        # (no score signal — WAF gates events without affecting the scorer).
+        # Wire-up code (cmd/arxsentinel) reads this and builds the ScoreFunc closure.
+        # Счёт-дельта, добавляемая к IP при срабатывании drop-правила.
+        # 0 = тихая блокировка (без сигнала скорингу — WAF гасит событие,
+        # не влияя на скорер). Используется wire-up кодом (cmd/arxsentinel)
+        # для построения замыкания ScoreFunc.
+        drop_score: 100
+        # Tag weights: label → score delta. The label comes from "tag:<label>"
+        # actions on rules; the value is the score added when that tag fires.
+        # Missing label at runtime → score 0 (tag still fires, no score signal).
+        # Веса тегов: метка → счёт-дельта. Метка берётся из action "tag:<label>",
+        # значение — прибавка к счёту при срабатывании тега.
+        # Отсутствующая метка в рантайме → счёт 0 (тег срабатывает, сигнала нет).
+        tag_weights:
+          waf_sqli: 80
+          waf_xss: 60
+          waf_traversal: 60
+          waf_bad_ua: 20
+          waf_suspicious: 10
+        rules:
+          # SQL injection: union select / drop table / OR 1=1 in raw URI / path / query
+          # SQL-инъекция: union select / drop table / OR 1=1 в raw URI / path / query
+          - name: block_sql_injection
+            expression: 'http.raw_uri matches "(?i)(union[^+]*select|drop[^+]*table|or[^+]+1=1)"'
+            action: drop
+
+          # Path traversal: ../../etc/passwd, %2e%2e%2f sequences
+          # Path traversal: ../../etc/passwd, последовательности %2e%2e%2f
+          - name: block_path_traversal
+            expression: 'http.path contains "../" or http.path contains "..%2f" or http.path contains "%2e%2e/"'
+            action: drop
+
+          # Known scanner / grabber User-Agents (sqlmap, nikto, nuclei, HTTrack)
+          # Известные сканеры / грабберы User-Agent (sqlmap, nikto, nuclei, HTTrack)
+          - name: block_scanner_ua
+            expression: 'http.user_agent matches "(?i)(sqlmap|nikto|nuclei|httrack|masscan)"'
+            action: drop
+
+          # 4xx flood: a single IP issuing 20+ 4xx responses in 60s (rate is enforced
+          # by the detector chain; this rule just gates by status >= 400 from real_ip
+          # in 4xx/5xx bands — combine with the rate detector for the flood side).
+          # 4xx-флуд: один IP с 20+ 4xx-ответами за 60s (rate обеспечивается детектором;
+          # это правило просто блокирует по status >= 400 с real_ip в диапазоне 4xx/5xx —
+          # для учёта частоты комбинируйте с детектором rate).
+          - name: tag_4xx_flood
+            expression: 'http.status ge 400 and http.status lt 500'
+            action: tag
+
 # ── executors: automated threat response ─────────────────────────────────────────────────
 #
 # Executors run autonomously: each reads from a Named Channel Switch source (sentinel-threat
