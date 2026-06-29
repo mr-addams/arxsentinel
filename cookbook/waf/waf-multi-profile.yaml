@@ -1,4 +1,4 @@
-# ====================== cookbook/rule-engine/waf-multi-profile.yaml ===================
+# ====================== cookbook/waf/waf-multi-profile.yaml ===================
 #
 #   WAF recipe with TWO streams, each running a different ruleset profile.
 #   Pipeline:

@@ -1,4 +1,4 @@
-# ====================== cookbook/rule-engine/waf-custom-fields.yaml ===================
+# ====================== cookbook/waf/waf-custom-fields.yaml ===================
 #
 #   WAF recipe with a CUSTOM field extension.
 #   Pipeline: nginx combined log → WAF (with custom http.tls_version field) → stdout.

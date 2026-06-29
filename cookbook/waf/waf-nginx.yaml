@@ -1,4 +1,4 @@
-# ====================== cookbook/rule-engine/waf-nginx.yaml ==============================
+# ====================== cookbook/waf/waf-nginx.yaml ==============================
 #
 #   Canonical WAF rule-engine recipe.
 #   Pipeline: nginx combined log → WAF processor → file sink (Fail2Ban-compatible).

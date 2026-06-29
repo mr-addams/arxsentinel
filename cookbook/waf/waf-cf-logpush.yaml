@@ -1,4 +1,4 @@
-# ====================== cookbook/rule-engine/waf-cf-logpush.yaml ======================
+# ====================== cookbook/waf/waf-cf-logpush.yaml ======================
 #
 #   WAF recipe for Cloudflare Logpush ingestion.
 #   Pipeline: Cloudflare Logpush (HTTP push, gzip NDJSON) → WAF → file sink.
