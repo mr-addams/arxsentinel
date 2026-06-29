@@ -25,6 +25,7 @@ package waf
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/mr-addams/arx-core/pkg/rule"
@@ -72,13 +73,23 @@ func newChainedResolver() *chainedResolver {
 
 // WafProcessor applies a compiled WAF rule set to incoming events.
 //
-// Concurrency: the processor holds references to the RuleSet (which is internally
+// Two-pass design (Task H8): the rule set is split at Init time into a whitelist
+// (passRules) and a threat set (gateRules). At Process time, passRules is evaluated
+// FIRST; a hit short-circuits the threat check (whitelisted event is passed through
+// unchanged). Only when no pass-rule matches does the processor fall through to
+// gateRules and apply the matched rule's action (drop / tag[:suffix]).
+//
+// Concurrency: the processor holds references to two RuleSets (each internally
 // RWMutex-protected, DECISION D13) and to a stateless resolver chain. Process is
-// safe to call from multiple goroutines.
+// safe to call from multiple goroutines — passRules and gateRules never share a
+// lock, so the two Match calls can run concurrently if a future caller wants to
+// parallelise them. Today they run sequentially because the second Match only
+// happens on a passRules miss (so it's not on the production-hot path).
 type WafProcessor struct {
-	rules    *ruleset.RuleSet
-	actions  map[string]string
-	resolver *chainedResolver
+	passRules *ruleset.RuleSet
+	gateRules *ruleset.RuleSet
+	actions   map[string]string
+	resolver  *chainedResolver
 }
 
 // Ensure WafProcessor satisfies plugin.Processor at compile time.
@@ -90,20 +101,21 @@ var _ plugin.Processor = (*WafProcessor)(nil)
 func NewWafProcessor(cfg Config) (*WafProcessor, error) {
 	if cfg.Rules == nil {
 		// Empty config is legal (plugin passes through every event) — but
-		// using a typed empty slice keeps actions map non-nil for caller
+		// using a typed empty slice keeps the action map non-nil for caller
 		// simplicity.
 		cfg.Rules = []RuleConfig{}
 	}
 
-	rs, actions, err := NewRuleSetFromConfig(cfg, Manifest)
+	passRS, gateRS, actions, err := NewRuleSetFromConfig(cfg, Manifest)
 	if err != nil {
 		return nil, fmt.Errorf("waf: %w", err)
 	}
 
 	return &WafProcessor{
-		rules:    rs,
-		actions:  actions,
-		resolver: newChainedResolver(),
+		passRules: passRS,
+		gateRules: gateRS,
+		actions:   actions,
+		resolver:  newChainedResolver(),
 	}, nil
 }
 
@@ -115,26 +127,39 @@ func (p *WafProcessor) Manifest() plugin.Manifest { return Manifest }
 
 // ========================== Process ============================================================
 
-// Process evaluates every compiled rule against event + resolver chain and applies
-// the matched rule's action. The first matching rule wins — subsequent rules are
-// not evaluated (DECISION D12: first-match-wins is the natural RuleSet semantics).
+// Process evaluates the compiled WAF rules against event + resolver chain and
+// applies the matched rule's action. Two-pass evaluation (Task H8):
+//
+//   - Pass 1: passRules.Match — a hit short-circuits the threat check. The event
+//     is passed through unchanged (whitelisted). Pass-rules do NOT consult the
+//     action map because their verdict is always "let it through".
+//   - Pass 2: gateRules.Match — the threat check. On a hit the matched rule's
+//     action (from the action map) is dispatched; on a miss the event is passed
+//     through unchanged.
+//
+// The first matching rule in EACH pass wins (DECISION D12: first-match-wins is
+// the natural RuleSet semantics). We never cross-contaminate the two RuleSets
+// because Match returns a single verdict — passRules hit means we never call
+// gateRules.Match for this event.
+//
+// Pass-rules check (len(passRules.Rules()) > 0) is the production-hot path: a
+// config with zero pass-rules skips the first Match entirely, paying only the
+// call-overhead of the no-rules check. RuleSet.Match on an empty RuleSet is a
+// constant-time miss anyway, so the explicit guard is a stylistic optimisation
+// rather than a correctness one.
 //
 // Action dispatch (DECISION D12 — engine returns verdict, plugin decides):
 //
-//	"drop" → return (nil, nil)            — gate the event out of the pipeline
-//	"tag"  → Level="THREAT"; return event — flag for downstream scoring / sinks
-//	"pass" → return event                 — pass through unchanged
-//
-// The "tag" case is the architect-verdict compromise for Flow 001: plugin.Event has
-// no convention for "matched rule name" and Envelope is fixed-shape. Level is the
-// only writable signal downstream stages read; piggybacking the matched rule's
-// name there ("THREAT:rule_name") is a self-documenting extension that downstream
-// sinks (which already parse Level) can split on ":" if they care to.
+//	"drop"         → return (nil, nil)              — gate the event out
+//	"tag"          → Level="THREAT:<rule>"; passthrough — flag for downstream
+//	"tag:<suffix>" → Level="THREAT:<rule>:<suffix>"; passthrough — same, with
+//	                  the suffix preserved so executor routing can read the rule's
+//	                  intent from Level without consulting the rule table.
 //
 // Returns:
 //
-//	(event,    nil) — passthrough (no rule fired, or action="pass"/"tag")
-//	(nil,      nil) — drop path (rule fired with action="drop")
+//	(event,    nil) — passthrough (no rule fired, or action="pass"/"tag"[/"tag:suffix"])
+//	(nil,      nil) — drop path (gate rule fired with action="drop")
 //	(nil,   ctx.Err()) — cancellation honored before any rule evaluation
 func (p *WafProcessor) Process(ctx context.Context, event *plugin.Event) (*plugin.Event, error) {
 	// ── Respect cancellation ──────────────────────────────────────────────────────────
@@ -142,26 +167,56 @@ func (p *WafProcessor) Process(ctx context.Context, event *plugin.Event) (*plugi
 		return nil, err
 	}
 
-	// ── Evaluate the rule chain ───────────────────────────────────────────────────────
-	name, matched := p.rules.Match(event, p.resolver)
+	// ── Pass 1: whitelist check (short-circuit on hit) ───────────────────────────────
+	// passRules is never nil (NewRuleSetFromConfig always returns a non-nil
+	// RuleSet; the empty case is "zero rules, all misses"). The Rules() length
+	// check is a small optimisation on the production-hot path: most WAF
+	// configs have no pass-rules, so we skip the Match call entirely.
+	if len(p.passRules.Rules()) > 0 {
+		if _, matched := p.passRules.Match(event, p.resolver); matched {
+			// Whitelist hit — pass through unchanged. The matched pass-rule's
+			// name is intentionally not exposed (no convention for it in
+			// Envelope). A future hook could log it via the sidecar logFn if
+			// the operator wants a paper trail of whitelist hits.
+			return event, nil
+		}
+	}
+
+	// ── Pass 2: threat check ─────────────────────────────────────────────────────────
+	name, matched := p.gateRules.Match(event, p.resolver)
 	if !matched {
 		return event, nil
 	}
 
-	// ── Apply the matched rule's action ───────────────────────────────────────────────
-	switch p.actions[name] {
-	case ActionDrop:
+	// ── Apply the matched gate-rule's action ──────────────────────────────────────────
+	action := p.actions[name]
+	switch {
+	case action == ActionDrop:
 		return nil, nil
-	case ActionTag:
+	case action == ActionTag:
 		event.Envelope.Level = "THREAT:" + name
 		return event, nil
-	case ActionPass:
-		// Passthrough.
+	case strings.HasPrefix(action, "tag:"):
+		// tag:<suffix> — preserve the suffix so downstream sinks / executors
+		// can route on the rule's intent (e.g. "tag:rate-limit" vs
+		// "tag:ban"). Falls back to bare "THREAT:<rule>" if the suffix is
+		// empty (shouldn't happen — classifyAction rejects empty tag:""
+		// because normalised "" wouldn't match the prefix, but the guard
+		// below keeps Level well-formed even on a future contract change).
+		suffix := strings.TrimPrefix(action, "tag:")
+		if suffix == "" {
+			event.Envelope.Level = "THREAT:" + name
+		} else {
+			event.Envelope.Level = "THREAT:" + name + ":" + suffix
+		}
 		return event, nil
 	default:
 		// Unknown action value — fail-closed (drop) rather than fail-open
 		// (silent passthrough). For a WAF gate the safer outcome is to gate
-		// the event out.
+		// the event out. classifyAction rejects unknown actions at Init, so
+		// reaching this branch means either a corruption in the action map
+		// or a future Action* constant that the dispatcher was not updated
+		// for — both should surface as a hard drop, not a silent pass.
 		return nil, nil
 	}
 }

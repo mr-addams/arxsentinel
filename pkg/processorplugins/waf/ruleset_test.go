@@ -1,12 +1,13 @@
 // ========================== pkg/processor/waf — ruleset tests ===========================
-//   Coverage for BuildScheme and NewRuleSetFromConfig (Flow 001, Task H3).
+//   Coverage for BuildScheme and NewRuleSetFromConfig (Flow 001, Task H3 + H8).
 //
 //   Test surfaces:
 //     1. BuildScheme on a valid WAF Manifest produces a Scheme containing every
 //        http.* field from Manifest.Produces.
 //     2. BuildScheme on a wrong PluginID returns an error.
-//     3. NewRuleSetFromConfig compiles a happy-path config and returns a non-nil
-//        RuleSet with the action map populated.
+//     3. NewRuleSetFromConfig compiles a happy-path config into two RuleSets
+//        (passRS + gateRS) and an action map containing ONLY gateRS rules
+//        (Task H8 — two-pass design).
 //     4. NewRuleSetFromConfig fails fast on a syntactically invalid expression.
 
 package waf
@@ -68,26 +69,32 @@ func TestBuildScheme_RejectsForeignManifest(t *testing.T) {
 
 // ========================== 3. NewRuleSetFromConfig happy path ==============================
 
-// TestNewRuleSetFromConfig_OK verifies that a well-formed config compiles and the
-// action map carries every rule (with normalised action values).
+// TestNewRuleSetFromConfig_OK verifies that a well-formed config compiles into two
+// RuleSets (passRS for pass-rules, gateRS for drop/tag) and the action map carries
+// only the gateRS rules (with normalised action values).
 func TestNewRuleSetFromConfig_OK(t *testing.T) {
 	cfg := Config{
 		Rules: []RuleConfig{
-			{Name: "r1", Expression: `http.status eq 200`, Action: ActionDrop},
-			{Name: "r2", Expression: `http.method eq "GET"`, Action: ActionTag},
-			{Name: "r3", Expression: `http.path eq "/x"`, Action: ActionPass},
-			{Name: "r4", Expression: `http.path eq "/y"`}, // no action → default drop
+			{Name: "r1", Expression: `http.status eq 200`, Action: ActionDrop},   // gate
+			{Name: "r2", Expression: `http.method eq "GET"`, Action: ActionTag},   // gate
+			{Name: "r3", Expression: `http.path eq "/x"`, Action: ActionPass},     // pass
+			{Name: "r4", Expression: `http.path eq "/y"`},                          // gate, default drop
 		},
 	}
-	rs, actions, err := NewRuleSetFromConfig(cfg, Manifest)
+	passRS, gateRS, actions, err := NewRuleSetFromConfig(cfg, Manifest)
 	if err != nil {
 		t.Fatalf("NewRuleSetFromConfig: %v", err)
 	}
-	if rs == nil {
-		t.Fatal("NewRuleSetFromConfig: want non-nil RuleSet")
+	if passRS == nil {
+		t.Fatal("NewRuleSetFromConfig: want non-nil passRS")
 	}
-	if len(actions) != 4 {
-		t.Fatalf("actions: want 4 entries, got %d (%v)", len(actions), actions)
+	if gateRS == nil {
+		t.Fatal("NewRuleSetFromConfig: want non-nil gateRS")
+	}
+	// actions map covers gateRS rules ONLY (r1, r2, r4) — pass-rules (r3) never
+	// reach the action dispatch path because WafProcessor short-circuits on them.
+	if len(actions) != 3 {
+		t.Fatalf("actions: want 3 entries (gate-only), got %d (%v)", len(actions), actions)
 	}
 	if actions["r1"] != ActionDrop {
 		t.Errorf("actions[r1]=%q, want %q", actions["r1"], ActionDrop)
@@ -95,15 +102,19 @@ func TestNewRuleSetFromConfig_OK(t *testing.T) {
 	if actions["r2"] != ActionTag {
 		t.Errorf("actions[r2]=%q, want %q", actions["r2"], ActionTag)
 	}
-	if actions["r3"] != ActionPass {
-		t.Errorf("actions[r3]=%q, want %q", actions["r3"], ActionPass)
-	}
 	if actions["r4"] != ActionDrop {
 		t.Errorf("actions[r4]=%q, want %q (default drop)", actions["r4"], ActionDrop)
 	}
-	// rs should also expose the four rules via Rules() (the introspection API).
-	if got := rs.Rules(); len(got) != 4 {
-		t.Errorf("Rules(): want 4 rules, got %d", len(got))
+	if _, present := actions["r3"]; present {
+		t.Errorf("actions must NOT contain pass-rule r3, got %q", actions["r3"])
+	}
+	// gateRS exposes the three gate rules via Rules() (the introspection API).
+	if got := gateRS.Rules(); len(got) != 3 {
+		t.Errorf("gateRS.Rules(): want 3 rules, got %d", len(got))
+	}
+	// passRS exposes the one pass rule via Rules().
+	if got := passRS.Rules(); len(got) != 1 {
+		t.Errorf("passRS.Rules(): want 1 rule, got %d", len(got))
 	}
 }
 
@@ -111,7 +122,8 @@ func TestNewRuleSetFromConfig_OK(t *testing.T) {
 
 // TestNewRuleSetFromConfig_BadExpression verifies that a single bad expression in
 // the config fails the whole Init — atomicity (D13). The error message must name
-// the offending rule.
+// the offending rule. On error both RuleSets must be nil so the caller cannot
+// accidentally use a partially-initialised processor.
 func TestNewRuleSetFromConfig_BadExpression(t *testing.T) {
 	cfg := Config{
 		Rules: []RuleConfig{
@@ -119,12 +131,15 @@ func TestNewRuleSetFromConfig_BadExpression(t *testing.T) {
 			{Name: "broken", Expression: `((( invalid syntax`},
 		},
 	}
-	rs, _, err := NewRuleSetFromConfig(cfg, Manifest)
+	passRS, gateRS, _, err := NewRuleSetFromConfig(cfg, Manifest)
 	if err == nil {
 		t.Fatal("NewRuleSetFromConfig: want error for bad expression")
 	}
-	if rs != nil {
-		t.Errorf("NewRuleSetFromConfig: want nil RuleSet on error, got %v", rs)
+	if passRS != nil {
+		t.Errorf("NewRuleSetFromConfig: want nil passRS on error, got %v", passRS)
+	}
+	if gateRS != nil {
+		t.Errorf("NewRuleSetFromConfig: want nil gateRS on error, got %v", gateRS)
 	}
 	if msg := err.Error(); !contains(msg, "broken") {
 		t.Errorf("error %q must name the failing rule %q", msg, "broken")

@@ -316,6 +316,63 @@ func TestWafProcessor_ActionNormalisation(t *testing.T) {
 	}
 }
 
+// ========================== tag:<label> action ===============================================
+
+// TestWafProcessor_TagLabel verifies that action="tag:<label>" is accepted at init
+// and that Process sets Level="THREAT:<label>" (not "THREAT:<rule_name>").
+func TestWafProcessor_TagLabel(t *testing.T) {
+	cfg := Config{
+		Rules: []RuleConfig{
+			{Name: "sqli_detect", Expression: `http.path contains "union"`, Action: "tag:waf_sqli"},
+		},
+	}
+	p, err := NewWafProcessor(cfg)
+	if err != nil {
+		t.Fatalf("NewWafProcessor: unexpected error for tag:<label> action: %v", err)
+	}
+	ev := makeLogEvent(&parser.LogEntry{Method: "GET", Status: 200, Path: "/search?q=union+select"})
+	got, err := p.Process(context.Background(), ev)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if got == nil {
+		t.Fatal("Process: want non-nil event (tag path), got nil")
+	}
+	const wantLevel = "THREAT:sqli_detect:waf_sqli"
+	if got.Envelope.Level != wantLevel {
+		t.Errorf("Process: Level=%q, want %q", got.Envelope.Level, wantLevel)
+	}
+}
+
+// TestWafProcessor_PassShortCircuit verifies that a matching pass-rule short-circuits
+// evaluation so that a subsequent drop-rule on the same event never fires.
+// Without two-pass logic the drop-rule would win (first-match-wins on merged set).
+func TestWafProcessor_PassShortCircuit(t *testing.T) {
+	cfg := Config{
+		Rules: []RuleConfig{
+			// drop fires on /admin — but pass fires first for internal IP
+			{Name: "block_admin", Expression: `http.path contains "/admin"`, Action: ActionDrop},
+			{Name: "allow_internal", Expression: `http.path contains "/admin"`, Action: ActionPass},
+		},
+	}
+	p, err := NewWafProcessor(cfg)
+	if err != nil {
+		t.Fatalf("NewWafProcessor: %v", err)
+	}
+	ev := makeLogEvent(&parser.LogEntry{Method: "GET", Status: 200, Path: "/admin/health"})
+	got, err := p.Process(context.Background(), ev)
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	// pass must short-circuit: event returned, not dropped
+	if got == nil {
+		t.Fatal("Process: want non-nil event (pass short-circuit), got nil (drop fired instead)")
+	}
+	if got.Envelope.Level != "" {
+		t.Errorf("Process: Level=%q, want empty (pass must not set Level)", got.Envelope.Level)
+	}
+}
+
 // ========================== helpers ==========================================================
 
 // contains delegates to strings.Contains; kept as a named helper so the assertion

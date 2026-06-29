@@ -8,8 +8,9 @@
 //     - BuildScheme         — iterates Manifest.Produces and registers each typed field
 //                              with the rule engine's Catalog (via builder.Builder).
 //     - NewRuleSetFromConfig — fail-fast compile of every rule at Init time; returns
-//                              a non-nil RuleSet + an action map (`name → "pass"|"drop"
-//                              |"tag"`, defaulting to "drop") or a wrapped error
+//                              TWO compiled RuleSets (passRS — action="pass" whitelist
+//                              rules, gateRS — action="drop"/"tag:..." threat rules) +
+//                              an action map for gateRS only. Returns a wrapped error
 //                              naming the rule that failed to compile.
 //
 //   WHAT IS NOT HERE:
@@ -37,6 +38,7 @@ import (
 	"github.com/mr-addams/arx-core/pkg/rule/builder"
 	"github.com/mr-addams/arx-core/pkg/rule/ruleset"
 )
+
 
 // ========================== Config / RuleConfig =============================================
 
@@ -132,67 +134,190 @@ func BuildScheme(manifest plugin.Manifest) (*rule.Scheme, error) {
 
 // ========================== NewRuleSetFromConfig ===========================================
 
-// NewRuleSetFromConfig builds a RuleSet from a parsed Config, compiling every rule
+// NewRuleSetFromConfig builds TWO RuleSets from a parsed Config, compiling every rule
 // expression against the Scheme built from the WAF Manifest. Compile failures fail
 // fast (returning a wrapped error that names both the rule and the parser/compiler
 // stage) — see DECISION D13: a misconfigured rule never poisons an otherwise-good
 // RuleSet, but it MUST be visible at Init, not at the first Match.
 //
+// Two-pass design (Task H8): the rule set is split by action prefix at Init time so
+// WafProcessor can do whitelist-first / threat-second at line rate:
+//
+//   - passRS — rules with action="pass". WafProcessor runs passRS.Match FIRST and
+//     short-circuits on a hit (whitelisted event skips the threat check).
+//   - gateRS — rules with action="drop" or action starting with "tag:". The threat
+//     check; matched rule's action is dispatched via the `actions` map.
+//   - anything else (empty Action is normalised to "drop", unknown values return
+//     an error here rather than silently fall back — see classifyAction).
+//
+// Why two RuleSets instead of one with per-rule action tags: a single RuleSet.Match
+// returns the first hit regardless of action priority. To implement whitelist-first
+// semantics we MUST evaluate pass-rules before gate-rules, which means they cannot
+// share a single RuleSet — Match() does not accept an "action filter" parameter.
+// Each RuleSet is a self-contained engine over the same Scheme, so the cost is just
+// one extra catalog/scheme/compiler trio at Init (one-time cost).
+//
 // Returns:
-//   - *ruleset.RuleSet — populated, ready for Match. Nil only on error.
-//   - map[string]string — action map keyed by rule name. Empty (not nil) when no rules.
-//     A key is present for every rule in cfg.Rules; Action normalised to one of
-//     ActionDrop / ActionTag / ActionPass (unknown values fall back to ActionDrop).
-//   - error — non-nil iff compilation failed; nil otherwise.
+//   - *ruleset.RuleSet (passRS) — whitelist rules, ready for Match. Non-nil even when
+//     empty (Rules() returns an empty slice); the caller's "has pass rules" check
+//     uses len(rs.Rules()) > 0.
+//   - *ruleset.RuleSet (gateRS) — threat rules (drop + tag:*), ready for Match.
+//     Non-nil even when empty (same as passRS).
+//   - map[string]string — action map keyed by rule name, contains ONLY gateRS rules.
+//     A key is present for every rule routed to gateRS; Action normalised to one of
+//     ActionDrop / ActionTag:... (unknown actions cause an error before this point).
+//     Pass-rules do NOT appear in this map — WafProcessor short-circuits on passRS
+//     hit and never consults the action map for them.
+//   - error — non-nil iff compilation failed OR an unknown action was found; nil
+//     otherwise. The returned RuleSets are nil on error (atomic init, D13).
 //
 // Callers that want to expose live rule management can ignore the action map and
-// instead use rs.Add / rs.Replace (ruleset.RuleSet is mutable, D13).
-func NewRuleSetFromConfig(cfg Config, manifest plugin.Manifest) (*ruleset.RuleSet, map[string]string, error) {
-	// Step 1: build the Scheme-bearing RuleSet via builder. Going through
-	// builder rather than BuildScheme + manual ruleset.NewWithCompiler keeps
-	// the registration logic in one place; BuildScheme is still exposed for
-	// introspection callers that don't need rules compiled.
+// instead use passRS.Add / gateRS.Add (ruleset.RuleSet is mutable, D13) — keeping
+// the two RuleSets in sync with their action categories is the caller's job.
+func NewRuleSetFromConfig(cfg Config, manifest plugin.Manifest) (passRS, gateRS *ruleset.RuleSet, actions map[string]string, err error) {
+	// ── Step 1: validate config and classify each rule by action ─────────────────────
+	// classifyAction performs both classification (which RuleSet the rule belongs to)
+	// and validation (unknown action is an error). The empty-action default lives in
+	// classifyAction so the case-insensitive normalisation is applied in one place.
+	// Two buckets: passNames and gateNames hold rule names by destination; we
+	// collect expressions in cfg.Rules order so a misconfigured rule produces a
+	// deterministic error (first failing rule name in the message).
+	passEntries := make([]compileJob, 0)
+	gateEntries := make([]compileJob, 0)
+	passNames := make([]string, 0)
+	gateNames := make([]string, 0)
+	actions = make(map[string]string, len(cfg.Rules))
+
+	for i, ruleCfg := range cfg.Rules {
+		if ruleCfg.Name == "" {
+			return nil, nil, nil, fmt.Errorf("waf: rule #%d has empty name", i+1)
+		}
+		if ruleCfg.Expression == "" {
+			return nil, nil, nil, fmt.Errorf("waf: rule %q has empty expression", ruleCfg.Name)
+		}
+		bucket, normalisedAction, err := classifyAction(ruleCfg.Name, ruleCfg.Action)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		switch bucket {
+		case actionBucketPass:
+			passEntries = append(passEntries, compileJob{expr: ruleCfg.Expression})
+			passNames = append(passNames, ruleCfg.Name)
+		case actionBucketGate:
+			gateEntries = append(gateEntries, compileJob{expr: ruleCfg.Expression})
+			gateNames = append(gateNames, ruleCfg.Name)
+			actions[ruleCfg.Name] = normalisedAction
+		}
+	}
+
+	// ── Step 2: build passRS ─────────────────────────────────────────────────────────
+	passRS, err = buildRuleSet("pass", manifest, passNames, passEntries)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// ── Step 3: build gateRS ─────────────────────────────────────────────────────────
+	gateRS, err = buildRuleSet("gate", manifest, gateNames, gateEntries)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return passRS, gateRS, actions, nil
+}
+
+// compileJob carries one rule's expression through the build pipeline. The
+// paired names slice is kept separate so the order of cfg.Rules is preserved
+// at Add-time (and so error messages can name the rule, not an index).
+type compileJob struct {
+	expr string
+}
+
+// buildRuleSet constructs a single RuleSet via builder.New and adds the given rules
+// in order. On any error, returns nil + the wrapped error (caller maps to atomic
+// init failure). The "label" argument is used in error messages only — "pass" or
+// "gate" — so the diagnostic names the bucket.
+func buildRuleSet(label string, manifest plugin.Manifest, names []string, entries []compileJob) (*ruleset.RuleSet, error) {
 	b := builder.New("http")
 	for _, fd := range manifest.Produces {
 		b.Field("http", fd.Name, fd.Type)
 	}
 	if err := b.Err(); err != nil {
-		return nil, nil, fmt.Errorf("waf: register fields: %w", err)
+		return nil, fmt.Errorf("waf: register fields (%s): %w", label, err)
 	}
 	rs, err := b.Ruleset()
 	if err != nil {
-		// Bubble the builder's error (duplicate field, unknown FieldType, ...)
-		// unchanged — the caller already has the diagnostic surface it needs.
-		return nil, nil, fmt.Errorf("waf: build ruleset: %w", err)
+		return nil, fmt.Errorf("waf: build ruleset (%s): %w", label, err)
 	}
-
-	// Step 2: compile each rule. Add returns the wrapped parser/compiler error
-	// with the stage tagged ("parse error: ..." / "compile error: ...") — we
-	// additionally prefix with the rule name so a config with ten rules makes
-	// the failure immediately attributable.
-	actions := make(map[string]string, len(cfg.Rules))
-	for i, ruleCfg := range cfg.Rules {
-		if ruleCfg.Name == "" {
-			return nil, nil, fmt.Errorf("waf: rule #%d has empty name", i+1)
+	for i, entry := range entries {
+		if err := rs.Add(names[i], entry.expr); err != nil {
+			return nil, fmt.Errorf("waf: rule %q: %w", names[i], err)
 		}
-		if ruleCfg.Expression == "" {
-			return nil, nil, fmt.Errorf("waf: rule %q has empty expression", ruleCfg.Name)
-		}
-		if err := rs.Add(ruleCfg.Name, ruleCfg.Expression); err != nil {
-			return nil, nil, fmt.Errorf("waf: rule %q: %w", ruleCfg.Name, err)
-		}
-		actions[ruleCfg.Name] = normaliseAction(ruleCfg.Action)
 	}
-
-	return rs, actions, nil
+	return rs, nil
 }
 
 // ========================== internal helpers ===============================================
+
+// actionBucket is the destination RuleSet for a rule, decided by its action string
+// at Init time. NewRuleSetFromConfig uses this to split cfg.Rules into the passRS
+// and gateRS RuleSets without re-parsing the action at Match time.
+type actionBucket int
+
+const (
+	actionBucketPass actionBucket = iota // action="pass" — whitelist, short-circuits
+	actionBucketGate                     // action="drop" or "tag[:suffix]" — threat check
+)
+
+// classifyAction decides which RuleSet a rule belongs to AND normalises the action
+// value for the gateRS action map. Returns an error for unknown actions so a
+// misconfigured rule is visible at Init (fail-fast, D13), not at the first Match.
+//
+// Rules:
+//
+//   - empty action        → gate bucket, normalised = ActionDrop (the default — see
+//                            defaultAction). An unconfigured rule falls through to
+//                            the safe WAF behaviour: gate the event out.
+//   - "pass" (any case)   → pass bucket, normalised = ActionPass. The rule never
+//                            appears in the action map (passRS short-circuits before
+//                            WafProcessor consults the map).
+//   - "drop" (any case)   → gate bucket, normalised = ActionDrop.
+//   - "tag" (any case)    → gate bucket, normalised = ActionTag.
+//   - "tag:<suffix>"      → gate bucket, normalised = original action. The suffix
+//                            is preserved so downstream consumers (e.g. metrics
+//                            tags, executor routing) can read the rule's intent
+//                            without losing information.
+//   - anything else       → error: an unknown action would otherwise silently fall
+//                            through the gate and re-introduce the silent-pass bug
+//                            that D12 was designed to prevent.
+func classifyAction(ruleName, action string) (actionBucket, string, error) {
+	normalised := strings.ToLower(strings.TrimSpace(action))
+	switch {
+	case normalised == "":
+		return actionBucketGate, ActionDrop, nil
+	case normalised == ActionPass:
+		return actionBucketPass, ActionPass, nil
+	case normalised == ActionDrop:
+		return actionBucketGate, ActionDrop, nil
+	case normalised == ActionTag, strings.HasPrefix(normalised, "tag:"):
+		// Preserve the original (case-preserved) action for the action map so
+		// "tag:foo" survives as "tag:foo", not "tag:foo".toLowerCase(). The
+		// match is case-insensitive but the stored value keeps user intent.
+		return actionBucketGate, action, nil
+	default:
+		return 0, "", fmt.Errorf("waf: unknown action %q for rule %q", action, ruleName)
+	}
+}
 
 // normaliseAction maps the user-supplied Action string to one of ActionDrop /
 // ActionTag / ActionPass. Unknown or empty values fall back to ActionDrop (the
 // safe default — see defaultAction). The map is intentionally case-insensitive
 // because YAML config is editor-friendly but inconsistent.
+//
+// RETAINED for TestWafProcessor_ActionNormalisation — that test pins the
+// case-insensitive / whitespace-tolerant mapping as a separate contract from
+// classifyAction. NewRuleSetFromConfig itself uses classifyAction; the public
+// ActionNormalisation contract is preserved for any external callers that
+// depended on the lenient mapping.
 func normaliseAction(a string) string {
 	switch strings.ToLower(strings.TrimSpace(a)) {
 	case ActionPass:
