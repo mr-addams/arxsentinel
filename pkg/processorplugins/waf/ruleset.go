@@ -301,10 +301,14 @@ const (
 //     WafProcessor consults the map).
 //   - "drop" (any case)   → gate bucket, normalised = ActionDrop.
 //   - "tag" (any case)    → gate bucket, normalised = ActionTag.
-//   - "tag:<suffix>"      → gate bucket, normalised = original action. The suffix
-//     is preserved so downstream consumers (e.g. metrics
-//     tags, executor routing) can read the rule's intent
-//     without losing information.
+//   - "tag:<suffix>"      → gate bucket, normalised = lowercased "tag:<suffix>".
+//     Suffix is lowercased per DECISIONS D1 so Process's
+//     case-sensitive dispatch (HasPrefix on "tag:") matches
+//     regardless of operator capitalisation. The Cookbook
+//     already documents tags as lowercase tokens
+//     (e.g. "tag:rate-limit", "tag:scan"); a mis-cased config
+//     surfaces at this normalisation rather than silently
+//     routing differently downstream.
 //   - anything else       → error: an unknown action would otherwise silently fall
 //     through the gate and re-introduce the silent-pass bug
 //     that D12 was designed to prevent.
@@ -318,10 +322,13 @@ func classifyAction(ruleName, action string) (actionBucket, string, error) {
 	case normalised == ActionDrop:
 		return actionBucketGate, ActionDrop, nil
 	case normalised == ActionTag, strings.HasPrefix(normalised, "tag:"):
-		// Preserve the original (case-preserved) action for the action map so
-		// "tag:foo" survives as "tag:foo", not "tag:foo".toLowerCase(). The
-		// match is case-insensitive but the stored value keeps user intent.
-		return actionBucketGate, action, nil
+		// Store the normalised (lowercased, trimmed) action in the action map
+		// so Process's case-sensitive dispatch (action == ActionTag,
+		// strings.HasPrefix(action, "tag:")) matches regardless of how the
+		// operator capitalised the config value. Process sees only this
+		// stored value; without normalisation here, "TAG" / "Tag:ban" /
+		// " tag:Foo " would fall through to the default drop branch (DECISIONS D1).
+		return actionBucketGate, normalised, nil
 	default:
 		return 0, "", fmt.Errorf("waf: unknown action %q for rule %q", action, ruleName)
 	}
