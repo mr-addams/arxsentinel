@@ -115,7 +115,9 @@ jobs:
             cp /tmp/go-test.json "$GITHUB_WORKSPACE/go-test.json"
             echo "::endgroup::"
 
-            SUMMARY=$(jq -r --arg bs "$BUILD_SEC" --arg ts "$TEST_SEC" '
+            # jq --slurp: go-test.json is JSONL (one obj per line); slurp it
+            # into a JSON array so the map/select filter below works.
+            SUMMARY=$(jq -r --slurp --arg bs "$BUILD_SEC" --arg ts "$TEST_SEC" '
               def n(k): (. | map(select(.Action==k and .Test)) | length);
               def dur: ([.[].Elapsed // 0] | add);
               "passed=\(n("pass")) skipped=\(n("skip")) failed=\(n("fail")) duration=\(dur)s build_seconds=\($bs)s test_seconds=\($ts)s"
@@ -258,10 +260,10 @@ jobs:
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v8
-        with:
-          # merge-multiple puts each artifact in a subdirectory under the
-          # current working dir, named after the artifact.
-          merge-multiple: true
+        # No `merge-multiple`: default behavior puts each artifact in its
+        # own subdirectory named after the artifact (go-test-json/,
+        # spike-log/), which is exactly what the metrics script's hardcoded
+        # paths below expect.
 
       - name: Compose freebsd-metrics.md
         env:
