@@ -164,3 +164,36 @@ jobs:
             # running pf ruleset).
             service pf restart || \
                 echo "[integration-nginx] service pf restart FAILED"
+
+            # ----------------------------------------------------------------
+            # Task 2.4 — native go build of arxsentinel.
+            # ----------------------------------------------------------------
+            # Sentinel runs NATIVE on the host (DECISIONS §2), so we
+            # build cmd/arxsentinel natively on the FreeBSD VM here, NOT
+            # inside a container. CGO_ENABLED=0 produces a fully-static
+            # binary (drop-in compatible with the Linux distroless /
+            # FreeBSD freebsd-static final stages). -trimpath +
+            # -ldflags="-s -w -X main.version=$(cat VERSION)" mirrors
+            # the Linux Dockerfile's build args so the binary's
+            # --version output matches the published version.
+            #
+            # No scoped TMPDIR here: native `go build` does not need
+            # TMPDIR for any step. Scoped TMPDIR is reserved for
+            # run-nginx.sh (Task 4.2) per Flow 088 DECISIONS §"Decision
+            # G.1e" (exported TMPDIR poisons Go module-mode detection
+            # for any go build that runs after it).
+            # ----------------------------------------------------------------
+            pkg install -y go || \
+                echo "[integration-nginx] pkg install go FAILED"
+            cd "$GITHUB_WORKSPACE"
+            VERSION=$(cat VERSION 2>/dev/null || echo "dev")
+            CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+                go build -trimpath \
+                    -ldflags="-s -w -X main.version=${VERSION}" \
+                    -o ./arxsentinel \
+                    ./cmd/arxsentinel || \
+                echo "[integration-nginx] arxsentinel build FAILED"
+            # version-check: --version is a supported flag (cmd/arxsentinel/
+            # main.go: flag.Bool("version", ...)).
+            ./arxsentinel --version || \
+                echo "[integration-nginx] arxsentinel --version FAILED"
