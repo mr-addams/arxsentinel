@@ -77,7 +77,7 @@ this release.
                                   ├── drop       → (nil, nil)
                                   ├── tag        → (event, Level="THREAT:<rule>")
                                   ├── tag:<lbl>  → (event, Level="THREAT:<rule>:<lbl>")
-                                  │              + ScoreFunc(ip, "<lbl>", weight)
+                                  │              + ScoreFunc(ip, weight)
                                   └── unknown    → fail-closed drop (nil, nil)
                   ── miss  ──► (event, nil)         (event flows on)
 ```
@@ -245,8 +245,8 @@ The action's **bucket** is determined by its prefix:
 |--------|--------|--------|
 | `pass` | `passRules` | Whitelist short-circuit (see [Two-pass evaluation](#8-actions)) |
 | `drop` | `gateRules` | Gate the event out of the pipeline |
-| `tag` | `gateRules` | Stamp `Level = "THREAT:<rule>"` and pass through |
-| `tag:<label>` | `gateRules` | Stamp `Level = "THREAT:<rule>:<label>"` **and** call `ScoreFunc(ip, "<label>", weight)` |
+| `tag` | `gateRules` | Overwrite `Level = "THREAT:<rule>"` and pass through (Level contract — see [Envelope.Level contract](#envelope-level-contract)) |
+| `tag:<label>` | `gateRules` | Overwrite `Level = "THREAT:<rule>:<label>"` **and** call `ScoreFunc(ip, weight)` (Level contract — see [Envelope.Level contract](#envelope-level-contract)) |
 
 Example:
 
@@ -296,8 +296,8 @@ The action dispatch table is exhaustive (any other value falls back to `drop`):
 | Action | Return value | Side-effect | Bucket | Use case |
 |--------|--------------|-------------|--------|----------|
 | `drop` | `(nil, nil)` | event gated out of pipeline | gate | Block: 405/403 paths, scanner patterns |
-| `tag` | `(event, nil)` | `event.Envelope.Level = "THREAT:<rule>"` | gate | Flag for downstream scoring/sink without blocking |
-| `tag:<label>` | `(event, nil)` | same as `tag` with `"THREAT:<rule>:<label>"` **plus** `ScoreFunc(ip, "<label>", weight)` | gate | Feed the score signal so a tagged rule contributes to ban decisions |
+| `tag` | `(event, nil)` | `event.Envelope.Level = "THREAT:<rule>"` (prior Level overwritten — D3) | gate | Flag for downstream scoring/sink without blocking |
+| `tag:<label>` | `(event, nil)` | same as `tag` with `"THREAT:<rule>:<label>"` (prior Level overwritten — D3) **plus** `ScoreFunc(ip, weight)` | gate | Feed the score signal so a tagged rule contributes to ban decisions |
 | `pass` | `(event, nil)` | unchanged; gate is skipped | pass | Allowlist / healthcheck rules (short-circuit) |
 | (default) | `(nil, nil)` | fail-closed drop | gate | Unknown action value — safe default for WAFs |
 
@@ -307,6 +307,38 @@ The action dispatch table is exhaustive (any other value falls back to `drop`):
 scorer, the sinks) can split on the colon to recover the rule name (and, for the
 labeled form, the label) when they care to. The processor's signature guarantees
 that only one rule's name appears there per event.
+
+### Envelope.Level contract
+
+The `Envelope.Level` overwrite on a `tag` / `tag:<label>` hit is an **explicit
+contract** of the WAF plugin (DECISION D3), not an incidental side-effect.
+Codifying it prevents future drift where a well-meaning change tries to merge
+Levels.
+
+- **Format** (two shapes):
+
+  ```
+  THREAT:<rule-name>          // action="tag"
+  THREAT:<rule-name>:<label>  // action="tag:<label>"
+  ```
+
+- **Single owner of the `THREAT:` prefix.** The WAF plugin is the only plugin
+  in arxsentinel that writes this namespace. Other plugins that want
+  rule-encoded routing must define their own prefix (e.g. `GEO:<country>`);
+  overloading `THREAT:` would create cross-plugin coupling.
+
+- **Prior `Level` is intentionally OVERWRITTEN.** A tag-rule firing means the
+  event is now classified as a threat by this WAF, and downstream sinks /
+  executors route on `Level`. Carrying forward an unrelated prior `Level`
+  would create ambiguity (is the event tagged by WAF or by some upstream
+  plugin?). For an audit trail of pre-WAF `Level`, the rule's `name` (encoded
+  in the new `Level`) plus the rule's expression are sufficient forensics —
+  no passthrough of the prior value is performed.
+
+This is NOT a sanctioned general pattern for "encoding structured routing
+data into `Level`" — it is a WAF-specific contract. Any future change that
+wants to add per-rule metadata should model it as a new `Envelope` field in
+arx-core, not as another `THREAT:`-prefixed string.
 
 `tag:<label>` *also* calls the `ScoreFunc` closure (see
 [Scoring integration](#9-scoring-integration-scorefunc-dropscore-tagweights)).
@@ -332,14 +364,20 @@ the score signal is a no-op.
 processor at Init time:
 
 ```go
-type ScoreFunc func(ip string, label string, delta int)
+type ScoreFunc func(ip string, delta int)
 ```
 
 - `ip` — the event's offending IP, taken from `http.real_ip` (falls back to
   `http.remote_addr` if `real_ip` is empty).
-- `label` — the label from `action: tag:<label>`, passed verbatim.
-- `delta` — the resolved weight for that label (see `TagWeights` below); for the
-  bare `tag` form the call is not made at all.
+- `delta` — the resolved score delta for the matched rule. For a `drop` action
+  this is `DropScore`; for a `tag:<label>` action it is the weight looked up
+  from `TagWeights[label]` (missing label → `0`, which is a no-op).
+
+The label from `action: tag:<label>` is **not** a parameter of `ScoreFunc`.
+The wire-up closure consumes the label internally to look the weight up in
+`TagWeights` and pass only the computed `delta` to `ScoreFunc`. The bare
+`tag` form does not call `ScoreFunc` at all (it has no label, hence no
+weight to resolve).
 
 The closure captures the live `tracker` reference, so every `ScoreFunc` call
 ends up writing into the same `tracker.GetState(ip)` slot the detectors use.

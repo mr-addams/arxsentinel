@@ -74,7 +74,6 @@ type Config struct {
 	// DropScore is the score delta applied to an IP when a drop-rule fires.
 	// Wire-up code (cmd/arxsentinel) reads this and builds the ScoreFunc closure.
 	// Zero means no score signal (WAF gates silently without affecting scorer).
-	// Нулевое значение = WAF гасит событие без влияния на скорер.
 	DropScore int
 
 	// TagWeights maps tag labels to score deltas.

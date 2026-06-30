@@ -16,8 +16,11 @@
 //     - Action policy (drop / tag / pass) — WafProcessor.Process owns that decision
 //
 //   DEPENDENCY RULE:
-//     pkg/processorplugins/waf → arx-core ({pkg/plugin, pkg/parser, pkg/rule}) + stdlib.
-//     No imports from internal/* so this plugin stays hostable from any cmd/* binary.
+//     pkg/processorplugins/waf → arx-core ({pkg/plugin, pkg/parser, pkg/rule}) +
+//     stdlib, plus internal/threat. The internal/threat import is required for the
+//     *threat.ThreatEvent payload re-entry path (resolver.go Resolve handles a
+//     re-entered scored event by returning its IP for `http.real_ip`; see
+//     DECISION D2 / Flow 087). All other dependencies are arx-core + stdlib.
 //
 //   CONCURRENCY:
 //     HttpResolver carries no state (no fields). A single zero value may be shared
