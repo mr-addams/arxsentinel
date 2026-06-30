@@ -42,8 +42,13 @@ set -eu
 # ---------------------------------------------------------------------
 # Step 0: locate inputs. REPO_ROOT is the workspace root ($GITHUB_WORKSPACE
 # at workflow runtime). All three inputs are committed in this directory.
+#
+# This script lives at tests/integration-freebsd/nginx/run-nginx.sh — three
+# path segments below the repo root, so dirname($0) needs three "../" to
+# reach it (NOT two, which is what 088's tests/integration-freebsd/
+# run-smoke.sh used, since that script is only two segments deep).
 # ---------------------------------------------------------------------
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 NGINX_DIR="$REPO_ROOT/tests/integration-freebsd/nginx"
 NGINX_CONF="$NGINX_DIR/nginx.conf"
 SENTINEL_BIN="$REPO_ROOT/arxsentinel"
