@@ -163,3 +163,43 @@ if [ "$READY" -ne 1 ]; then
     exit 1
 fi
 echo "[nginx] nginx ready"
+
+# ---------------------------------------------------------------------
+# Step 4: start the native sentinel. DECISIONS §2 — sentinel on host,
+# NOT in a container. CWD = $WORK_DIR so the relative paths in
+# sentinel-nginx.yaml resolve. The sentinel writes its pid to
+# /tmp/arxsentinel.pid (per the yaml) and its operational log to
+# sentinel-nginx.log under $WORK_DIR.
+# ---------------------------------------------------------------------
+echo "[nginx] starting native sentinel (CWD=$WORK_DIR)..."
+cd "$WORK_DIR"
+"$SENTINEL_BIN" \
+    --config "$WORK_DIR/sentinel-nginx.yaml" \
+    > "$WORK_DIR/sentinel-nginx.log" 2>&1 &
+SENTINEL_PID=$!
+echo "[nginx] sentinel started with PID $SENTINEL_PID"
+
+# Step 5: wait for "watching started" in sentinel-nginx.log. This
+# sync prevents the host append in step 6 from racing the TailReader
+# open+seek(EOF) (mirrors 088 run-smoke.sh step 3). The yaml's
+# logging.debug: true is REQUIRED for the "TAIL watching started"
+# line to be emitted (see sentinel-nginx.yaml header).
+echo "[nginx] waiting for 'watching started' (timeout 30s)..."
+DEADLINE=$(($(date +%s) + 30))
+WATCHING=0
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+    if grep -q "watching started" "$WORK_DIR/sentinel-nginx.log" 2>/dev/null; then
+        WATCHING=1
+        break
+    fi
+    sleep 1
+done
+if [ "$WATCHING" -ne 1 ]; then
+    echo "[nginx] FAIL: 'watching started' not seen within 30s" >&2
+    echo "[nginx] sentinel log (last 50 lines):" >&2
+    tail -50 "$WORK_DIR/sentinel-nginx.log" >&2 || true
+    kill "$SENTINEL_PID" 2>/dev/null || true
+    exit 1
+fi
+echo "[nginx] TailReader ready"
+
