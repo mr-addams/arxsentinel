@@ -1,0 +1,115 @@
+# ========================== ArxSentinel — Containerfile (FreeBSD) ======================
+#
+#   Single-stage build: ghcr.io/freebsd/freebsd-static:14.3 (final base only)
+#
+#   This is the FreeBSD analogue of deploy/container/docker/Dockerfile for
+#   Flow 088 (FreeBSD CI harness). The Linux Dockerfile is multi-stage
+#   (golang:1.26-alpine builder → gcr.io/distroless/static-debian12:nonroot
+#   final). This Containerfile is intentionally single-stage: it does NOT
+#   rebuild the Go binaries inside the container. The binaries
+#   (cmd/arxsentinel, cmd/healthcheck) are built natively inside the
+#   vmactions/freebsd-vm@v1.5.0 VM (FreeBSD 14.3 + pkg-installed go) by the
+#   container-build-freebsd CI job and COPY'd in from the build context.
+#
+#   Source of truth: .opencode/flows/088_2026-06-30_freebsd-ci-harness/
+#                    DECISIONS.md, §"Decision E.2".
+#
+#   Run: podman build -f Containerfile.freebsd -t arxsentinel:freebsd-local \
+#        <staging-dir-with-binaries-and-config>
+#
+# =======================================================================================
+
+# ── Final base ─────────────────────────────────────────────────────────────────────────
+# Why ghcr.io/freebsd/freebsd-static:14.3:
+#   - The official `freebsd/` namespace on ghcr.io publishes three FreeBSD
+#     OCI base images; `freebsd-static` is the static-binary counterpart to
+#     the Linux `gcr.io/distroless/static-debian12` we use for the Linux
+#     image. ArxSentinel builds with CGO_ENABLED=0 (see deploy/container/
+#     docker/Dockerfile line 34: `CGO_ENABLED=0 GOOS=${TARGETOS}...`); the
+#     same build with GOOS=freebsd GOARCH=amd64 CGO_ENABLED=0 is drop-in
+#     compatible with `freebsd-static:14.3`.
+#   - `14.3` is pinned to match exactly the FreeBSD release used elsewhere
+#     in Flow 088: vmactions/freebsd-vm `release: "14.3"`, the pkg repo we
+#     install go+podman from, and the runtime kernel of the build VM. No
+#     CURRENT/16 mismatch.
+#   - Verified via the ghcr.io registry API on 2026-06-30: anonymous pull
+#     token, GET /v2/freebsd/freebsd-static/tags/list returned 36 tags
+#     including the pinned `14.3` we need. This is a public, official
+#     project namespace — not a personal/publish repo.
+#
+# Why single-stage (no golang-builder stage here):
+#   The Linux Dockerfile is multi-stage because the Linux build host needs
+#   an explicit Go toolchain stage to compile the source. On FreeBSD we
+#   already run a native `go build` in the vmactions VM (the VM is a real
+#   FreeBSD 14.3 userland with `go` from pkg — exactly the toolchain that
+#   produced the binaries we want to ship). Adding a multi-stage
+#   golang-builder inside this Containerfile would force Linux-emulation
+#   on a Linux-hosted builder (podman on the VM's Linux host), which is
+#   both slower and dishonest about what we're actually testing: the
+#   whole point of this flow is to validate that ArxSentinel builds and
+#   runs on real FreeBSD. The native in-VM `go build` is the correct
+#   toolchain path; this Containerfile's job is only to package the
+#   already-built artifacts into a static FreeBSD OCI image.
+#
+# Why tag-pinned not digest-pinned:
+#   Tag pinning (`freebsd-static:14.3`) is sufficient for the first
+#   iteration. Digest pinning (`freebsd-static@sha256:<digest>`) is Task
+#   E.7 in Flow 088, scheduled AFTER Task E.4 produces at least one green
+#   `container-build-freebsd` run. Pinning the digest on a not-yet-working
+#   base would just freeze the broken state — the digest changes the
+#   moment the upstream image is rebuilt, and we want a working image
+#   before we lock the upstream.
+#
+# Why no USER directive:
+#   The Linux final stage uses `gcr.io/distroless/static-debian12:nonroot`,
+#   which pre-creates a `nonroot` user (uid 65532) in /etc/passwd and
+#   sets USER 65532. The `freebsd-static:14.3` base does NOT pre-set a
+#   nonroot user — setting `USER <unknown>` here would resolve to a uid
+#   that does not exist in the image's /etc/passwd and would prevent the
+#   container from starting (podman's ocijail/overlay runtime refuses
+#   unknown uids by default). The first iteration therefore runs as the
+#   base image's default user (root). Nonroot hardening is deferred to a
+#   follow-up task once the smoke (`podman run --rm arxsentinel:freebsd-
+#   local --version`) proves the image boots cleanly — out of scope for
+#   Flow 088's first green build.
+FROM ghcr.io/freebsd/freebsd-static:14.3
+
+# ── Artifacts from the vmactions VM build ──────────────────────────────────────────────
+# The container-build-freebsd job (Task E.4 in Flow 088) pre-builds these
+# natively in the VM and stages them under the same directory it passes
+# as the build context to `podman build -f Containerfile.freebsd`. See
+# DECISIONS §"Decision E.2" for why single-stage and not multi-stage-with-
+# golang-builder.
+#
+# Both binaries are built with CGO_ENABLED=0 (matching the Linux build),
+# so they have no dynamic libc dependency and run cleanly in the static
+# base.
+#
+# --chmod=755: podman/buildah COPY preserves source-file mode bits, but the
+# build context is staged by the vmactions VM's shell under a default umask
+# (0022) — so the files arrive with mode 0o644 (NOT executable). Without
+# the explicit --chmod, ENTRYPOINT ["/arxsentinel"] would fail with
+# permission denied at `podman run` time. Setting mode here is the
+# authoritative place; we do not rely on the staging script's `chmod`.
+COPY --chmod=755 arxsentinel /arxsentinel
+COPY --chmod=755 healthcheck /healthcheck
+
+# Reuse the existing container-defaults config — FreeBSD and Linux
+# containers share the same config.docker.yaml (pid in /tmp, logs in
+# /var/log/arxsentinel/, metrics enabled). This is the same file the
+# Linux Dockerfile already COPY's; intentionally no separate
+# config.freebsd.yaml to keep the two images behaviorally aligned.
+COPY config.docker.yaml /etc/arxsentinel/config.yaml
+
+# 9117 — Prometheus /metrics endpoint (metrics.listen_addr default).
+EXPOSE 9117
+
+# HEALTHCHECK parity with the Linux Dockerfile. Note: this image is
+# research-CI (smoke target is `podman run --rm arxsentinel:freebsd-local
+# --version`, not a long-running healthcheck), but the line is kept so
+# a follow-up task that does run the container long-term inherits the
+# same probe shape as the Linux image.
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
+  CMD ["/healthcheck"]
+
+ENTRYPOINT ["/arxsentinel"]
