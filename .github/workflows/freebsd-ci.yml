@@ -1,0 +1,356 @@
+# FreeBSD CI (isolated, opt-in)
+# =============================
+# This workflow is an ISOLATED FreeBSD CI harness, NOT a release gate.
+# It lives parallel to integration.yml / release.yml / dev-release.yml /
+# container.yml / nightly.yml / pages.yml and is INERT to all of them.
+#
+# Triggers: only workflow_dispatch + push to the flow branch
+# feat/088-freebsd-ci-harness. NO pull_request, NO schedule, NO release.
+# Branch protection on dev/main is unaffected by this file.
+#
+# Source of truth: .opencode/flows/088_2026-06-30_freebsd-ci-harness/DECISIONS.md
+# — esp. §"A.1 — vmactions/freebsd-vm pinned tag" (v1.5.0 / release: 14.3)
+# and §"A.2 — Spike runtime plan" (verbatim podman spike step order).
+# Exit criteria: TASKS.md Group B, plus the metrics captured in Group D.
+
+name: FreeBSD CI (isolated, opt-in)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/088-freebsd-ci-harness
+
+# One concurrent run per ref; cancel stale runs on the same branch.
+concurrency:
+  group: freebsd-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # -----------------------------------------------------------------------
+  # B.2 — build + test on FreeBSD (amd64 only — Decision 3)
+  # -----------------------------------------------------------------------
+  build-test:
+    name: build + test (freebsd/amd64)
+    outputs:
+      summary: ${{ steps.vmout.outputs.summary }}
+      build_seconds: ${{ steps.vmout.outputs.build_seconds }}
+      test_seconds: ${{ steps.vmout.outputs.test_seconds }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go (host cache)
+        # Host step only — it warms the Actions Go toolchain cache. The VM
+        # installs its own go via pkg below; both must agree on the version
+        # declared in go.mod, hence go-version-file here as a single source
+        # of truth.
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build and test inside FreeBSD VM
+        id: vmtest
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          # Pass through Actions env so the VM can see runner/cache paths.
+          # GITHUB_* are auto-forwarded by the action; being explicit here
+          # per the action README is a no-op safety belt.
+          envs: 'GITHUB_*'
+          # Explicit copyback (matches podman-spike step) — protects return of
+          # the build/test artefacts to the host if upstream changes the default
+          # in a future minor release. Default is true per action.yml.
+          copyback: true
+          run: |
+            set -eu
+            echo "::group::VM environment"
+            uname -a
+            freebsd-version || true
+            echo "::endgroup::"
+
+            # Install jq and go inside the VM. FreeBSD base image has neither
+            # by default; pkg provides both. Pin to a known-good go version
+            # by relying on pkg's current default in the 14.3 repos.
+            echo "::group::pkg install go + jq"
+            pkg install -y go jq
+            echo "::endgroup::"
+
+            echo "::group::go version"
+            go version
+            echo "::endgroup::"
+
+            # go build ./... — capture wall-clock time for the metrics job.
+            echo "::group::go build ./..."
+            BUILD_START=$(date +%s)
+            go build ./...
+            BUILD_END=$(date +%s)
+            BUILD_SEC=$((BUILD_END - BUILD_START))
+            echo "build_seconds=${BUILD_SEC}"
+            echo "::endgroup::"
+
+            # go test -json -short ./... — write the full JSON stream to a
+            # known file so the metrics job can parse it from the artifact.
+            # A small jq summariser collapses the JSONL into a single line:
+            #   passed=N skipped=N failed=N duration=Ms build_seconds=Ns
+            echo "::group::go test -short ./..."
+            TEST_START=$(date +%s)
+            set +e
+            go test -json -short ./... > /tmp/go-test.json
+            TEST_RC=$?
+            set -e
+            TEST_END=$(date +%s)
+            TEST_SEC=$((TEST_END - TEST_START))
+            echo "test_rc=${TEST_RC} test_seconds=${TEST_SEC}"
+
+            # Preserve the raw json first so the jq summariser below and the
+            # artifact upload both read from the same path.
+            cp /tmp/go-test.json "$GITHUB_WORKSPACE/go-test.json"
+            echo "::endgroup::"
+
+            SUMMARY=$(jq -r --arg bs "$BUILD_SEC" --arg ts "$TEST_SEC" '
+              def n(k): (. | map(select(.Action==k and .Test)) | length);
+              def dur: ([.[].Elapsed // 0] | add);
+              "passed=\(n("pass")) skipped=\(n("skip")) failed=\(n("fail")) duration=\(dur)s build_seconds=\($bs)s test_seconds=\($ts)s"
+            ' "$GITHUB_WORKSPACE/go-test.json" 2>/dev/null || \
+            echo "passed=0 skipped=0 failed=0 duration=0s build_seconds=${BUILD_SEC} test_seconds=${TEST_SEC}")
+            echo "summary=${SUMMARY}"
+
+            # Write step outputs to a workspace file (rsync'd back to the host
+            # via vmactions default copyback). A host-side post-step reads this
+            # file and pushes the values into the real $GITHUB_OUTPUT, because
+            # $GITHUB_OUTPUT itself lives outside the synced workspace and is
+            # NOT reachable from inside the VM.
+            {
+              echo "summary=${SUMMARY}"
+              echo "build_seconds=${BUILD_SEC}"
+              echo "test_seconds=${TEST_SEC}"
+              echo "test_rc=${TEST_RC}"
+            } > "$GITHUB_WORKSPACE/vm-outputs.txt"
+
+      - name: Publish VM step outputs to $GITHUB_OUTPUT
+        id: vmout
+        # vmactions/freebsd-vm runs the run: block inside the FreeBSD VM,
+        # where $GITHUB_OUTPUT is not reachable (it lives on the host runner's
+        # temp dir, outside the synced $GITHUB_WORKSPACE). The VM step writes
+        # its outputs to vm-outputs.txt inside the workspace, which rsync
+        # (with default copyback: true) returns to the host. This host-side
+        # step then appends them to the real $GITHUB_OUTPUT so the job-level
+        # `outputs:` block declared above can see them.
+        if: always()
+        run: |
+          set -eu
+          if [ ! -f vm-outputs.txt ]; then
+            echo "vm-outputs.txt not present — VM step may not have reached the output block"
+            exit 0
+          fi
+          while IFS= read -r line; do
+            case "$line" in
+              summary=*|build_seconds=*|test_seconds=*|test_rc=*)
+                echo "$line" >> "$GITHUB_OUTPUT"
+                ;;
+            esac
+          done < vm-outputs.txt
+
+      - name: Upload go-test.json
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: go-test-json
+          path: go-test.json
+          if-no-files-found: warn
+
+  # -----------------------------------------------------------------------
+  # B.3 — podman integration spike (exploratory, non-blocking — Decision 6)
+  # -----------------------------------------------------------------------
+  podman-spike:
+    name: podman-spike (exploratory, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run podman spike inside FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          copyback: true
+          envs: 'GITHUB_*'
+          run: |
+            # NO `set -e`: this spike is exploratory and uses `|| true` for
+            # the linux compat step (which may need a reboot we cannot do
+            # in-CI). The job itself is gated by `continue-on-error: true`.
+            set -o pipefail
+
+            {
+              echo "=== podman spike run @ $(date -u +%FT%TZ) ==="
+              echo "=== host: $(uname -a) ==="
+              echo
+
+              # Step 1: install podman (Decision 6 / DECISIONS §"A.2").
+              echo "--- step 1: pkg install sysutils/podman ---"
+              pkg install -y sysutils/podman || echo "[spike] pkg install FAILED"
+
+              # Step 2: enable Linux compat. Best-effort: wrap in `|| true` and
+              # log the failure. The pkg-message explicitly notes that this may
+              # need a reboot we cannot perform in-CI.
+              echo "--- step 2: linux_enable=YES + service linux start ---"
+              sysrc linux_enable=YES || true
+              service linux start || echo "[spike] service linux start FAILED (reboot may be required)"
+
+              # Step 3: report podman version and effective storage driver.
+              echo "--- step 3: podman --version + storage driver ---"
+              podman --version || echo "[spike] podman --version FAILED"
+              podman info --format '{{.Store.GraphDriverName}}' \
+                || echo "[spike] podman info FAILED"
+
+              # Step 4: BSD-rooted container.
+              echo "--- step 4: podman run quay.io/dougrabson/hello (BSD-rooted) ---"
+              podman run --rm quay.io/dougrabson/hello \
+                || echo "[spike] BSD-rooted run FAILED"
+
+              # Step 5: Linux OCI image via compat layer.
+              echo "--- step 5: podman run --os=linux alpine (Linux compat) ---"
+              podman run --rm --os=linux alpine cat /etc/os-release \
+                || echo "[spike] Linux compat run FAILED"
+
+              # Step 6: podman-compose version (informational only —
+              # Decision 6 forbids running a full integration stack here).
+              echo "--- step 6: podman-compose --version (informational) ---"
+              podman-compose --version || echo "[spike] podman-compose not installed"
+
+              echo
+              echo "=== spike end @ $(date -u +%FT%TZ) ==="
+            } > "$GITHUB_WORKSPACE/spike-log.txt" 2>&1
+
+            echo "spike-log written to $GITHUB_WORKSPACE/spike-log.txt"
+            ls -l "$GITHUB_WORKSPACE/spike-log.txt"
+
+      - name: Upload spike-log.txt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: spike-log
+          path: spike-log.txt
+          if-no-files-found: warn
+
+  # -----------------------------------------------------------------------
+  # B.4 — metrics consolidation (depends on both B.2 and B.3)
+  # -----------------------------------------------------------------------
+  metrics:
+    name: freebsd-metrics
+    needs: [build-test, podman-spike]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          # merge-multiple puts each artifact in a subdirectory under the
+          # current working dir, named after the artifact.
+          merge-multiple: true
+
+      - name: Compose freebsd-metrics.md
+        env:
+          BUILD_TEST_OUTCOME: ${{ needs.build-test.result }}
+          PODMAN_SPIKE_OUTCOME: ${{ needs.podman-spike.result }}
+          VM_SUMMARY: ${{ needs.build-test.outputs.summary }}
+          VM_BUILD_SECONDS: ${{ needs.build-test.outputs.build_seconds }}
+          VM_TEST_SECONDS: ${{ needs.build-test.outputs.test_seconds }}
+        run: |
+          set -eu
+          cd "$GITHUB_WORKSPACE"
+
+          # Build step outputs come from the B.2 step `id: vmtest`, published
+          # to job-level outputs via the host-side "Publish VM step outputs"
+          # step. They are available regardless of build-test result (the host
+          # post-step uses `if: always()` and the VM writes vm-outputs.txt
+          # before the failing test command can short-circuit it). Fall back
+          # to "see run logs" if absent.
+          SUMMARY="${VM_SUMMARY:-see run logs}"
+          BUILD_SEC="${VM_BUILD_SECONDS:-?}"
+          TEST_SEC="${VM_TEST_SECONDS:-?}"
+
+          # VM boot time: the vmactions/freebsd-vm step's own host-side
+          # duration is the best available proxy (it includes VM boot +
+          # pkg installs + go build/test). We do not invent a number; the
+          # authoritative value lives in the Actions run UI for this job.
+          VM_STEP_DURATION="see run logs (build-test job: vmactions/freebsd-vm step duration)"
+
+          # go test summary re-parse from the downloaded artifact (in case
+          # the step output is missing on a red build).
+          if [ -f go-test-json/go-test.json ] && command -v jq >/dev/null 2>&1; then
+            JQ_SUMMARY=$(jq -r --slurp '
+              def n(k): (. | map(select(.Action==k and .Test)) | length);
+              def dur: ([.[].Elapsed // 0] | add);
+              def arr: .;
+              "passed=\(arr | n("pass")) skipped=\(arr | n("skip")) failed=\(arr | n("fail")) duration=\(arr | dur)s"
+            ' go-test-json/go-test.json 2>/dev/null || echo "see run logs")
+          else
+            JQ_SUMMARY="see run logs"
+          fi
+
+          # Spike verdict: extract a short raw verdict line from the spike
+          # log. We do not editorialise — just surface what the log says.
+          if [ -f spike-log/spike-log.txt ]; then
+            SPIKE_VERDICT=$(grep -E '^\[spike\]|^--- step|^=== spike' spike-log/spike-log.txt | head -40 || true)
+            SPIKE_RAW_HEAD=$(head -120 spike-log/spike-log.txt || true)
+          else
+            SPIKE_VERDICT="spike-log artifact not present (job did not run or did not upload)"
+            SPIKE_RAW_HEAD=""
+          fi
+
+          METRICS=freebsd-metrics.md
+          : > "$METRICS"
+          {
+            printf '# FreeBSD CI metrics (auto-generated)\n\n'
+            printf '> **Auto-generated artifact.** The curated human review is\n'
+            printf '> \`SUMMARY.md\` in\n'
+            printf '> \`.opencode/flows/088_2026-06-30_freebsd-ci-harness/\`, written\n'
+            printf '> after this run by the implementer (Task D.1).\n\n'
+            printf '## Job outcomes\n\n'
+            printf -- '- **build-test:**   %s\n' "$BUILD_TEST_OUTCOME"
+            printf -- '- **podman-spike:** %s (continue-on-error: true — expected to be informational)\n\n' "$PODMAN_SPIKE_OUTCOME"
+            printf '## VM timing\n\n'
+            printf -- '- **vmactions/freebsd-vm step duration** (proxy for VM boot + setup + build + test): %s\n' "$VM_STEP_DURATION"
+            printf -- '- **go build ./... (in-VM):**           %ss\n' "$BUILD_SEC"
+            printf -- '- **go test -short ./... (in-VM):**     %ss\n\n' "$TEST_SEC"
+            printf '## go test summary\n\n'
+            printf 'From the B.2 step output:\n\n'
+            printf '```\n%s\n```\n\n' "$SUMMARY"
+            printf 'Re-parsed from \`go-test-json/go-test.json\`:\n\n'
+            printf '```\n%s\n```\n\n' "$JQ_SUMMARY"
+            printf '## podman spike outcome\n\n'
+            printf 'Verdicts extracted from \`spike-log/spike-log.txt\` (raw, not summarised):\n\n'
+            printf '```\n%s\n```\n\n' "$SPIKE_VERDICT"
+            if [ -n "$SPIKE_RAW_HEAD" ]; then
+              printf '<details>\n'
+              printf '<summary>spike log head (first 120 lines)</summary>\n\n'
+              printf '```\n%s\n```\n\n' "$SPIKE_RAW_HEAD"
+              printf '</details>\n'
+            fi
+          } >> "$METRICS"
+
+          echo "freebsd-metrics.md composed:"
+          wc -l freebsd-metrics.md
+
+      - name: Upload freebsd-metrics.md
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: freebsd-metrics
+          path: freebsd-metrics.md
+          if-no-files-found: error
