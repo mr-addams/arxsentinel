@@ -226,6 +226,47 @@ jobs:
               podman info --format '{{.Store.GraphDriverName}}' \
                   || echo "[spike] post-sed podman info FAILED"
 
+              # Step 2.6: enable pf for podman CNI networking. Live Actions
+              # run 28457774103 confirmed that without this, every `podman
+              # run` (BSD-rooted quay.io/dougrabson/hello, Linux-compat
+              # alpine, AND the container-build-freebsd job's --version
+              # smoke) hard-fails at network init with:
+              #   Error: plugin type="bridge" failed (add): cni plugin
+              #   bridge failed: The pf kernel module must be loaded to
+              #   support ipMasq networks
+              # The FreeBSD podman pkg-message documents the fix verbatim:
+              #   cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf
+              #   # edit v4egress_if / v6egress_if to your egress iface
+              #   sysrc pf_enable=YES
+              #   service pf start
+              #   kldload pf
+              #   sysctl net.pf.filter_local=1
+              #   service pf restart
+              # This block is REPEATED in the container-build-freebsd job
+              # for the same reason the storage sed fix is repeated — see
+              # Decision E.2b (each vmactions/freebsd-vm step = a fresh VM;
+              # /etc/pf.conf and kldload state do not persist across
+              # VM-action steps nor live under the synced $GITHUB_WORKSPACE).
+              # See DECISIONS §"Group F" (Decision F.1, F.2).
+              echo "--- step 2.6: enable pf for podman networking ---"
+              # Diagnostic: capture the actual interface list into the
+              # spike-log artifact so any wrong guess on vtnet0 is visible
+              # in the downloadable log without a second CI run. vtnet0 is
+              # the historical default for QEMU/virtio NICs that
+              # vmactions/freebsd-vm uses — see Decision F.2.
+              ifconfig -l
+              cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf \
+                  || echo "[spike] pf.conf.sample copy FAILED"
+              sed -i .bak \
+                  -e 's/^v4egress_if=.*/v4egress_if="vtnet0"/' \
+                  -e 's/^v6egress_if=.*/v6egress_if="vtnet0"/' \
+                  /etc/pf.conf \
+                  || echo "[spike] pf.conf interface substitution FAILED"
+              kldload pf || echo "[spike] kldload pf FAILED (already loaded?)"
+              sysctl net.pf.filter_local=1 || true
+              sysrc pf_enable=YES
+              service pf start || echo "[spike] service pf start FAILED"
+
               # Step 3: report podman version and effective storage driver.
               echo "--- step 3: podman --version + storage driver ---"
               podman --version || echo "[spike] podman --version FAILED"
@@ -322,6 +363,34 @@ jobs:
                   || echo "[build] storage.conf sed fix FAILED"
               podman info --format '{{.Store.GraphDriverName}}' \
                   || echo "[build] podman info FAILED"
+
+              # Step 2.5: enable pf for podman CNI networking. Same fix as
+              # podman-spike step 2.6 — repeated here because each
+              # vmactions/freebsd-vm step = a fresh VM with no pf loaded
+              # and no /etc/pf.conf (system file, not under the synced
+              # $GITHUB_WORKSPACE — see Decision E.2b). Without this, the
+              # smoke `podman run --rm arxsentinel:freebsd-local --version`
+              # in step 6 below hard-fails at network init with the same
+              # "pf kernel module must be loaded" error live run 28457774103
+              # showed. See DECISIONS §"Group F" (Decision F.1, F.2).
+              echo "--- step 2.5: enable pf for podman networking ---"
+              # Diagnostic: capture the actual interface list into the
+              # build-log artifact. vtnet0 = QEMU/virtio default (Decision
+              # F.2). If this guess is wrong, the ifconfig -l output above
+              # shows the right interface name → one-line fix in both
+              # pf-setup blocks.
+              ifconfig -l
+              cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf \
+                  || echo "[build] pf.conf.sample copy FAILED"
+              sed -i .bak \
+                  -e 's/^v4egress_if=.*/v4egress_if="vtnet0"/' \
+                  -e 's/^v6egress_if=.*/v6egress_if="vtnet0"/' \
+                  /etc/pf.conf \
+                  || echo "[build] pf.conf interface substitution FAILED"
+              kldload pf || echo "[build] kldload pf FAILED (already loaded?)"
+              sysctl net.pf.filter_local=1 || true
+              sysrc pf_enable=YES
+              service pf start || echo "[build] service pf start FAILED"
 
               # Step 3: native go build of the two binaries into a staging
               # directory. CGO_ENABLED=0 produces a fully-static binary that
