@@ -263,6 +263,48 @@ jobs:
             # for the cat-after-write emit point).
             echo
             echo "=== integration-nginx unblock chain end @ $(date -u +%FT%TZ) ==="
+            echo
+
+            # ----------------------------------------------------------------
+            # Task 4.2 — invoke run-nginx.sh with SCOPED TMPDIR (per
+            # Flow 088 Decision G.1e).
+            # ----------------------------------------------------------------
+            # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
+            # environment assignment — POSIX single-command form, NOT
+            # `export TMPDIR="$GITHUB_WORKSPACE"`. The exported form
+            # poisons Go module-mode detection for any `go build` that
+            # runs AFTER it: Go sees cwd == TMPDIR and refuses to use
+            # the go.mod there ("ignoring go.mod in system temp root").
+            # The 088 G.1 first run (Actions run 28462048606) hit this
+            # cascade — `export TMPDIR` at the top of the run block
+            # silently broke the integration-smoke's native `go build`,
+            # which then cascaded to a misleading "no local image"
+            # error from the smoke. 088 DECISIONS.md §"Decision G.1e"
+            # documents the full postmortem and the scoped-per-command
+            # fix. We invoke the same pattern verbatim here.
+            #
+            # Why this matters even though the go build runs BEFORE
+            # the run-nginx.sh invocation: defensively, the scoped
+            # form also protects any future step added below this
+            # point (e.g. a follow-up integration-nginx iteration
+            # adding a `go test` after the smoke). 088 G.1e says
+            # "any future VM-action job that mixes go build with a
+            # script using TMPDIR MUST scope TMPDIR per-command,
+            # not export it" — we obey unconditionally.
+            #
+            # The run-nginx.sh exit code is recorded but not
+            # short-circuited to a workflow failure: the job runs
+            # with continue-on-error: true (DECISIONS §6 research-
+            # grade). A red run is a recorded finding in the
+            # downloadable smoke-log.txt, not a flow-blocker.
+            # ----------------------------------------------------------------
+            echo "[integration-nginx] invoking run-nginx.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/nginx/run-nginx.sh \
+                && echo "[integration-nginx] run-nginx.sh exit: 0 (3 assertions green)" \
+                || echo "[integration-nginx] run-nginx.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+
+            echo
+            echo "=== integration-nginx run-nginx.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
