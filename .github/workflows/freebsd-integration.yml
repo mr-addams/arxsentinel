@@ -94,6 +94,54 @@ jobs:
             echo
 
             # ----------------------------------------------------------------
+            # Task 4.1 — podman install + Linux compat layer enable.
+            # ----------------------------------------------------------------
+            # `nginx:alpine` (used by tests/integration-freebsd/nginx/
+            # run-nginx.sh step 3) is a Linux OCI image. FreeBSD's
+            # sysutils/podman pulls Linux images under the Linux
+            # compatibility layer, which must be enabled BEFORE the
+            # first `podman run --os=linux`. Per the FreeBSD podman
+            # pkg-message (quoted verbatim in Flow 088 DECISIONS.md
+            # §"Group B" / "B.3 step 2") the recipe is:
+            #   sysrc linux_enable=YES
+            #   service linux start
+            # The service start is BEST-EFFORT: the vmactions VM has
+            # no reboot, and on first boot the linux.ko module may not
+            # be loadable until after a reboot we cannot perform. The
+            # 088 alpine-spike B.3 step 2 carries the same caveat
+            # (DECISIONS §"A.2" "Linux compat may need a reboot we
+            # can't do in-CI"). We log the failure to smoke-log.txt
+            # but do not abort: the native FreeBSD run-smoke.sh case
+            # doesn't need Linux compat, and the run-nginx.sh nginx
+            # pull may still succeed on a VM where linux.ko was
+            # already loaded by the vmactions image's first-boot
+            # rc sequence.
+            #
+            # `pkg install -y sysutils/podman` MUST run before the
+            # sed storage.conf fix in Task 2.2 (the file
+            # /usr/local/etc/containers/storage.conf is installed by
+            # the sysutils/podman pkg). The FreeBSD pkg cache is empty
+            # in a fresh vmactions VM, so this pulls the binary pkg
+            # from FreeBSD's pkg mirror; expect ~30-60s on first run.
+            # ----------------------------------------------------------------
+            pkg install -y sysutils/podman || \
+                echo "[integration-nginx] pkg install podman FAILED"
+            podman --version || \
+                echo "[integration-nginx] podman --version FAILED"
+            sysrc linux_enable=YES || \
+                echo "[integration-nginx] sysrc linux_enable=YES FAILED"
+            # service linux start: best-effort, log failure but do not
+            # abort. The 088 §B.3 spike step 2 has the same
+            # disposition. A red run here is a finding for the
+            # triage-run-1.md, not a flow-blocker (DECISIONS.md §6).
+            if service linux start; then
+                echo "[integration-nginx] service linux start: ok"
+            else
+                echo "[integration-nginx] WARN: service linux start failed" >&2
+                echo "[integration-nginx] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
+            fi
+
+            # ----------------------------------------------------------------
             # Task 2.2 — storage-driver sed fix.
             # ----------------------------------------------------------------
             # The FreeBSD podman pkg ships
