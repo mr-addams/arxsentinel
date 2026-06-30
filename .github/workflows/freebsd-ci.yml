@@ -263,6 +263,144 @@ jobs:
           if-no-files-found: warn
 
   # -----------------------------------------------------------------------
+  # E.4 — container-build-freebsd: real ArxSentinel FreeBSD image build
+  # (Task E.4, Decision E.2 + E.2b). Independent from metrics: a red build
+  # is a finding, not a flow-blocker. Runs in its own fresh VM (each
+  # vmactions/freebsd-vm step = a fresh FreeBSD 14.3 with default `zfs`
+  # storage.conf), so the storage-driver sed fix from E.1 is REPEATED here
+  # — see Decision E.2b for why it cannot be shared via a host-side pre-step.
+  # -----------------------------------------------------------------------
+  container-build-freebsd:
+    name: container-build-freebsd (exploratory, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build ArxSentinel FreeBSD image inside FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          copyback: true
+          envs: 'GITHUB_*'
+          run: |
+            # NO `set -e`: this job is exploratory (Decision E.2 + B.3
+            # discipline). A red `podman build` is a recorded finding, not a
+            # flow-blocker. We use `set -o pipefail` only so commands can
+            # fail individually and the build-log captures the failure
+            # context for the artifact.
+            set -o pipefail
+
+            {
+              echo "=== container-build-freebsd run @ $(date -u +%FT%TZ) ==="
+              echo "=== host: $(uname -a) ==="
+              echo
+
+              # Step 1: install go + podman. `pkg install` is independent of
+              # podman's storage state — safe to run before the storage fix.
+              echo "--- step 1: pkg install go podman ---"
+              pkg install -y go podman || echo "[build] pkg install FAILED"
+
+              # Step 2: storage-driver fix. The FreeBSD podman pkg ships
+              # /usr/local/etc/containers/storage.conf with `driver = "zfs"`
+              # — correct on real FreeBSD ZFS installs but WRONG inside the
+              # vmactions/freebsd-vm QEMU VM whose rootfs has no zpool.
+              # Without this fix, `podman build` hard-fails with
+              # "no zfs dataset found for rootdir '/var/db/containers/storage'".
+              # This is the SAME fix as podman-spike step 2.5 (Decision E.1)
+              # — repeated here because each vmactions/freebsd-vm step = a
+              # fresh VM with default storage.conf; the system file does NOT
+              # live under the synced $GITHUB_WORKSPACE, so a host-side
+              # pre-step cannot deduplicate it. See Decision E.2b.
+              echo "--- step 2: storage.conf driver zfs → vfs ---"
+              sed -I .bak -e 's/driver = "zfs"/driver = "vfs"/' \
+                  /usr/local/etc/containers/storage.conf \
+                  || echo "[build] storage.conf sed fix FAILED"
+              podman info --format '{{.Store.GraphDriverName}}' \
+                  || echo "[build] podman info FAILED"
+
+              # Step 3: native go build of the two binaries into a staging
+              # directory. CGO_ENABLED=0 produces a fully-static binary that
+              # is drop-in compatible with ghcr.io/freebsd/freebsd-static:14.3
+              # (the final-stage base used by deploy/container/freebsd/
+              # Containerfile.freebsd). `-trimpath -ldflags="-s -w -X
+              # main.version=$(cat VERSION)"` mirrors the Linux Dockerfile's
+              # build args (deploy/container/docker/Dockerfile line 34) so the
+              # two images report the same `--version` shape.
+              echo "--- step 3: go build arxsentinel + healthcheck (CGO=0) ---"
+              mkdir -p /tmp/build
+              cd "$GITHUB_WORKSPACE"
+              VERSION=$(cat VERSION 2>/dev/null || echo "dev")
+              echo "[build] VERSION=${VERSION}"
+              CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+                go build -trimpath \
+                  -ldflags="-s -w -X main.version=${VERSION}" \
+                  -o /tmp/build/arxsentinel \
+                  ./cmd/arxsentinel \
+                || echo "[build] arxsentinel build FAILED"
+              CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+                go build -trimpath \
+                  -ldflags="-s -w" \
+                  -o /tmp/build/healthcheck \
+                  ./cmd/healthcheck \
+                || echo "[build] healthcheck build FAILED"
+              ls -l /tmp/build/
+
+              # Step 4: stage config.docker.yaml next to the binaries so it
+              # is in the build context the Containerfile expects (COPY
+              # config.docker.yaml /etc/arxsentinel/config.yaml). Reuse the
+              # existing Linux container-defaults config — FreeBSD and Linux
+              # images share the same container config (pid in /tmp, /var/log/
+              # arxsentinel/ outputs, metrics enabled). See Decision E.2.
+              echo "--- step 4: stage config.docker.yaml into build context ---"
+              cp "$GITHUB_WORKSPACE/deploy/container/docker/config.docker.yaml" \
+                 /tmp/build/config.docker.yaml \
+                || echo "[build] config.docker.yaml copy FAILED"
+
+              # Step 5: podman build. Use the Containerfile.freebsd committed
+              # in Task E.3 (deploy/container/freebsd/Containerfile.freebsd),
+              # with /tmp/build/ as the build context (contains the binaries
+              # and the staged config). Tag arxsentinel:freebsd-local.
+              echo "--- step 5: podman build -f Containerfile.freebsd ---"
+              podman build -f "$GITHUB_WORKSPACE/deploy/container/freebsd/Containerfile.freebsd" \
+                  -t arxsentinel:freebsd-local \
+                  /tmp/build/ \
+                || echo "[build] podman build FAILED"
+
+              # Step 6: smoke. `--version` is a supported flag (cmd/arxsentinel/
+              # main.go: flag.Bool("version", ...)). If podman build succeeded,
+              # this should print the version and exit 0. If podman build
+              # failed above, this will fail too — the `|| echo` captures both
+              # for the build-log.
+              echo "--- step 6: smoke podman run --rm arxsentinel:freebsd-local --version ---"
+              podman run --rm arxsentinel:freebsd-local --version \
+                || echo "[build] podman run --version FAILED"
+
+              # Step 7: list images for the artifact (informational — shows
+              # image size + digest from the local podman store).
+              echo "--- step 7: podman images (informational) ---"
+              podman images arxsentinel:freebsd-local 2>&1 || true
+
+              echo
+              echo "=== build end @ $(date -u +%FT%TZ) ==="
+            } > "$GITHUB_WORKSPACE/build-log.txt" 2>&1
+
+            echo "build-log written to $GITHUB_WORKSPACE/build-log.txt"
+            ls -l "$GITHUB_WORKSPACE/build-log.txt"
+
+      - name: Upload build-log.txt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: container-build-freebsd
+          path: build-log.txt
+          if-no-files-found: warn
+
+  # -----------------------------------------------------------------------
   # B.4 — metrics consolidation (depends on both B.2 and B.3)
   # -----------------------------------------------------------------------
   metrics:
