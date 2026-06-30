@@ -274,38 +274,6 @@ func TestWafProcessor_EmptyConfig(t *testing.T) {
 	}
 }
 
-// ========================== Action normalisation ==============================================
-
-// TestWafProcessor_ActionNormalisation verifies that the case-insensitive /
-// whitespace-tolerant mapping in normaliseAction behaves as documented:
-//   - empty / unknown → ActionDrop (default)
-//   - "Drop" / "DROP" → ActionDrop
-//   - "Tag"           → ActionTag
-//   - "Pass"          → ActionPass
-func TestWafProcessor_ActionNormalisation(t *testing.T) {
-	cases := []struct {
-		action string
-		want   string
-	}{
-		{"", ActionDrop},
-		{"drop", ActionDrop},
-		{"DROP", ActionDrop},
-		{"  Drop  ", ActionDrop},
-		{"tag", ActionTag},
-		{"TAG", ActionTag},
-		{"pass", ActionPass},
-		{"PASS", ActionPass},
-		{"unknown", ActionDrop}, // unrecognised defaults to drop
-	}
-	for _, tc := range cases {
-		t.Run(tc.action, func(t *testing.T) {
-			if got := normaliseAction(tc.action); got != tc.want {
-				t.Errorf("normaliseAction(%q): want %q, got %q", tc.action, tc.want, got)
-			}
-		})
-	}
-}
-
 // ========================== tag-action case insensitivity (DECISIONS D1) ====================
 
 // TestWafProcessor_TagActionCaseInsensitive pins DECISIONS D1: classifyAction must

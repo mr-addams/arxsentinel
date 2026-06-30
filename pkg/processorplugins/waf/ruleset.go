@@ -200,8 +200,8 @@ func NewRuleSetFromConfig(cfg Config, manifest plugin.Manifest) (passRS, gateRS 
 	// Two buckets: passNames and gateNames hold rule names by destination; we
 	// collect expressions in cfg.Rules order so a misconfigured rule produces a
 	// deterministic error (first failing rule name in the message).
-	passEntries := make([]compileJob, 0)
-	gateEntries := make([]compileJob, 0)
+	passExprs := make([]string, 0)
+	gateExprs := make([]string, 0)
 	passNames := make([]string, 0)
 	gateNames := make([]string, 0)
 	actions = make(map[string]string, len(cfg.Rules))
@@ -219,23 +219,23 @@ func NewRuleSetFromConfig(cfg Config, manifest plugin.Manifest) (passRS, gateRS 
 		}
 		switch bucket {
 		case actionBucketPass:
-			passEntries = append(passEntries, compileJob{expr: ruleCfg.Expression})
+			passExprs = append(passExprs, ruleCfg.Expression)
 			passNames = append(passNames, ruleCfg.Name)
 		case actionBucketGate:
-			gateEntries = append(gateEntries, compileJob{expr: ruleCfg.Expression})
+			gateExprs = append(gateExprs, ruleCfg.Expression)
 			gateNames = append(gateNames, ruleCfg.Name)
 			actions[ruleCfg.Name] = normalisedAction
 		}
 	}
 
 	// ── Step 2: build passRS ─────────────────────────────────────────────────────────
-	passRS, err = buildRuleSet("pass", manifest, passNames, passEntries)
+	passRS, err = buildRuleSet("pass", manifest, passNames, passExprs)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	// ── Step 3: build gateRS ─────────────────────────────────────────────────────────
-	gateRS, err = buildRuleSet("gate", manifest, gateNames, gateEntries)
+	gateRS, err = buildRuleSet("gate", manifest, gateNames, gateExprs)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -243,18 +243,15 @@ func NewRuleSetFromConfig(cfg Config, manifest plugin.Manifest) (passRS, gateRS 
 	return passRS, gateRS, actions, nil
 }
 
-// compileJob carries one rule's expression through the build pipeline. The
-// paired names slice is kept separate so the order of cfg.Rules is preserved
-// at Add-time (and so error messages can name the rule, not an index).
-type compileJob struct {
-	expr string
-}
-
 // buildRuleSet constructs a single RuleSet via builder.New and adds the given rules
 // in order. On any error, returns nil + the wrapped error (caller maps to atomic
 // init failure). The "label" argument is used in error messages only — "pass" or
 // "gate" — so the diagnostic names the bucket.
-func buildRuleSet(label string, manifest plugin.Manifest, names []string, entries []compileJob) (*ruleset.RuleSet, error) {
+//
+// exprs is the list of rule expressions, paired positionally with names; the
+// caller (NewRuleSetFromConfig) preserves cfg.Rules order so a misconfigured
+// rule produces a deterministic error (first failing rule name in the message).
+func buildRuleSet(label string, manifest plugin.Manifest, names []string, exprs []string) (*ruleset.RuleSet, error) {
 	b := builder.New("http")
 	for _, fd := range manifest.Produces {
 		b.Field("http", fd.Name, fd.Type)
@@ -266,8 +263,8 @@ func buildRuleSet(label string, manifest plugin.Manifest, names []string, entrie
 	if err != nil {
 		return nil, fmt.Errorf("waf: build ruleset (%s): %w", label, err)
 	}
-	for i, entry := range entries {
-		if err := rs.Add(names[i], entry.expr); err != nil {
+	for i, expr := range exprs {
+		if err := rs.Add(names[i], expr); err != nil {
 			return nil, fmt.Errorf("waf: rule %q: %w", names[i], err)
 		}
 	}
@@ -330,31 +327,5 @@ func classifyAction(ruleName, action string) (actionBucket, string, error) {
 		return actionBucketGate, normalised, nil
 	default:
 		return 0, "", fmt.Errorf("waf: unknown action %q for rule %q", action, ruleName)
-	}
-}
-
-// normaliseAction maps the user-supplied Action string to one of ActionDrop /
-// ActionTag / ActionPass. Unknown or empty values fall back to ActionDrop (the
-// safe default — see defaultAction). The map is intentionally case-insensitive
-// because YAML config is editor-friendly but inconsistent.
-//
-// RETAINED for TestWafProcessor_ActionNormalisation — that test pins the
-// case-insensitive / whitespace-tolerant mapping as a separate contract from
-// classifyAction. NewRuleSetFromConfig itself uses classifyAction; the public
-// ActionNormalisation contract is preserved for any external callers that
-// depended on the lenient mapping.
-func normaliseAction(a string) string {
-	switch strings.ToLower(strings.TrimSpace(a)) {
-	case ActionPass:
-		return ActionPass
-	case ActionTag:
-		return ActionTag
-	case "", ActionDrop:
-		return ActionDrop
-	default:
-		// Unknown action: the operator will surface this as a misconfigured
-		// rule that doesn't fire as expected. Normalise to drop — the
-		// safest fallback for a WAF gate.
-		return ActionDrop
 	}
 }
