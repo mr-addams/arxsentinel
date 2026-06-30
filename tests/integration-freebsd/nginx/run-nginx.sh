@@ -321,3 +321,27 @@ if [ "$BAD_COUNT" -gt 0 ]; then
     echo "[nginx] FAIL: assertion 3 - $BAD_COUNT threat line(s) missing score=/reason=" >&2
     FAIL=1
 fi
+
+# ---------------------------------------------------------------------
+# Step 8: persist artifacts for the workflow. The cleanup trap on
+# EXIT (set in step 1) does NOT remove $WORK_DIR when TMPDIR is
+# $GITHUB_WORKSPACE — the workflow's actions/upload-artifact picks
+# up these files BEFORE the VM is destroyed (Task 3.6). The copies
+# here land at the top of $TMPDIR (= $GITHUB_WORKSPACE in CI)
+# so the workflow's `cat $GITHUB_WORKSPACE/...` + `upload-artifact`
+# at Task 4.3 can find them by name.
+# ---------------------------------------------------------------------
+if [ -s "$THREAT_LOG" ]; then
+    cp "$THREAT_LOG" "${TMPDIR:-/tmp}/threats-nginx.log.smoke"
+fi
+if [ -s "$ACCESS_LOG" ]; then
+    cp "$ACCESS_LOG" "${TMPDIR:-/tmp}/nginx-access.log"
+fi
+
+# Step 9: final report. Cleanup happens via the EXIT trap.
+if [ "$FAIL" -ne 0 ]; then
+    echo "[nginx] FAIL: one or more assertions failed (see above)"
+    exit 1
+fi
+echo "[nginx] PASS: all 3 assertions green - FreeBSD/podman nginx integration end-to-end works"
+exit 0

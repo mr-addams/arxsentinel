@@ -228,10 +228,20 @@ jobs:
             echo "smoke-log written to $GITHUB_WORKSPACE/smoke-log.txt"
             ls -l "$GITHUB_WORKSPACE/smoke-log.txt"
 
-      - name: Upload smoke-log.txt
+      - name: Upload integration-nginx artifacts
+        # smoke-log.txt: the full VM run log (Task 2.5)
+        # threats-nginx.log.smoke: the sentinel threat log (Task 3.6
+        #   copy, mirrored to $GITHUB_WORKSPACE so copyback returns it)
+        # nginx-access.log: the raw nginx access log the sentinel read
+        #   (Task 3.6 copy, same path; lets the user cross-reference
+        #   threat log entries with the access-log line that triggered
+        #   them during triage)
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: integration-nginx-smoke-log
-          path: smoke-log.txt
+          name: integration-nginx
+          path: |
+            smoke-log.txt
+            threats-nginx.log.smoke
+            nginx-access.log
           if-no-files-found: warn
