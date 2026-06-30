@@ -203,3 +203,27 @@ if [ "$WATCHING" -ne 1 ]; then
 fi
 echo "[nginx] TailReader ready"
 
+# ---------------------------------------------------------------------
+# Step 6: drive attacks from a curl container. DECISIONS §3 — the
+# curl container joins the same CNI network so it can resolve
+# "nginx" via container DNS. ONE invocation, TWO requests
+# (sqlmap + Mozilla) — both originate from the same curl container
+# and therefore share its CNI IP. This is the deliberate
+# UA-selective test (DECISIONS §5): the grader checks that the
+# sqlmap UA is scored as THREAT and the Mozilla UA is NOT, not
+# the IP-based legit-vs-attacker check the 088 synthetic smoke
+# uses (which doesn't apply here because both requests share the
+# same IP).
+# ---------------------------------------------------------------------
+SQLMAP_UA='sqlmap/1.7.11'
+MOZILLA_UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+
+echo "[nginx] driving attacks from curl container (sqlmap + Mozilla UAs)..."
+podman run --rm --network "$NETWORK" \
+    --entrypoint /bin/sh \
+    curlimages/curl \
+    -c "curl -sS -A '${SQLMAP_UA}' http://nginx/ ; curl -sS -A '${MOZILLA_UA}' http://nginx/" \
+    >/dev/null 2>&1 \
+    || echo "[nginx] curl attacker exited non-zero (still check the access log)"
+echo "[nginx] attacks sent"
+
