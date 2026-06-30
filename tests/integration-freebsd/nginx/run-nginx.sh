@@ -227,3 +227,97 @@ podman run --rm --network "$NETWORK" \
     || echo "[nginx] curl attacker exited non-zero (still check the access log)"
 echo "[nginx] attacks sent"
 
+# ---------------------------------------------------------------------
+# Step 7: poll the threat log for non-empty content (~20s timeout).
+# Mirrors 088 run-smoke.sh step 5.
+# ---------------------------------------------------------------------
+THREAT_LOG="$WORK_DIR/output/threats-nginx.log"
+echo "[nginx] polling $THREAT_LOG (timeout 20s)..."
+DEADLINE=$(($(date +%s) + 20))
+WRITTEN=0
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+    if [ -s "$THREAT_LOG" ]; then
+        WRITTEN=1
+        break
+    fi
+    sleep 1
+done
+if [ "$WRITTEN" -ne 1 ]; then
+    echo "[nginx] FAIL: $THREAT_LOG not written within 20s" >&2
+    echo "[nginx] access log content (if any):" >&2
+    cat "$WORK_DIR/nginx/access.log" >&2 || true
+    echo "[nginx] sentinel log (last 80 lines):" >&2
+    tail -80 "$WORK_DIR/sentinel-nginx.log" >&2 || true
+    exit 1
+fi
+
+# Dump the threat log for inline visibility.
+LINES=$(cat "$THREAT_LOG")
+echo "[nginx] threat log content:"
+printf '%s\n' "$LINES" | sed 's/^/  /'
+
+# ---------------------------------------------------------------------
+# Step 7a: extract the sqlmap-request source IP from the access log.
+# DECISIONS §5 — the attacker's source IP is the curl container's
+# CNI-assigned IP, which appears in access.log as the first field
+# of the line containing the sqlmap UA. We extract that IP here
+# (once) so assertions 1 and 2 below can use it.
+# ---------------------------------------------------------------------
+ACCESS_LOG="$WORK_DIR/nginx/access.log"
+if [ ! -s "$ACCESS_LOG" ]; then
+    echo "[nginx] FAIL: access log empty or missing at $ACCESS_LOG" >&2
+    exit 1
+fi
+# grep the sqlmap UA (literal, no regex specials) then awk the first
+# field. Safe even if the UA contains regex chars — grep treats it
+# as a fixed string in this case (no -E flag).
+SQLMAP_IP=$(grep "${SQLMAP_UA}" "$ACCESS_LOG" | awk '{print $1}' | head -1)
+if [ -z "$SQLMAP_IP" ]; then
+    echo "[nginx] FAIL: could not extract sqlmap request IP from access log" >&2
+    echo "[nginx] access log content:" >&2
+    cat "$ACCESS_LOG" >&2 || true
+    exit 1
+fi
+echo "[nginx] sqlmap request source IP: $SQLMAP_IP"
+
+# ---------------------------------------------------------------------
+# Step 7b: three assertions per DECISIONS §5 (adapted from 088
+# run-smoke.sh — UA-based, not IP-based). A single FAIL on any
+# assertion sets FAIL=1; the script reports all three at the end
+# (does not short-circuit, so the grader can see the full failure
+# shape).
+# ---------------------------------------------------------------------
+FAIL=0
+
+# Assertion 1: ` THREAT ` substring AND sqlmap-attack source IP
+# appear in the threat log. (088 run-smoke.sh assertion 1 with the
+# IP extracted from access.log, NOT a fixed literal.)
+if ! printf '%s\n' "$LINES" | grep -q " THREAT " \
+   || ! printf '%s\n' "$LINES" | grep -q " $SQLMAP_IP "; then
+    echo "[nginx] FAIL: assertion 1 - expected ' THREAT ' and IP '$SQLMAP_IP' in threat log" >&2
+    FAIL=1
+fi
+
+# Assertion 2: Mozilla UA does NOT appear in the threat log.
+# DEPARTURE FROM 088 run-smoke.sh assertion 2 (which used a legit
+# IP-absent check): both curl requests share the curl container's
+# CNI IP (DECISIONS §3 + §5), so IP-based legit-vs-attacker
+# discrimination does not work. Instead we assert the Mozilla UA
+# itself is absent — a stricter test of UA-selectivity (the
+# detector must score on UA, not just on the request itself).
+if printf '%s\n' "$LINES" | grep -q "${MOZILLA_UA}"; then
+    echo "[nginx] FAIL: assertion 2 - false positive: Mozilla UA appeared in threat log" >&2
+    FAIL=1
+fi
+
+# Assertion 3: every non-empty threat line has score= AND reason=
+# (Fail2Ban-like format). Identical to 088 run-smoke.sh assertion 3.
+# non-empty lines WITHOUT both markers → BAD_COUNT > 0 → fail.
+# `|| true` on the grep -cv because an all-matching input exits 1
+# (no matches for the negative pattern) which would short-circuit
+# set -e.
+BAD_COUNT=$(printf '%s\n' "$LINES" | grep -v '^$' | grep -cv 'score=.*reason=' || true)
+if [ "$BAD_COUNT" -gt 0 ]; then
+    echo "[nginx] FAIL: assertion 3 - $BAD_COUNT threat line(s) missing score=/reason=" >&2
+    FAIL=1
+fi
