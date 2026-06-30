@@ -79,7 +79,19 @@ jobs:
             # recorded finding in the downloadable smoke-log.txt, not a
             # flow-blocker. `set -o pipefail` only, so any individual
             # command can fail and the log captures the failure context.
-            set -o pipefail
+
+            # Task 2.5 — wrap the whole run block in a single FD redirect
+            # to $GITHUB_WORKSPACE/smoke-log.txt. The block below (Task
+            # 2.2 storage sed + 2.3 pf + 2.4 go build + Phase 3 nginx
+            # integration + Phase 4 wire-up) lives INSIDE this { ... }
+            # group. Whatever the VM prints (success OR failure) lands in
+            # smoke-log.txt and is then re-emitted inline + uploaded as
+            # an artifact — Flow 088 TD-13 cat-after-write pattern.
+            {
+            # Marker for the log artifact's first line.
+            echo "=== integration-nginx run @ $(date -u +%FT%TZ) ==="
+            echo "=== host: $(uname -a) ==="
+            echo
 
             # ----------------------------------------------------------------
             # Task 2.2 — storage-driver sed fix.
@@ -197,3 +209,29 @@ jobs:
             # main.go: flag.Bool("version", ...)).
             ./arxsentinel --version || \
                 echo "[integration-nginx] arxsentinel --version FAILED"
+
+            # Marker for the log artifact's last line (Phase 3-4 will
+            # append the run-nginx.sh output below this block — kept
+            # for the cat-after-write emit point).
+            echo
+            echo "=== integration-nginx unblock chain end @ $(date -u +%FT%TZ) ==="
+            } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
+
+            # Flow 088 TD-13 cat-after-write pattern: re-emit the log
+            # inline in the Actions run-log (collapsible group) AND
+            # keep it downloadable as the artifact. Without this the
+            # log is artifact-only-debug, requiring a download to
+            # triage. See Flow 088 TECH_DEBT.md TD-13.
+            echo "::group::Full smoke log (also in the uploaded smoke-log.txt artifact)"
+            cat "$GITHUB_WORKSPACE/smoke-log.txt"
+            echo "::endgroup::"
+            echo "smoke-log written to $GITHUB_WORKSPACE/smoke-log.txt"
+            ls -l "$GITHUB_WORKSPACE/smoke-log.txt"
+
+      - name: Upload smoke-log.txt
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-nginx-smoke-log
+          path: smoke-log.txt
+          if-no-files-found: warn
