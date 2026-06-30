@@ -74,9 +74,36 @@ jobs:
           # it with scoped TMPDIR + artifact upload. The empty `run: |`
           # placeholder below is replaced across Tasks 2.2-4.3.
           run: |
-            # Placeholder — Phase 2-4 add: storage sed (2.2), pf setup
-            # (2.3), go build (2.4), log capture + upload (2.5), then
-            # nginx.conf + sentinel-nginx.yaml + run-nginx.sh + podman
-            # network + sentinel launch + curl attacker + assertions +
-            # artifact upload (3.1-4.3).
-            echo "[integration-nginx] skeleton job — Phase 2-4 not yet wired in this dispatch"
+            # NO `set -e`: this job is exploratory (DECISIONS §6 — research
+            # grade on first iterations). A red nginx integration is a
+            # recorded finding in the downloadable smoke-log.txt, not a
+            # flow-blocker. `set -o pipefail` only, so any individual
+            # command can fail and the log captures the failure context.
+            set -o pipefail
+
+            # ----------------------------------------------------------------
+            # Task 2.2 — storage-driver sed fix.
+            # ----------------------------------------------------------------
+            # The FreeBSD podman pkg ships
+            # /usr/local/etc/containers/storage.conf with `driver = "zfs"`.
+            # Correct on real FreeBSD ZFS installs; WRONG inside the
+            # vmactions/freebsd-vm QEMU VM whose rootfs has no zpool
+            # (UFS/RAW). Without this fix, every `podman run` hard-fails
+            # with "no zfs dataset found for rootdir". Switch to vfs
+            # (file-backed, works in any filesystem). MUST run BEFORE
+            # any `podman run` / `podman build` later in this run block.
+            #
+            # Why this is repeated here (not shared with another job):
+            # each vmactions/freebsd-vm step spawns a fresh VM that
+            # ships the default zfs storage.conf; the file lives at
+            # /usr/local/etc/containers/storage.conf on the VM (NOT under
+            # the synced $GITHUB_WORKSPACE), so a host-side pre-step
+            # cannot deduplicate it. Same rationale as Flow 088
+            # DECISIONS §"Decision E.2b" (storage-driver sed fix must
+            # repeat in every VM-action step).
+            # ----------------------------------------------------------------
+            sed -I .bak -e 's/driver = "zfs"/driver = "vfs"/' \
+                /usr/local/etc/containers/storage.conf
+            # Reaffirm effective driver — should now print "vfs".
+            podman info --format '{{.Store.GraphDriverName}}' || \
+                echo "[integration-nginx] post-storage-sed podman info FAILED"
