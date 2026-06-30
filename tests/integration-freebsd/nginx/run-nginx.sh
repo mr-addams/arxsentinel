@@ -143,9 +143,16 @@ podman network create "$NETWORK"
 # "did not resolve to an alias and no unqualified-search registries are
 # defined" (same class of bug as Flow 088 Decision F.4 — alpine short-name
 # fix in podman-spike step 5).
+#
+# --os=linux is REQUIRED: nginx:alpine's OCI image index has no
+# "freebsd" OS variant, only linux/*. Without --os=linux, podman on
+# FreeBSD defaults to looking for a freebsd-OS manifest and fails with
+# "no image found in image index for architecture amd64 ... OS freebsd"
+# (same flag Flow 088 podman-spike step 5 used for docker.io/alpine).
 # ---------------------------------------------------------------------
 echo "[nginx] starting nginx container..."
 NGINX_CID=$(podman run -d \
+    --os=linux \
     --name nginx \
     --network "$NETWORK" \
     -v "$WORK_DIR/nginx.conf:/etc/nginx/nginx.conf:ro" \
@@ -232,8 +239,10 @@ MOZILLA_UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 
 echo "[nginx] driving attacks from curl container (sqlmap + Mozilla UAs)..."
 # Fully-qualified docker.io/curlimages/curl (NOT bare curlimages/curl) —
-# same short-name resolution issue as the nginx image above.
-podman run --rm --network "$NETWORK" \
+# same short-name resolution issue as the nginx image above. --os=linux —
+# same image-index reasoning as the nginx container above (curlimages/curl
+# has no freebsd OS variant either).
+podman run --rm --os=linux --network "$NETWORK" \
     --entrypoint /bin/sh \
     docker.io/curlimages/curl \
     -c "curl -sS -A '${SQLMAP_UA}' http://nginx/ ; curl -sS -A '${MOZILLA_UA}' http://nginx/" \
