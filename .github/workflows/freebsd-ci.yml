@@ -211,6 +211,21 @@ jobs:
               sysrc linux_enable=YES || true
               service linux start || echo "[spike] service linux start FAILED (reboot may be required)"
 
+              # Step 2.5: fix the podman storage driver. The FreeBSD podman pkg
+              # ships /usr/local/etc/containers/storage.conf with `driver = "zfs"`
+              # — correct on real FreeBSD installs backed by a ZFS pool, but WRONG
+              # inside the vmactions/freebsd-vm QEMU VM whose rootfs has no zpool
+              # (UFS/RAW). Without this fix, podman run hard-fails with "no zfs
+              # dataset found for rootdir". Switch to vfs (file-backed) which
+              # works in any filesystem. See DECISIONS §"Decision E.1".
+              echo "--- step 2.5: rewrite storage.conf driver zfs → vfs ---"
+              sed -I .bak -e 's/driver = "zfs"/driver = "vfs"/' \
+                  /usr/local/etc/containers/storage.conf \
+                  || echo "[spike] storage.conf sed fix FAILED"
+              # Reaffirm the effective driver — should now print "vfs".
+              podman info --format '{{.Store.GraphDriverName}}' \
+                  || echo "[spike] post-sed podman info FAILED"
+
               # Step 3: report podman version and effective storage driver.
               echo "--- step 3: podman --version + storage driver ---"
               podman --version || echo "[spike] podman --version FAILED"
