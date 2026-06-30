@@ -261,10 +261,20 @@ echo "[nginx] driving attacks from curl container (sqlmap + Mozilla UAs)..."
 # same short-name resolution issue as the nginx image above. --os=linux —
 # same image-index reasoning as the nginx container above (curlimages/curl
 # has no freebsd OS variant either).
+#
+# TWO sqlmap requests (not one): live run 28478337664 proved detection
+# fires correctly on a single hit ([DETECTOR] [UA] ... +40 ...) but the
+# config's default alert threshold is 50 — one hit (score=40) never
+# crosses it, so nothing is written to the threat log. The scorer is
+# additive within the decay window ("decay 0→0 + delta=40" in that run's
+# log), so a second identical-UA hit lands at score=80, comfortably over
+# the threshold. Matches 088's testdata/synthetic.access.log fixture,
+# which also sends multiple sqlmap-UA requests from the same attacker
+# (5, in that case) rather than relying on a single hit.
 podman run --rm --os=linux --network "$NETWORK" \
     --entrypoint /bin/sh \
     docker.io/curlimages/curl \
-    -c "curl -sS -A '${SQLMAP_UA}' http://${NGINX_IP}/ ; curl -sS -A '${MOZILLA_UA}' http://${NGINX_IP}/" \
+    -c "curl -sS -A '${SQLMAP_UA}' http://${NGINX_IP}/ ; curl -sS -A '${SQLMAP_UA}' http://${NGINX_IP}/ ; curl -sS -A '${MOZILLA_UA}' http://${NGINX_IP}/" \
     >/dev/null 2>&1 \
     || echo "[nginx] curl attacker exited non-zero (still check the access log)"
 echo "[nginx] attacks sent"
