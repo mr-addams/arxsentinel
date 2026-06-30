@@ -300,6 +300,10 @@ jobs:
               echo "=== spike end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/spike-log.txt" 2>&1
 
+            echo "::group::Full log (also in the uploaded artifact)"
+            cat "$GITHUB_WORKSPACE/spike-log.txt"
+            echo "::endgroup::"
+
             echo "spike-log written to $GITHUB_WORKSPACE/spike-log.txt"
             ls -l "$GITHUB_WORKSPACE/spike-log.txt"
 
@@ -466,6 +470,10 @@ jobs:
               echo "=== build end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/build-log.txt" 2>&1
 
+            echo "::group::Full log (also in the uploaded artifact)"
+            cat "$GITHUB_WORKSPACE/build-log.txt"
+            echo "::endgroup::"
+
             echo "build-log written to $GITHUB_WORKSPACE/build-log.txt"
             ls -l "$GITHUB_WORKSPACE/build-log.txt"
 
@@ -506,17 +514,6 @@ jobs:
           copyback: true
           envs: 'GITHUB_*'
           run: |
-            # Point TMPDIR at the synced workspace BEFORE any other setup
-            # so that (a) the smoke script's work dir
-            # (${TMPDIR}/arx-smoke-$$) lands in the workspace that
-            # copyback returns to the host, and (b) the threats.log.smoke
-            # persistence copy in run-smoke.sh step 5 survives the
-            # script's cleanup() trap (the copy is in $TMPDIR, NOT under
-            # the trap-removed $WORK_DIR). Without this, threats.log is
-            # only readable from the smoke-log.txt dump and the artifact
-            # would not contain the structured threat log.
-            export TMPDIR="$GITHUB_WORKSPACE"
-
             # NO `set -e`: exploratory job — a red smoke is a recorded
             # finding to triage in the downloaded smoke-log.txt, not a
             # flow-blocking event (same discipline as podman-spike B.3
@@ -603,17 +600,25 @@ jobs:
                   /tmp/build/ \
                 || echo "[smoke] podman build FAILED"
 
-              # Step 7: invoke the synthetic-log smoke script. The script
-              # does the podman run + bind-mounts + sync + assertions
+              # Step 7: invoke the synthetic-log smoke script with TMPDIR
+              # scoped to $GITHUB_WORKSPACE (NOT export): the script needs
+              # $TMPDIR for work dir and threats.log persistence. Scoped (not
+              # export) because go build (step 4) runs in $GITHUB_WORKSPACE,
+              # and Go refuses module mode when cwd == TMPDIR — built-in
+              # protection against module-mode on temporary directories.
               # (port of tests/container/container_test.go::
               # TestContainerDetectsThreat). See Decision G.1b.
               echo "--- step 7: run tests/integration-freebsd/run-smoke.sh ---"
-              sh "$GITHUB_WORKSPACE/tests/integration-freebsd/run-smoke.sh" \
+              TMPDIR="$GITHUB_WORKSPACE" sh "$GITHUB_WORKSPACE/tests/integration-freebsd/run-smoke.sh" \
                 || echo "[smoke] run-smoke.sh FAILED"
 
               echo
               echo "=== smoke end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
+
+            echo "::group::Full log (also in the uploaded artifact)"
+            cat "$GITHUB_WORKSPACE/smoke-log.txt"
+            echo "::endgroup::"
 
             # The smoke script copies threats.log to
             # $TMPDIR/threats.log.smoke (i.e. $GITHUB_WORKSPACE/...) so
