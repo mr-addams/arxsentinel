@@ -243,7 +243,13 @@ echo "[nginx] TailReader ready"
 SQLMAP_UA='sqlmap/1.7.11'
 MOZILLA_UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 
-NGINX_IP=$(podman inspect nginx --format "{{.NetworkSettings.Networks.${NETWORK}.IPAddress}}")
+# `index` (not dot-notation) is REQUIRED: $NETWORK contains a hyphen
+# ("arx-net"), and a Go template map-key access via dot-notation
+# (.Networks.arx-net.IPAddress) parses the hyphen as a subtraction
+# operator and fails with "bad character U+002D '-'" (live run
+# 28477133986 hit this exact error). `index` takes the key as a
+# string argument, sidestepping Go template identifier syntax rules.
+NGINX_IP=$(podman inspect nginx --format "{{(index .NetworkSettings.Networks \"${NETWORK}\").IPAddress}}")
 if [ -z "$NGINX_IP" ]; then
     echo "[nginx] FAIL: could not resolve nginx container's CNI IP via podman inspect" >&2
     exit 1
