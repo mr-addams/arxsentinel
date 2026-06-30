@@ -136,6 +136,13 @@ podman network create "$NETWORK"
 # on the host — the path the host-native sentinel reads in step 4).
 # --name nginx gives the attacker container a DNS name to reach
 # ("curl http://nginx/" — DECISIONS §3 consequences).
+#
+# Fully-qualified docker.io/library/nginx:alpine (NOT bare nginx:alpine):
+# the FreeBSD podman default /usr/local/share/containers/registries.conf
+# has no unqualified-search-registries entry, so a short name fails with
+# "did not resolve to an alias and no unqualified-search registries are
+# defined" (same class of bug as Flow 088 Decision F.4 — alpine short-name
+# fix in podman-spike step 5).
 # ---------------------------------------------------------------------
 echo "[nginx] starting nginx container..."
 NGINX_CID=$(podman run -d \
@@ -143,7 +150,7 @@ NGINX_CID=$(podman run -d \
     --network "$NETWORK" \
     -v "$WORK_DIR/nginx.conf:/etc/nginx/nginx.conf:ro" \
     -v "$WORK_DIR/nginx:/var/log/nginx" \
-    nginx:alpine)
+    docker.io/library/nginx:alpine)
 echo "[nginx] container $NGINX_CID started"
 
 # Wait for nginx to be ready: `podman exec nginx nginx -t` validates
@@ -224,9 +231,11 @@ SQLMAP_UA='sqlmap/1.7.11'
 MOZILLA_UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 
 echo "[nginx] driving attacks from curl container (sqlmap + Mozilla UAs)..."
+# Fully-qualified docker.io/curlimages/curl (NOT bare curlimages/curl) —
+# same short-name resolution issue as the nginx image above.
 podman run --rm --network "$NETWORK" \
     --entrypoint /bin/sh \
-    curlimages/curl \
+    docker.io/curlimages/curl \
     -c "curl -sS -A '${SQLMAP_UA}' http://nginx/ ; curl -sS -A '${MOZILLA_UA}' http://nginx/" \
     >/dev/null 2>&1 \
     || echo "[nginx] curl attacker exited non-zero (still check the access log)"
