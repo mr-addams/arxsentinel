@@ -134,8 +134,11 @@ podman network create "$NETWORK"
 # not the image's default) and bind-mount $WORK_DIR/nginx over
 # /var/log/nginx (so the access log lands at $WORK_DIR/nginx/access.log
 # on the host — the path the host-native sentinel reads in step 4).
-# --name nginx gives the attacker container a DNS name to reach
-# ("curl http://nginx/" — DECISIONS §3 consequences).
+# --name nginx is kept for operator convenience (`podman logs nginx`,
+# `podman exec nginx ...` below) but is NOT used as a DNS name by the
+# curl attacker — step 6 resolves the container's CNI IP via `podman
+# inspect` instead, since the FreeBSD CNI bridge plugin has no
+# dnsname resolver (see step 6's comment for the live-run finding).
 #
 # Fully-qualified docker.io/library/nginx:alpine (NOT bare nginx:alpine):
 # the FreeBSD podman default /usr/local/share/containers/registries.conf
@@ -223,19 +226,29 @@ fi
 echo "[nginx] TailReader ready"
 
 # ---------------------------------------------------------------------
-# Step 6: drive attacks from a curl container. DECISIONS §3 — the
-# curl container joins the same CNI network so it can resolve
-# "nginx" via container DNS. ONE invocation, TWO requests
-# (sqlmap + Mozilla) — both originate from the same curl container
-# and therefore share its CNI IP. This is the deliberate
-# UA-selective test (DECISIONS §5): the grader checks that the
-# sqlmap UA is scored as THREAT and the Mozilla UA is NOT, not
-# the IP-based legit-vs-attacker check the 088 synthetic smoke
-# uses (which doesn't apply here because both requests share the
-# same IP).
+# Step 6: drive attacks from a curl container. DECISIONS §3 said the
+# curl container could resolve "nginx" via container DNS — live run
+# 28476909225 disproved that: nginx started fine and TailReader was
+# watching, but access.log stayed empty and curl exited non-zero. The
+# FreeBSD `containernetworking-plugins` port ships the basic CNI
+# bridge plugin only, NOT a dnsname plugin (that is what provides
+# container-name DNS resolution on a CNI bridge network; podman on
+# Linux gets this for free from netavark+aardvark-dns, which FreeBSD
+# podman does not use). Resolve the nginx container's CNI IP via
+# `podman inspect` instead of relying on DNS, and use the IP directly
+# in the curl URL — this departs from DECISIONS §3's stated mechanism
+# but keeps its consequence (same-IP-for-both-requests, UA-selective
+# grader) intact.
 # ---------------------------------------------------------------------
 SQLMAP_UA='sqlmap/1.7.11'
 MOZILLA_UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+
+NGINX_IP=$(podman inspect nginx --format "{{.NetworkSettings.Networks.${NETWORK}.IPAddress}}")
+if [ -z "$NGINX_IP" ]; then
+    echo "[nginx] FAIL: could not resolve nginx container's CNI IP via podman inspect" >&2
+    exit 1
+fi
+echo "[nginx] nginx container IP: $NGINX_IP"
 
 echo "[nginx] driving attacks from curl container (sqlmap + Mozilla UAs)..."
 # Fully-qualified docker.io/curlimages/curl (NOT bare curlimages/curl) —
@@ -245,7 +258,7 @@ echo "[nginx] driving attacks from curl container (sqlmap + Mozilla UAs)..."
 podman run --rm --os=linux --network "$NETWORK" \
     --entrypoint /bin/sh \
     docker.io/curlimages/curl \
-    -c "curl -sS -A '${SQLMAP_UA}' http://nginx/ ; curl -sS -A '${MOZILLA_UA}' http://nginx/" \
+    -c "curl -sS -A '${SQLMAP_UA}' http://${NGINX_IP}/ ; curl -sS -A '${MOZILLA_UA}' http://${NGINX_IP}/" \
     >/dev/null 2>&1 \
     || echo "[nginx] curl attacker exited non-zero (still check the access log)"
 echo "[nginx] attacks sent"
