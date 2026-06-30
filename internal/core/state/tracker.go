@@ -367,6 +367,18 @@ func (t *Tracker) Has(ip string) bool {
 	return ok
 }
 
+// GetState returns the IPState for the given IP, or nil if not tracked.
+// Read-only lookup — does not create a new entry.
+// Used by WAF ScoreFunc to apply score deltas from rule hits.
+//
+// Called from: WAF ScoreFunc closure (processor_security.go).
+// Non-blocking: read lock only.
+func (t *Tracker) GetState(ip string) *IPState {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.states[ip]
+}
+
 // ========================== GC ======================================================
 
 // RunGC starts the background goroutine for garbage collecting inactive IPs.

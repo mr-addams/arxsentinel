@@ -1213,3 +1213,104 @@ func writeTempYAML(t *testing.T, content string) string {
 	f.Close()
 	return f.Name()
 }
+
+// ++++++++++++++++++++++++++ ProcessorConfig backward compatibility +++++++++++++++++++
+//   Flow 085 (H11) introduced stream-level and pipeline-level processors: blocks.
+//   The three tests below ensure that a config without a processors: block (the
+//   pre-H11 format), an empty processors list, and a migrated stream-level list
+//   all leave Pipelines[0].Processors in a state that downstream wire-up code can
+//   iterate safely.
+
+// TestProcessorConfig_BackwardCompat verifies that an old config without processors:
+// still loads and migrates without panic. Pipelines[0].Processors stays nil,
+// which is the backward-compatible "no processors" state.
+func TestProcessorConfig_BackwardCompat(t *testing.T) {
+	path := writeTempYAML(t, `
+streams:
+  - name: legacy
+    inputs:
+      - type: stdin
+    outputs:
+      - type: stdout
+        format: fail2ban
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if len(cfg.Streams) == 0 || len(cfg.Streams[0].Pipelines) == 0 {
+		t.Fatal("expected at least one stream and one pipeline after Migrate()")
+	}
+	p := cfg.Streams[0].Pipelines[0]
+	if p.Processors != nil {
+		t.Errorf("backward-compat config: want nil Processors, got %v", p.Processors)
+	}
+}
+
+// TestProcessorConfig_EmptyList verifies that processors: [] on a stream does not
+// cause a panic or error. Migrate skips empty lists (nothing to inherit), so
+// the pipeline's Processors remains nil — range nil is safe in Go.
+func TestProcessorConfig_EmptyList(t *testing.T) {
+	path := writeTempYAML(t, `
+streams:
+  - name: legacy-empty
+    processors: []
+    inputs:
+      - type: stdin
+    outputs:
+      - type: stdout
+        format: fail2ban
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if len(cfg.Streams) == 0 || len(cfg.Streams[0].Pipelines) == 0 {
+		t.Fatal("expected at least one stream and one pipeline after Migrate()")
+	}
+	p := cfg.Streams[0].Pipelines[0]
+	// Migrate skips propagation when stream.Processors is empty — pipeline stays nil.
+	// range nil is safe: verify no panic.
+	if len(p.Processors) != 0 {
+		t.Errorf("empty processors: list: want len 0, got %d", len(p.Processors))
+	}
+	for _, proc := range p.Processors {
+		_ = proc
+	}
+}
+
+// TestProcessorConfig_Migrate_Propagates verifies that a stream-level processors:
+// list is propagated into pipelines with nil Processors by Migrate/LoadConfig.
+func TestProcessorConfig_Migrate_Propagates(t *testing.T) {
+	path := writeTempYAML(t, `
+streams:
+  - name: with-waf
+    processors:
+      - plugin: waf
+        params:
+          waf_config:
+            rules:
+              - name: test
+                expression: 'http.path contains "/test"'
+                action: drop
+    inputs:
+      - type: stdin
+    outputs:
+      - type: stdout
+        format: fail2ban
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if len(cfg.Streams) == 0 || len(cfg.Streams[0].Pipelines) == 0 {
+		t.Fatal("expected at least one stream and one pipeline after Migrate()")
+	}
+	procs := cfg.Streams[0].Pipelines[0].Processors
+	if len(procs) != 1 {
+		t.Fatalf("want 1 propagated processor, got %d", len(procs))
+	}
+	if procs[0].Plugin != "waf" {
+		t.Errorf("propagated processor plugin: want %q, got %q", "waf", procs[0].Plugin)
+	}
+}

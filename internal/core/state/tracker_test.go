@@ -363,6 +363,40 @@ func BenchmarkTrackerUpdate(b *testing.B) {
 	}
 }
 
+// ========================== Tests GetState ============================================
+
+// TestTracker_GetState verifies that GetState returns nil for unknown IPs
+// and a real pointer after Update — without creating entries on miss.
+func TestTracker_GetState(t *testing.T) {
+	tr := NewTracker(makeConfig(1000), nil)
+
+	// GetState on unknown IP → nil (must not create entry)
+	if got := tr.GetState("9.9.9.9"); got != nil {
+		t.Errorf("GetState(unknown): expected nil, got %+v", got)
+	}
+	if tr.Has("9.9.9.9") {
+		t.Error("GetState must not create entries; Has() must be false after a miss")
+	}
+	if n := tr.Len(); n != 0 {
+		t.Errorf("Len after GetState miss: expected 0, got %d", n)
+	}
+
+	// After Update(entry) → GetState returns non-nil with matching IP
+	want := tr.Update(makeEntry("1.2.3.4", "GET", "/index.html", 200))
+	got := tr.GetState("1.2.3.4")
+	if got == nil {
+		t.Fatal("GetState(tracked): expected non-nil, got nil")
+	}
+	if got.IP != "1.2.3.4" {
+		t.Errorf("GetState(tracked).IP: expected 1.2.3.4, got %s", got.IP)
+	}
+
+	// Same underlying pointer — Update is the source of truth, GetState is a lookup
+	if got != want {
+		t.Error("GetState must return the same *IPState that Update returned")
+	}
+}
+
 // ========================== ScoreAccess tests =========================================
 
 // TestScoreAccess verifies the detector.ScoreAccess implementation via IPState.

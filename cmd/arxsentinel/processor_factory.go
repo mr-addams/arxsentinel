@@ -42,6 +42,8 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	coreruntime "github.com/mr-addams/arx-core/pkg/runtime"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+	"github.com/mr-addams/arxsentinel/pkg/processorplugins/waf"
+	"gopkg.in/yaml.v3"
 )
 
 // ++++++++++++++++++++++++++ securityFactory — Product-side factory ++++++++++++++++++++++++
@@ -147,6 +149,15 @@ func (f *securityFactory) Build(
 	group := resolveTrackerGroup(pipeCfg)
 	tracker := f.getOrCreateTracker(group, cfg)
 
+	// WAF processor — optional, nil-safe. Built from the first `plugin: waf`
+	// entry in pipeCfg.Processors; empty list → Waf=nil, WAF gate is a no-op.
+	// ScoreFn closure binds the per-group tracker so WAF can signal score
+	// deltas directly into the same IPState securityProcessor consults later.
+	wafProc, err := buildWafProcessor(pipeCfg.Processors, tracker, cfg.Scoring.BanThreshold)
+	if err != nil {
+		return nil, fmt.Errorf("waf init error: %w", err)
+	}
+
 	return &securityState{
 		StreamName:       streamName,
 		PipelineName:     pipeName,
@@ -155,6 +166,7 @@ func (f *securityFactory) Build(
 		Scorer:           scorerRef,
 		Matcher:          matcher,
 		Verifier:         verifier,
+		Waf:              wafProc,
 		FakeBotScore:     cfg.Whitelist.FakeBotScore,
 		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
 	}, nil
@@ -209,6 +221,14 @@ func (f *securityFactory) Reload(
 	// под новый конфиг, IPState-данные сохраняются.
 	oldState.Tracker.Reconfigure(newCfg)
 
+	// WAF — rebuild from new cfg (rules may have changed; RuleSet is read-only
+	// compiled, so a fresh WafProcessor is required for new rules). Tracker
+	// is reused → ScoreFn closure binds the same tracker (correct, same group).
+	wafProc, err := buildWafProcessor(newPipeCfg.Processors, oldState.Tracker, newCfg.Scoring.BanThreshold)
+	if err != nil {
+		return nil, fmt.Errorf("waf reload error: %w", err)
+	}
+
 	utils.Log("CONFIG", fmt.Sprintf("%s: SIGHUP config reloaded",
 		pipelineLogTag(oldState.StreamName, oldState.PipelineName)), "info")
 
@@ -220,6 +240,7 @@ func (f *securityFactory) Reload(
 		Scorer:           scorerRef,
 		Matcher:          newMatcher,
 		Verifier:         oldState.Verifier,
+		Waf:              wafProc,
 		FakeBotScore:     newCfg.Whitelist.FakeBotScore,
 		DNSVerifyTimeout: time.Duration(newCfg.Whitelist.DNSVerifyTimeout),
 	}, nil
@@ -286,4 +307,68 @@ func streamConfigFromOld(old *securityState) config.StreamConfig {
 // stub — реальный pipeCfg в этом случае взять негде.
 func oldPipeConfigFromOld(old *securityState) config.PipelineConfig {
 	return config.PipelineConfig{Name: old.PipelineName}
+}
+
+// buildWafProcessor scans pipeCfg.Processors for the first entry with
+// plugin=="waf" and returns a compiled *waf.WafProcessor, or nil if no WAF
+// is configured. Shared by Build() and Reload() — the only difference between
+// the two calls is the cfg.Processors slice and tracker reference.
+//
+// Implementation note: ProcessorConfig.Params is `map[string]any` after yaml
+// parsing — yaml round-trip converts the `waf_config` sub-key into a typed
+// waf.Config struct (yaml.v3 → waf.Config.Unmarshal). This is the same
+// convention used elsewhere in arxsentinel for plugin-specific typed config
+// (see DetectorConfig.Params round-trip in builders.go).
+//
+// ScoreFn is bound here so the closure captures the per-group *state.Tracker
+// — WAF fires scoreFn(ip, delta) on drop / tag:<label> hits and the deltas
+// land in the same IPState that securityProcessor's scorer reads later.
+// banThreshold is used as DropScore fallback when the waf_config block does
+// not set DropScore explicitly — keeps WAF ban-coordination in sync with
+// cfg.Scoring.BanThreshold without operator duplication.
+func buildWafProcessor(processors []config.ProcessorConfig, tracker *state.Tracker, banThreshold int) (*waf.WafProcessor, error) {
+	for _, pc := range processors {
+		if pc.Plugin != "waf" {
+			continue
+		}
+		// `waf_config` may be absent (rules-only config with all knobs defaulted)
+		// or typed (rebuilt config from a previous run).
+		rawCfg, ok := pc.Params["waf_config"]
+		if !ok {
+			return nil, fmt.Errorf("waf: plugin entry missing required key %q", "waf_config")
+		}
+		var wafCfg waf.Config
+		switch v := rawCfg.(type) {
+		case waf.Config:
+			// Already typed — direct assignment, no round-trip needed.
+			wafCfg = v
+		case map[string]any:
+			// yaml-parsed form: marshal→unmarshal to populate the typed struct.
+			buf, err := yaml.Marshal(v)
+			if err != nil {
+				return nil, fmt.Errorf("waf: marshal waf_config: %w", err)
+			}
+			if err := yaml.Unmarshal(buf, &wafCfg); err != nil {
+				return nil, fmt.Errorf("waf: unmarshal waf_config: %w", err)
+			}
+		default:
+			return nil, fmt.Errorf("waf: waf_config must be a map or waf.Config (got %T)", rawCfg)
+		}
+		// DropScore fallback: align WAF drop-weight with the global ban
+		// threshold when the operator didn't set DropScore explicitly.
+		if wafCfg.DropScore == 0 && banThreshold > 0 {
+			wafCfg.DropScore = banThreshold
+		}
+		// ScoreFn closure — pipeline-single-writer model (tracker.go:75).
+		// Safe: Update and ScoreFn run in the same goroutine, so the
+		// returned *IPState pointer isn't concurrently mutated.
+		wafCfg.ScoreFn = func(ip string, delta int) {
+			if st := tracker.GetState(ip); st != nil {
+				st.SetScore(st.GetScore()+delta, time.Now())
+			}
+		}
+		return waf.NewWafProcessor(wafCfg)
+	}
+	// No WAF entry — pipeline runs without the rule-engine gate.
+	return nil, nil
 }
