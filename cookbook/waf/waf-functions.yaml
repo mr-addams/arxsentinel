@@ -35,10 +35,6 @@
 #     http.bytes_sent, http.referer, http.user_agent, http.remote_addr,
 #     http.real_ip, http.protocol, http.remote_user.
 #
-#   Использование: для авторов, которые предпочитают композицию функций над
-#   inline-флагами RE2. Каждое правило показывает ОДНУ функцию v0.3.0 или
-#   небольшую композицию.
-#
 # =======================================================================================
 
 # ── Streams ───────────────────────────────────────────────────────────────────────────
@@ -59,7 +55,6 @@ streams:
               # Reference: pkg/rule/REFERENCE.md — `lower` is alloc-free,
               # `(string) → string`. The operator `contains` is level-6 (same as
               # `eq`/`ne`); function-call left operand is the v0.3.0 idiom.
-              # Это самая частая пара: case-normalise, then substring match.
               - name: block_bot_ua_lower
                 expression: 'lower(http.user_agent) contains "ahrefsbot" or lower(http.user_agent) contains "semrushbot" or lower(http.user_agent) contains "mj12bot" or lower(http.user_agent) contains "dotbot"'
                 action: drop
@@ -70,8 +65,6 @@ streams:
               # a function call, so `lower(http.path) starts_with "/admin"` is
               # a legal composition: function call on the left, operator on the
               # right, both at level 6 in precedence.
-              # `starts_with` — оператор (D18), не функция. Лексер видит его раньше
-              # function call, поэтому композиция валидна.
               - name: block_admin_path_case_insensitive
                 expression: 'lower(http.path) starts_with "/admin" and http.method eq "GET" and http.remote_user eq ""'
                 action: drop
@@ -82,9 +75,6 @@ streams:
               # The function form decodes once and tests for `../` — fewer
               # patterns to maintain. `url_decode` allocates per call (per
               # REFERENCE.md) — keep this rule on high-confidence paths only.
-              # Операторная форма перечисляет каждую кодировку руками. Функциональная
-              # декодирует один раз и ищет `../` — меньше паттернов в обслуживании.
-              # `url_decode` — allocating, поэтому держим правило на high-confidence.
               - name: block_path_traversal_decoded
                 expression: 'url_decode(http.path) contains "../" or url_decode(http.path) contains "..\\"'
                 action: drop
@@ -93,7 +83,6 @@ streams:
               # `len(http.raw_uri)` returns `KindInt`, compared against an int
               # literal. Demonstrates that a function result can be used on
               # either side of a comparison operator (level 6).
-              # Возвращает `KindInt`, сравнивается с int-литералом.
               - name: drop_oversized_uri
                 expression: 'len(http.raw_uri) gt 4096'
                 action: drop
@@ -103,7 +92,6 @@ streams:
               # families are part of v0.3.0 (REFERENCE.md D16). Useful when the
               # downstream system / SIEM expects uppercase tokens (e.g. method
               # normalisation for HTTP/2 server push).
-              # Тот же смысл, что `lower(...)`; обе case-семейства в v0.3.0.
               - name: block_uppercase_protocol
                 expression: 'upper(http.protocol) contains "HTTP/0.9"'
                 action: drop
@@ -112,9 +100,6 @@ streams:
               # Variadic — accepts ≥0 args (REFERENCE.md). Here we build a
               # composite "audit header" string and tag the event so a downstream
               # sink (e.g. a SIEM) can grep it without re-parsing `http.*`.
-              # `concat` — variadic, ≥0 аргументов. Собираем композитную строку
-              # для тега, чтобы downstream-sink мог grep'ать без повторного
-              # парсинга http.*.
               - name: tag_audit_composite
                 expression: 'http.method eq "POST" and http.path starts_with "/api/"'
                 action: tag
@@ -129,17 +114,12 @@ streams:
               # expression that consumes the composite would look like:
               #   label: concat(http.method, " ", http.path, " ua=", http.user_agent)
               # and the rule STILL evaluates the boolean expression unchanged.
-              #
-              # `label` (если есть) приклеивается к THREAT:<rule>:<label> (Group B.4).
-              # В выражении (Bool) его использовать нельзя — функция тратится в слот
-              # label.
 
               # ── g) `regex_replace(...)` + `contains` — strip noise token ───
               # `regex_replace(s, pattern, replacement)` returns `string`. When
               # the pattern is a string literal (it is here: `"utm_[a-z]+=[^&]*&?"`)
               # the pattern is PRE-COMPILED at compile time (REFERENCE.md D4).
               # Hot-path cost: one regex match + one allocation per call.
-              # Шаблон — строковый литерал, поэтому компилируется один раз (D4).
               - name: block_sql_injection_stripped
                 expression: 'regex_replace(http.raw_uri, "utm_[a-z]+=[^&]*&?", "") contains "union" or regex_replace(http.raw_uri, "utm_[a-z]+=[^&]*&?", "") contains "select" or regex_replace(http.raw_uri, "utm_[a-z]+=[^&]*&?", "") contains "drop "'
                 action: drop
@@ -150,7 +130,6 @@ streams:
               # (REFERENCE.md D17) — zero `ParseCIDR` per call. Demonstrates
               # that `http.real_ip` (KindIP) flows directly into a function
               # without explicit conversion.
-              # CIDR-литерал резолвится в `*net.IPNet` на этапе компиляции (D17).
               - name: block_admin_internal_only
                 expression: 'http.path starts_with "/admin/" and not cidr_matches(http.real_ip, "10.0.0.0/8") and not cidr_matches(http.real_ip, "192.168.0.0/16")'
                 action: drop
