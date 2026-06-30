@@ -66,8 +66,19 @@ streams:
 
               # 5. Scanner UA on the edge.
               # Сканер-UA на edge.
+              # Operator form: RE2 inline `(?i)` for case-insensitive match.
+              # Операторная форма: RE2 inline-флаг `(?i)` для case-insensitive матча.
               - name: block_scanner_ua
                 expression: 'http.user_agent matches "(?i)(sqlmap|nikto|nuclei(/[0-9.]+)?|httrack|masscan|zgrab)"'
+                action: drop
+
+              # 5b. Same intent — FUNCTION layer (v0.3.0). `lower(...)` normalises,
+              # then a plain `contains` is enough. Side-by-side with the operator
+              # form above; both are first-match-wins, so order is interchangeable.
+              # Тот же смысл — СЛОЙ ФУНКЦИЙ (v0.3.0). `lower(...)` нормализует, далее
+              # достаточно `contains`. Параллельно с операторной формой выше.
+              - name: block_scanner_ua_lower
+                expression: 'lower(http.user_agent) contains "sqlmap" or lower(http.user_agent) contains "nikto" or lower(http.user_agent) contains "httrack" or lower(http.user_agent) contains "masscan" or lower(http.user_agent) contains "zgrab"'
                 action: drop
 
               # 6. High-rate tag: 5xx from origin in burst.

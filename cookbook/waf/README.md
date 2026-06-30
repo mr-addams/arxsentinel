@@ -41,6 +41,7 @@ from reaching downstream stages.
 | [`waf-cf-logpush.yaml`](waf-cf-logpush.yaml) | WAF recipe for Cloudflare Logpush ingestion. Cloudflare-specific notes for `http.real_ip` / `http.user_agent` / `http.bytes_sent`. Adds a `sentinel-threat` sink that forwards THREAT events to the Cloudflare IP Lists executor. |
 | [`waf-custom-fields.yaml`](waf-custom-fields.yaml) | How to extend the field schema with a custom `http.tls_version` field — two Go changes (manifest Produces + resolver resolveHTTP case), no `ruleset.go` edit. Drop legacy TLS 1.0 / 1.1 at line rate. |
 | [`waf-multi-profile.yaml`](waf-multi-profile.yaml) | Two streams, two ruleset profiles: `strict` for admin/API surface (broad patterns, zero tolerance) and `permissive` for public surface (high-confidence patterns only). Per-stream executors with different TTLs. |
+| [`waf-functions.yaml`](waf-functions.yaml) | Demonstration of the **arx-core v0.3.0 function layer** (`lower`, `upper`, `len`, `url_decode`, `concat`, `regex_replace`, `cidr_matches`, …) inside WAF rules. One rule per function, with comments explaining each composition. Also added as a side-by-side function variant of the scanner-UA block in `waf-nginx.yaml`, `waf-cf-logpush.yaml`, and `waf-multi-profile.yaml`. |
 
 Each YAML is self-contained: copy the `streams`, `processors:`, `scoring`,
 `detectors`, `whitelist` (and optionally `executors`) blocks into your own

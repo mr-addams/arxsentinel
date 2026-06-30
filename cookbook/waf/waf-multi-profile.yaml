@@ -64,8 +64,19 @@ streams:
 
               # 4. Scanner / grabber UA — zero tolerance on admin surface.
               # Сканер / grabber UA — нулевая толерантность на admin.
+              # Operator form (RE2 inline `(?i)`).
+              # Операторная форма (RE2 inline-флаг `(?i)`).
               - name: block_scanner_ua
                 expression: 'http.user_agent matches "(?i)(sqlmap|nikto|nuclei(/[0-9.]+)?|httrack|masscan|zgrab|nmap|dirbuster|gobuster|wpscan)"'
+                action: drop
+
+              # 4b. Same intent — v0.3.0 FUNCTION layer variant (Flow 087 Group E).
+              # `lower(http.user_agent)` then a plain `contains` chain. Both forms
+              # are first-match-wins; equivalent intent, different shape.
+              # Тот же смысл — вариант через СЛОЙ ФУНКЦИЙ v0.3.0 (Flow 087 Group E).
+              # `lower(http.user_agent)` и далее цепочка `contains`. Эквивалентно.
+              - name: block_scanner_ua_lower
+                expression: 'lower(http.user_agent) contains "sqlmap" or lower(http.user_agent) contains "nikto" or lower(http.user_agent) contains "httrack" or lower(http.user_agent) contains "masscan" or lower(http.user_agent) contains "zgrab" or lower(http.user_agent) contains "nmap" or lower(http.user_agent) contains "dirbuster" or lower(http.user_agent) contains "gobuster" or lower(http.user_agent) contains "wpscan"'
                 action: drop
 
               # 5. Empty / missing User-Agent on admin surface — drop.
