@@ -318,6 +318,43 @@ jobs:
             echo "smoke-log written to $GITHUB_WORKSPACE/smoke-log.txt"
             ls -l "$GITHUB_WORKSPACE/smoke-log.txt"
 
+            # ----------------------------------------------------------------
+            # Task 4.3 — inline ::group:: + cat for the threat log and
+            # the nginx access log. Both are also uploaded as artifacts
+            # by the `Upload integration-nginx artifacts` step below
+            # (Task 3.6 — already in place, if: always() + if-no-files-
+            # found: warn so red runs still produce the artifact for
+            # triage). The ::group:: blocks here are for INLINE run-log
+            # visibility — without them the threat log and access log
+            # are artifact-only-debug, requiring a download to triage
+            # the run. Same Flow 088 TD-13 cat-after-write pattern as
+            # the smoke-log block above (Task 2.5).
+            #
+            # DECISIONS: §5 (UA-based grader — three assertions on the
+            # threat log; inline visibility is what makes the assertion
+            # output visible in the Actions run-log, not just in the
+            # downloaded artifact); §6 (continue-on-error — the cat
+            # commands are best-effort, missing files just print an
+            # ls-not-found message inline, no abort).
+            # ----------------------------------------------------------------
+            echo "::group::threats-nginx.log (also in uploaded artifact integration-nginx/threats-nginx.log.smoke)"
+            if [ -s "$GITHUB_WORKSPACE/threats-nginx.log.smoke" ]; then
+                cat "$GITHUB_WORKSPACE/threats-nginx.log.smoke"
+            else
+                echo "[integration-nginx] threats-nginx.log.smoke missing or empty (run-nginx.sh likely did not reach the artifact-persist step)"
+            fi
+            echo "::endgroup::"
+            echo "threats-nginx.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-nginx.log.smoke" 2>/dev/null || echo 0) bytes"
+
+            echo "::group::nginx access log (also in uploaded artifact integration-nginx/nginx-access.log)"
+            if [ -s "$GITHUB_WORKSPACE/nginx-access.log" ]; then
+                cat "$GITHUB_WORKSPACE/nginx-access.log"
+            else
+                echo "[integration-nginx] nginx-access.log missing or empty (run-nginx.sh likely did not reach the artifact-persist step)"
+            fi
+            echo "::endgroup::"
+            echo "nginx-access.log size: $(wc -c < "$GITHUB_WORKSPACE/nginx-access.log" 2>/dev/null || echo 0) bytes"
+
       - name: Upload integration-nginx artifacts
         # smoke-log.txt: the full VM run log (Task 2.5)
         # threats-nginx.log.smoke: the sentinel threat log (Task 3.6
