@@ -52,9 +52,14 @@ jobs:
   # (continue-on-error: true on first iterations — research-grade).
   # -------------------------------------------------------------------
   integration-nginx:
-    name: integration-nginx (exploratory, non-blocking)
+    # Promoted (Task 5.4): continue-on-error dropped after 2 consecutive
+    # green live dispatches (runs 28478529310, 28478698670 - both
+    # "[nginx] PASS: all 3 assertions green", exit 0) per DECISIONS section
+    # 6's promotion criterion. Job-level blocking applies ONLY within this
+    # isolated workflow (workflow_dispatch + push to the flow branch) -
+    # it does not gate dev/main branch protection.
+    name: integration-nginx
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 30
 
     steps:
