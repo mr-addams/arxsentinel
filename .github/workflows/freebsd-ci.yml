@@ -478,6 +478,164 @@ jobs:
           if-no-files-found: warn
 
   # -----------------------------------------------------------------------
+  # G.1 — integration-smoke: synthetic-log end-to-end batch (port of
+  # tests/container/container_test.go::TestContainerDetectsThreat to
+  # FreeBSD/podman). Runs in its own fresh VM (Decision G.1c) — repeats
+  # the full unblock+build chain (storage sed fix per E.1/E.2b, pf setup
+  # per F.1/F.2, native go build, podman build) BEFORE invoking
+  # run-smoke.sh, because container-build-freebsd's image does not persist
+  # across VM-action jobs without a registry push (forbidden by Decision 7
+  # / Deferred 4). Independent from metrics — red smoke must not block the
+  # metrics artifact.
+  # -----------------------------------------------------------------------
+  integration-smoke:
+    name: integration-smoke (exploratory, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run synthetic-log integration smoke inside FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          copyback: true
+          envs: 'GITHUB_*'
+          run: |
+            # Point TMPDIR at the synced workspace BEFORE any other setup
+            # so that (a) the smoke script's work dir
+            # (${TMPDIR}/arx-smoke-$$) lands in the workspace that
+            # copyback returns to the host, and (b) the threats.log.smoke
+            # persistence copy in run-smoke.sh step 5 survives the
+            # script's cleanup() trap (the copy is in $TMPDIR, NOT under
+            # the trap-removed $WORK_DIR). Without this, threats.log is
+            # only readable from the smoke-log.txt dump and the artifact
+            # would not contain the structured threat log.
+            export TMPDIR="$GITHUB_WORKSPACE"
+
+            # NO `set -e`: exploratory job — a red smoke is a recorded
+            # finding to triage in the downloaded smoke-log.txt, not a
+            # flow-blocking event (same discipline as podman-spike B.3
+            # and container-build-freebsd E.4). `set -o pipefail` only.
+            set -o pipefail
+
+            {
+              echo "=== integration-smoke run @ $(date -u +%FT%TZ) ==="
+              echo "=== host: $(uname -a) ==="
+              echo
+
+              # Step 1-5: reproduce the unblock+build chain from
+              # container-build-freebsd (Decision G.1c — images do NOT
+              # persist across VM-action jobs; each vmactions/freebsd-vm
+              # step = fresh VM with default zfs storage.conf and no pf
+              # loaded). Tags prefixed [smoke] to distinguish this job's
+              # log lines from the spike/build jobs in cross-artifact
+              # triage.
+              echo "--- step 1: pkg install go podman ---"
+              pkg install -y go podman || echo "[smoke] pkg install FAILED"
+
+              # Step 2: storage.conf driver fix (repeat of E.1 / E.2b).
+              echo "--- step 2: storage.conf driver zfs → vfs ---"
+              sed -I .bak -e 's/driver = "zfs"/driver = "vfs"/' \
+                  /usr/local/etc/containers/storage.conf \
+                  || echo "[smoke] storage.conf sed fix FAILED"
+              podman info --format '{{.Store.GraphDriverName}}' \
+                  || echo "[smoke] podman info FAILED"
+
+              # Step 3: pf kernel module + /etc/pf.conf setup (repeat of
+              # F.2 / Decision E.2b — fresh VM = no pf loaded). See
+              # Decision F.2 for the ifconfig -l diagnostic rationale.
+              echo "--- step 3: enable pf for podman networking ---"
+              ifconfig -l
+              cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf \
+                  || echo "[smoke] pf.conf.sample copy FAILED"
+              sed -i .bak \
+                  -e 's/^v4egress_if=.*/v4egress_if="vtnet0"/' \
+                  -e 's/^v6egress_if=.*/v6egress_if="vtnet0"/' \
+                  /etc/pf.conf \
+                  || echo "[smoke] pf.conf interface substitution FAILED"
+              kldload pf || echo "[smoke] kldload pf FAILED (already loaded?)"
+              sysctl net.pf.filter_local=1 || true
+              sysrc pf_enable=YES
+              service pf start || echo "[smoke] service pf start FAILED"
+
+              # Step 4: native go build (CGO_ENABLED=0, mirrors Linux
+              # Dockerfile build args — see container-build-freebsd step 3
+              # comment). Binary is built in the VM (not via a Containerfile
+              # golang-builder stage — see Decision E.2).
+              echo "--- step 4: go build arxsentinel + healthcheck (CGO=0) ---"
+              mkdir -p /tmp/build
+              cd "$GITHUB_WORKSPACE"
+              VERSION=$(cat VERSION 2>/dev/null || echo "dev")
+              echo "[smoke] VERSION=${VERSION}"
+              CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+                go build -trimpath \
+                  -ldflags="-s -w -X main.version=${VERSION}" \
+                  -o /tmp/build/arxsentinel \
+                  ./cmd/arxsentinel \
+                || echo "[smoke] arxsentinel build FAILED"
+              CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+                go build -trimpath \
+                  -ldflags="-s -w" \
+                  -o /tmp/build/healthcheck \
+                  ./cmd/healthcheck \
+                || echo "[smoke] healthcheck build FAILED"
+              ls -l /tmp/build/
+
+              # Step 5: stage config.docker.yaml into build context (same
+              # as container-build-freebsd step 4; reuses the Linux
+              # container-defaults config — Decision E.2).
+              echo "--- step 5: stage config.docker.yaml into build context ---"
+              cp "$GITHUB_WORKSPACE/deploy/container/docker/config.docker.yaml" \
+                 /tmp/build/config.docker.yaml \
+                || echo "[smoke] config.docker.yaml copy FAILED"
+
+              # Step 6: podman build (same as container-build-freebsd step
+              # 5 — Containerfile.freebsd committed in E.3 is the
+              # single-stage FreeBSD analogue of the Linux Dockerfile).
+              echo "--- step 6: podman build arxsentinel:freebsd-local ---"
+              podman build -f "$GITHUB_WORKSPACE/deploy/container/freebsd/Containerfile.freebsd" \
+                  -t arxsentinel:freebsd-local \
+                  /tmp/build/ \
+                || echo "[smoke] podman build FAILED"
+
+              # Step 7: invoke the synthetic-log smoke script. The script
+              # does the podman run + bind-mounts + sync + assertions
+              # (port of tests/container/container_test.go::
+              # TestContainerDetectsThreat). See Decision G.1b.
+              echo "--- step 7: run tests/integration-freebsd/run-smoke.sh ---"
+              sh "$GITHUB_WORKSPACE/tests/integration-freebsd/run-smoke.sh" \
+                || echo "[smoke] run-smoke.sh FAILED"
+
+              echo
+              echo "=== smoke end @ $(date -u +%FT%TZ) ==="
+            } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
+
+            # The smoke script copies threats.log to
+            # $TMPDIR/threats.log.smoke (i.e. $GITHUB_WORKSPACE/...) so
+            # the artifact upload below can pick it up. If the script
+            # failed before that copy, the file is absent and the upload
+            # step uses if-no-files-found: warn — the smoke-log.txt still
+            # contains the full threat log dump for triage.
+            echo "smoke-log written to $GITHUB_WORKSPACE/smoke-log.txt"
+            ls -l "$GITHUB_WORKSPACE/smoke-log.txt" \
+                  "$GITHUB_WORKSPACE/threats.log.smoke" 2>&1 || true
+
+      - name: Upload smoke-log.txt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-smoke
+          path: |
+            smoke-log.txt
+            threats.log.smoke
+          if-no-files-found: warn
+
+  # -----------------------------------------------------------------------
   # B.4 — metrics consolidation (depends on both B.2 and B.3)
   # -----------------------------------------------------------------------
   metrics:

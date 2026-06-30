@@ -1,0 +1,36 @@
+# tests/integration-freebsd/smoke.yaml — FreeBSD/podman analogue of
+# tests/container/container_test.go::threatTestConfig (lines 71-87).
+#
+# Used by tests/integration-freebsd/run-smoke.sh, which ports the Linux
+# testcontainers TestContainerDetectsThreat to native `podman run` inside
+# a vmactions/freebsd-vm@v1.5.0 step. The bind-mount paths (/input/access.log,
+# /output/threats.log) match the in-container layout that run-smoke.sh sets
+# up via `podman run -v` arguments.
+#
+# Why debug: true is REQUIRED (not a nice-to-have):
+#   The smoke script's step 3 synchronises on the "watching started" log
+#   line that TailReader emits immediately after seek(EOF). Without
+#   debug: true, the TAIL log tag is suppressed and the polling loop in
+#   step 3 never sees the sync marker → it would time out at 30s on every
+#   run. Set debug: true unconditionally for this smoke; the production
+#   FreeBSD image (config.docker.yaml) keeps debug: false.
+#
+# Reference: DECISIONS.md §"Group G design refinements" — Decision G.1b
+# (synthetic-log smoke, NOT nginx-backend) and Decision G.1d (no chmod
+# 0777 needed — freebsd-static base runs as root).
+
+general:
+  log_file: /input/access.log
+  pid_file: /tmp/arxsentinel.pid
+  tail_retry_interval: "1s"
+logging:
+  debug: true
+  console_color: false
+metrics:
+  enabled: false
+  listen_addr: ":9117"
+  username: ""
+  password_hash: ""
+output:
+  threat_log: /output/threats.log
+  operational_log: /tmp/sentinel.log
