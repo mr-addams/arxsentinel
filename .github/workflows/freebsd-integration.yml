@@ -1,0 +1,43 @@
+# FreeBSD integration suite (nginx-first backend)
+# =================================================
+# This workflow is the Flow 089 deliverable: a NEW FreeBSD integration
+# suite, isolated from the six battle workflow files (container.yml /
+# integration.yml / release.yml / dev-release.yml / nightly.yml /
+# pages.yml) and from Flow 088's freebsd-ci.yml (which lives on the
+# unmerged branch feat/088-freebsd-ci-harness, NOT on dev).
+#
+# Triggers: only workflow_dispatch + push to the flow branch
+# feat/089-freebsd-integration-suite. NO pull_request, NO schedule,
+# NO release. Branch protection on dev/main is unaffected by this file.
+#
+# Source of truth: .opencode/flows/089_2026-06-30_freebsd-integration-suite/
+# DECISIONS.md — esp. §1 (separate workflow file, not in freebsd-ci.yml),
+# §6 (continue-on-error: true on first iterations), §8 (uses: version
+# hygiene), §9 (commit policy --no-verify, no push from CI).
+#
+# Exit criteria: TASKS.md Phase 1-4 (this file's skeleton + unblock chain
+# + nginx integration suite + wire-up). Phase 5 (live run + triage) is
+# the user's gate, not the implementer's.
+
+name: FreeBSD integration suite (nginx)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/089-freebsd-integration-suite
+
+# One concurrent run per ref; cancel stale runs on the same branch.
+concurrency:
+  group: freebsd-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# The job set is filled in by Phase 2-4. Skeleton keeps `jobs:` empty
+# so the workflow parses cleanly and shows up in the Actions UI as a
+# runnable workflow (the Actions UI surfaces workflows with at least
+# one job — see Task 2.1 for the first real job).
+jobs:
+  # integration-nginx — added in Task 2.1.
