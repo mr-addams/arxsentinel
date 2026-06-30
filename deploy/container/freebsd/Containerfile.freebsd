@@ -51,14 +51,20 @@
 #   toolchain path; this Containerfile's job is only to package the
 #   already-built artifacts into a static FreeBSD OCI image.
 #
-# Why tag-pinned not digest-pinned:
-#   Tag pinning (`freebsd-static:14.3`) is sufficient for the first
-#   iteration. Digest pinning (`freebsd-static@sha256:<digest>`) is Task
-#   E.7 in Flow 088, scheduled AFTER Task E.4 produces at least one green
-#   `container-build-freebsd` run. Pinning the digest on a not-yet-working
-#   base would just freeze the broken state — the digest changes the
-#   moment the upstream image is rebuilt, and we want a working image
-#   before we lock the upstream.
+# Why digest-pinned (was tag-pinned until run 28468156115):
+#   We are now pinned by digest because the first-green-build gate has
+#   been satisfied: Task E.4 produced a green build on live CI run
+#   28460116773, and the integration-smoke went green on 28468156115.
+#   Decision E.2 scheduled this promotion for "after the first green
+#   build" (Task E.7 in TASKS.md). The tag form (`freebsd-static:14.3`)
+#   is gone from the active FROM line below; any future upstream rebuild
+#   of `14.3` will NOT silently change what we test against — bumping
+#   the digest requires an explicit edit here.
+#
+#   Historical note (pre-E.7): was tag-pinned (`freebsd-static:14.3`)
+#   for the first iteration, on the rationale that pinning the digest
+#   on a not-yet-working base would just freeze the broken state. The
+#   tag-pinning period is over as of the green runs cited above.
 #
 # Why no USER directive:
 #   The Linux final stage uses `gcr.io/distroless/static-debian12:nonroot`,
@@ -72,7 +78,31 @@
 #   follow-up task once the smoke (`podman run --rm arxsentinel:freebsd-
 #   local --version`) proves the image boots cleanly — out of scope for
 #   Flow 088's first green build.
-FROM ghcr.io/freebsd/freebsd-static:14.3
+# Pinned to the OCI image-index digest, not a per-arch manifest digest,
+# not a tag. Reasons:
+#   1. Why digest, not tag: upstream rebuilds silently mutate the content
+#      behind tag `14.3`; pinning the digest locks the exact image index
+#      we validated on live CI run 28468156115. See Decision E.2
+#      (consequences) + Task E.7 in Flow 088 TASKS.md.
+#   2. Why the index digest, not a per-arch manifest digest: this digest
+#      is the multi-arch OCI image index (`Content-Type:
+#      application/vnd.oci.image.index.v1+json`). Podman resolves the
+#      per-arch leaf from the index at pull time — the FreeBSD VM is
+#      amd64 only (Decision E.3 — amd64 first), so podman picks the
+#      amd64 leaf automatically. A per-arch digest pin would force a
+#      separate FROM line per arch when the future arch matrix
+#      (Decision 3 / Deferred 6) lands. The index pin freezes the
+#      upstream root we validated and leaves per-arch resolution to the
+#      runtime.
+#   3. Verification: ghcr.io anonymous registry API on 2026-06-30.
+#      GET /v2/freebsd/freebsd-static/manifests/14.3
+#        Accept: application/vnd.oci.image.index.v1+json
+#        Accept: application/vnd.docker.distribution.manifest.list.v2+json
+#      Response header `docker-content-digest`:
+#        sha256:ad289f6c4bb15e05b6f8f6f4a26a3ecd576fb30d9997d16ba1886a6c83009587
+#      Response Content-Type:
+#        application/vnd.oci.image.index.v1+json
+FROM ghcr.io/freebsd/freebsd-static@sha256:ad289f6c4bb15e05b6f8f6f4a26a3ecd576fb30d9997d16ba1886a6c83009587
 
 # ── Artifacts from the vmactions VM build ──────────────────────────────────────────────
 # The container-build-freebsd job (Task E.4 in Flow 088) pre-builds these
