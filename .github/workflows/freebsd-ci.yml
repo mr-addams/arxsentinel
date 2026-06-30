@@ -280,7 +280,15 @@ jobs:
 
               # Step 5: Linux OCI image via compat layer.
               echo "--- step 5: podman run --os=linux alpine (Linux compat) ---"
-              podman run --rm --os=linux alpine cat /etc/os-release \
+              # Fully-qualified docker.io/alpine (not bare 'alpine'): bare
+              # short-names trigger a lookup against unqualified-search-
+              # registries in /usr/local/share/containers/registries.conf,
+              # which on the FreeBSD podman default is empty → error
+              # "no unqualified-search registries are defined". Using the
+              # fully-qualified name bypasses that lookup entirely. See
+              # Decision F.4 (variant b — one-line change vs editing
+              # registries.conf system file).
+              podman run --rm --os=linux docker.io/alpine cat /etc/os-release \
                 || echo "[spike] Linux compat run FAILED"
 
               # Step 6: podman-compose version (informational only —
