@@ -40,4 +40,43 @@ permissions:
 # runnable workflow (the Actions UI surfaces workflows with at least
 # one job — see Task 2.1 for the first real job).
 jobs:
-  # integration-nginx — added in Task 2.1.
+  # -------------------------------------------------------------------
+  # integration-nginx — Phase 2-4 deliverable: real-HTTP-source test
+  # under FreeBSD/podman. nginx runs in a Linux-emulated nginx:alpine
+  # container; native arxsentinel (built in the same VM) tails the
+  # bind-mounted access log; a curl attacker container drives sqlmap
+  # UA requests; three assertions verify the threat log.
+  #
+  # DECISIONS: §2 (sentinel NATIVE on host, not in container), §3
+  # (native CNI `podman network create`, no podman-compose), §6
+  # (continue-on-error: true on first iterations — research-grade).
+  # -------------------------------------------------------------------
+  integration-nginx:
+    name: integration-nginx (exploratory, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run nginx integration smoke inside FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          copyback: true
+          envs: 'GITHUB_*'
+          # Phase 2 fills in the unblock chain (storage sed + pf setup +
+          # native go build) starting at Task 2.2. Phase 3 invokes
+          # tests/integration-freebsd/nginx/run-nginx.sh. Phase 4 wraps
+          # it with scoped TMPDIR + artifact upload. The empty `run: |`
+          # placeholder below is replaced across Tasks 2.2-4.3.
+          run: |
+            # Placeholder — Phase 2-4 add: storage sed (2.2), pf setup
+            # (2.3), go build (2.4), log capture + upload (2.5), then
+            # nginx.conf + sentinel-nginx.yaml + run-nginx.sh + podman
+            # network + sentinel launch + curl attacker + assertions +
+            # artifact upload (3.1-4.3).
+            echo "[integration-nginx] skeleton job — Phase 2-4 not yet wired in this dispatch"
