@@ -272,6 +272,40 @@ func TestHttpResolver_ThreatEvent(t *testing.T) {
 	}
 }
 
+// TestHttpResolver_ThreatEvent_IPFailures mirrors TestHttpResolver_IPFailures for
+// the ThreatEvent payload shape: toIPValue is shared, so the same three rejection
+// conditions (empty string, malformed literal, CIDR) apply to ThreatEvent.IP. Each
+// case is a distinct toIPValue failure mode — not a duplicate of the others.
+func TestHttpResolver_ThreatEvent_IPFailures(t *testing.T) {
+	r := HttpResolver{}
+
+	cases := []struct {
+		name string
+		te   *threat.ThreatEvent
+	}{
+		{
+			name: "empty_ip",
+			te:   &threat.ThreatEvent{IP: ""},
+		},
+		{
+			name: "malformed_ip",
+			te:   &threat.ThreatEvent{IP: "not.an.ip"},
+		},
+		{
+			name: "cidr_ip",
+			te:   &threat.ThreatEvent{IP: "10.0.0.0/8"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := makeEvent(tc.te)
+			if _, ok := r.Resolve("http.real_ip", ev); ok {
+				t.Errorf("Resolve(http.real_ip) with IP=%q: want ok=false, got true", tc.te.IP)
+			}
+		})
+	}
+}
+
 // TestHttpResolver_ThreatEvent_InvalidIP covers the empty-IP edge case for the
 // ThreatEvent path too — toIPValue is shared, so the same rules apply.
 func TestHttpResolver_ThreatEvent_InvalidIP(t *testing.T) {

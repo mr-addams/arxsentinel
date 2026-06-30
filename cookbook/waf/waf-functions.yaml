@@ -1,0 +1,211 @@
+# ====================== cookbook/waf/waf-functions.yaml ==========================
+#
+#   WAF recipe demonstrating the v0.3.0 FUNCTION layer (Flow 087 Group E).
+#   Pipeline: nginx combined log → WAF (function-form rules) → file sink.
+#
+#   Use case: the rule author wants to compose boolean predicates from
+#   case-normalised, URL-decoded, or otherwise transformed http.* values
+#   rather than leaning on RE2 inline flags and `(?i)` everywhere.
+#
+#   Each rule below demonstrates ONE v0.3.0 function or a small composition:
+#     rule_a  `lower(...)` + `contains`         — case-insensitive UA block
+#     rule_b  `lower(...)` + `starts_with`      — case-normalised path gate
+#                                                (note: `starts_with` is an OPERATOR
+#                                                 — REFERENCE.md D18. Function-call
+#                                                 on the left is the v0.3.0 idiom.)
+#     rule_c  `url_decode(...)` + `contains`    — catches percent-encoded path
+#                                                traversal (`%2e%2e%2f`) without
+#                                                enumerating encodings by hand
+#     rule_d  `len(...)` + comparison            — int-returning function vs
+#                                                int literal; demonstrates
+#                                                KindInt result Kind
+#     rule_e  `upper(...)` + `contains`          — second case-normalisation,
+#                                                upper variant
+#     rule_f  `concat(...)`                      — variadic string assembly
+#                                                (audit-log header)
+#     rule_g  `regex_replace(...)` + `contains`  — strip a known noise token
+#                                                from the URI before matching
+#                                                (literal pattern, pre-compiled)
+#     rule_h  `cidr_matches(...)` + path gate    — function-returning-bool
+#                                                operating on a string CIDR
+#                                                (compile-time resolved)
+#
+#   Field names used (must exist in pkg/processorplugins/waf/manifest.go):
+#     http.method, http.path, http.query, http.raw_uri, http.status,
+#     http.bytes_sent, http.referer, http.user_agent, http.remote_addr,
+#     http.real_ip, http.protocol, http.remote_user.
+#
+# =======================================================================================
+
+# ── Streams ───────────────────────────────────────────────────────────────────────────
+streams:
+  - name: waf-fn-gate
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log
+        parser: combined
+
+    processors:
+      - plugin: waf
+        params:
+          waf_config:
+            rules:
+
+              # ── a) `lower(...)` + `contains` — case-insensitive UA block ─────
+              # Reference: pkg/rule/REFERENCE.md — `lower` is alloc-free,
+              # `(string) → string`. The operator `contains` is level-6 (same as
+              # `eq`/`ne`); function-call left operand is the v0.3.0 idiom.
+              - name: block_bot_ua_lower
+                expression: 'lower(http.user_agent) contains "ahrefsbot" or lower(http.user_agent) contains "semrushbot" or lower(http.user_agent) contains "mj12bot" or lower(http.user_agent) contains "dotbot"'
+                action: drop
+
+              # ── b) `lower(...)` + `starts_with` (operator on function result) ─
+              # `starts_with` is a reserved keyword (operator), NOT a function
+              # (REFERENCE.md D18). The lexer tokenises it before the parser sees
+              # a function call, so `lower(http.path) starts_with "/admin"` is
+              # a legal composition: function call on the left, operator on the
+              # right, both at level 6 in precedence.
+              - name: block_admin_path_case_insensitive
+                expression: 'lower(http.path) starts_with "/admin" and http.method eq "GET" and http.remote_user eq ""'
+                action: drop
+
+              # ── c) `url_decode(...)` + `contains` — percent-encoded traversal ─
+              # The operator form (rule `block_path_traversal` in waf-nginx.yaml)
+              # enumerates each encoding by hand (`%2e%2e/`, `..%2f`, `..\\`).
+              # The function form decodes once and tests for `../` — fewer
+              # patterns to maintain. `url_decode` allocates per call (per
+              # REFERENCE.md) — keep this rule on high-confidence paths only.
+              - name: block_path_traversal_decoded
+                expression: 'url_decode(http.path) contains "../" or url_decode(http.path) contains "..\\"'
+                action: drop
+
+              # ── d) `len(...)` + comparison — function returning KindInt ─────
+              # `len(http.raw_uri)` returns `KindInt`, compared against an int
+              # literal. Demonstrates that a function result can be used on
+              # either side of a comparison operator (level 6).
+              - name: drop_oversized_uri
+                expression: 'len(http.raw_uri) gt 4096'
+                action: drop
+
+              # ── e) `upper(...)` + `contains` — alternate case-normalisation ─
+              # Same intent as `lower(...)`; demonstrates that BOTH case
+              # families are part of v0.3.0 (REFERENCE.md D16). Useful when the
+              # downstream system / SIEM expects uppercase tokens (e.g. method
+              # normalisation for HTTP/2 server push).
+              - name: block_uppercase_protocol
+                expression: 'upper(http.protocol) contains "HTTP/0.9"'
+                action: drop
+
+              # ── f) `concat(...)` — variadic string assembly (audit tag) ────
+              # Variadic — accepts ≥0 args (REFERENCE.md). Here we build a
+              # composite "audit header" string and tag the event so a downstream
+              # sink (e.g. a SIEM) can grep it without re-parsing `http.*`.
+              - name: tag_audit_composite
+                expression: 'http.method eq "POST" and http.path starts_with "/api/"'
+                action: tag
+                label: concat(http.method, " ", http.path, " ua=", http.user_agent)
+
+              # NOTE: the WAF plugin's `label` field (when present on a `tag` rule)
+              # is appended to the THREAT:<rule>:<label> Level (Flow 087 Group B.4).
+              # The expression above DOES NOT reference `concat(...)` directly
+              # because rule `expression` is a Bool — the function result is
+              # consumed by the `label` slot, not the predicate. The example is
+              # here to document the variadic contract; an end-to-end WAF
+              # expression that consumes the composite would look like:
+              #   label: concat(http.method, " ", http.path, " ua=", http.user_agent)
+              # and the rule STILL evaluates the boolean expression unchanged.
+
+              # ── g) `regex_replace(...)` + `contains` — strip noise token ───
+              # `regex_replace(s, pattern, replacement)` returns `string`. When
+              # the pattern is a string literal (it is here: `"utm_[a-z]+=[^&]*&?"`)
+              # the pattern is PRE-COMPILED at compile time (REFERENCE.md D4).
+              # Hot-path cost: one regex match + one allocation per call.
+              - name: block_sql_injection_stripped
+                expression: 'regex_replace(http.raw_uri, "utm_[a-z]+=[^&]*&?", "") contains "union" or regex_replace(http.raw_uri, "utm_[a-z]+=[^&]*&?", "") contains "select" or regex_replace(http.raw_uri, "utm_[a-z]+=[^&]*&?", "") contains "drop "'
+                action: drop
+
+              # ── h) `cidr_matches(...)` + path gate — bool-returning fn ─────
+              # `cidr_matches(ip, string)` returns `bool`. When the CIDR string
+              # is a literal, `*net.IPNet` is resolved at COMPILE TIME
+              # (REFERENCE.md D17) — zero `ParseCIDR` per call. Demonstrates
+              # that `http.real_ip` (KindIP) flows directly into a function
+              # without explicit conversion.
+              - name: block_admin_internal_only
+                expression: 'http.path starts_with "/admin/" and not cidr_matches(http.real_ip, "10.0.0.0/8") and not cidr_matches(http.real_ip, "192.168.0.0/16")'
+                action: drop
+
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/fn-threats.log
+        format: fail2ban    # fail2ban | json; default: fail2ban
+
+# ── Scoring ──────────────────────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50
+  ban_threshold: 80
+  observation_window: "300s"
+  decay: "linear"
+
+# ── Detectors ────────────────────────────────────────────────────────────────────────
+detectors:
+
+  probe:
+    enabled: true
+    score: 25
+    paths:
+      - "/.env"
+      - "/.git/config"
+      - "/wp-config.php"
+      - "/phpmyadmin/"
+
+  bruteforce:
+    enabled: true
+    min_requests: 10
+    ratio_threshold: 0.6
+    score: 30
+
+  crawler:
+    enabled: true
+    min_sequential: 5
+    score: 20
+
+  noasset:
+    enabled: true
+    min_page_requests: 3
+    asset_ratio_threshold: 0.1
+    score: 20
+
+  rate:
+    enabled: true
+    window: "60s"
+    threshold: 100
+    score: 25
+
+  useragent:
+    enabled: true
+    scanner_score: 40
+    grabber_score: 20
+    automation_score: 15
+    empty_ua_score: 30
+    extra_scanner_patterns: []
+    extra_grabber_patterns: []
+    extra_automation_patterns: []
+
+  overflow:
+    enabled: true
+    max_url_length: 2048
+    score: 30
+
+  badbot:
+    enabled: true
+    score: 60
+    check_ua: true
+    check_referer: false
+
+# ── Whitelist ────────────────────────────────────────────────────────────────────────
+whitelist:
+  custom:
+    ips: []      # trusted individual IPs; list of strings
+    cidrs: []    # trusted IP ranges; list of strings
+    ua_substrings: []  # trusted UA substrings (case-insensitive); list of strings
+    paths: ["/healthz", "/readyz", "/livez", "/.well-known/"]

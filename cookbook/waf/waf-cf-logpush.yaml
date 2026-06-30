@@ -12,10 +12,6 @@
 #     - http.real_ip is populated from CF-Connecting-IP automatically by the parser.
 #     - http.user_agent is the original client UA, not Cloudflare's egress UA.
 #     - http.bytes_sent counts body bytes the EDGE served, not the origin.
-#   Cloudflare-специфика:
-#     - http.real_ip заполняется из CF-Connecting-IP автоматически парсером.
-#     - http.user_agent — оригинальный клиентский UA, не Cloudflare egress.
-#     - http.bytes_sent — байты тела, отданные EDGE, не origin'ом.
 #
 # =======================================================================================
 
@@ -25,8 +21,6 @@ streams:
     inputs:
       # Cloudflare Logpush endpoint. Set the ownership-challenge token in
       # Cloudflare's UI; ownership is verified automatically by the parser.
-      # Endpoint Logpush. Токен подтверждения ownership указывается в UI Cloudflare,
-      # ownership проверяется парсером автоматически.
       - type: http
         addr: "http://0.0.0.0:8889"
         protocol: cloudflare
@@ -38,7 +32,6 @@ streams:
             rules:
 
               # 1. Allowlist: known-good automation (Googlebot, status monitoring).
-              # Разрешающее правило: доверенная автоматизация.
               - name: pass_known_good_bots
                 expression: 'http.user_agent matches "(?i)(googlebot|bingbot|cloudflare healthcheck|statuscake)"'
                 action: pass
@@ -47,14 +40,11 @@ streams:
               # request as a definite attack (Cloudflare's `clientRequest.cf.clientTrustScore`
               # is not in the http.* namespace; this rule approximates via the
               # well-known challenge response status 403 or 503).
-              # Cloudflare-attack-score shortcut: drop, если edge пометил запрос
-              # как определённую атаку.
               - name: drop_cf_blocked
                 expression: 'http.status eq 403 or http.status eq 503'
                 action: drop
 
               # 3. SQL injection on the public-facing surface.
-              # SQL-инъекция на публичной поверхности.
               - name: block_sql_injection
                 expression: 'http.raw_uri matches "(?i)(union[^+]*select|drop[^+]+table|--[^+]+$|or[^+]+1=1|and[^+]+1=1)"'
                 action: drop
@@ -65,13 +55,19 @@ streams:
                 action: drop
 
               # 5. Scanner UA on the edge.
-              # Сканер-UA на edge.
+              # Operator form: RE2 inline `(?i)` for case-insensitive match.
               - name: block_scanner_ua
                 expression: 'http.user_agent matches "(?i)(sqlmap|nikto|nuclei(/[0-9.]+)?|httrack|masscan|zgrab)"'
                 action: drop
 
+              # 5b. Same intent — FUNCTION layer (v0.3.0). `lower(...)` normalises,
+              # then a plain `contains` is enough. Side-by-side with the operator
+              # form above; both are first-match-wins, so order is interchangeable.
+              - name: block_scanner_ua_lower
+                expression: 'lower(http.user_agent) contains "sqlmap" or lower(http.user_agent) contains "nikto" or lower(http.user_agent) contains "httrack" or lower(http.user_agent) contains "masscan" or lower(http.user_agent) contains "zgrab"'
+                action: drop
+
               # 6. High-rate tag: 5xx from origin in burst.
-              # High-rate тег: 5xx с origin всплеском.
               - name: tag_origin_5xx
                 expression: 'http.status ge 500 and http.status lt 600'
                 action: tag
@@ -84,9 +80,6 @@ streams:
       # Also forward THREAT events to the Cloudflare IP Lists executor via
       # the in-process Named Channel Switch. The executor (`sentinel-cf`)
       # must be declared in executors: below.
-      # Также пробрасываем THREAT-события в Cloudflare IP Lists executor через
-      # in-process Named Channel Switch. Executor (`sentinel-cf`) должен быть
-      # объявлен в executors: ниже.
       - type: sentinel-threat
         name: sentinel-cf
 
@@ -166,8 +159,6 @@ whitelist:
 # ── Executors: Cloudflare IP Lists ──────────────────────────────────────────────────
 # Receives THREAT events from the `sentinel-cf` sink (NCS queue) and bans the
 # offending IP via the Cloudflare API. ttl=24h auto-unbans.
-# Получает THREAT-события из sink'а `sentinel-cf` (NCS-очередь) и банит IP через
-# Cloudflare API. ttl=24h автоматически разбанивает.
 executors:
   - name: cf-ban
     type: cloudflare

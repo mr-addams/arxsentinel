@@ -14,10 +14,6 @@
 #   First-match-wins (DECISION D12). Order matters: pass rules first, then
 #   high-confidence drops, then "tag" rules that mark but don't block.
 #
-#   Для standalone nginx reverse proxy. WAF отбрасывает событие из пайплайна до
-#   запуска цепочки детекторов — high-confidence SQL-инъекция гасится на скорости
-#   линии, не загрязняя state скoring'а.
-#
 # =======================================================================================
 
 # ── Streams ───────────────────────────────────────────────────────────────────────────
@@ -25,7 +21,6 @@ streams:
   - name: waf-gate
     inputs:
       # Source: nginx combined access log with real_ip populated.
-      # Источник: nginx combined access log с заполненным real_ip.
       - type: file
         path: /var/log/nginx/access.log
         parser: combined
@@ -33,9 +28,6 @@ streams:
     # Processors: rule-engine plugins evaluated in array order. The first plugin
     # to gate the event stops further processing — placing `waf` here means
     # SQL-injection and scanner UAs never reach the detector chain.
-    # Процессоры: плагины rule-engine в порядке массива. Первый плагин, заблоки-
-    # ровавший событие, останавливает обработку — `waf` здесь значит, что
-    # SQL-инъекция и сканер-UA никогда не доходят до цепочки детекторов.
     processors:
       - plugin: waf
         params:
@@ -43,35 +35,42 @@ streams:
             rules:
 
               # 1. Allowlist: load balancer / monitoring healthchecks pass through.
-              # Разрешающее правило: healthcheck от LB / мониторинга проходит насквозь.
               # Must come FIRST so it short-circuits the other rules.
-              # ОБЯЗАТЕЛЬНО первое — short-circuit для остальных правил.
               - name: pass_healthcheck
                 expression: 'http.path eq "/healthz" or http.path eq "/readyz" or http.path eq "/livez"'
                 action: pass
 
               # 2. SQL injection: classic patterns in raw URI / path / query.
-              # SQL-инъекция: классические паттерны в raw URI / path / query.
               - name: block_sql_injection
                 expression: 'http.raw_uri matches "(?i)(union[^+]*select|drop[^+]+table|--[^+]+$|or[^+]+1=1|and[^+]+1=1)"'
                 action: drop
 
               # 3. Path traversal: ../../etc/passwd and URL-encoded variants.
-              # Path traversal: ../../etc/passwd и URL-кодированные варианты.
               - name: block_path_traversal
                 expression: 'http.path contains "../" or http.path contains "..\\" or http.path contains "%2e%2e/" or http.path contains "..%2f"'
                 action: drop
 
               # 4. Known scanner / grabber User-Agents.
-              # Известные сканеры / grabber'ы.
+              # Operator form — uses the RE2 inline `(?i)` flag to make the match
+              # case-insensitive. Works on any UA casing out of the box.
               - name: block_scanner_ua
                 expression: 'http.user_agent matches "(?i)(sqlmap|nikto|nuclei(/[0-9.]+)?|httrack|masscan|zgrab|nmap scripting engine)"'
                 action: drop
 
+              # 4b. Same intent — written with the v0.3.0 FUNCTION layer (Flow 087
+              # Group E). `lower(...)` normalises the UA, then a plain substring
+              # match is enough — no `(?i)` flag needed. Useful when the rule
+              # author prefers function composition over regex flags.
+              # Both rules exist side-by-side on purpose: showing that operator
+              # form and function form are equivalent, not replacement. Order matters
+              # (first-match-wins) — keep the more specific operator rule ahead of
+              # this generic function variant, or vice versa if you prefer.
+              - name: block_scanner_ua_lower
+                expression: 'lower(http.user_agent) contains "sqlmap" or lower(http.user_agent) contains "nikto" or lower(http.user_agent) contains "httrack" or lower(http.user_agent) contains "masscan" or lower(http.user_agent) contains "zgrab" or lower(http.user_agent) contains "nmap scripting engine"'
+                action: drop
+
               # 5. 4xx flood: tag for downstream scoring. The actual rate logic
               # lives in the rate detector; this rule only flags the status band.
-              # 4xx-флуд: пометка для downstream-скоринга. Логика частоты — в
-              # детекторе rate; это правило лишь помечает диапазон status.
               - name: tag_4xx_flood
                 expression: 'http.status ge 400 and http.status lt 500'
                 action: tag
@@ -84,13 +83,11 @@ streams:
 # ── Scoring (detector chain — runs AFTER WAF) ────────────────────────────────────────
 # Dropped events never reach scoring. Tagged events (THREAT:<rule>) flow through
 # the normal detector chain with the matched rule name in Level.
-# Отброшенные события не доходят до scoring. Помеченные (THREAT:<rule>) идут через
-# обычную цепочку детекторов с именем сработавшего правила в Level.
 scoring:
-  alert_threshold: 50       # score >= 50 → WARN / запись в threat-лог
+  alert_threshold: 50       # score >= 50 → WARN / write to threat log
   ban_threshold: 80         # score >= 80 → THREAT / executor action
-  observation_window: "300s" # окно накопления / accumulation window
-  decay: "linear"           # алгоритм затухания / decay algorithm
+  observation_window: "300s" # accumulation window
+  decay: "linear"           # decay algorithm
 
 # ── Detectors ────────────────────────────────────────────────────────────────────────
 detectors:

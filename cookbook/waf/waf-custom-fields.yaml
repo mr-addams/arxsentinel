@@ -14,10 +14,6 @@
 #   builder.FromManifest registers the new field), the field is available as
 #   `http.tls_version` in any rule expression.
 #
-#   Разбор ниже. Стандартный http.* не включает TLS-метаданные, поэтому это
-#   расширение делается в два Go-шага + ноль правок в ruleset.go (auto-discovery
-#   через builder.FromManifest регистрирует новое поле автоматически).
-#
 # =======================================================================================
 
 # ── Go code changes (PR description, not files in the recipe) ───────────────────────
@@ -28,7 +24,6 @@
 #         // ... existing 12 fields ...
 #
 #         // Custom field: TLS handshake version negotiated by the client.
-#         // Кастомное поле: версия TLS-рукопожатия, согласованная с клиентом.
 #         {Name: "tls_version", Type: plugin.TypeString},
 #     }
 #
@@ -42,13 +37,6 @@
 #   - `http.tls_version` is available in any rule expression.
 #   - The new field auto-registers via builder.FromManifest (no ruleset.go change).
 #   - FieldDecl vs. resolveHTTP drift is caught by resolver_test.go (recommended).
-#
-# После этих двух правок:
-#   - Новое поле типизировано при компиляции (string).
-#   - `http.tls_version` доступно в любом rule-выражении.
-#   - Поле автоматически регистрируется через builder.FromManifest (без правок
-#     в ruleset.go).
-#   - Расхождение FieldDecl vs. resolveHTTP ловится в resolver_test.go (рекомендуется).
 #
 # =======================================================================================
 
@@ -67,17 +55,14 @@ streams:
             rules:
 
               # 1. Pass healthchecks (standard http.* — works out of the box).
-              # Healthcheck проходит (стандартное http.* — работает сразу).
               - name: pass_healthcheck
                 expression: 'http.path eq "/healthz"'
                 action: pass
 
               # 2. CUSTOM FIELD: drop clients negotiating deprecated TLS 1.0 / 1.1.
-              # КАСТОМНОЕ ПОЛЕ: drop клиентов, соглашающихся на устаревшие TLS 1.0 / 1.1.
               #
               # >>> THIS RULE REQUIRES the Go-side extension documented above <<<
               # >>> (manifest.go Produces + resolver.go resolveHTTP case).       <<<
-              # >>> ЭТО ПРАВИЛО ТРЕБУЕТ Go-расширения, документированного выше. <<<
               #
               # Until the Go changes land, the WAF plugin will reject this rule
               # at startup with "field http.tls_version is not in the active
@@ -88,11 +73,6 @@ streams:
               #   - "TLSv1.0" / "TLSv1.1" → drop
               #   - "TLSv1.2" / "TLSv1.3" → passthrough
               #   - "" (missing)          → resolver returns unmatched, rule doesn't fire
-              #
-              # ПОКА Go-правки не внесены, WAF-плагин отвергнет это правило при
-              # старте с "field http.tls_version is not in the active scheme
-              # [unknown_field]". После Go-правок правило компилируется и
-              # выполняется на скорости линии.
               - name: drop_legacy_tls
                 expression: 'http.tls_version eq "TLSv1.0" or http.tls_version eq "TLSv1.1"'
                 action: drop
@@ -100,8 +80,6 @@ streams:
               # 3. CUSTOM FIELD: tag TLS 1.2 sessions with weak client cipher
               # (illustrative — depends on what the parser populates in the
               # custom field's payload). Same Go-side requirement as #2.
-              # КАСТОМНОЕ ПОЛЕ: пометить TLS 1.2 со слабыми шифрами. Те же
-              # требования к Go-стороне, что и в #2.
               - name: tag_weak_cipher
                 expression: 'http.tls_version eq "TLSv1.2" and http.user_agent contains "curl/7."'
                 action: tag
@@ -109,9 +87,6 @@ streams:
               # 4. Standard SQL injection — uses standard http.* field, no
               # custom extension required. Verifies the rule surface still works
               # alongside the custom-field rules.
-              # Стандартная SQL-инъекция — стандартное http.* поле, расширение
-              # не требуется. Подтверждает, что поверхность правил работает
-              # вместе с custom-field правилами.
               - name: block_sql_injection
                 expression: 'http.raw_uri matches "(?i)(union[^+]*select|drop[^+]+table|or[^+]+1=1)"'
                 action: drop

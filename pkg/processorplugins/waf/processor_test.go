@@ -274,33 +274,85 @@ func TestWafProcessor_EmptyConfig(t *testing.T) {
 	}
 }
 
-// ========================== Action normalisation ==============================================
+// ========================== tag-action case insensitivity (DECISIONS D1) ====================
 
-// TestWafProcessor_ActionNormalisation verifies that the case-insensitive /
-// whitespace-tolerant mapping in normaliseAction behaves as documented:
-//   - empty / unknown → ActionDrop (default)
-//   - "Drop" / "DROP" → ActionDrop
-//   - "Tag"           → ActionTag
-//   - "Pass"          → ActionPass
-func TestWafProcessor_ActionNormalisation(t *testing.T) {
+// TestWafProcessor_TagActionCaseInsensitive pins DECISIONS D1: classifyAction must
+// normalise the tag-action value at Init so the action map stores the canonical
+// lowercase form. Process's case-sensitive dispatch (action == ActionTag /
+// HasPrefix(action, "tag:")) then matches regardless of operator capitalisation
+// or surrounding whitespace. Without normalisation, "TAG" / "Tag:ban" /
+// " tag:Foo " all fall through to Process's default branch → (nil, nil) drop,
+// which is a silent regression of an operator's tag-or-pass intent into a block.
+//
+// The test exercises BOTH the classifyAction level (action map values are
+// canonical lowercase) AND the Process dispatch level (Level is set to
+// THREAT:<rule>[:<label>], event is not dropped).
+func TestWafProcessor_TagActionCaseInsensitive(t *testing.T) {
 	cases := []struct {
-		action string
-		want   string
+		name       string // rule name — used in expected Level
+		action     string // raw value from config — the case-insensitive / whitespace input
+		wantMapVal string // expected value in actions[name] after classifyAction
+		wantLevel  string // expected Envelope.Level after Process dispatch
 	}{
-		{"", ActionDrop},
-		{"drop", ActionDrop},
-		{"DROP", ActionDrop},
-		{"  Drop  ", ActionDrop},
-		{"tag", ActionTag},
-		{"TAG", ActionTag},
-		{"pass", ActionPass},
-		{"PASS", ActionPass},
-		{"unknown", ActionDrop}, // unrecognised defaults to drop
+		{
+			name:       "rule_upper_tag",
+			action:     "TAG",
+			wantMapVal: ActionTag,
+			wantLevel:  "THREAT:rule_upper_tag",
+		},
+		{
+			name:       "rule_mixed_tag",
+			action:     "Tag:ban",
+			wantMapVal: "tag:ban",
+			wantLevel:  "THREAT:rule_mixed_tag:ban",
+		},
+		{
+			name:       "rule_padded_tag",
+			action:     " tag:Foo ",
+			wantMapVal: "tag:foo",
+			wantLevel:  "THREAT:rule_padded_tag:foo",
+		},
 	}
+
 	for _, tc := range cases {
-		t.Run(tc.action, func(t *testing.T) {
-			if got := normaliseAction(tc.action); got != tc.want {
-				t.Errorf("normaliseAction(%q): want %q, got %q", tc.action, tc.want, got)
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{
+				Rules: []RuleConfig{
+					{
+						Name:       tc.name,
+						Expression: `http.path eq "/probe"`,
+						Action:     tc.action,
+					},
+				},
+			}
+			p, err := NewWafProcessor(cfg)
+			if err != nil {
+				t.Fatalf("NewWafProcessor(action=%q): unexpected init error: %v", tc.action, err)
+			}
+
+			// Level 1: classifyAction must have normalised the action so the
+			// action map holds canonical lowercase form. This is the unit-level
+			// guarantee — Process's dispatch depends on this value.
+			gotMapVal := p.actions[tc.name]
+			if gotMapVal != tc.wantMapVal {
+				t.Errorf("classifyAction: actions[%q]=%q, want %q (action %q must normalise)",
+					tc.name, gotMapVal, tc.wantMapVal, tc.action)
+			}
+
+			// Level 2: Process must dispatch as tag (passthrough with Level set),
+			// NOT fall through to the default branch and silently drop the event.
+			ev := makeLogEvent(&parser.LogEntry{Method: "GET", Status: 200, Path: "/probe"})
+			got, err := p.Process(context.Background(), ev)
+			if err != nil {
+				t.Fatalf("Process(action=%q): unexpected error: %v", tc.action, err)
+			}
+			if got == nil {
+				t.Fatalf("Process(action=%q): event DROPPED (nil,nil) — tag action was misclassified as drop; want non-nil tag passthrough",
+					tc.action)
+			}
+			if got.Envelope.Level != tc.wantLevel {
+				t.Errorf("Process(action=%q): Level=%q, want %q",
+					tc.action, got.Envelope.Level, tc.wantLevel)
 			}
 		})
 	}
@@ -538,7 +590,7 @@ func TestWafProcessor_ScoreFunc_Nil(t *testing.T) {
 // plumbing doesn't drop the field on the floor.
 func TestWafProcessor_Config_TagWeights(t *testing.T) {
 	cfg := Config{
-		Rules:      []RuleConfig{{Name: "dummy", Expression: `http.path eq "/"`, Action: "drop"}},
+		Rules: []RuleConfig{{Name: "dummy", Expression: `http.path eq "/"`, Action: "drop"}},
 		TagWeights: map[string]int{
 			"waf_sqli": 80,
 			"waf_xss":  60,
