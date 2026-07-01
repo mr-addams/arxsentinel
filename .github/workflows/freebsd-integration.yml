@@ -676,7 +676,14 @@ jobs:
             # ----------------------------------------------------------------
             echo "[integration-caddy] building custom caddy image with transform-encoder (~60-120s)..."
             cd "$GITHUB_WORKSPACE/tests/integration"
+            # --platform linux/amd64 is REQUIRED (triage-caddy-1.md P2.7
+            # iteration 2 finding): caddy:builder/caddy:latest are
+            # Linux-only multi-arch images, same as nginx:alpine/curl.
+            # Without it podman defaults to matching the host's freebsd
+            # OS in the manifest list and fails with "no image found in
+            # image index ... OS freebsd" on the very first FROM line.
             podman build \
+                --platform linux/amd64 \
                 -f dockerfiles/Caddy.Dockerfile \
                 -t caddy-arxsentinel:local \
                 . || \
