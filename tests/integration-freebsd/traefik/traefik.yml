@@ -1,0 +1,120 @@
+# tests/integration-freebsd/traefik/traefik.yml — Traefik v3 static
+# config for Flow 091 integration-traefik job.
+#
+# Used by tests/integration-freebsd/traefik/run-traefik.sh (Phase P3 of
+# Flow 091). The traefik container runs under FreeBSD's Linux emulation
+# (`podman run --os=linux docker.io/library/traefik:v3-alpine` — per
+# Flow 088 DECISIONS §"A.2" Linux compat path, same flag as Flow 089's
+# nginx container and 091's caddy container).
+#
+# Per Flow 091 DECISIONS §4 traefik row: image "traefik:alpine (or
+# official traefik:v3.x)", access-log path /logs/access.log, JSON access
+# log with UA in request.User-Agent.
+#
+# IMPORTANT — arx-core parser contract (verified against the source
+# before this file was written — see profiles.go in arx-core v0.3.1
+# pkg/parser/profiles.go:60, :84-93, and the pattern's header comment
+# at :30-38):
+#
+#   The built-in "traefik" parser profile in arx-core uses
+#   NewRegexParser(apacheCLFPattern) — the SAME Apache CLF regex as the
+#   caddy profile, minus the trailing $ end-anchor (so Traefik's
+#   post-UA fields — duration_ms, router name, service name, retries —
+#   are silently ignored).
+#
+#   apacheCLFPattern's header comment is explicit:
+#     "Also used for Caddy (configured to emit CLF), Traefik (CLF
+#      default), and LiteSpeed / OpenLiteSpeed."
+#
+#   That is, Traefik's DEFAULT accessLog format (when the `format`
+#   field is NOT set, or set to a CLF string) is already what the
+#   arx-core "traefik" profile expects. The brief's hint about "JSON
+#   by default" was based on the design-document plan; the IMPLEMENTED
+#   contract in arx-core v0.3.1 expects CLF, and the per-profile
+#   Design note (profiles.go:10-17) explicitly records the
+#   decision-2-deviation:
+#     "DECISIONS.md planned caddy and traefik as JSONParser profiles.
+#      In practice, Caddy v2 JSON uses nested objects and Traefik JSON
+#      splits the request into method/path/proto — neither maps
+#      cleanly to JSONParser's single-field "request" contract. All
+#      five profiles use RegexParser instead."
+#
+# Therefore: this traefik.yml leaves the accessLog `format` field at
+# its CLF default. The bind-mount in run-traefik.sh places $WORK_DIR/
+# logs on /logs, so the host-side file is $WORK_DIR/logs/access.log.
+# sentinel-traefik.yaml then points general.log_file at the host
+# bind-mount path and parser.profile at "traefik" — the two halves of
+# the same contract.
+#
+# Why bind-mount on /logs (not /var/log/traefik or another path):
+#   The brief specifies /logs/access.log per Decision 4 traefik row,
+#   and the convention in traefik:v3.x static config is that
+#   accessLogsFile is taken as-is (no path resolution magic, no
+#   default-prefix). Picking /logs/access.log is the cleanest
+#   separation from any other system log traefik might want to write
+#   (which would default to stdout/stderr under our setup).
+#
+# Why minimal — one entryPoint, no TLS, no providers file:
+#   We want traefik to accept HTTP on :80 and emit the access log
+#   line; the parser doesn't care about the response code, only the
+#   request line + UA + client IP. No TLS = no cert provisioning
+#   chain required (which would fail in the vmactions VM just like
+#   caddy's auto_https had to be turned off — same root cause). The
+#   file provider / dynamic config is intentionally omitted: a single
+#   empty router is enough to make traefik log every incoming
+#   request, and a 404 Not Found is the default response when no
+#   route matches the Host header.
+#
+# log format:
+#   accessLog with NO `format` field → Traefik writes Common Log
+#   Format by default. The format field exists to override (e.g. to
+#   JSON), but the arx-core "traefik" profile expects the CLF default.
+#   Explicit comment so a future reader doesn't "fix" the missing
+#   `format:` line.
+
+api:
+  # api.insecure: false — keep the dashboard/API closed; we don't need
+  # it and the FreeBSD VM has no reason to expose :8080 to the host.
+  insecure: false
+
+entryPoints:
+  # web: standard HTTP entrypoint on :80. Matches caddy/Apache/nginx
+  # defaults; the curl attacker in run-traefik.sh step 6 hits this
+  # port. No TLS — see header.
+  web:
+    address: ":80"
+
+accessLog:
+  # file path inside the container. Combined with the -v bind-mount
+  # in run-traefik.sh that maps $WORK_DIR/logs onto /logs, the host
+  # path is $WORK_DIR/logs/access.log — the file sentinel-traefik.yaml
+  # tails. Per Decision 4 traefik row.
+  filePath: "/logs/access.log"
+  # format: omitted (CLF default — see header WHY-comment). Setting
+  # this to "json" would break the arx-core "traefik" parser profile,
+  # which expects Apache CLF (profiles.go:84-93).
+  #
+  # bufferingSize, maxSize, maxAge: omitted — Traefik defaults work
+  # for our test (single line per request, 20-30 lines total in the
+  # attack scenario). If a follow-up iteration sees partial lines in
+  # the host-side file, revisit bufferingSize (default 100, may flush
+  # mid-line under load).
+
+providers:
+  # file provider disabled: the dynamic config file would need a
+  # router + service definition to register, and we don't need any
+  # routing logic for the integration smoke. Traefik still logs every
+  # request that hits the entryPoint even with no routes configured
+  # (it just answers 404). This is the analogue of caddy's "respond /
+  # "*" 404" and nginx's "return 404" in nginx.conf.
+  file:
+    filename: ""
+    watch: false
+
+log:
+  # level: INFO — quiet enough to not pollute the smoke log with
+  # debug chatter, loud enough to see the startup line that
+  # run-traefik.sh's readiness check greps for. The readiness check
+  # uses a log-grep pattern (not wget — see run-traefik.sh header for
+  # the caddy lesson that we apply to traefik too).
+  level: INFO
