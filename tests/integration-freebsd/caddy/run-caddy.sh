@@ -212,15 +212,24 @@ CADDY_CID=$(podman run -d \
     caddy-arxsentinel:local)
 echo "[caddy] container $CADDY_CID started"
 
-# Wait for nginx to be ready: `podman exec nginx nginx -t` validates
-# the config (catches the bind-mount typo case); the `podman logs`
-# line for "start worker processes" signals that nginx has fully
-# started. ~15s timeout is generous for first-pull + boot.
+# Wait for caddy to be ready: `podman exec caddy caddy version` validates
+# the binary is executable; the `podman logs` line for "server running"
+# (caddy's JSON startup log, confirmed via live dispatch 28550879869)
+# signals caddy has fully started serving.
+#
+# NOT wget-based (unlike run-nginx.sh's original check): live dispatch
+# 28550879869 found `caddy:latest` (Debian-based upstream, unlike
+# alpine/busybox images) does NOT ship wget — `podman exec caddy wget
+# ...` silently failed on every poll for the full 30s timeout even
+# though caddy's own log showed "server running" within ~1s of start.
+# See Decision 4 Revised addendum / triage-caddy-1.md for the full
+# finding.
 echo "[caddy] waiting for caddy ready (timeout 30s)..."
 DEADLINE=$(($(date +%s) + 30))
 READY=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-    if podman exec caddy wget -qO- http://127.0.0.1/ >/dev/null 2>&1; then
+    if podman exec caddy caddy version >/dev/null 2>&1 \
+       && podman logs caddy 2>&1 | grep -q '"msg":"server running"'; then
         READY=1
         break
     fi
