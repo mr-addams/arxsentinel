@@ -237,10 +237,15 @@ jobs:
             cd "$GITHUB_WORKSPACE"
             go build -o arxsentinel ./cmd/arxsentinel
             # healthcheck binary is needed by the Containerfile.freebsd (088
-            # pattern: COPY both into the final-stage image). Build it here.
-            go build -o arxsentinel-healthcheck ./cmd/healthcheck || \
+            # pattern: COPY both into the final-stage image). MUST be named
+            # exactly "healthcheck" - Containerfile.freebsd's
+            # "COPY --chmod=755 healthcheck /healthcheck" line references
+            # this literal filename (confirmed by live run 28508814305,
+            # which failed with "stat: /healthcheck: no such file or
+            # directory" when this was built as arxsentinel-healthcheck).
+            go build -o healthcheck ./cmd/healthcheck || \
                 echo "::notice::cmd/healthcheck build failed — image will skip healthcheck"
-            ls -la arxsentinel arxsentinel-healthcheck 2>/dev/null || \
+            ls -la arxsentinel healthcheck 2>/dev/null || \
                 ls -la arxsentinel
             echo "::endgroup::"
 
