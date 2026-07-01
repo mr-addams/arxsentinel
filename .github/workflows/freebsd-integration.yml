@@ -26,6 +26,14 @@ on:
   push:
     branches:
       - feat/089-freebsd-integration-suite
+  # Flow 090 P5+ (DECISIONS.md Decision 9 Revised 2026-07-01): allows
+  # this workflow to be called from .github/workflows/dev-release.yml via
+  # `uses: ./.github/workflows/freebsd-integration.yml` from the new
+  # freebsd-integration-gate job. ADDITIVE trigger — workflow_dispatch
+  # and push: still fire this workflow exactly as before; workflow_call:
+  # is a separate trigger that exposes the workflow as a reusable
+  # callee. Pattern matches .github/workflows/integration.yml line 7.
+  workflow_call:
 
 # One concurrent run per ref; cancel stale runs on the same branch.
 concurrency:

@@ -5,7 +5,11 @@ before:
     - go mod tidy
 
 builds:
-  - binary: arxsentinel
+  - id: arxsentinel
+    # id: explicit so the archives: entry can reference this build by name.
+    # goreleaser uses the binary name as the default id when id: is absent;
+    # making it explicit pins the reference for the FreeBSD-side archives filter.
+    binary: arxsentinel
     main: ./cmd/arxsentinel
     goos:
       - linux
@@ -21,6 +25,26 @@ builds:
       - CGO_ENABLED=0
     ldflags:
       # Injects version from git tag; -s -w strip debug symbols to reduce binary size.
+      - -s -w -X main.version={{.Version}}
+
+  # ── FreeBSD builds (Flow 090, DECISIONS.md Decision 2) ──────────────────────────
+  # Separate entry (NOT extension of the Linux entry) so per-OS divergence is
+  # isolated. Never riscv64 (Go toolchain does not support freebsd/riscv64 —
+  # tribal knowledge from Flows 088/089). No goarm field — FreeBSD/arm uses
+  # a single hard-float target, no softp/hardp selection knob.
+  - id: arxsentinel-freebsd
+    binary: arxsentinel
+    main: ./cmd/arxsentinel
+    goos:
+      - freebsd
+    goarch:
+      - "386"
+      - amd64
+      - arm
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
       - -s -w -X main.version={{.Version}}
 
 nfpms:
@@ -172,6 +196,54 @@ nfpms:
       - src: deploy/logrotate/arxsentinel
         dst: /etc/logrotate.d/arxsentinel
         type: config
+
+# ── archives (Flow 090, DECISIONS.md Decision 3) ─────────────────────────────────
+# Two entries: (1) linux-archive explicitly pins the Linux tar.gz behaviour that
+# was previously implicit goreleaser-default; (2) freebsd-archive adds the
+# FreeBSD tar.gz with bundled install.sh + rc.d script + cookbook/config sample.
+# The Linux entry exists to make git-diff audit possible: the post-change dist/
+# Linux archive checksums MUST match the pre-change baseline byte-for-byte
+# (control snapshot at .tmp/090-control-snapshot.txt).
+archives:
+  # linux-archive — explicit pin of the previous implicit behaviour.
+  # Verbatim name_template = goreleaser implicit default (verified via the
+  # control snapshot's filenames: arxsentinel_<version>_linux_<arch>.tar.gz).
+  # No files: extra — same single-binary tarball the implicit default produced.
+  - id: linux-archive
+    ids:
+      - arxsentinel
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 \"v1\") }}{{ .Amd64 }}{{ end }}"
+    formats:
+      - tar.gz
+
+  # freebsd-archive — bundles install.sh + rc.d script + cookbook/config.
+  # NO nfpm-equivalent on FreeBSD (goreleaser nfpm supports only deb/rpm/apk/
+  # archlinux — pkg is not in the list). tar.gz + install.sh is the only
+  # realistic goreleaser-native path (DECISIONS.md Decision 3).
+  - id: freebsd-archive
+    ids:
+      - arxsentinel-freebsd
+    name_template: "{{ .ProjectName }}_{{ .Version }}_freebsd_{{ .Arch }}"
+    formats:
+      - tar.gz
+    files:
+      # install.sh + rc.d script bundled at archive root with explicit dst
+      # filenames (goreleaser treats dst: "." as a literal directory name and
+      # ends up flattening duplicates — verified empirically in a previous
+      # iteration. Using explicit destination filenames is the safe path.)
+      - src: packaging/freebsd/install.sh
+        dst: install.sh
+      - src: packaging/freebsd/arxsentinel.rc
+        dst: arxsentinel.rc
+      # Cookbook + reference config — bundled at the paths install.sh expects.
+      # install.sh looks at `./cookbook/nginx-basic.yaml` (flattened from
+      # cookbook/fail2ban/nginx-basic.yaml in the repo tree — the archive
+      # carries one-level-flattened cookbook to keep the installer's relative
+      # path expectations stable).
+      - src: cookbook/fail2ban/nginx-basic.yaml
+        dst: cookbook/nginx-basic.yaml
+      - src: cookbook/config.reference.yaml
+        dst: config.reference.yaml
 
 dockers_v2:
   - dockerfile: deploy/container/docker/Dockerfile.goreleaser

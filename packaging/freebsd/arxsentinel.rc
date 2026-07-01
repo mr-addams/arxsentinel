@@ -1,0 +1,103 @@
+#!/bin/sh
+#
+# arxsentinel — FreeBSD rc.d script.
+#
+# Purpose: standard FreeBSD service management for the arxsentinel daemon
+# (start / stop / restart / status). Wired into /etc/rc.d so the user can
+# manage the daemon via the standard FreeBSD `service(8)` command and the
+# arxsentinel_enable rcvar in /etc/rc.conf.
+#
+# FreeBSD path conventions in use (DECISIONS.md Decision 4):
+#   - binary:     /usr/local/bin/arxsentinel
+#   - config:     /usr/local/etc/arxsentinel/config.yaml
+#   - pidfile:    /var/run/arxsentinel/arxsentinel.pid
+#
+# Compiled-in default config path in the daemon is Linux-specific
+# (/etc/arxsentinel/config.yaml) — see cmd/arxsentinel/main.go:86. The
+# FreeBSD override is to pass -config= via command_args= (DECISIONS.md Q1
+# Revised note on Decision 4). Re-validated by `sh -n` in the Flow 090
+# local snapshot gate.
+#
+# Enable in /etc/rc.conf:
+#   arxsentinel_enable="YES"
+# Or via the sysrc(8) helper:
+#   sysrc arxsentinel_enable=YES
+
+# PROVIDE: arxsentinel
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+
+# Standard FreeBSD rc.d boilerplate. /etc/rc.subr defines load_rc_config,
+# run_rc_command, and the standard rcvar plumbing.
+. /etc/rc.subr
+
+name="arxsentinel"
+rcvar="${name}_enable"
+
+# Privilege drop: run_rc_command (rc.subr) su(1)'s into ${name}_user/
+# ${name}_group before exec'ing $command when these are set — FreeBSD
+# rc.d analogue of the Linux systemd unit's User=arxsentinel/
+# Group=arxsentinel. Without this the daemon would run as root (the
+# user that invokes `service arxsentinel start`, typically root via
+# sudo). install.sh creates this exact user/group (Step 1).
+arxsentinel_user="arxsentinel"
+arxsentinel_group="arxsentinel"
+
+# FreeBSD path convention (DECISIONS.md Decision 4): third-party binaries
+# under /usr/local/bin/, config under /usr/local/etc/arxsentinel/.
+command="/usr/local/bin/arxsentinel"
+# Explicit procname: rc.subr matches ${procname} (default: ${command}) against
+# `ps ax` first-arg when `service arxsentinel status` is called. Adding it
+# explicitly is defensive against future command_args expansion changing the
+# process-visible name. With command_args="-config=..." the binary still
+# appears in ps as "arxsentinel" (the first arg), so procname=command is
+# correct.
+procname="${command}"
+
+# DECISIONS.md Q1 (Revised note on Decision 4): the daemon's compiled-in
+# default config path is /etc/arxsentinel/config.yaml (Linux-specific),
+# so we MUST pass -config= explicitly on the FreeBSD side. The Go flag
+# package accepts both --config= and -config= (cmd/arxsentinel/main.go:125).
+command_args="-config=/usr/local/etc/arxsentinel/config.yaml"
+
+# pidfile + required_files use the FreeBSD standard locations.
+pidfile="/var/run/arxsentinel/arxsentinel.pid"
+required_files="/usr/local/etc/arxsentinel/config.yaml"
+
+# FreeBSD analogue of the Linux systemd unit's RuntimeDirectory=arxsentinel
+# directive: rc.d has no built-in equivalent, so the runtime dir must be
+# mkdir'd manually before starting.
+#
+# WIRED VIA start_precmd BELOW — without that variable, rc.subr would NOT
+# invoke this function automatically. FreeBSD rc.subr only runs a pre-start
+# hook when the variable `start_precmd` (the `argument_precmd` for argument=start,
+# per rc.subr(8)) is set to the function name. Just defining `start_pre()` is
+# not enough — rc.subr does not auto-discover functions by name suffix.
+# Verified against: rc.subr(8) man page + reference FreeBSD port
+# (net-mgmt/prometheus2/files/prometheus.in).
+arxsentinel_start_precmd()
+{
+    # install -d is atomic (single syscall), idempotent, and sets ownership in
+    # one step — preferred over mkdir+chown for the same reason the prometheus
+    # port uses it. Mode 0755: rc.subr su(1)'s into ${arxsentinel_user} before
+    # exec'ing $command, and the user needs to write the pidfile there.
+    install -d -m 0755 -o "${arxsentinel_user}" -g "${arxsentinel_group}" /var/run/arxsentinel
+}
+
+# Wire the pre-start hook. rc.subr reads `start_precmd` (the argument_precmd
+# for the `start` method, per rc.subr(8)) and eval's its value as a shell
+# command list, just before running the default `start` method. Without this
+# wiring, arxsentinel_start_precmd would never be invoked and the pidfile
+# directory would not exist on a fresh install — `service arxsentinel start`
+# would fail with "can't write pidfile". Setting it BEFORE load_rc_config
+# lets rc.conf override if needed; load_rc_config merges, it doesn't erase.
+start_precmd="arxsentinel_start_precmd"
+
+# Load any user overrides from /etc/rc.conf[.local] (e.g. arxsentinel_enable,
+# arxsentinel_user, arxsentinel_flags). Required for `service arxsentinel
+# status` to report the correct pidfile and start command.
+load_rc_config "${name}"
+
+# run_rc_command dispatches to start/stop/restart/status/etc. based on $1
+# (the first positional arg passed by `service arxsentinel <verb>`).
+run_rc_command "$1"
