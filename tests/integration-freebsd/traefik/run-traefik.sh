@@ -7,7 +7,7 @@
 #  assertions.
 #
 # Architecture (per Flow 089 DECISIONS §2 + §3, carried over verbatim):
-# - traefik runs in a Linux-emulated docker.io/library/traefik:v3-alpine
+# - traefik runs in a Linux-emulated docker.io/library/traefik:latest
 #   container under podman (FreeBSD Linux compat — see Flow 088 DECISIONS
 #   §"A.2"). traefik is a single Go-static binary; no plugin build or
 #   xcaddy step is required (caddy needed transform-encoder to coerce
@@ -43,7 +43,7 @@
 #   nginx used `podman exec nginx nginx -t` (config-validate) +
 #   `podman logs | grep "start worker processes"` (startup-sync). The
 #   traefik analogue would be config-validate + startup log line, but
-#   traefik:v3-alpine does NOT ship a `traefik --version`-style probe
+#   traefik:latest does NOT ship a `traefik --version`-style probe
 #   via `podman exec` (the binary's main entrypoint is the daemon
 #   itself; running `traefik version` via `podman exec` works but
 #   adds no signal over the startup log line). Following the caddy
@@ -174,7 +174,7 @@ podman network create "$NETWORK"
 # ---------------------------------------------------------------------
 # Step 3: start the traefik container detached. bind-mount the staged
 # traefik.yml over /etc/traefik/traefik.yml (so traefik reads our
-# config, not the image's default — traefik:v3-alpine's image has no
+# config, not the image's default — traefik:latest's image has no
 # config file by default and the daemon would exit immediately on
 # start without one) and bind-mount $WORK_DIR/logs over /logs (so
 # the access log lands at $WORK_DIR/logs/access.log on the host — the
@@ -185,15 +185,15 @@ podman network create "$NETWORK"
 # inspect` instead, since the FreeBSD CNI bridge plugin has no
 # dnsname resolver (G6; same as nginx + caddy runs).
 #
-# Fully-qualified docker.io/library/traefik:v3-alpine (NOT bare
-# traefik:v3-alpine): the FreeBSD podman default
+# Fully-qualified docker.io/library/traefik:latest (NOT bare
+# traefik:latest): the FreeBSD podman default
 # /usr/local/share/containers/registries.conf has no
 # unqualified-search-registries entry, so a short name fails with
 # "did not resolve to an alias and no unqualified-search registries
 # are defined" (G1; same class of bug as Flow 088 Decision F.4 and
 # 091 P2.7 Bug 1).
 #
-# --os=linux is REQUIRED: traefik:v3-alpine's OCI image index has no
+# --os=linux is REQUIRED: traefik:latest's OCI image index has no
 # "freebsd" OS variant, only linux/*. Without --os=linux, podman on
 # FreeBSD defaults to looking for a freebsd-OS manifest and fails
 # with "no image found in image index for architecture amd64 ...
@@ -224,7 +224,7 @@ TRAEFIK_CID=$(podman run -d \
     --network "$NETWORK" \
     -v "$WORK_DIR/traefik.yml:/etc/traefik/traefik.yml:ro" \
     -v "$WORK_DIR/logs:/logs" \
-    docker.io/library/traefik:v3-alpine)
+    docker.io/library/traefik:latest)
 echo "[traefik] container $TRAEFIK_CID started"
 
 # Wait for traefik to be ready: log-grep pattern ONLY (no wget
