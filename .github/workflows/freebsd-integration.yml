@@ -6,9 +6,17 @@
 # pages.yml) and from Flow 088's freebsd-ci.yml (which lives on the
 # unmerged branch feat/088-freebsd-ci-harness, NOT on dev).
 #
-# Triggers: only workflow_dispatch + push to the flow branch
-# feat/089-freebsd-integration-suite. NO pull_request, NO schedule,
-# NO release. Branch protection on dev/main is unaffected by this file.
+# Triggers: workflow_dispatch + push to the flow base + five sub-branches,
+# + workflow_call (Flow 090 P5+).
+#
+# NO pull_request on dev/main (branch protection on dev/main is unaffected
+# by this file). The pull_request trigger is scoped to inner PRs (sub-branch
+# → flow base branch feat/091-freebsd-integration-parity) only — it makes
+# the inner PR a real CI gate per the user's brief requirement 2 and Flow
+# 091 DECISIONS.md §3 + §5. It does NOT fire on PRs into dev/main, keeping
+# the dev PR CI surface unchanged (integration.yml, release.yml, dev-
+# release.yml remain the dev gates; FreeBSD jobs are NOT promoted to dev-
+# gate — Deferred 091.6).
 #
 # Source of truth: .opencode/flows/089_2026-06-30_freebsd-integration-suite/
 # DECISIONS.md — esp. §1 (separate workflow file, not in freebsd-ci.yml),
@@ -25,7 +33,29 @@ on:
   workflow_dispatch:
   push:
     branches:
+      # Flow 089 carry-over (single-backend spike). Lives on its own
+      # historical branch, not on the 091 flow base.
       - feat/089-freebsd-integration-suite
+      # Flow 091 base + five per-backend sub-branches (DECISIONS §3 + §5).
+      # Each sub-branch is cut from the flow base; its PR target is the
+      # flow base (inner PR), not dev. push: triggers fire on every
+      # commit pushed to any of these refs; the pull_request: trigger
+      # below gates the inner merge.
+      - feat/091-freebsd-integration-parity
+      - feat/091-caddy-freebsd
+      - feat/091-traefik-freebsd
+      - feat/091-haproxy-freebsd
+      - feat/091-apache-freebsd
+      - feat/091-litespeed-freebsd
+  # pull_request: scoped to inner PRs only (sub-branch → flow base branch
+  # feat/091-freebsd-integration-parity) per DECISIONS §5. NOT on dev/main:
+  # the dev PR CI surface stays integration.yml + release.yml + dev-release.yml,
+  # FreeBSD jobs are NOT promoted to dev-gate (Deferred 091.6, carries 089
+  # Deferred 089.7). This trigger makes the inner PR a real CI gate — the
+  # sub-branch must be green before merge into the flow base.
+  pull_request:
+    branches:
+      - feat/091-freebsd-integration-parity
   # Flow 090 P5+ (DECISIONS.md Decision 9 Revised 2026-07-01): allows
   # this workflow to be called from .github/workflows/dev-release.yml via
   # `uses: ./.github/workflows/freebsd-integration.yml` from the new
@@ -384,4 +414,204 @@ jobs:
             smoke-log.txt
             threats-nginx.log.smoke
             nginx-access.log
+          if-no-files-found: warn
+
+  # =====================================================================
+  # Flow 091 — five new backend jobs (caddy / traefik / haproxy / apache
+  # / litespeed). Each stub ships its first commit with
+  # continue-on-error: true (DECISIONS §6 — research-grade on first
+  # dispatch, per-backend promotion to in-workflow gating after 2+
+  # consecutive green live dispatches). The run: body is an empty
+  # placeholder; Phase P{n} (P2=caddy, P3=traefik, P4=haproxy, P5=apache,
+  # P6=litespeed) fills in the unblock chain + per-backend run-<backend>.sh
+  # invocation + per-backend artifact upload.
+  #
+  # The stubs ARE NOT a no-op for Actions: each one dispatches a fresh
+  # FreeBSD VM (vmactions/freebsd-vm@v1.5.0) on push to its sub-branch,
+  # validates the trigger wiring (push: branches: + pull_request: branches:
+  # on the flow base), and emits a smoke-log.txt artifact. The empty
+  # run: makes the first dispatch trivially green, so the trigger wiring
+  # is verified before Phase P2 invests in a real run-caddy.sh body.
+  # =====================================================================
+
+  # -------------------------------------------------------------------
+  # integration-caddy — Flow 091 P2 (DECISIONS §1: caddy first, cheapest
+  # port — alpine-base single binary, access log format closest to
+  # nginx's combined).
+  # -------------------------------------------------------------------
+  integration-caddy:
+    name: integration-caddy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true  # DECISIONS §6 — research-grade first dispatch; promote after 2+ green
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run caddy integration smoke inside FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          copyback: true
+          envs: 'GITHUB_*'
+          run: |
+            # TODO Phase P2: replace placeholder with the caddy unblock
+            # chain (storage sed + pf setup + native go build, inherited
+            # from integration-nginx) + tests/integration-freebsd/caddy/
+            # run-caddy.sh invocation + threat-log assertions.
+
+      - name: Upload integration-caddy artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-caddy
+          path: smoke-log.txt
+          if-no-files-found: warn
+
+  # -------------------------------------------------------------------
+  # integration-traefik — Flow 091 P3 (DECISIONS §1: traefik second,
+  # Go-static binary, minimal Linux-emul friction, JSON access log).
+  # -------------------------------------------------------------------
+  integration-traefik:
+    name: integration-traefik
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true  # DECISIONS §6 — research-grade first dispatch; promote after 2+ green
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run traefik integration smoke inside FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          copyback: true
+          envs: 'GITHUB_*'
+          run: |
+            # TODO Phase P3: replace placeholder with the traefik unblock
+            # chain + tests/integration-freebsd/traefik/run-traefik.sh
+            # invocation + threat-log assertions.
+
+      - name: Upload integration-traefik artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-traefik
+          path: smoke-log.txt
+          if-no-files-found: warn
+
+  # -------------------------------------------------------------------
+  # integration-haproxy — Flow 091 P4 (DECISIONS §1: haproxy third, log-
+  # format engineering needed — `capture request header User-Agent` in
+  # the frontend block for badbot testability per Decision 4 matrix).
+  # -------------------------------------------------------------------
+  integration-haproxy:
+    name: integration-haproxy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true  # DECISIONS §6 — research-grade first dispatch; promote after 2+ green
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run haproxy integration smoke inside FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          copyback: true
+          envs: 'GITHUB_*'
+          run: |
+            # TODO Phase P4: replace placeholder with the haproxy unblock
+            # chain + tests/integration-freebsd/haproxy/run-haproxy.sh
+            # invocation + threat-log assertions. Note: haproxy needs
+            # explicit `capture request header User-Agent` config work
+            # before badbot becomes testable (DECISIONS §4 matrix).
+
+      - name: Upload integration-haproxy artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-haproxy
+          path: smoke-log.txt
+          if-no-files-found: warn
+
+  # -------------------------------------------------------------------
+  # integration-apache — Flow 091 P5 (DECISIONS §1: apache fourth, mod_
+  # log_config + mod_remoteip, most config-heavy of the five, deferred
+  # to mid-suite so its complexity doesn't gate early stability
+  # feedback).
+  # -------------------------------------------------------------------
+  integration-apache:
+    name: integration-apache
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true  # DECISIONS §6 — research-grade first dispatch; promote after 2+ green
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run apache integration smoke inside FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          copyback: true
+          envs: 'GITHUB_*'
+          run: |
+            # TODO Phase P5: replace placeholder with the apache unblock
+            # chain + tests/integration-freebsd/apache/run-apache.sh
+            # invocation + threat-log assertions.
+
+      - name: Upload integration-apache artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-apache
+          path: smoke-log.txt
+          if-no-files-found: warn
+
+  # -------------------------------------------------------------------
+  # integration-litespeed — Flow 091 P6 (DECISIONS §1: litespeed last,
+  # highest Linux-emulation risk per 089's Deferred 089.1 prediction;
+  # saved for last so its risk doesn't gate the other four. Needs
+  # dockerfiles/patch-ols-logformat.py invocation for UA capture per
+  # DECISIONS §4).
+  # -------------------------------------------------------------------
+  integration-litespeed:
+    name: integration-litespeed
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true  # DECISIONS §6 — research-grade first dispatch; promote after 2+ green
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run litespeed integration smoke inside FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          copyback: true
+          envs: 'GITHUB_*'
+          run: |
+            # TODO Phase P6: replace placeholder with the litespeed
+            # unblock chain + tests/integration-freebsd/litespeed/
+            # run-litespeed.sh invocation + threat-log assertions. Note:
+            # litespeed needs patch-ols-logformat.py for UA capture
+            # (DECISIONS §4 matrix).
+
+      - name: Upload integration-litespeed artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-litespeed
+          path: smoke-log.txt
           if-no-files-found: warn
