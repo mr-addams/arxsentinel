@@ -257,6 +257,17 @@ jobs:
                 ls -la arxsentinel
             echo "::endgroup::"
 
+            # Containerfile.freebsd's "COPY config.docker.yaml
+            # /etc/arxsentinel/config.yaml" line (088 pattern) expects this
+            # file at the build context root. The repo's actual copy lives
+            # at deploy/container/docker/config.docker.yaml - stage it here
+            # (live run 28510798283 failed at this exact COPY step with
+            # "stat: /config.docker.yaml: no such file or directory"
+            # because this staging step was missing).
+            echo "::group::stage config.docker.yaml into build context"
+            cp deploy/container/docker/config.docker.yaml config.docker.yaml
+            echo "::endgroup::"
+
             # ── podman build against Containerfile.freebsd ───────────────────────
             # Containerfile.freebsd was added by Flow 088 PR #239 — it's a single
             # stage that COPY's pre-built binaries into the digest-pinned
