@@ -8,6 +8,14 @@ on:
       - 'README*.md'
       - 'VERSION'
       - '.github/workflows/**'
+  # Manual trigger for workflow-only changes to this file: the push
+  # trigger above excludes .github/workflows/** via paths-ignore, so a
+  # commit that ONLY touches this file (e.g. a CI-fix like the
+  # freebsd-container-image healthcheck-filename fix) does not
+  # auto-dispatch a live run. workflow_dispatch lets an operator verify
+  # such a fix on demand without needing an unrelated code change to
+  # piggyback a push trigger.
+  workflow_dispatch:
 
 permissions:
   contents: write
