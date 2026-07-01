@@ -99,6 +99,20 @@ accessLog:
   # attack scenario). If a follow-up iteration sees partial lines in
   # the host-side file, revisit bufferingSize (default 100, may flush
   # mid-line under load).
+  #
+  # fields.headers.defaultMode: keep is REQUIRED (found live, run
+  # 28554443502): Traefik's default for fields.headers.defaultMode is
+  # "drop" (confirmed via official docs, https://doc.traefik.io/
+  # traefik/master/observe/logs-and-access-logs/ — "the defaultMode
+  # for fields.headers is drop... request headers are excluded unless
+  # explicitly specified"). Without this, Referer AND User-Agent both
+  # render as literal "-" in the CLF line regardless of what the
+  # client actually sent — the badbot/UA-scanner detection (Decision 9)
+  # has no signal to key on, and run-traefik.sh's sqlmap-IP extraction
+  # (grep on the UA string) fails outright.
+  fields:
+    headers:
+      defaultMode: keep
 
 # No providers block at all: an empty `providers.file.filename: ""`
 # is NOT "disabled" — Traefik still instantiates the file provider and
