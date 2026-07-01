@@ -169,10 +169,17 @@ jobs:
         with:
           release: "14.3"
           usesh: true
-          # copyback not needed — the artifact IS the image pushed to ghcr; we
-          # don't need to copy any file back to the host. False here saves the
-          # round-trip latency of the VM syncing its filesystem on exit.
-          copyback: false
+          # copyback: true (matches 088/089's proven-stable jobs, which use
+          # the same podman run --version smoke test successfully many
+          # times). copyback: false was tried first (the artifact IS the
+          # image pushed to ghcr, no file needs copying back) but live runs
+          # 28511957455 (both the original dispatch and a manual retry)
+          # crashed with "ssh exited with code 134" (SIGABRT) immediately
+          # after a fully successful `podman build`, before the smoke-test
+          # step printed anything. copyback: false is the one config
+          # difference vs. 088/089's identical smoke-test pattern; reverting
+          # to true is the cheapest, most defensible next experiment.
+          copyback: true
           # DEV_TAG is a custom (non-GITHUB_-prefixed) env var - it does NOT
           # match a GITHUB_* glob and must be listed explicitly, unlike
           # GITHUB_TOKEN/GITHUB_ACTOR which vmactions forwards by name here.
