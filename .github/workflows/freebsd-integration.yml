@@ -449,6 +449,51 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # ---------------------------------------------------------------
+      # P2.4 host build -- build caddy-arxsentinel on ubuntu-latest.
+      # ---------------------------------------------------------------
+      # WHY host build, not podman build inside the FreeBSD VM:
+      #   triage-caddy-1.md recorded 5 independent bugs across 4
+      #   live dispatches, all trying to compile caddy+xcaddy inside
+      #   podman build under FreeBSD Linux-compat emulation (short-
+      #   name image resolution, --platform linux/amd64, trimmed go
+      #   binary unable to self-locate GOROOT via readlink /proc/self
+      #   /exe under linprocfs, and DNS resolution to proxy.golang.org
+      #   timing out from inside the podman build container -- which
+      #   differs from podman run, which works fine for every other
+      #   backend in this flow). Per Decision 4 Revised, the entire
+      #   build is moved off the FreeBSD VM.
+      #
+      #   ubuntu-latest has native Docker with full internet access
+      #   and no emulation layer -- the same well-trodden path every
+      #   other Docker-based CI step in this project already uses.
+      #   vmactions/freebsd-vm syncs the entire $GITHUB_WORKSPACE into
+      #   the VM via rsync BEFORE the run: script executes (Decision 4
+      #   Revised, citing index.js:911-922), so the saved tar lands
+      #   inside the VM automatically -- podman load there is a pure
+      #   local file-import operation with zero network/toolchain
+      #   dependency, sidestepping every one of the 5 bugs.
+      #
+      #   This pattern is the precedent for any future backend that
+      #   needs a custom image with Go-toolchain module fetches
+      #   (G11 in DECISIONS.md gotchas checklist).
+      #
+      # docker is preinstalled on ubuntu-latest GitHub-hosted runners
+      # (Docker Engine 24+, confirmed in GitHub Actions runner images
+      # docs) -- no setup-docker step needed; bare docker build works.
+      # Working directory defaults to $GITHUB_WORKSPACE, so the tar
+      # lands at $GITHUB_WORKSPACE/caddy-arxsentinel.tar and is
+      # rsync-synced into the VM by vmactions/freebsd-vm.
+      # ---------------------------------------------------------------
+      - name: Build caddy-arxsentinel image on host (native Docker, no FreeBSD Linux-emul)
+        run: |
+          docker build \
+            -t caddy-arxsentinel:local \
+            -f tests/integration/dockerfiles/Caddy.Dockerfile \
+            tests/integration/
+          docker save caddy-arxsentinel:local -o caddy-arxsentinel.tar
+          ls -l caddy-arxsentinel.tar
+
       - name: Run caddy integration smoke inside FreeBSD VM
         uses: vmactions/freebsd-vm@v1.5.0
         with:
@@ -647,48 +692,25 @@ jobs:
                 echo "[integration-caddy] arxsentinel --version FAILED"
 
             # ----------------------------------------------------------------
-            # P2.4 -- build custom caddy image with transform-encoder.
+            # P2.4 -- load pre-built caddy-arxsentinel image (host build).
             # ----------------------------------------------------------------
-            # WHY a custom caddy build (not docker.io/library/caddy:2-alpine):
-            #   The arx-core caddy parser profile (parser/profiles.go
-            #   caddyProfile) is a RegexParser on Apache CLF. Caddy v2
-            #   emits JSON by default; the transform-encoder plugin
-            #   converts it to CLF. The plugin is a compiled-in binary
-            #   extension -- not a runtime config -- so the caddy image
-            #   must be built with xcaddy. tests/integration/dockerfiles/
-            #   Caddy.Dockerfile is the same Dockerfile the battle suite
-            #   uses (tests/integration/docker-compose.yml:58); reusing
-            #   it here means the FreeBSD-native sentinel sees the same
-            #   log shape as the battle suite, validating parser parity
-            #   (Decision 4 consequences: per-backend parity check is
-            #   exactly this -- same config, same parser, different
-            #   upstream).
-            #
-            # Wall time: ~60-120s for xcaddy + go build of caddy +
-            #   transform-encoder plugin. Recorded in the smoke-log
-            #   artifact so the user can see the breakdown without a
-            #   second dispatch.
-            #
-            # Build context is tests/integration/ (the Dockerfile uses
-            #   docker-compose-style relative paths -- only the
-            #   Dockerfile itself is needed; the docker-compose context
-            #   files are not pulled in by this build).
+            # Per Decision 4 Revised / G11: caddy-arxsentinel:local is
+            # built NATIVELY on the ubuntu-latest host (docker build +
+            # docker save in the previous workflow step), NOT compiled
+            # inside the VM. The tar is synced into the VM via
+            # vmactions/freebsd-vm's rsync of $GITHUB_WORKSPACE (the
+            # tar lands at $GITHUB_WORKSPACE/caddy-arxsentinel.tar in
+            # both host and VM). podman load here is a pure local
+            # file-import with no network/toolchain dependency -- this
+            # sidesteps all 5 bugs from triage-caddy-1.md (short-name,
+            # platform, GOROOT under linprocfs, DNS in build container)
+            # in one move. See Decision 4 Revised in DECISIONS.md for
+            # the full rationale + bug history; G11 for the precedent
+            # it sets for future backends.
             # ----------------------------------------------------------------
-            echo "[integration-caddy] building custom caddy image with transform-encoder (~60-120s)..."
-            cd "$GITHUB_WORKSPACE/tests/integration"
-            # --platform linux/amd64 is REQUIRED (triage-caddy-1.md P2.7
-            # iteration 2 finding): caddy:builder/caddy:latest are
-            # Linux-only multi-arch images, same as nginx:alpine/curl.
-            # Without it podman defaults to matching the host's freebsd
-            # OS in the manifest list and fails with "no image found in
-            # image index ... OS freebsd" on the very first FROM line.
-            podman build \
-                --platform linux/amd64 \
-                -f dockerfiles/Caddy.Dockerfile \
-                -t caddy-arxsentinel:local \
-                . || \
-                echo "[integration-caddy] podman build caddy-arxsentinel FAILED (run-caddy.sh will fail to start the container)"
-            cd "$GITHUB_WORKSPACE"
+            echo "[integration-caddy] loading pre-built caddy-arxsentinel image (built on host, synced via rsync)..."
+            podman load -i "$GITHUB_WORKSPACE/caddy-arxsentinel.tar" || \
+                echo "[integration-caddy] podman load caddy-arxsentinel FAILED (run-caddy.sh will fail to start the container)"
 
             # Marker for the log artifact's last line (Phase 3-4 will
             # append the run-caddy.sh output below this block — kept
