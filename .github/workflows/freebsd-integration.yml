@@ -850,13 +850,13 @@ jobs:
   # image, which traefik does not).
   # -------------------------------------------------------------------
   integration-traefik:
-    # Phase P3 first dispatch: continue-on-error: true per DECISIONS
-    # §6 (research-grade; promote to in-workflow gating after 2+
-    # consecutive green live dispatches — Task P3.8).
+    # Promoted (Task P3.8): continue-on-error dropped after 2 consecutive
+    # green live dispatches (runs 28554864680, 28555057960 — both
+    # "[traefik] PASS: all 3 assertions green", exit 0) per DECISIONS
+    # section 6's promotion criterion.
     name: integration-traefik
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true  # DECISIONS §6 — research-grade first dispatch; promote after 2+ green
 
     steps:
       - name: Checkout
