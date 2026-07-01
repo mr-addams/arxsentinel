@@ -165,7 +165,10 @@ jobs:
           # don't need to copy any file back to the host. False here saves the
           # round-trip latency of the VM syncing its filesystem on exit.
           copyback: false
-          envs: 'GITHUB_TOKEN GITHUB_ACTOR'
+          # DEV_TAG is a custom (non-GITHUB_-prefixed) env var - it does NOT
+          # match a GITHUB_* glob and must be listed explicitly, unlike
+          # GITHUB_TOKEN/GITHUB_ACTOR which vmactions forwards by name here.
+          envs: 'GITHUB_TOKEN GITHUB_ACTOR DEV_TAG'
           run: |
             set -eu
 
