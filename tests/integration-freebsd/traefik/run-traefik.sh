@@ -229,18 +229,23 @@ echo "[traefik] container $TRAEFIK_CID started"
 
 # Wait for traefik to be ready: log-grep pattern ONLY (no wget
 # following the caddy lesson — see header WHY-comment). The pattern
-# combines "Traefik version" (process-startup-sync) AND
-# "entryPoint" listener line (the entryPoint is bound and accepting
-# traffic). Both must appear within the deadline; either alone is
-# insufficient (a "Traefik version" line could appear during a
-# config-parse failure, and an "entryPoint" line could be in a
-# non-listening state in some edge cases).
+# checks for "Traefik version" (process-startup-sync, confirmed via
+# live dispatch 28554031614 to appear within ~1s of container start).
+# The original check ALSO required an "entryPoint" log-line match,
+# guessed without empirical confirmation — live run 28554031614 showed
+# the real v3.7.6 startup log never emits that literal substring (the
+# provider-startup sequence uses different wording), so the AND
+# condition never became true and the check false-negatived for the
+# full 30s even though traefik was actually up. A 2s grace sleep after
+# "Traefik version" appears covers the remaining provider-init/entry-
+# point-bind window (observed to complete well within that in the same
+# live run's log timestamps).
 echo "[traefik] waiting for traefik ready (timeout 30s)..."
 DEADLINE=$(($(date +%s) + 30))
 READY=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-    if podman logs traefik 2>&1 | grep -q "Traefik version" \
-       && podman logs traefik 2>&1 | grep -q "entryPoint"; then
+    if podman logs traefik 2>&1 | grep -q "Traefik version"; then
+        sleep 2
         READY=1
         break
     fi

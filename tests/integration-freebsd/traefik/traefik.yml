@@ -100,16 +100,14 @@ accessLog:
   # the host-side file, revisit bufferingSize (default 100, may flush
   # mid-line under load).
 
-providers:
-  # file provider disabled: the dynamic config file would need a
-  # router + service definition to register, and we don't need any
-  # routing logic for the integration smoke. Traefik still logs every
-  # request that hits the entryPoint even with no routes configured
-  # (it just answers 404). This is the analogue of caddy's "respond /
-  # "*" 404" and nginx's "return 404" in nginx.conf.
-  file:
-    filename: ""
-    watch: false
+# No providers block at all: an empty `providers.file.filename: ""`
+# is NOT "disabled" — Traefik still instantiates the file provider and
+# then fails with "neither filename nor directory is defined" (found
+# live, run 28554031614). Omitting `providers:` entirely means no
+# dynamic-config provider starts, avoiding the spurious error. Traefik
+# still logs every request that hits the entryPoint even with zero
+# routes configured (it just answers 404) — the analogue of caddy's
+# "respond / "*" 404" and nginx's "return 404" in nginx.conf.
 
 log:
   # level: INFO — quiet enough to not pollute the smoke log with
