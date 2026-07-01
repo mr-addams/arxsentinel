@@ -291,3 +291,42 @@ jobs:
           DEV_TAG: ${{ needs.dev-release.outputs.tag }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
+
+  # ─── Flow 090 P5+ (Decision 9 Revised) — FreeBSD integration gate ────────
+  # Parallel-non-gating reusable-workflow caller for the Flow 089 nginx
+  # integration suite. NOT in the needs: chain of dev-release — runs in
+  # parallel with the existing `integration` Linux reusable-workflow caller
+  # (line 17-18). This is the "со всеми интеграционными тестами" wiring
+  # interpreted per Decision 9: surface the EXISTING FreeBSD integration
+  # checks (089 nginx integration) on every dev push, NOT wait for backends
+  # 2-6 (those remain deferred to Flow 091+ per TD-089-1 atomic-iteration
+  # discipline).
+  #
+  # First iteration: continue-on-error: true. Promotion to workflow-internal
+  # blocking is a separate revisionist commit after 2+ consecutive greens
+  # (Decision 7 + 088/089 Decision 6 first-iter discipline). NEVER promoted
+  # to branch-protection gating on dev/main.
+  freebsd-integration-gate:
+    name: FreeBSD integration gate (parallel, non-gating first-iter)
+    runs-on: ubuntu-latest
+    # NOT needs: dev-release — this job runs in parallel with the existing
+    # `integration` job (line 17), providing a separate signal that does NOT
+    # block the Linux release pipeline. The 089 nginx integration suite
+    # inside freebsd-integration.yml carries its own continue-on-error
+    # first-iter on its job(s); this caller-level continue-on-error is belt-
+    # and-suspenders for cases where the called workflow fails catastrophically
+    # (e.g., caller-side YAML dispatch error).
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Run freebsd-integration.yml workflow (089 deliverable)
+        # Reusable-workflow call. freebsd-integration.yml was merged to dev
+        # in PR #240 (Flow 089). Edit 1 above added the workflow_call: trigger
+        # that allows this call (089 originally shipped without it — oversight
+        # recorded in DECISIONS Decision 9 Revised). The 089 workflow runs
+        # the nginx integration smoke on its own vmactions/freebsd-vm step:
+        # builds arxsentinel natively, runs nginx + curl attacker via podman,
+        # asserts THREAT+attacker-IP+score+reason on the threats log.
+        uses: ./.github/workflows/freebsd-integration.yml
