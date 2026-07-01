@@ -250,29 +250,37 @@ jobs:
             # just that they cross-compile.
             echo "::group::native go build (cmd/arxsentinel + cmd/healthcheck)"
             cd "$GITHUB_WORKSPACE"
-            go build -o arxsentinel ./cmd/arxsentinel
+            # Stage binaries + config into a MINIMAL /tmp/build/ directory
+            # (088's exact pattern), NOT $GITHUB_WORKSPACE. Live run
+            # 28513793247 crashed with "ssh exited with code 134" (SIGABRT)
+            # immediately after a fully successful `podman build .` when the
+            # build context was the full repo checkout ($GITHUB_WORKSPACE,
+            # includes .git/ and the whole source tree - much larger than
+            # 088's 3-file /tmp/build/ context). A same-day dispatch of the
+            # isolated 088 container-build-freebsd job (run 28514538119)
+            # confirmed the identical smoke test succeeds today with the
+            # small-context pattern, ruling out an environment regression -
+            # the large build context was the actual difference.
+            mkdir -p /tmp/build
+            go build -o /tmp/build/arxsentinel ./cmd/arxsentinel
             # healthcheck binary is needed by the Containerfile.freebsd (088
             # pattern: COPY both into the final-stage image). MUST be named
             # exactly "healthcheck" - Containerfile.freebsd's
             # "COPY --chmod=755 healthcheck /healthcheck" line references
-            # this literal filename (confirmed by live run 28508814305,
-            # which failed with "stat: /healthcheck: no such file or
-            # directory" when this was built as arxsentinel-healthcheck).
-            go build -o healthcheck ./cmd/healthcheck || \
+            # this literal filename.
+            go build -o /tmp/build/healthcheck ./cmd/healthcheck || \
                 echo "::notice::cmd/healthcheck build failed — image will skip healthcheck"
-            ls -la arxsentinel healthcheck 2>/dev/null || \
-                ls -la arxsentinel
+            ls -la /tmp/build/
             echo "::endgroup::"
 
             # Containerfile.freebsd's "COPY config.docker.yaml
             # /etc/arxsentinel/config.yaml" line (088 pattern) expects this
-            # file at the build context root. The repo's actual copy lives
-            # at deploy/container/docker/config.docker.yaml - stage it here
-            # (live run 28510798283 failed at this exact COPY step with
-            # "stat: /config.docker.yaml: no such file or directory"
-            # because this staging step was missing).
+            # file at the build context root - stage it into /tmp/build/
+            # alongside the binaries (same directory as the podman build
+            # context below).
             echo "::group::stage config.docker.yaml into build context"
-            cp deploy/container/docker/config.docker.yaml config.docker.yaml
+            cp "$GITHUB_WORKSPACE/deploy/container/docker/config.docker.yaml" \
+               /tmp/build/config.docker.yaml
             echo "::endgroup::"
 
             # ── podman build against Containerfile.freebsd ───────────────────────
@@ -280,12 +288,14 @@ jobs:
             # stage that COPY's pre-built binaries into the digest-pinned
             # ghcr.io/freebsd/freebsd-static:14.3 base. Single-arch (amd64 only —
             # the QEMU VM is amd64, no cross-arch buildx analogue for FreeBSD).
+            # Context is /tmp/build/ (3 files: arxsentinel, healthcheck,
+            # config.docker.yaml) - NOT $GITHUB_WORKSPACE - matching 088's
+            # proven-stable container-build-freebsd job exactly.
             echo "::group::podman build arxsentinel:freebsd-local"
-            cd "$GITHUB_WORKSPACE"
             podman build \
                 -t arxsentinel:freebsd-local \
-                -f deploy/container/freebsd/Containerfile.freebsd \
-                .
+                -f "$GITHUB_WORKSPACE/deploy/container/freebsd/Containerfile.freebsd" \
+                /tmp/build/
             # Smoke test the image — `--version` exercises the binary inside
             # the FreeBSD container runtime (ocijail). If the base image's
             # entrypoint or the binary has an ABI mismatch, this surfaces it
