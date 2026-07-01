@@ -77,7 +77,7 @@ SENTINEL_CFG_SRC="$CADDY_DIR/sentinel-caddy.yaml"
 # Sanity: all three inputs must exist. A typo or missing build would
 # silently produce an empty access log and the assertions would
 # falsely PASS.
-if [ ! -s "$NGINX_CONF" ]; then
+if [ ! -s "$CADDY_CONF" ]; then
     echo "[caddy] FAIL: Caddyfile missing or empty at $CADDY_CONF" >&2
     exit 1
 fi
