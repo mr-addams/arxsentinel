@@ -440,10 +440,15 @@ jobs:
   # nginx's combined).
   # -------------------------------------------------------------------
   integration-caddy:
+    # Promoted (Task P2.8): continue-on-error dropped after 2 consecutive
+    # green live dispatches (runs 28551946529, 28552167223 — both
+    # "[caddy] PASS: all 3 assertions green", exit 0) per DECISIONS
+    # section 6's promotion criterion. Job-level blocking applies ONLY
+    # within this isolated workflow — it does not gate dev/main branch
+    # protection.
     name: integration-caddy
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true  # DECISIONS §6 — research-grade first dispatch; promote after 2+ green
 
     steps:
       - name: Checkout
