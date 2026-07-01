@@ -296,11 +296,41 @@ jobs:
                 -t arxsentinel:freebsd-local \
                 -f "$GITHUB_WORKSPACE/deploy/container/freebsd/Containerfile.freebsd" \
                 /tmp/build/
-            # Smoke test the image — `--version` exercises the binary inside
-            # the FreeBSD container runtime (ocijail). If the base image's
-            # entrypoint or the binary has an ABI mismatch, this surfaces it
-            # immediately, before the push.
+            echo "[debug] podman build finished, exit $?"
+            echo "::endgroup::"
+
+            # DEBUG INSTRUMENTATION (temporary - Flow 090 SIGABRT investigation):
+            # live runs 28508814305 / 28511957455 / 28513793247 / 28515335753
+            # all crashed with "ssh exited with code 134" (SIGABRT)
+            # immediately after `podman build` succeeded, with ZERO output
+            # from the smoke-test `podman run --version` line that follows -
+            # not even its own stdout. copyback:true (#245) and a minimal
+            # /tmp/build/ context (#246) did NOT fix it (ruled out both
+            # hypotheses). This block adds explicit markers + diagnostics
+            # around the exact transition point so the NEXT crash pinpoints
+            # whether the abort happens (a) between build and run (nothing
+            # in `podman run` executes at all), (b) inside `podman run`
+            # itself, or (c) after `podman run` succeeds but before its
+            # stdout flushes over SSH.
+            echo "::group::debug: podman state before smoke test"
+            echo "[debug] about to run podman images"
+            podman images
+            echo "[debug] about to run podman info storage"
+            podman info --format '{{.Store.GraphDriverName}}' || echo "[debug] podman info FAILED rc=$?"
+            echo "[debug] state checks done, about to invoke podman run"
+            echo "::endgroup::"
+
+            echo "::group::smoke test podman run --version"
+            echo "[debug] pre-run marker"
+            set +e
             podman run --rm arxsentinel:freebsd-local --version
+            SMOKE_RC=$?
+            set -e
+            echo "[debug] post-run marker, podman run exit code=${SMOKE_RC}"
+            if [ "$SMOKE_RC" -ne 0 ]; then
+                echo "::error::smoke test failed with exit code ${SMOKE_RC}"
+                exit "$SMOKE_RC"
+            fi
             echo "::endgroup::"
 
             # ── podman login + push to ghcr with both tag variants ───────────────
