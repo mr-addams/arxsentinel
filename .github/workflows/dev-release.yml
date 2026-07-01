@@ -262,13 +262,31 @@ jobs:
             # small-context pattern, ruling out an environment regression -
             # the large build context was the actual difference.
             mkdir -p /tmp/build
-            go build -o /tmp/build/arxsentinel ./cmd/arxsentinel
+            # CGO_ENABLED=0 is REQUIRED, not optional: without it, a FreeBSD
+            # pkg go toolchain with a C compiler available may link
+            # dynamically against libc. The Containerfile.freebsd base image
+            # (ghcr.io/freebsd/freebsd-static:14.3) ships NO dynamic linker
+            # or libc - it is a static-binaries-only image (the name says
+            # so). A dynamically-linked binary exec'd there aborts in the
+            # dynamic loader before main() runs - a silent SIGABRT with
+            # ZERO stdout output, exit code 134, in well under a second.
+            # This exact signature was captured via debug instrumentation
+            # (#247) on live run 28516662994: `podman run --version`
+            # returned exit 134 in 0.49s with no output at all. 088's
+            # proven-stable container-build-freebsd job (freebsd-ci.yml)
+            # always set CGO_ENABLED=0 explicitly; this job omitted it -
+            # the actual root cause of every SIGABRT crash in this
+            # investigation (#242-#247 fixed real but secondary bugs along
+            # the way; none of them addressed this).
+            CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+                go build -o /tmp/build/arxsentinel ./cmd/arxsentinel
             # healthcheck binary is needed by the Containerfile.freebsd (088
             # pattern: COPY both into the final-stage image). MUST be named
             # exactly "healthcheck" - Containerfile.freebsd's
             # "COPY --chmod=755 healthcheck /healthcheck" line references
             # this literal filename.
-            go build -o /tmp/build/healthcheck ./cmd/healthcheck || \
+            CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+                go build -o /tmp/build/healthcheck ./cmd/healthcheck || \
                 echo "::notice::cmd/healthcheck build failed — image will skip healthcheck"
             ls -la /tmp/build/
             echo "::endgroup::"
