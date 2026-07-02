@@ -151,10 +151,19 @@ jobs:
   # test itself.
   # NEVER promoted to branch-protection gating on dev/main — only the live
   # dev-release job stays gating there; this FreeBSD job stays workflow-internal.
+  #
+  # needs: freebsd-integration-gate added (2026-07-02): the FreeBSD backend
+  # suite is no longer a thin nginx-only smoke test (Flow 089) — Flow
+  # 091/092 brought it to full 7-module+badbot+blocklist+proxy-chain
+  # coverage across all 6 backends, each individually promoted off
+  # continue-on-error after 2+ consecutive green runs (see that suite's own
+  # DECISIONS.md). Publishing a FreeBSD-native container built from code
+  # whose FreeBSD behavior hasn't just been verified defeats the point of
+  # having the suite.
   freebsd-container-image:
     name: FreeBSD container image (amd64, parallel enrichment)
     runs-on: ubuntu-latest
-    needs: dev-release
+    needs: [dev-release, freebsd-integration-gate]
     timeout-minutes: 30
 
     steps:
@@ -387,28 +396,26 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
 
   # ─── Flow 090 P5+ (Decision 9 Revised) — FreeBSD integration gate ────────
-  # Parallel-non-gating reusable-workflow caller for the Flow 089 nginx
-  # integration suite. NOT in the needs: chain of dev-release — runs in
-  # parallel with the existing `integration` Linux reusable-workflow caller
-  # (line 17-18). This is the "со всеми интеграционными тестами" wiring
-  # interpreted per Decision 9: surface the EXISTING FreeBSD integration
-  # checks (089 nginx integration) on every dev push, NOT wait for backends
-  # 2-6 (those remain deferred to Flow 091+ per TD-089-1 atomic-iteration
-  # discipline).
+  # Reusable-workflow caller for the FreeBSD backend integration suite.
+  # Originally (Flow 090) a thin nginx-only smoke test, run in parallel
+  # with `dev-release`/`integration` and gating nothing — actionlint
+  # forbids `continue-on-error` on a reusable-workflow-call job, so a red
+  # run here always flipped the overall workflow RUN conclusion to
+  # "failure" even though nothing downstream depended on it (accepted
+  # first-iteration trade-off, see prior revision of this comment in git
+  # history for the full reasoning).
   #
-  # NOTE: `continue-on-error` is NOT available on a reusable-workflow-call
-  # job (actionlint enforces this — only "name", "uses", "with", "secrets",
-  # "needs", "if", "permissions" are allowed here). This means a red
-  # freebsd-integration-gate DOES flip the overall dev-release workflow
-  # RUN conclusion to "failure" in the Actions UI, even though it does not
-  # block or fail the dev-release/freebsd-container-image jobs themselves
-  # (no needs: dependency on this job). This is a known, accepted trade-off
-  # for the first iteration — revisit if the false-alarm noise on dev-push
-  # notifications becomes a problem (candidate fix: wrap the call in a
-  # normal job with steps: gh workflow run + poll, trading directness for
-  # continue-on-error support).
+  # Gating added (2026-07-02): Flow 091/092 brought this suite to full
+  # 7-module+badbot+blocklist+proxy-chain coverage across all 6 backends,
+  # each individually promoted off continue-on-error inside
+  # freebsd-integration.yml after 2+ consecutive green runs. With that
+  # bar cleared, `freebsd-container-image` now lists this job in its
+  # `needs:` — a FreeBSD-native container is no longer published unless
+  # the FreeBSD backend suite passed on the same commit. Still NOT in the
+  # needs: chain of `dev-release`/`integration` themselves (Linux release
+  # publishing stays independent of FreeBSD test results).
   freebsd-integration-gate:
-    name: FreeBSD integration gate (parallel, non-gating first-iter)
+    name: FreeBSD integration gate (gates freebsd-container-image)
     # Reusable-workflow call: uses: is a JOB-LEVEL field here, mutually
     # exclusive with runs-on:/steps: (GitHub Actions docs: "you call
     # reusable workflows directly within a job, and not from within job
@@ -416,12 +423,8 @@ jobs:
     # freebsd-integration.yml was merged to dev in PR #240 (Flow 089); Edit
     # 1 above added the workflow_call: trigger that allows this call (089
     # originally shipped without it — oversight recorded in DECISIONS
-    # Decision 9 Revised). The 089 workflow runs the nginx integration
-    # smoke on its own vmactions/freebsd-vm step: builds arxsentinel
-    # natively, runs nginx + curl attacker via podman, asserts
+    # Decision 9 Revised). The workflow runs all 6 backends' integration
+    # suites on their own vmactions/freebsd-vm steps: builds arxsentinel
+    # natively, runs each backend + curl attacker via podman, asserts
     # THREAT+attacker-IP+score+reason on the threats log.
-    #
-    # NOT needs: dev-release — this job runs in parallel with the existing
-    # `integration` job (line 17); its own failure does not fail or block
-    # the dev-release/freebsd-container-image jobs (no needs: chain to them).
     uses: ./.github/workflows/freebsd-integration.yml
