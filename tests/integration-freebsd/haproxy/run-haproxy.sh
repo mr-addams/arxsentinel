@@ -293,20 +293,23 @@ echo "[haproxy] stdout-capture PID: $LOGS_PID"
 # + first stats socket). If P4.6 reveals a more specific marker,
 # tighten the grep; the conservative form is the safe default.
 #
-# We read from the HOST-side $WORK_DIR/haproxy/access.log (NOT from
-# `podman logs haproxy` directly) because:
-#   1. The sentinel also reads from the host-side file — using the
-#      same source for the readiness check matches the production
-#      read path and catches any write-flush lag in the
-#      `podman logs --follow` pipe.
-#   2. The bg-capture process is already running (step 3b), so the
-#      host-side file is being actively written.
+# We poll `podman logs haproxy` DIRECTLY (NOT the host-side
+# $WORK_DIR/haproxy/access.log file written by the backgrounded
+# `podman logs --follow ... > file &` process from step 3b). Found
+# live (run 28556804334): the file stayed completely empty for the
+# full 30s timeout even though `podman logs --tail 30 haproxy` (a
+# direct, one-shot call) showed the startup NOTICE lines immediately
+# — classic stdio full-buffering: `podman logs --follow`'s output,
+# redirected to a FILE (not a TTY), is buffered by the C library and
+# the short NOTICE lines never fill the buffer enough to flush within
+# the poll window. A direct `podman logs` call has no such buffering
+# (each invocation is a fresh read of the container's log ring, not a
+# streamed pipe), so it reliably sees the content immediately.
 echo "[haproxy] waiting for haproxy ready (timeout 30s)..."
 DEADLINE=$(($(date +%s) + 30))
 READY=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-    if [ -s "$WORK_DIR/haproxy/access.log" ] \
-       && grep -q "haproxy" "$WORK_DIR/haproxy/access.log" 2>/dev/null; then
+    if podman logs haproxy 2>&1 | grep -q "Loading success"; then
         sleep 3
         READY=1
         break
