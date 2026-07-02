@@ -492,19 +492,16 @@ jobs:
   # nginx's combined).
   # -------------------------------------------------------------------
   fbsd-integration-caddy:
-    # Direct-scenario promotion (Task P2.8, superseded by Flow 092 below):
-    # continue-on-error dropped after 2 consecutive green live dispatches
-    # (runs 28551946529, 28552167223 — both "[caddy] PASS: all 3
-    # assertions green", exit 0) per DECISIONS section 6's promotion
-    # criterion.
-    #
-    # Flow 092: integration.sh now also runs Track A (7-module+badbot+
-    # blocklist coverage) and Track B (proxy-chain scenario), both new
-    # and unproven live. RE-ADDING continue-on-error: true per the same
-    # nginx precedent (DECISIONS §"Revised: 2026-07-02 — nginx
-    # promoted") until 2 consecutive green dispatches of the EXTENDED
-    # script are confirmed.
-    continue-on-error: true
+    # Flow 092 promotion: continue-on-error dropped after 2 consecutive
+    # green live dispatches of the FULLY EXTENDED script (Track A
+    # 7-module+badbot+blocklist coverage AND Track B proxy-chain
+    # together): runs 28590755312, 28591049267 — both "[caddy] PASS:
+    # all assertions green - direct + proxy-chain FreeBSD/podman caddy
+    # integration end-to-end works" (DECISIONS §"Revised: 2026-07-02 —
+    # caddy promoted"). One real bug found before green: G21 —
+    # `trusted_proxies` does not affect transform-encoder's
+    # `{request>remote_ip}`; fixed via an XFF-fallback log format
+    # string instead.
     name: fbsd-integration-caddy
     runs-on: ubuntu-latest
     timeout-minutes: 30
