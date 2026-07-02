@@ -492,12 +492,19 @@ jobs:
   # nginx's combined).
   # -------------------------------------------------------------------
   fbsd-integration-caddy:
-    # Promoted (Task P2.8): continue-on-error dropped after 2 consecutive
-    # green live dispatches (runs 28551946529, 28552167223 — both
-    # "[caddy] PASS: all 3 assertions green", exit 0) per DECISIONS
-    # section 6's promotion criterion. Job-level blocking applies ONLY
-    # within this isolated workflow — it does not gate dev/main branch
-    # protection.
+    # Direct-scenario promotion (Task P2.8, superseded by Flow 092 below):
+    # continue-on-error dropped after 2 consecutive green live dispatches
+    # (runs 28551946529, 28552167223 — both "[caddy] PASS: all 3
+    # assertions green", exit 0) per DECISIONS section 6's promotion
+    # criterion.
+    #
+    # Flow 092: integration.sh now also runs Track A (7-module+badbot+
+    # blocklist coverage) and Track B (proxy-chain scenario), both new
+    # and unproven live. RE-ADDING continue-on-error: true per the same
+    # nginx precedent (DECISIONS §"Revised: 2026-07-02 — nginx
+    # promoted") until 2 consecutive green dispatches of the EXTENDED
+    # script are confirmed.
+    continue-on-error: true
     name: fbsd-integration-caddy
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -885,6 +892,13 @@ jobs:
             fi
             echo "::endgroup::"
             echo "caddy-access.log size: $(wc -c < "$GITHUB_WORKSPACE/caddy-access.log" 2>/dev/null || echo 0) bytes"
+
+            # Final line of the run: block — propagate integration.sh's
+            # real exit code as THIS STEP's exit code (G19 — same fix
+            # as nginx's job). continue-on-error: true still masks this
+            # at the job level for now, but the step's own conclusion
+            # will be accurate once that flag is dropped at promotion.
+            exit "$SCRIPT_EXIT"
 
       - name: Upload fbsd-integration-caddy artifacts
         # smoke-log.txt: the full VM run log (Task 2.5)
