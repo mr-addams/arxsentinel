@@ -153,6 +153,31 @@ jobs:
       # fields; the upstream file is left untouched (unknown blast
       # radius on the Docker battle suite's own CI if edited).
       # ---------------------------------------------------------------
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Cross-compile arxsentinel (host, no emulation)
+        # Moved out of the FreeBSD VM (2026-07-02): native `go build`
+        # inside a FreeBSD VM is slow. Go's cross-compiler needs no
+        # emulation at all (GOOS=freebsd just targets a different
+        # ELF/ABI), so building here on the plain ubuntu-latest host is
+        # seconds instead of minutes. vmactions/freebsd-vm mounts the
+        # entire $GITHUB_WORKSPACE tree into the VM at the same path
+        # before `run:` executes, so this file shows up inside the VM
+        # for free — no explicit copy step needed on the host side.
+        run: |
+          mkdir -p .ci-freebsd-build
+          VERSION=$(cat VERSION 2>/dev/null || echo "dev")
+          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+              go build -trimpath \
+                  -ldflags="-s -w -X main.version=${VERSION}" \
+                  -o .ci-freebsd-build/arxsentinel \
+                  ./cmd/arxsentinel
+          chmod +x .ci-freebsd-build/arxsentinel
+          ls -la .ci-freebsd-build/
+
       - name: Build litespeed-arxsentinel image on host (native Docker, no FreeBSD Linux-emul)
         run: |
           docker build \
@@ -326,33 +351,16 @@ jobs:
                 echo "[fbsd-integration-litespeed] service pf restart FAILED"
 
             # ----------------------------------------------------------------
-            # Task 2.4 — native go build of arxsentinel.
+            # Task 2.4 — stage pre-built arxsentinel from host build.
             # ----------------------------------------------------------------
-            # Sentinel runs NATIVE on the host (DECISIONS §2), so we
-            # build cmd/arxsentinel natively on the FreeBSD VM here,
-            # NOT inside a container. CGO_ENABLED=0 produces a fully-
-            # static binary (drop-in compatible with the Linux
-            # distroless / FreeBSD freebsd-static final stages).
-            # -trimpath + -ldflags="-s -w -X main.version=$(cat VERSION)"
-            # mirrors the Linux Dockerfile's build args so the
-            # binary's --version output matches the published version.
-            #
-            # No scoped TMPDIR here: native `go build` does not need
-            # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # integration.sh (P6.4) per Flow 088 DECISIONS §"Decision
-            # G.1e" (exported TMPDIR poisons Go module-mode detection
-            # for any go build that runs after it).
+            # Binary was cross-compiled on the ubuntu-latest host (previous
+            # step) and synced into this VM via vmactions/freebsd-vm's
+            # automatic $GITHUB_WORKSPACE mount. This step stages it to
+            # the working directory where integration.sh expects it.
             # ----------------------------------------------------------------
-            pkg install -y go || \
-                echo "[fbsd-integration-litespeed] pkg install go FAILED"
             cd "$GITHUB_WORKSPACE"
-            VERSION=$(cat VERSION 2>/dev/null || echo "dev")
-            CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
-                go build -trimpath \
-                    -ldflags="-s -w -X main.version=${VERSION}" \
-                    -o ./arxsentinel \
-                    ./cmd/arxsentinel || \
-                echo "[fbsd-integration-litespeed] arxsentinel build FAILED"
+            cp .ci-freebsd-build/arxsentinel ./arxsentinel && chmod +x ./arxsentinel || \
+                echo "[fbsd-integration-litespeed] arxsentinel stage FAILED"
             # version-check: --version is a supported flag
             # (cmd/arxsentinel/main.go: flag.Bool("version", ...)).
             ./arxsentinel --version || \
@@ -974,6 +982,31 @@ jobs:
           docker save caddy-arxsentinel:local -o caddy-arxsentinel.tar
           ls -l caddy-arxsentinel.tar
 
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Cross-compile arxsentinel (host, no emulation)
+        # Moved out of the FreeBSD VM (2026-07-02): native `go build`
+        # inside a FreeBSD VM is slow. Go's cross-compiler needs no
+        # emulation at all (GOOS=freebsd just targets a different
+        # ELF/ABI), so building here on the plain ubuntu-latest host is
+        # seconds instead of minutes. vmactions/freebsd-vm mounts the
+        # entire $GITHUB_WORKSPACE tree into the VM at the same path
+        # before `run:` executes, so this file shows up inside the VM
+        # for free — no explicit copy step needed on the host side.
+        run: |
+          mkdir -p .ci-freebsd-build
+          VERSION=$(cat VERSION 2>/dev/null || echo "dev")
+          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+              go build -trimpath \
+                  -ldflags="-s -w -X main.version=${VERSION}" \
+                  -o .ci-freebsd-build/arxsentinel \
+                  ./cmd/arxsentinel
+          chmod +x .ci-freebsd-build/arxsentinel
+          ls -la .ci-freebsd-build/
+
       - name: Run caddy integration smoke inside FreeBSD VM
         uses: vmactions/freebsd-vm@v1.5.0
         with:
@@ -1139,33 +1172,16 @@ jobs:
                 echo "[fbsd-integration-caddy] service pf restart FAILED"
 
             # ----------------------------------------------------------------
-            # Task 2.4 — native go build of arxsentinel.
+            # Task 2.4 — stage pre-built arxsentinel from host build.
             # ----------------------------------------------------------------
-            # Sentinel runs NATIVE on the host (DECISIONS §2), so we
-            # build cmd/arxsentinel natively on the FreeBSD VM here, NOT
-            # inside a container. CGO_ENABLED=0 produces a fully-static
-            # binary (drop-in compatible with the Linux distroless /
-            # FreeBSD freebsd-static final stages). -trimpath +
-            # -ldflags="-s -w -X main.version=$(cat VERSION)" mirrors
-            # the Linux Dockerfile's build args so the binary's
-            # --version output matches the published version.
-            #
-            # No scoped TMPDIR here: native `go build` does not need
-            # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # integration.sh (Task 4.2) per Flow 088 DECISIONS §"Decision
-            # G.1e" (exported TMPDIR poisons Go module-mode detection
-            # for any go build that runs after it).
+            # Binary was cross-compiled on the ubuntu-latest host (previous
+            # step) and synced into this VM via vmactions/freebsd-vm's
+            # automatic $GITHUB_WORKSPACE mount. This step stages it to
+            # the working directory where integration.sh expects it.
             # ----------------------------------------------------------------
-            pkg install -y go || \
-                echo "[fbsd-integration-caddy] pkg install go FAILED"
             cd "$GITHUB_WORKSPACE"
-            VERSION=$(cat VERSION 2>/dev/null || echo "dev")
-            CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
-                go build -trimpath \
-                    -ldflags="-s -w -X main.version=${VERSION}" \
-                    -o ./arxsentinel \
-                    ./cmd/arxsentinel || \
-                echo "[fbsd-integration-caddy] arxsentinel build FAILED"
+            cp .ci-freebsd-build/arxsentinel ./arxsentinel && chmod +x ./arxsentinel || \
+                echo "[fbsd-integration-caddy] arxsentinel stage FAILED"
             # version-check: --version is a supported flag (cmd/arxsentinel/
             # main.go: flag.Bool("version", ...)).
             ./arxsentinel --version || \
@@ -1367,6 +1383,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Cross-compile arxsentinel (host, no emulation)
+        # Moved out of the FreeBSD VM (2026-07-02): native `go build`
+        # inside a FreeBSD VM is slow. Go's cross-compiler needs no
+        # emulation at all (GOOS=freebsd just targets a different
+        # ELF/ABI), so building here on the plain ubuntu-latest host is
+        # seconds instead of minutes. vmactions/freebsd-vm mounts the
+        # entire $GITHUB_WORKSPACE tree into the VM at the same path
+        # before `run:` executes, so this file shows up inside the VM
+        # for free — no explicit copy step needed on the host side.
+        run: |
+          mkdir -p .ci-freebsd-build
+          VERSION=$(cat VERSION 2>/dev/null || echo "dev")
+          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+              go build -trimpath \
+                  -ldflags="-s -w -X main.version=${VERSION}" \
+                  -o .ci-freebsd-build/arxsentinel \
+                  ./cmd/arxsentinel
+          chmod +x .ci-freebsd-build/arxsentinel
+          ls -la .ci-freebsd-build/
+
       - name: Run traefik integration smoke inside FreeBSD VM
         uses: vmactions/freebsd-vm@v1.5.0
         with:
@@ -1539,33 +1580,16 @@ jobs:
                 echo "[fbsd-integration-traefik] service pf restart FAILED"
 
             # ----------------------------------------------------------------
-            # Task 2.4 — native go build of arxsentinel.
+            # Task 2.4 — stage pre-built arxsentinel from host build.
             # ----------------------------------------------------------------
-            # Sentinel runs NATIVE on the host (DECISIONS §2), so we
-            # build cmd/arxsentinel natively on the FreeBSD VM here,
-            # NOT inside a container. CGO_ENABLED=0 produces a fully-
-            # static binary (drop-in compatible with the Linux
-            # distroless / FreeBSD freebsd-static final stages).
-            # -trimpath + -ldflags="-s -w -X main.version=$(cat VERSION)"
-            # mirrors the Linux Dockerfile's build args so the
-            # binary's --version output matches the published version.
-            #
-            # No scoped TMPDIR here: native `go build` does not need
-            # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # integration.sh (P3.4) per Flow 088 DECISIONS §"Decision
-            # G.1e" (exported TMPDIR poisons Go module-mode detection
-            # for any go build that runs after it).
+            # Binary was cross-compiled on the ubuntu-latest host (previous
+            # step) and synced into this VM via vmactions/freebsd-vm's
+            # automatic $GITHUB_WORKSPACE mount. This step stages it to
+            # the working directory where integration.sh expects it.
             # ----------------------------------------------------------------
-            pkg install -y go || \
-                echo "[fbsd-integration-traefik] pkg install go FAILED"
             cd "$GITHUB_WORKSPACE"
-            VERSION=$(cat VERSION 2>/dev/null || echo "dev")
-            CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
-                go build -trimpath \
-                    -ldflags="-s -w -X main.version=${VERSION}" \
-                    -o ./arxsentinel \
-                    ./cmd/arxsentinel || \
-                echo "[fbsd-integration-traefik] arxsentinel build FAILED"
+            cp .ci-freebsd-build/arxsentinel ./arxsentinel && chmod +x ./arxsentinel || \
+                echo "[fbsd-integration-traefik] arxsentinel stage FAILED"
             # version-check: --version is a supported flag
             # (cmd/arxsentinel/main.go: flag.Bool("version", ...)).
             ./arxsentinel --version || \
@@ -1731,6 +1755,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Cross-compile arxsentinel (host, no emulation)
+        # Moved out of the FreeBSD VM (2026-07-02): native `go build`
+        # inside a FreeBSD VM is slow. Go's cross-compiler needs no
+        # emulation at all (GOOS=freebsd just targets a different
+        # ELF/ABI), so building here on the plain ubuntu-latest host is
+        # seconds instead of minutes. vmactions/freebsd-vm mounts the
+        # entire $GITHUB_WORKSPACE tree into the VM at the same path
+        # before `run:` executes, so this file shows up inside the VM
+        # for free — no explicit copy step needed on the host side.
+        run: |
+          mkdir -p .ci-freebsd-build
+          VERSION=$(cat VERSION 2>/dev/null || echo "dev")
+          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+              go build -trimpath \
+                  -ldflags="-s -w -X main.version=${VERSION}" \
+                  -o .ci-freebsd-build/arxsentinel \
+                  ./cmd/arxsentinel
+          chmod +x .ci-freebsd-build/arxsentinel
+          ls -la .ci-freebsd-build/
 
       - name: Run haproxy integration smoke inside FreeBSD VM
         uses: vmactions/freebsd-vm@v1.5.0
@@ -1918,33 +1967,16 @@ jobs:
                 echo "[fbsd-integration-haproxy] service pf restart FAILED"
 
             # ----------------------------------------------------------------
-            # Task 2.4 — native go build of arxsentinel.
+            # Task 2.4 — stage pre-built arxsentinel from host build.
             # ----------------------------------------------------------------
-            # Sentinel runs NATIVE on the host (DECISIONS §2), so we
-            # build cmd/arxsentinel natively on the FreeBSD VM here,
-            # NOT inside a container. CGO_ENABLED=0 produces a fully-
-            # static binary (drop-in compatible with the Linux
-            # distroless / FreeBSD freebsd-static final stages).
-            # -trimpath + -ldflags="-s -w -X main.version=$(cat VERSION)"
-            # mirrors the Linux Dockerfile's build args so the
-            # binary's --version output matches the published version.
-            #
-            # No scoped TMPDIR here: native `go build` does not need
-            # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # integration.sh (P4.4) per Flow 088 DECISIONS §"Decision
-            # G.1e" (exported TMPDIR poisons Go module-mode detection
-            # for any go build that runs after it).
+            # Binary was cross-compiled on the ubuntu-latest host (previous
+            # step) and synced into this VM via vmactions/freebsd-vm's
+            # automatic $GITHUB_WORKSPACE mount. This step stages it to
+            # the working directory where integration.sh expects it.
             # ----------------------------------------------------------------
-            pkg install -y go || \
-                echo "[fbsd-integration-haproxy] pkg install go FAILED"
             cd "$GITHUB_WORKSPACE"
-            VERSION=$(cat VERSION 2>/dev/null || echo "dev")
-            CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
-                go build -trimpath \
-                    -ldflags="-s -w -X main.version=${VERSION}" \
-                    -o ./arxsentinel \
-                    ./cmd/arxsentinel || \
-                echo "[fbsd-integration-haproxy] arxsentinel build FAILED"
+            cp .ci-freebsd-build/arxsentinel ./arxsentinel && chmod +x ./arxsentinel || \
+                echo "[fbsd-integration-haproxy] arxsentinel stage FAILED"
             # version-check: --version is a supported flag
             # (cmd/arxsentinel/main.go: flag.Bool("version", ...)).
             ./arxsentinel --version || \
@@ -2137,6 +2169,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Cross-compile arxsentinel (host, no emulation)
+        # Moved out of the FreeBSD VM (2026-07-02): native `go build`
+        # inside a FreeBSD VM is slow. Go's cross-compiler needs no
+        # emulation at all (GOOS=freebsd just targets a different
+        # ELF/ABI), so building here on the plain ubuntu-latest host is
+        # seconds instead of minutes. vmactions/freebsd-vm mounts the
+        # entire $GITHUB_WORKSPACE tree into the VM at the same path
+        # before `run:` executes, so this file shows up inside the VM
+        # for free — no explicit copy step needed on the host side.
+        run: |
+          mkdir -p .ci-freebsd-build
+          VERSION=$(cat VERSION 2>/dev/null || echo "dev")
+          CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+              go build -trimpath \
+                  -ldflags="-s -w -X main.version=${VERSION}" \
+                  -o .ci-freebsd-build/arxsentinel \
+                  ./cmd/arxsentinel
+          chmod +x .ci-freebsd-build/arxsentinel
+          ls -la .ci-freebsd-build/
+
       - name: Run apache integration smoke inside FreeBSD VM
         uses: vmactions/freebsd-vm@v1.5.0
         with:
@@ -2301,33 +2358,16 @@ jobs:
                 echo "[fbsd-integration-apache] service pf restart FAILED"
 
             # ----------------------------------------------------------------
-            # Task 2.4 — native go build of arxsentinel.
+            # Task 2.4 — stage pre-built arxsentinel from host build.
             # ----------------------------------------------------------------
-            # Sentinel runs NATIVE on the host (DECISIONS §2), so we
-            # build cmd/arxsentinel natively on the FreeBSD VM here,
-            # NOT inside a container. CGO_ENABLED=0 produces a fully-
-            # static binary (drop-in compatible with the Linux
-            # distroless / FreeBSD freebsd-static final stages).
-            # -trimpath + -ldflags="-s -w -X main.version=$(cat VERSION)"
-            # mirrors the Linux Dockerfile's build args so the
-            # binary's --version output matches the published version.
-            #
-            # No scoped TMPDIR here: native `go build` does not need
-            # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # integration.sh (P5.4) per Flow 088 DECISIONS §"Decision
-            # G.1e" (exported TMPDIR poisons Go module-mode detection
-            # for any go build that runs after it).
+            # Binary was cross-compiled on the ubuntu-latest host (previous
+            # step) and synced into this VM via vmactions/freebsd-vm's
+            # automatic $GITHUB_WORKSPACE mount. This step stages it to
+            # the working directory where integration.sh expects it.
             # ----------------------------------------------------------------
-            pkg install -y go || \
-                echo "[fbsd-integration-apache] pkg install go FAILED"
             cd "$GITHUB_WORKSPACE"
-            VERSION=$(cat VERSION 2>/dev/null || echo "dev")
-            CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
-                go build -trimpath \
-                    -ldflags="-s -w -X main.version=${VERSION}" \
-                    -o ./arxsentinel \
-                    ./cmd/arxsentinel || \
-                echo "[fbsd-integration-apache] arxsentinel build FAILED"
+            cp .ci-freebsd-build/arxsentinel ./arxsentinel && chmod +x ./arxsentinel || \
+                echo "[fbsd-integration-apache] arxsentinel stage FAILED"
             # version-check: --version is a supported flag
             # (cmd/arxsentinel/main.go: flag.Bool("version", ...)).
             ./arxsentinel --version || \
