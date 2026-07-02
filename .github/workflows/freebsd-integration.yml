@@ -1297,13 +1297,17 @@ jobs:
   # the frontend block for badbot testability per Decision 4 matrix).
   # -------------------------------------------------------------------
   fbsd-integration-haproxy:
-    # Promoted (Task P4.8): continue-on-error dropped after 2 consecutive
-    # green live dispatches (runs 28557166919, 28557311294 — both
-    # "[haproxy] PASS: all 3 assertions green", exit 0) per DECISIONS
-    # section 6's promotion criterion. HAProxy logs to stdout, captured
-    # via `podman logs --follow` instead of a -v bind-mount; the
-    # `capture request header User-Agent` directive lives in
-    # haproxy.cfg, NOT the run-script.
+    # Direct-scenario promotion (Task P4.8, superseded by Flow 092 below):
+    # continue-on-error dropped after 2 consecutive green live dispatches
+    # (runs 28557166919, 28557311294 — both "[haproxy] PASS: all 3
+    # assertions green", exit 0) per DECISIONS section 6's promotion
+    # criterion. HAProxy logs to stdout, captured via `podman logs
+    # --follow` instead of a -v bind-mount; the `capture request header
+    # User-Agent` directive lives in haproxy.cfg, NOT the run-script.
+    #
+    # Flow 092: integration.sh now also runs Track A + Track B, both new
+    # and unproven live. RE-ADDING continue-on-error: true per precedent.
+    continue-on-error: true
     name: fbsd-integration-haproxy
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1646,6 +1650,10 @@ jobs:
             fi
             echo "::endgroup::"
             echo "haproxy-access.log size: $(wc -c < "$GITHUB_WORKSPACE/haproxy-access.log" 2>/dev/null || echo 0) bytes"
+
+            # Final line of the run: block — propagate integration.sh's
+            # real exit code as THIS STEP's exit code (G19).
+            exit "$SCRIPT_EXIT"
 
       - name: Upload fbsd-integration-haproxy artifacts
         # smoke-log.txt: the full VM run log (P4.4)
