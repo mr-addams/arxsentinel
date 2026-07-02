@@ -59,8 +59,8 @@
 #     + 12 blocklist-loaded) adapted per DECISIONS §5 (step 7).
 #   - P2.3: artifact persistence copy (step 8).
 #   - P2.3: chain-scenario steps 10-16 added per Flow 092
-#     (DECISIONS §1-6) — backend on arx-chain-net with trusted_proxies
-#     static + nginx-rp proxy on 10.89.2.0/24 (caddy = N=2 offset
+#     (DECISIONS §1-6) — backend on arx-chain-net with an XFF-fallback
+#     log format + nginx-rp proxy on 10.89.2.0/24 (caddy = N=2 offset
 #     from nginx's N=1).
 
 set -eu
@@ -719,10 +719,10 @@ fi
 # Static-IP design (DECISIONS §2): the chain network's two endpoints
 # have fixed, known addresses from creation time (.10 for the chain
 # backend, .20 for the proxy). This sidesteps the inspect-after-start
-# chicken-and-egg problem (the backend's Caddyfile has to declare
-# "trust XFF from proxy IP X" via trusted_proxies BEFORE the proxy
-# starts — known-upfront IPs make both configs static, no
-# rewrite-on-startup dance). It also makes this script's inline log
+# chicken-and-egg problem (the proxy's `proxy_pass` target needs the
+# backend's IP BEFORE the backend starts, and vice versa in principle
+# — known-upfront IPs make both configs static, no rewrite-on-startup
+# dance). It also makes this script's inline log
 # readable: a fixed address in the proxy URL is easier to grep-and-know
 # than a $NGINX_RP_IP capture.
 # ---------------------------------------------------------------------
@@ -754,68 +754,41 @@ CHAIN_PROXY_IP="10.89.2.20"
 # as Step 3 (caddy-arxsentinel:local — the drop-in caddy binary with
 # transform-encoder plugin pre-compiled, built in the workflow's
 # unblock chain from tests/integration/dockerfiles/Caddy.Dockerfile).
-# The chain Caddyfile is the direct-scenario config (Step 1 staged
-# $WORK_DIR/Caddyfile) extended with `trusted_proxies static
-# $CHAIN_PROXY_IP/32` in the global `servers { }` block — the caddy
-# equivalent of nginx's `set_real_ip_from` (DECISIONS §5).
+#
+# CORRECTED (live run 28590328652 found the ORIGINAL `trusted_proxies
+# static <ip>/32` approach below does NOT change what `{request>
+# remote_ip}` logs — that placeholder is ALWAYS the raw TCP peer
+# address in Caddy's transform-encoder, `trusted_proxies` does not
+# rewrite it). The battle suite's ACTUAL proven "behind a proxy"
+# config is `tests/integration/configs/Caddyfile-backend:16` — it
+# does NOT use `trusted_proxies` for this at all. It changes the LOG
+# FORMAT STRING itself to a transform-encoder fallback expression:
+# `{request>headers>X-Forwarded-For>[0]:request>remote_ip}` — "use
+# the first X-Forwarded-For header value if present, else fall back
+# to remote_ip." This is the caddy-specific mechanism (no equivalent
+# to nginx's real_ip module exists for LOG output specifically;
+# `trusted_proxies` in Caddy affects other subsystems — e.g.
+# `reverse_proxy` header trust — not the transform-encoder's raw
+# placeholder resolution).
 #
 # WHY a separate Caddyfile: the direct-scenario backend does NOT need
-# trusted_proxies (it never receives an XFF header in that scenario —
-# the attacker connects directly, no proxy in front). Sharing one
-# Caddyfile would require either adding the directive for the direct
-# run (harmless but unnecessary — no XFF arrives to be trusted) or
-# conditional logic that would make the file harder to read. Two
-# files, two containers, two log dirs — clean separation, same image.
-#
-# WHY /32 trust, not a subnet (DECISIONS §3): the chain network has
-# exactly one proxy container, so its single static IP is the only
-# IP that will ever present an XFF header. Trusting a /32 is narrower
-# than trusting a subnet (which is what the Docker battle suite does
-# at tests/integration/configs/Caddyfile:12 — `trusted_proxies static
-# 172.16.0.0/12` — there because the Docker compose network contains
-# multiple proxies). Narrower trust means a real attacker who somehow
-# gets on the chain network cannot spoof XFF headers and have them
-# trusted. The `servers { trusted_proxies ... }` block is inserted
-# INSIDE the Caddyfile's global options block (`{ ... }` at the top
-# of the file, which already contains `admin off` + `auto_https off`)
-# — `servers` is a server-options directive scoped INSIDE the global
-# options block (per caddyserver.com/docs/caddyfile/options#server-options),
-# NOT a top-level construct. The battle suite reference at
-# tests/integration/configs/Caddyfile:6-13 confirms this placement
-# (the `servers { }` block there is wrapped in the outer `{ ... }`).
+# the XFF-fallback format (it never receives an XFF header in that
+# scenario — the attacker connects directly, no proxy in front).
+# Using the fallback format there would be harmless (falls back to
+# remote_ip when there's no XFF) but keeping two files is clearer per
+# Decision 4 (copy-then-adapt, no conditional logic in one file).
+# Two files, two containers, two log dirs — clean separation, same
+# image.
 # ---------------------------------------------------------------------
-echo "[caddy] preparing chain-scenario Caddyfile (with trusted_proxies for $CHAIN_PROXY_IP/32)..."
+echo "[caddy] preparing chain-scenario Caddyfile (with XFF-fallback log format)..."
 mkdir -p "$WORK_DIR/caddy-chain"
 
-# awk trick: insert the `servers { trusted_proxies ... }` block
-# IMMEDIATELY AFTER the `auto_https off` directive inside the
-# Caddyfile's global options block (`{ ... }` at the top of the file,
-# which already contains `admin off` + `auto_https off`). The new
-# block is thus a sibling of `admin off` + `auto_https off` INSIDE
-# the outer `{ ... }`, which is the only correct placement per
-# Caddyfile syntax (the battle suite reference at tests/integration/
-# configs/Caddyfile:6-13 shows the exact same shape: `servers { ... }`
-# as a child of the global options block). The awk pattern anchors
-# on `^[[:space:]]+auto_https off` (whitespace-then-directive, NOT
-# a comment line — the Caddyfile mentions "auto_https off" three
-# times in comments too, which would otherwise match) so the
-# insertion lands on the actual directive line, not on a `#`
-# comment reference to it. The Caddyfile's `auto_https off` line
-# is the LAST directive before the closing `}` of the global
-# options block, so the inserted `servers { ... }` is guaranteed
-# to be a child of that block.
-awk '
-    /^[[:space:]]+auto_https off/ && !inserted {
-        print
-        print ""
-        print "    servers {"
-        print "        trusted_proxies static '"$CHAIN_PROXY_IP"'/32"
-        print "    }"
-        inserted=1
-        next
-    }
-    { print }
-' "$WORK_DIR/Caddyfile" > "$WORK_DIR/Caddyfile-chain"
+# sed replaces the direct-scenario's `{request>remote_ip}` placeholder
+# (start of the format transform backtick-string) with the XFF-fallback
+# expression — literal string substitution, the placeholder text is
+# unique in the file (only appears in the `format transform` line).
+sed 's|{request>remote_ip} - -|{request>headers>X-Forwarded-For>[0]:request>remote_ip} - -|' \
+    "$WORK_DIR/Caddyfile" > "$WORK_DIR/Caddyfile-chain"
 
 echo "[caddy] starting chain-scenario caddy container on $CHAIN_BACKEND_IP..."
 CADDY_CHAIN_CID=$(podman run -d \
@@ -935,12 +908,12 @@ echo "[caddy] proxy ready"
 # Step 13: drive attacks THROUGH the proxy. Same UA mix as Step 6
 # (sqlmap x2 + Mozilla x1) but the URL is the proxy's static IP
 # (http://10.89.2.20/), NOT the chain backend's IP. The proxy adds
-# X-Forwarded-For with the curl container's CNI IP, the chain
-# backend's trusted_proxies directive preserves the incoming XFF
-# (because the source IP is in the trusted list), and Caddy's
-# transform-encoder writes the real client IP in the
-# `{request>remote_ip}` field (which is what the parser and grader
-# use to attribute the attack). Mirror of the direct-scenario attack
+# X-Forwarded-For with the curl container's CNI IP, and the chain
+# Caddyfile's XFF-fallback log format
+# (`{request>headers>X-Forwarded-For>[0]:request>remote_ip}`) writes
+# that real client IP as the logged address (which is what the
+# parser and grader use to attribute the attack). Mirror of the
+# direct-scenario attack
 # — same curl image, same attacker behavior, only the URL changes.
 #
 # --network $NETWORK: the curl container runs on the DIRECT-scenario
@@ -968,9 +941,9 @@ echo "[caddy] chain attacks sent"
 # access log to be written, extract the sqlmap-request source IP from
 # IT (NOT from the direct-scenario access log), and verify that the
 # extracted IP is the REAL client (curl container's CNI IP) — NOT
-# the proxy's IP ($CHAIN_PROXY_IP). If trusted_proxies did NOT
-# preserve the XFF chain (or Caddy's transform-encoder ignored the
-# real client IP), the logged IP would be the proxy's connecting
+# the proxy's IP ($CHAIN_PROXY_IP). If the XFF-fallback format did NOT
+# resolve the real client (e.g. XFF absent or the fallback expression
+# is wrong), the logged IP would be the proxy's connecting
 # address ($CHAIN_PROXY_IP) — that is the "ip-leak" class of
 # failure the battle suite's assert_chain (verify.sh:188) calls
 # out (class=ip-leak in its report). Mirrored here in this script's
@@ -984,8 +957,8 @@ echo "[caddy] chain attacks sent"
 # attackers the sentinel sees as the same kind of source). The
 # check below is intentionally scoped to the chain-backend's OWN
 # access log — that log only contains the chain scenario's three
-# requests, and {request>remote_ip} in that log is whatever
-# trusted_proxies resolved (which we want to be the real client,
+# requests, and the logged IP field in that log is whatever the
+# XFF-fallback format resolved (which we want to be the real client,
 # not the proxy).
 # ---------------------------------------------------------------------
 CHAIN_ACCESS_LOG="$WORK_DIR/caddy-chain/access.log"
@@ -1007,11 +980,10 @@ if [ "$WRITTEN" -ne 1 ]; then
 fi
 
 # Extract the sqlmap-request source IP from the chain backend's
-# access log. awk the first field (which is `{request>remote_ip}` in
-# the transform-encoder CLF format, populated by Caddy with the
-# XFF-resolved IP because the source is in the trusted_proxies
-# list). head -1 to pick the first match — same convention as Step
-# 7a (deterministic, survives multiple hits).
+# access log. awk the first field (populated by the XFF-fallback
+# format expression — the real client IP when XFF is present).
+# head -1 to pick the first match — same convention as Step 7a
+# (deterministic, survives multiple hits).
 CHAIN_SQLMAP_IP=$(grep "${SQLMAP_UA}" "$CHAIN_ACCESS_LOG" | awk '{print $1}' | head -1)
 if [ -z "$CHAIN_SQLMAP_IP" ]; then
     echo "[caddy] FAIL: could not extract sqlmap request IP from chain access log" >&2
@@ -1022,16 +994,16 @@ fi
 echo "[caddy] chain sqlmap request source IP (as logged by chain backend): $CHAIN_SQLMAP_IP"
 
 # Assertion 4: the IP logged by the chain backend must NOT be the
-# proxy's IP. If it IS the proxy's IP, trusted_proxies did not
-# preserve XFF and Caddy is logging the proxy's connecting address
-# instead of the real client — the exact failure mode assert_chain
+# proxy's IP. If it IS the proxy's IP, the XFF-fallback format did
+# not resolve the real client and Caddy is logging the proxy's
+# connecting address instead — the exact failure mode assert_chain
 # in tests/integration/verify.sh:188 calls "ip-leak". Conversely,
 # any non-proxy IP is treated as a PASS for this assertion (the
 # detailed IP-correctness of the curl container's CNI assignment
 # is not what we are asserting here; what matters is "not the
 # proxy's IP").
 if [ "$CHAIN_SQLMAP_IP" = "$CHAIN_PROXY_IP" ]; then
-    echo "[caddy] FAIL: assertion 4 - trusted_proxies did not resolve proxy chain - logged proxy IP instead of real client IP (ip-leak)" >&2
+    echo "[caddy] FAIL: assertion 4 - XFF-fallback log format did not resolve proxy chain - logged proxy IP instead of real client IP (ip-leak)" >&2
     FAIL=1
 fi
 
