@@ -37,11 +37,13 @@ jobs:
   # writer — see below), so it gets its own upstream job rather than being
   # duplicated in both.
   #
-  # `go test -race` (defense-in-depth re-run of the full suite immediately
-  # before tagging, on top of the `integration` reusable-workflow's own
-  # tests) stays here, ahead of tag creation — a regression caught here
-  # still blocks the tag from ever being created, same guarantee as before
-  # the split.
+  # No `go test` step here (dropped 2026-07-02): it duplicated
+  # `integration.yml:88`'s own `go test -race -count=1 ./...` verbatim —
+  # `dev-tag` checks out the identical commit that `integration` (a hard
+  # `needs:` prerequisite) already tested, so a second run added ~1 minute
+  # per dev-release with zero additional safety. Pre-commit's local hook
+  # (`scripts/hooks/pre-commit`) runs the same command too, but that's a
+  # separate, bypassable, non-CI safety net — irrelevant to this job.
   dev-tag:
     name: Calculate and create dev tag
     outputs:
@@ -61,18 +63,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
-      - name: Run tests
-        # -race is mandatory under the Transformation Safety Protocol:
-        # the telemetry pipeline moves concurrent code, and silent data races
-        # would corrupt scoring state across module boundaries.
-        # -count=1 disables Go's test-result cache so a regression cannot be masked.
-        run: go test -race -count=1 ./...
 
       - name: Configure git
         run: |
