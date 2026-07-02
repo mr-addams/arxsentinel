@@ -136,20 +136,25 @@ jobs:
   # Re-encodes the storage/pf unblock chain verbatim per 088 Decision E.2b
   # (fresh VM = fresh defaults requiring fresh unblock).
   #
-  # First iteration: continue-on-error: true (Decision 7 + 088/089 Decision 6
-  # first-iter discipline). Promotion to workflow-internal blocking is a
-  # separate revisionist commit after 2+ consecutive green dispatches.
+  # Promoted (2026-07-02): continue-on-error dropped after 4 consecutive
+  # green live dispatches (runs 28518101769, 28563608176, 28601198244,
+  # 28605899280), well past Decision 7's "2+ consecutive green" promotion
+  # bar. The 6 SIGABRT failures that preceded the streak (runs 28508814305
+  # through 28516662994) were root-caused and fixed during Flow 090's
+  # original investigation (CGO_ENABLED=0, minimal build context, copyback:
+  # true — see the smoke-test step's inline comments for the full
+  # postmortem); none of those root causes are still present in this job's
+  # current form. Same code path is also exercised by the FreeBSD
+  # integration test suite (`.github/workflows/freebsd-integration.yml`),
+  # so a regression here would already surface there first — this job is
+  # the final packaging step over already-tested code, not a first-line
+  # test itself.
   # NEVER promoted to branch-protection gating on dev/main — only the live
   # dev-release job stays gating there; this FreeBSD job stays workflow-internal.
   freebsd-container-image:
     name: FreeBSD container image (amd64, parallel enrichment)
     runs-on: ubuntu-latest
     needs: dev-release
-    # Decision 7 + 088/089 Decision 6: first iteration carries continue-on-error
-    # so a FreeBSD-side failure does NOT block the Linux release pipeline that
-    # has already published by the time this job dispatches (it's in `needs:
-    # dev-release`, so by definition runs AFTER successful Linux release).
-    continue-on-error: true
     timeout-minutes: 30
 
     steps:
