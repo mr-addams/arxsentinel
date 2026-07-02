@@ -551,6 +551,26 @@ echo "[nginx] chain backend ready"
 # itself runs the same image (nginx:alpine) — proven on FreeBSD by
 # Step 3, and the config is trivial (events + http + one server).
 #
+# WHY the full $NGINX_CONF directive set (error_log, mime.types,
+# open_log_file_cache), not a from-scratch minimal config: live runs
+# 28583294976/28584079469 found nginx-rp failing to start — first
+# with a visible "io_setup() failed (38: Function not implemented)"
+# crash, then (after a bind-mount-only fix attempt) the SAME failure
+# but silent, because the bind-mount replaced the image's
+# /var/log/nginx/error.log -> /dev/stderr symlink without restoring
+# it (exactly the gotcha $NGINX_CONF's own header already documents
+# and fixes with `error_log /dev/stderr notice;`). Rather than
+# re-derive a minimal proxy config and re-discover each of
+# $NGINX_CONF's already-proven directives one crash at a time, this
+# config is the SAME proven template (mime.types, named log_format,
+# error_log, open_log_file_cache off) with ONLY the location block's
+# content swapped from `return 404` to `proxy_pass` + the XFF
+# headers. If io_setup() was actually about a missing directive in
+# the minimal config (not a container-count or bind-mount issue —
+# per DECISIONS Decision 2 discussion, unproven either way), this
+# rules it out empirically by removing every config difference except
+# the one that matters for the chain scenario.
+#
 # proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for: the
 # same directive the battle suite uses, which APPENDS to any
 # incoming XFF chain (rather than overwriting) — irrelevant for this
@@ -563,13 +583,24 @@ echo "[nginx] chain backend ready"
 # resolve differently).
 # ---------------------------------------------------------------------
 cat > "$WORK_DIR/nginx-rp.conf" <<NGINX_RP_EOF
+error_log /dev/stderr notice;
+
 events {}
+
 http {
+    include      /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
     server {
-        listen 80;
+        listen 80 default_server;
+        server_name _;
+
+        open_log_file_cache off;
+
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header Host             \$host;
         proxy_set_header X-Real-IP        "";
+
         location / {
             proxy_pass http://${CHAIN_BACKEND_IP}:80/;
         }
@@ -577,15 +608,13 @@ http {
 }
 NGINX_RP_EOF
 
-# Live run 28583294976 found nginx-rp failing to start entirely:
-# "io_setup() failed (38: Function not implemented)" from nginx's
-# master process. Every OTHER nginx container in this project (Step 3,
-# Step 11) bind-mounts its /var/log/nginx to a host path; nginx-rp was
-# the only one left writing to the container's own overlay layer.
-# Bind-mounting its log dir (even though this script never reads it)
-# routes those log writes through the same host-filesystem path the
-# working containers use instead of ocijail's emulated overlay I/O —
-# which is the concrete difference between the two outcomes.
+# Bind-mount /var/log/nginx for consistency with the proven $NGINX_CONF
+# template (Step 3, Step 11 both do this) — this script never reads
+# nginx-rp's own log, but matching the proven container-start shape
+# exactly (bind-mount + error_log /dev/stderr, see the config comment
+# above) removes it as a variable while root-causing the earlier
+# "io_setup() failed" startup crash (live runs 28583294976,
+# 28584079469).
 mkdir -p "$WORK_DIR/nginx-rp"
 echo "[nginx] starting proxy container on $CHAIN_PROXY_IP..."
 NGINX_RP_CID=$(podman run -d \
