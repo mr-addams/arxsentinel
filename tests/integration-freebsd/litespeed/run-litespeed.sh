@@ -325,7 +325,14 @@ echo "[litespeed] waiting for OLS ready (timeout 30s)..."
 DEADLINE=$(($(date +%s) + 30))
 READY=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-    if podman logs litespeed 2>&1 | grep -q "LiteSpeed"; then
+    # "[OK] litespeed: pid=NNNN." — confirmed exact startup line from
+    # live dispatch 28560759487 (lowercase "litespeed", NOT "LiteSpeed"
+    # as originally guessed — grep is case-sensitive by default, so
+    # the mismatched-case pattern never matched, timing out the full
+    # 30s despite OLS starting successfully within ~1s). Case-
+    # insensitive grep now, matching both the confirmed real line and
+    # any future banner variant.
+    if podman logs litespeed 2>&1 | grep -qi "litespeed"; then
         sleep 3
         READY=1
         break
