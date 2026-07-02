@@ -706,10 +706,358 @@ if [ -s "$ACCESS_LOG" ]; then
     cp "$ACCESS_LOG" "${TMPDIR:-/tmp}/caddy-access.log"
 fi
 
-# Step 9: final report. Cleanup happens via the EXIT trap.
+# ---------------------------------------------------------------------
+# Steps 10-16: proxy-chain scenario. Flow 092 (DECISIONS §2/§3/§5).
+# The direct-scenario above is DONE and green-or-fail-independent of
+# this section — it has already written its threat log, already
+# captured its artifacts, and is only consulted in the final FAIL
+# tally below (FAIL accumulator carries from Step 7b unchanged). All
+# new assertions here accumulate into the SAME FAIL=1 flag so a
+# chain-scenario failure still surfaces in a single exit-code-1
+# summary at the end.
+#
+# Static-IP design (DECISIONS §2): the chain network's two endpoints
+# have fixed, known addresses from creation time (.10 for the chain
+# backend, .20 for the proxy). This sidesteps the inspect-after-start
+# chicken-and-egg problem (the backend's Caddyfile has to declare
+# "trust XFF from proxy IP X" via trusted_proxies BEFORE the proxy
+# starts — known-upfront IPs make both configs static, no
+# rewrite-on-startup dance). It also makes this script's inline log
+# readable: a fixed address in the proxy URL is easier to grep-and-know
+# than a $NGINX_RP_IP capture.
+# ---------------------------------------------------------------------
+
+# ---------------------------------------------------------------------
+# Step 10: create the chain network with a dedicated subnet
+# (10.89.2.0/24 for caddy — per-backend offset, see Flow 092
+# DECISIONS §2; caddy = N=2 since nginx already took N=1). A separate
+# network from the direct-scenario's $NETWORK ("arx-net") keeps the
+# two scenarios' CNI bridges independent — a podman network create
+# with the same name as a pre-existing network exits non-zero, so
+# re-use would need an "if exists" dance. A fresh network is the
+# simpler path.
+# ---------------------------------------------------------------------
+echo "[caddy] creating chain CNI network $CHAIN_NETWORK (subnet 10.89.2.0/24)..."
+podman network create --subnet 10.89.2.0/24 "$CHAIN_NETWORK"
+
+# Static IP assignment for the chain backend (DECISIONS §2/§3).
+# .10 within 10.89.2.0/24 — chosen by convention (smallest non-zero
+# suffix for the "primary" service in the network, .20 for the
+# upstream proxy). Hard-coded, not derived, on purpose: see
+# DECISIONS §2 "static IPs also make the chain-scenario shell
+# script easier to read and debug from an inline log".
+CHAIN_BACKEND_IP="10.89.2.10"
+CHAIN_PROXY_IP="10.89.2.20"
+
+# ---------------------------------------------------------------------
+# Step 11: start the chain-scenario backend. SAME custom-built image
+# as Step 3 (caddy-arxsentinel:local — the drop-in caddy binary with
+# transform-encoder plugin pre-compiled, built in the workflow's
+# unblock chain from tests/integration/dockerfiles/Caddy.Dockerfile).
+# The chain Caddyfile is the direct-scenario config (Step 1 staged
+# $WORK_DIR/Caddyfile) extended with `trusted_proxies static
+# $CHAIN_PROXY_IP/32` in the global `servers { }` block — the caddy
+# equivalent of nginx's `set_real_ip_from` (DECISIONS §5).
+#
+# WHY a separate Caddyfile: the direct-scenario backend does NOT need
+# trusted_proxies (it never receives an XFF header in that scenario —
+# the attacker connects directly, no proxy in front). Sharing one
+# Caddyfile would require either adding the directive for the direct
+# run (harmless but unnecessary — no XFF arrives to be trusted) or
+# conditional logic that would make the file harder to read. Two
+# files, two containers, two log dirs — clean separation, same image.
+#
+# WHY /32 trust, not a subnet (DECISIONS §3): the chain network has
+# exactly one proxy container, so its single static IP is the only
+# IP that will ever present an XFF header. Trusting a /32 is narrower
+# than trusting a subnet (which is what the Docker battle suite does
+# at tests/integration/configs/Caddyfile:12 — `trusted_proxies static
+# 172.16.0.0/12` — there because the Docker compose network contains
+# multiple proxies). Narrower trust means a real attacker who somehow
+# gets on the chain network cannot spoof XFF headers and have them
+# trusted. The `servers { trusted_proxies ... }` block is inserted
+# INSIDE the Caddyfile's global options block (`{ ... }` at the top
+# of the file, which already contains `admin off` + `auto_https off`)
+# — `servers` is a server-options directive scoped INSIDE the global
+# options block (per caddyserver.com/docs/caddyfile/options#server-options),
+# NOT a top-level construct. The battle suite reference at
+# tests/integration/configs/Caddyfile:6-13 confirms this placement
+# (the `servers { }` block there is wrapped in the outer `{ ... }`).
+# ---------------------------------------------------------------------
+echo "[caddy] preparing chain-scenario Caddyfile (with trusted_proxies for $CHAIN_PROXY_IP/32)..."
+mkdir -p "$WORK_DIR/caddy-chain"
+
+# awk trick: insert the `servers { trusted_proxies ... }` block
+# IMMEDIATELY AFTER the `auto_https off` directive inside the
+# Caddyfile's global options block (`{ ... }` at the top of the file,
+# which already contains `admin off` + `auto_https off`). The new
+# block is thus a sibling of `admin off` + `auto_https off` INSIDE
+# the outer `{ ... }`, which is the only correct placement per
+# Caddyfile syntax (the battle suite reference at tests/integration/
+# configs/Caddyfile:6-13 shows the exact same shape: `servers { ... }`
+# as a child of the global options block). The awk pattern anchors
+# on `^[[:space:]]+auto_https off` (whitespace-then-directive, NOT
+# a comment line — the Caddyfile mentions "auto_https off" three
+# times in comments too, which would otherwise match) so the
+# insertion lands on the actual directive line, not on a `#`
+# comment reference to it. The Caddyfile's `auto_https off` line
+# is the LAST directive before the closing `}` of the global
+# options block, so the inserted `servers { ... }` is guaranteed
+# to be a child of that block.
+awk '
+    /^[[:space:]]+auto_https off/ && !inserted {
+        print
+        print ""
+        print "    servers {"
+        print "        trusted_proxies static '"$CHAIN_PROXY_IP"'/32"
+        print "    }"
+        inserted=1
+        next
+    }
+    { print }
+' "$WORK_DIR/Caddyfile" > "$WORK_DIR/Caddyfile-chain"
+
+echo "[caddy] starting chain-scenario caddy container on $CHAIN_BACKEND_IP..."
+CADDY_CHAIN_CID=$(podman run -d \
+    --os=linux \
+    --name caddy-chain \
+    --network "$CHAIN_NETWORK" \
+    --ip "$CHAIN_BACKEND_IP" \
+    -v "$WORK_DIR/Caddyfile-chain:/etc/caddy/Caddyfile:ro" \
+    -v "$WORK_DIR/caddy-chain:/var/log/caddy" \
+    caddy-arxsentinel:local)
+echo "[caddy] chain backend $CADDY_CHAIN_CID started"
+
+# Wait-for-ready pattern identical to Step 3: `caddy version` validates
+# the binary is executable, `"msg":"server running"` in podman logs
+# signals full start. 30s is generous (container start is faster than
+# first-pull, but we share the limit with Step 3 for consistency).
+echo "[caddy] waiting for chain backend ready (timeout 30s)..."
+DEADLINE=$(($(date +%s) + 30))
+READY=0
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+    if podman exec caddy-chain caddy version >/dev/null 2>&1 \
+       && podman logs caddy-chain 2>&1 | grep -q '"msg":"server running"'; then
+        READY=1
+        break
+    fi
+    sleep 1
+done
+if [ "$READY" -ne 1 ]; then
+    echo "[caddy] FAIL: chain backend not ready within 30s" >&2
+    echo "[caddy] chain backend logs (last 30 lines):" >&2
+    podman logs --tail 30 caddy-chain >&2 || true
+    exit 1
+fi
+echo "[caddy] chain backend ready"
+
+# ---------------------------------------------------------------------
+# Step 12: start the proxy container. VERBATIM copy of the proven
+# nginx-rp pattern from tests/integration-freebsd/nginx/integration.sh
+# (Step 12, lines 816-859) — same `docker.io/library/nginx:alpine`
+# image, same `error_log /dev/stderr notice; include mime.types;
+# open_log_file_cache off;` directive set (G17: reuse PROVEN template,
+# not a minimal from-scratch one), with ONLY the `proxy_pass` target
+# swapped to the caddy chain backend's static IP ($CHAIN_BACKEND_IP).
+#
+# The decision to use nginx-rp as the universal proxy for ALL backends
+# (not just nginx) is Flow 092 Decision 1 — one generic reverse-proxy
+# pattern, ported per backend. The caddy-direct-scenario job needs to
+# exercise caddy's chain handling; which proxy sits in front of it is
+# incidental (nginx-rp is the proven, battle-suite-parity choice).
+# ---------------------------------------------------------------------
+cat > "$WORK_DIR/caddy-rp.conf" <<NGINX_RP_EOF
+error_log /dev/stderr notice;
+
+events {}
+
+http {
+    include      /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    server {
+        listen 80 default_server;
+        server_name _;
+
+        open_log_file_cache off;
+
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header Host             \$host;
+        proxy_set_header X-Real-IP        "";
+
+        location / {
+            proxy_pass http://${CHAIN_BACKEND_IP}:80/;
+        }
+    }
+}
+NGINX_RP_EOF
+
+# Bind-mount /var/log/nginx for consistency with the proven template
+# (nginx/integration.sh Step 12 does the same) — this script never
+# reads the proxy's own log, but matching the proven container-start
+# shape exactly (bind-mount + error_log /dev/stderr) removes it as a
+# variable.
+mkdir -p "$WORK_DIR/caddy-rp"
+echo "[caddy] starting proxy container on $CHAIN_PROXY_IP..."
+CADDY_RP_CID=$(podman run -d \
+    --os=linux \
+    --name caddy-rp \
+    --network "$CHAIN_NETWORK" \
+    --ip "$CHAIN_PROXY_IP" \
+    -v "$WORK_DIR/caddy-rp.conf:/etc/nginx/nginx.conf:ro" \
+    -v "$WORK_DIR/caddy-rp:/var/log/nginx" \
+    docker.io/library/nginx:alpine)
+echo "[caddy] proxy $CADDY_RP_CID started"
+
+# Same wait-for-ready pattern as nginx chain proxy. nginx -t catches
+# the heredoc-substituted config typo case; "start worker processes"
+# in podman logs is the full-start signal.
+echo "[caddy] waiting for proxy ready (timeout 30s)..."
+DEADLINE=$(($(date +%s) + 30))
+READY=0
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+    if podman exec caddy-rp nginx -t >/dev/null 2>&1 \
+       && podman logs caddy-rp 2>&1 | grep -q "start worker processes"; then
+        READY=1
+        break
+    fi
+    sleep 1
+done
+if [ "$READY" -ne 1 ]; then
+    echo "[caddy] FAIL: proxy not ready within 30s" >&2
+    echo "[caddy] proxy logs (last 30 lines):" >&2
+    podman logs --tail 30 caddy-rp >&2 || true
+    exit 1
+fi
+echo "[caddy] proxy ready"
+
+# ---------------------------------------------------------------------
+# Step 13: drive attacks THROUGH the proxy. Same UA mix as Step 6
+# (sqlmap x2 + Mozilla x1) but the URL is the proxy's static IP
+# (http://10.89.2.20/), NOT the chain backend's IP. The proxy adds
+# X-Forwarded-For with the curl container's CNI IP, the chain
+# backend's trusted_proxies directive preserves the incoming XFF
+# (because the source IP is in the trusted list), and Caddy's
+# transform-encoder writes the real client IP in the
+# `{request>remote_ip}` field (which is what the parser and grader
+# use to attribute the attack). Mirror of the direct-scenario attack
+# — same curl image, same attacker behavior, only the URL changes.
+#
+# --network $NETWORK: the curl container runs on the DIRECT-scenario
+# network (arx-net), not the chain network. The two networks are
+# isolated — a packet from arx-net cannot reach 10.89.2.20 by
+# Layer-2 routing. This is the intended topology: the attacker sits
+# on the same "outside" network as in Step 6, the proxy is the
+# bridge. The curl container's CNI IP will therefore be on arx-net
+# (different from the IP it would have if it were on
+# arx-chain-net) — Step 14's assertion extracts the IP from the
+# chain-backend's access log, so it doesn't matter that this IP is
+# on a different network than the direct scenario's attacker IP.
+# ---------------------------------------------------------------------
+echo "[caddy] driving proxy-chain attacks from curl container (sqlmap + Mozilla UAs)..."
+podman run --rm --os=linux --network "$NETWORK" \
+    --entrypoint /bin/sh \
+    docker.io/curlimages/curl \
+    -c "curl -sS -A '${SQLMAP_UA}' http://${CHAIN_PROXY_IP}/ ; curl -sS -A '${SQLMAP_UA}' http://${CHAIN_PROXY_IP}/ ; curl -sS -A '${MOZILLA_UA}' http://${CHAIN_PROXY_IP}/" \
+    >/dev/null 2>&1 \
+    || echo "[caddy] chain curl attacker exited non-zero (still check the access log)"
+echo "[caddy] chain attacks sent"
+
+# ---------------------------------------------------------------------
+# Step 14: chain-specific assertion (4th). Wait for the chain-backend's
+# access log to be written, extract the sqlmap-request source IP from
+# IT (NOT from the direct-scenario access log), and verify that the
+# extracted IP is the REAL client (curl container's CNI IP) — NOT
+# the proxy's IP ($CHAIN_PROXY_IP). If trusted_proxies did NOT
+# preserve the XFF chain (or Caddy's transform-encoder ignored the
+# real client IP), the logged IP would be the proxy's connecting
+# address ($CHAIN_PROXY_IP) — that is the "ip-leak" class of
+# failure the battle suite's assert_chain (verify.sh:188) calls
+# out (class=ip-leak in its report). Mirrored here in this script's
+# existing grep-based assertion style (Step 7b) — same FAIL=1
+# accumulator, same non-short-circuit report-at-end discipline.
+#
+# A note on UA-vs-NA-detection here: the chain scenario's detection
+# fires off the SAME UA (sqlmap), so the threat log may contain
+# entries from BOTH scenarios (direct Step 7's three requests and
+# chain Step 13's three requests, all with the same UA, all from
+# attackers the sentinel sees as the same kind of source). The
+# check below is intentionally scoped to the chain-backend's OWN
+# access log — that log only contains the chain scenario's three
+# requests, and {request>remote_ip} in that log is whatever
+# trusted_proxies resolved (which we want to be the real client,
+# not the proxy).
+# ---------------------------------------------------------------------
+CHAIN_ACCESS_LOG="$WORK_DIR/caddy-chain/access.log"
+echo "[caddy] polling $CHAIN_ACCESS_LOG (timeout 20s)..."
+DEADLINE=$(($(date +%s) + 20))
+WRITTEN=0
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+    if [ -s "$CHAIN_ACCESS_LOG" ]; then
+        WRITTEN=1
+        break
+    fi
+    sleep 1
+done
+if [ "$WRITTEN" -ne 1 ]; then
+    echo "[caddy] FAIL: $CHAIN_ACCESS_LOG not written within 20s" >&2
+    echo "[caddy] proxy logs (last 30 lines):" >&2
+    podman logs --tail 30 caddy-rp >&2 || true
+    exit 1
+fi
+
+# Extract the sqlmap-request source IP from the chain backend's
+# access log. awk the first field (which is `{request>remote_ip}` in
+# the transform-encoder CLF format, populated by Caddy with the
+# XFF-resolved IP because the source is in the trusted_proxies
+# list). head -1 to pick the first match — same convention as Step
+# 7a (deterministic, survives multiple hits).
+CHAIN_SQLMAP_IP=$(grep "${SQLMAP_UA}" "$CHAIN_ACCESS_LOG" | awk '{print $1}' | head -1)
+if [ -z "$CHAIN_SQLMAP_IP" ]; then
+    echo "[caddy] FAIL: could not extract sqlmap request IP from chain access log" >&2
+    echo "[caddy] chain access log content:" >&2
+    cat "$CHAIN_ACCESS_LOG" >&2 || true
+    exit 1
+fi
+echo "[caddy] chain sqlmap request source IP (as logged by chain backend): $CHAIN_SQLMAP_IP"
+
+# Assertion 4: the IP logged by the chain backend must NOT be the
+# proxy's IP. If it IS the proxy's IP, trusted_proxies did not
+# preserve XFF and Caddy is logging the proxy's connecting address
+# instead of the real client — the exact failure mode assert_chain
+# in tests/integration/verify.sh:188 calls "ip-leak". Conversely,
+# any non-proxy IP is treated as a PASS for this assertion (the
+# detailed IP-correctness of the curl container's CNI assignment
+# is not what we are asserting here; what matters is "not the
+# proxy's IP").
+if [ "$CHAIN_SQLMAP_IP" = "$CHAIN_PROXY_IP" ]; then
+    echo "[caddy] FAIL: assertion 4 - trusted_proxies did not resolve proxy chain - logged proxy IP instead of real client IP (ip-leak)" >&2
+    FAIL=1
+fi
+
+# ---------------------------------------------------------------------
+# Step 15: persist the chain-scenario access log for the workflow's
+# upload-artifact step. Same pattern as Step 8 — copy to
+# ${TMPDIR:-/tmp}/ (which the workflow's freebsd-integration.yml
+# already syncs as $GITHUB_WORKSPACE in CI). Whether the workflow
+# picks up this NEW file under the existing upload pattern is a
+# separate task (Task 7's workflow-YAML wiring); this script's job
+# is to put the artifact in the expected location. If the workflow
+# does not auto-include it, the file still lands next to the
+# direct-scenario caddy-access.log for an operator to grab.
+# ---------------------------------------------------------------------
+if [ -s "$CHAIN_ACCESS_LOG" ]; then
+    cp "$CHAIN_ACCESS_LOG" "${TMPDIR:-/tmp}/caddy-chain-access.log"
+fi
+
+# Step 16 (was Step 9): final report. Cleanup happens via the EXIT
+# trap. FAIL=1 may have been set by either Step 7b's direct-scenario
+# assertions OR Step 14's chain-scenario assertion — both
+# accumulate into the same flag, both are reported by this single
+# exit-code decision.
 if [ "$FAIL" -ne 0 ]; then
     echo "[caddy] FAIL: one or more assertions failed (see above)"
     exit 1
 fi
-echo "[caddy] PASS: all 12 assertions green - FreeBSD/podman caddy integration end-to-end works"
+echo "[caddy] PASS: all assertions green - direct + proxy-chain FreeBSD/podman caddy integration end-to-end works"
 exit 0
