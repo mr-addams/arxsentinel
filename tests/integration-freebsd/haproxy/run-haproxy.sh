@@ -200,7 +200,9 @@ podman network create "$NETWORK"
 # Step 3: start the haproxy container detached. bind-mount the staged
 # haproxy.cfg over /usr/local/etc/haproxy/haproxy.cfg (the default path
 # the official haproxy image reads on startup; haproxy's ENTRYPOINT is
-# the daemon itself, which parses this file before binding :80).
+# the daemon itself, which parses this file before binding :8080 —
+# NOT :80, per the haproxy.cfg header WHY-comment on the non-root
+# privileged-port bind failure found live).
 # Note: we DO NOT bind-mount a host log dir onto /var/log/haproxy —
 # HAProxy's log target in haproxy.cfg is `log stdout ...`, so the
 # container never writes a file (P4.3 architectural divergence —
@@ -431,12 +433,12 @@ echo "[haproxy] driving attacks from curl container (8 scenarios + 2 sqlmap repe
 # container-start overhead and race the TailReader).
 ATTACK_CMD=""
 for UA in $SCENARIO_UAS; do
-    ATTACK_CMD="${ATTACK_CMD}curl -sS -A '${UA}' http://${HAPROXY_IP}/ ; "
+    ATTACK_CMD="${ATTACK_CMD}curl -sS -A '${UA}' http://${HAPROXY_IP}:8080/ ; "
 done
 # 2 sqlmap repeats (the threshold-breaker — see comment above).
-ATTACK_CMD="${ATTACK_CMD}curl -sS -A '${SQLMAP_UA}' http://${HAPROXY_IP}/ ; "
-ATTACK_CMD="${ATTACK_CMD}curl -sS -A '${SQLMAP_UA}' http://${HAPROXY_IP}/ ; "
-ATTACK_CMD="${ATTACK_CMD}curl -sS -A '${MOZILLA_UA}' http://${HAPROXY_IP}/"
+ATTACK_CMD="${ATTACK_CMD}curl -sS -A '${SQLMAP_UA}' http://${HAPROXY_IP}:8080/ ; "
+ATTACK_CMD="${ATTACK_CMD}curl -sS -A '${SQLMAP_UA}' http://${HAPROXY_IP}:8080/ ; "
+ATTACK_CMD="${ATTACK_CMD}curl -sS -A '${MOZILLA_UA}' http://${HAPROXY_IP}:8080/"
 
 podman run --rm --os=linux --network "$NETWORK" \
     --entrypoint /bin/sh \
