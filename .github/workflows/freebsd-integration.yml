@@ -130,6 +130,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Free disk space (host)
+        # Added 2026-07-02 after three live failures (runs 28617320029,
+        # 28619687328, 28624694453 — job IDs 84864254828, 84872079244,
+        # 84888375658) all showed the SAME root cause in the log:
+        # "##[warning]You are running out of disk space ... Free space
+        # left: 0 MB" immediately before "ssh exited with code 255" (the
+        # VM's SSH tunnel dies once the HOST runner's disk is full — that
+        # error is a downstream symptom, not the actual cause; the first
+        # of the three failures predates today's cross-compile changes,
+        # so this is a pre-existing problem, not a regression). litespeed
+        # is the only backend (besides caddy, which has stayed under the
+        # limit so far) with an extra host-side `docker build` + `docker
+        # save` step for its custom OLS chain image, on top of the
+        # standard ubuntu-latest runner's ~14GB free disk budget — GitHub's
+        # runner images ship many large SDKs/toolchains this project never
+        # uses (`.NET`, Android SDK, GHC/Haskell, Swift, CodeQL, Boost),
+        # which is the standard, widely-used cleanup target for CI jobs
+        # that are disk-constrained. `|| true` on every removal: runner
+        # image contents change across GitHub's rolling updates, and a
+        # missing directory must never fail this job.
+        run: |
+          echo "Disk usage before cleanup:"
+          df -h /
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/.ghcup || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf /opt/az || true
+          docker image prune -af || true
+          echo "Disk usage after cleanup:"
+          df -h /
+
       # ---------------------------------------------------------------
       # Flow 092 Track B host build — litespeed-arxsentinel:local.
       # Same pattern as caddy's P2.4 step (Decision 4 Revised / G11):
