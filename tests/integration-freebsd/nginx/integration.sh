@@ -577,6 +577,16 @@ http {
 }
 NGINX_RP_EOF
 
+# Live run 28583294976 found nginx-rp failing to start entirely:
+# "io_setup() failed (38: Function not implemented)" from nginx's
+# master process. Every OTHER nginx container in this project (Step 3,
+# Step 11) bind-mounts its /var/log/nginx to a host path; nginx-rp was
+# the only one left writing to the container's own overlay layer.
+# Bind-mounting its log dir (even though this script never reads it)
+# routes those log writes through the same host-filesystem path the
+# working containers use instead of ocijail's emulated overlay I/O —
+# which is the concrete difference between the two outcomes.
+mkdir -p "$WORK_DIR/nginx-rp"
 echo "[nginx] starting proxy container on $CHAIN_PROXY_IP..."
 NGINX_RP_CID=$(podman run -d \
     --os=linux \
@@ -584,6 +594,7 @@ NGINX_RP_CID=$(podman run -d \
     --network "$CHAIN_NETWORK" \
     --ip "$CHAIN_PROXY_IP" \
     -v "$WORK_DIR/nginx-rp.conf:/etc/nginx/nginx.conf:ro" \
+    -v "$WORK_DIR/nginx-rp:/var/log/nginx" \
     docker.io/library/nginx:alpine)
 echo "[nginx] proxy $NGINX_RP_CID started"
 
