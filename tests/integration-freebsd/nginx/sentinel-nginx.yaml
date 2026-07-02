@@ -66,3 +66,38 @@ metrics:
 output:
   threat_log: output/threats-nginx.log
   operational_log: sentinel-nginx.log
+
+# blocklist: matches the structure used by tests/integration/
+# arxsentinel/nginx.yaml:16-28 (the battle suite) so the parser
+# contract is identical between the FreeBSD-native and battle
+# binaries. ONLY the badbot-ua list is wired — referrer-based
+# badbot detection is NOT exercised by Step 6 in integration.sh
+# (only UA-based, per Flow 091 Decision 9 spec).
+#
+# Why direct upstream fetch (https://raw.githubusercontent.com/...)
+# and NOT http://localhost:8090/... as in the battle suite:
+#   The FreeBSD job has no dedicated blocklist-server container.
+#   Adding one (Docker compose / podman run + bind mount + wait-for-
+#   healthcheck) is engineering work that does not buy us anything
+#   the direct fetch does not already give: the GH runner image
+#   already has internet access for the podman pull of nginx:alpine
+#   and curlimages/curl in Steps 3 + 6, so it has the connectivity
+#   this fetch needs. Direct fetch is also identical to the upstream
+#   URL `tests/integration/run.sh:70` already uses to materialise the
+#   test-ua.txt fixture for scenarios.sh — same source, same format,
+#   no extra failure surface.
+#
+# Why storage: "" (in-memory only, no on-disk persistence):
+#   The FreeBSD sentinel is a per-job smoke instance — the VM is
+#   destroyed on job exit, so there is no value in caching the
+#   fetched patterns to disk. In-memory only matches the battle
+#   suite's exact same value and the smoke's ephemeral lifecycle.
+#   Source: tests/integration/arxsentinel/nginx.yaml:17.
+blocklist:
+  storage: ""
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text

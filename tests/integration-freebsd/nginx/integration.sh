@@ -273,36 +273,168 @@ if [ -z "$NGINX_IP" ]; then
 fi
 echo "[nginx] nginx container IP: $NGINX_IP"
 
-echo "[nginx] driving attacks from curl container (sqlmap + Mozilla UAs)..."
+# Generate the long URL path for the overflow scenario (block 7) on
+# the HOST (not inside the curl container) so the value can be
+# embedded as a literal in the -c "..." script string below. Same
+# recipe as tests/integration/scenarios.sh:169 — /dev/urandom is ~24%
+# alphanumeric, so we read 20000 bytes to guarantee 2200 clean chars.
+# pipefail is disabled because head -c 2200 closes stdin before tr
+# finishes reading — SIGPIPE on tr is expected and benign. stderr is
+# suppressed for the same reason.
+LONG_PATH="/$(set +o pipefail; head -c 20000 /dev/urandom | tr -dc 'a-zA-Z0-9' 2>/dev/null | head -c 2200)"
+
+# Pick the badbot UA the same way scenarios.sh:179 does: prefer the
+# committed test fixture ($REPO_ROOT/tests/integration/blocklist/
+# test-ua.txt) because it is the same file run.sh:122 produces from
+# the FIRST literal pattern in the upstream mitchellkrogza list — a
+# pattern the FreeBSD sentinel's blocklist automaton will also load
+# (same upstream URL, see sentinel-nginx.yaml blocklist.lists[0].
+# sources[0].url). Fallback "AhrefsBot/1.0" matches scenarios.sh:179
+# — a UA guaranteed to be in the upstream list as a regex literal
+# (AhrefsBot appears unescaped near the top of bad-user-agents.list).
+if [ -s "$REPO_ROOT/tests/integration/blocklist/test-ua.txt" ]; then
+    BADBOT_UA=$(head -1 "$REPO_ROOT/tests/integration/blocklist/test-ua.txt")
+else
+    BADBOT_UA="AhrefsBot"
+fi
+echo "[nginx] using badbot UA for block 8: ${BADBOT_UA}/1.0"
+
+echo "[nginx] driving 8 attack blocks from a single curl container..."
 # Fully-qualified docker.io/curlimages/curl (NOT bare curlimages/curl) —
 # same short-name resolution issue as the nginx image above. --os=linux —
 # same image-index reasoning as the nginx container above (curlimages/curl
 # has no freebsd OS variant either).
 #
-# TWO sqlmap requests (not one): live run 28478337664 proved detection
-# fires correctly on a single hit ([DETECTOR] [UA] ... +40 ...) but the
-# config's default alert threshold is 50 — one hit (score=40) never
-# crosses it, so nothing is written to the threat log. The scorer is
-# additive within the decay window ("decay 0→0 + delta=40" in that run's
-# log), so a second identical-UA hit lands at score=80, comfortably over
-# the threshold. Matches 088's testdata/synthetic.access.log fixture,
-# which also sends multiple sqlmap-UA requests from the same attacker
-# (5, in that case) rather than relying on a single hit.
+# ONE curl container for ALL 8 blocks (NOT one per block) — the
+# detectors under test (bruteforce, crawler, noasset, rate) are
+# per-IP trackers. Multiple containers would mean multiple attacker
+# IPs, and each detector would see only a fraction of the required
+# request count → no fire → no threat log entry → false-negative
+# assertion. This is the same collapse battle-suite's attack_all
+# does: scenarios.sh:80-183 wraps each block in a SERVERS[] loop
+# (one container per server, but all blocks within a single server
+# run from the same container). We have one server, so the SERVERS[]
+# loop collapses to a single container. The Mozilla UA legit request
+# is folded into block 2 (ua) as the last request of that block —
+# it must share the attacker's IP (it does, single container) and
+# must come AFTER the scanner-UA hits so the scorer's per-IP state
+# for that client already has the ua module in its reason list
+# (Mozilla then either drops the score below threshold or simply
+# doesn't add a new module — the assertion is that the Mozilla UA
+# string itself is absent from the threat log, not that the IP
+# isn't there).
+#
+# The 8 blocks are verbatim ports from tests/integration/
+# scenarios.sh:80-183 (per Flow 092 Decision 7 — close the Flow
+# 091 Decision 9 gap). Each block's source line is annotated below
+# in the same WHY comment style as the rest of this file.
+ATTACK_SCRIPT="
+# ── block 1: probe (scenarios.sh:82-90) ──
+curl -sf -o /dev/null http://${NGINX_IP}/wp-login.php      || true
+curl -sf -o /dev/null http://${NGINX_IP}/.env              || true
+curl -sf -o /dev/null http://${NGINX_IP}/.git/config       || true
+curl -sf -o /dev/null http://${NGINX_IP}/admin/config.php  || true
+curl -sf -o /dev/null http://${NGINX_IP}/etc/passwd        || true
+curl -sf -o /dev/null http://${NGINX_IP}/.aws/credentials  || true
+curl -sf -o /dev/null http://${NGINX_IP}/xmlrpc.php        || true
+# ── block 2: ua (scenarios.sh:94-100) + the legit Mozilla request ──
+curl -sf -o /dev/null -A '${SQLMAP_UA}'     http://${NGINX_IP}/ || true
+curl -sf -o /dev/null -A '${SQLMAP_UA}'     http://${NGINX_IP}/ || true
+curl -sf -o /dev/null -A 'Nuclei/3.0'       http://${NGINX_IP}/ || true
+curl -sf -o /dev/null -A 'masscan/1.3'      http://${NGINX_IP}/ || true
+curl -sf -o /dev/null -A 'zgrab/0.x'        http://${NGINX_IP}/ || true
+# Legit Mozilla request — kept in block 2 (NOT a separate block)
+# because Assertion 2 (Mozilla UA absent from threat log) only
+# makes sense in the context of the scanner-UA attack on the same
+# IP. If Mozilla were in its own block AFTER all scanners, the
+# scorer's per-IP state for this client would have already been
+# written to the threat log with the sqlmap IP; sending a Mozilla
+# request on a fresh connection (or with a different effective
+# source) would muddle the test.
+curl -sf -o /dev/null -A '${MOZILLA_UA}'   http://${NGINX_IP}/ || true
+# ── block 3: bruteforce (scenarios.sh:104-120) ──
+curl -sf -o /dev/null http://${NGINX_IP}/                      || true
+curl -sf -o /dev/null http://${NGINX_IP}/                      || true
+curl -sf -o /dev/null http://${NGINX_IP}/                      || true
+curl -sf -o /dev/null http://${NGINX_IP}/missing-page-1        || true
+curl -sf -o /dev/null http://${NGINX_IP}/missing-page-2        || true
+curl -sf -o /dev/null http://${NGINX_IP}/missing-page-3        || true
+curl -sf -o /dev/null http://${NGINX_IP}/missing-page-4        || true
+curl -sf -o /dev/null http://${NGINX_IP}/missing-page-5        || true
+curl -sf -o /dev/null http://${NGINX_IP}/missing-page-6        || true
+curl -sf -o /dev/null http://${NGINX_IP}/missing-page-7        || true
+curl -sf -o /dev/null http://${NGINX_IP}/missing-page-8        || true
+curl -sf -o /dev/null http://${NGINX_IP}/missing-page-9        || true
+curl -sf -o /dev/null http://${NGINX_IP}/missing-page-10       || true
+curl -sf -o /dev/null http://${NGINX_IP}/missing-page-11       || true
+curl -sf -o /dev/null http://${NGINX_IP}/missing-page-12       || true
+# ── block 4: crawler (scenarios.sh:126-132) ──
+curl -sf -o /dev/null http://${NGINX_IP}/items/1  || true
+curl -sf -o /dev/null http://${NGINX_IP}/items/2  || true
+curl -sf -o /dev/null http://${NGINX_IP}/items/3  || true
+curl -sf -o /dev/null http://${NGINX_IP}/items/4  || true
+curl -sf -o /dev/null http://${NGINX_IP}/items/5  || true
+curl -sf -o /dev/null http://${NGINX_IP}/items/6  || true
+# ── block 5: noasset (scenarios.sh:138-146) ──
+curl -sf -o /dev/null http://${NGINX_IP}/           || true
+curl -sf -o /dev/null http://${NGINX_IP}/           || true
+curl -sf -o /dev/null http://${NGINX_IP}/           || true
+curl -sf -o /dev/null http://${NGINX_IP}/info.php   || true
+curl -sf -o /dev/null http://${NGINX_IP}/           || true
+curl -sf -o /dev/null http://${NGINX_IP}/           || true
+curl -sf -o /dev/null http://${NGINX_IP}/info.php   || true
+curl -sf -o /dev/null http://${NGINX_IP}/           || true
+# ── block 6: rate (scenarios.sh:151-161) — 60 requests in 2 waves with 1s gap ──
+i=0; while [ \$i -lt 30 ]; do
+    curl -sf -o /dev/null http://${NGINX_IP}/ || true
+    i=\$((i+1))
+done
+sleep 1
+i=0; while [ \$i -lt 30 ]; do
+    curl -sf -o /dev/null http://${NGINX_IP}/ || true
+    i=\$((i+1))
+done
+# ── block 7: overflow (scenarios.sh:169-172) — single URL with path > 2048 bytes ──
+curl -sf -o /dev/null 'http://${NGINX_IP}${LONG_PATH}' || true
+# ── block 8: badbot (scenarios.sh:180-183) — LAST on purpose ──
+# scenarios.sh:177-178: 'Placed last among direct-server scenarios to
+# give sentinels time to load patterns from the local blocklist-server
+# container before the request arrives.' The same reasoning applies
+# here even though we fetch directly from upstream (the fetch is async
+# from start, and the automaton rebuild happens on the first successful
+# fetch — putting badbot last gives the blocklist manager the most
+# wall-clock time to complete that fetch + rebuild cycle before the
+# first matching request hits). Two requests, not one, for the same
+# threshold-crossing reason as the sqlmap pair in block 2 (the badbot
+# detector's first hit may not cross the alert threshold on its own).
+curl -sf -o /dev/null -A '${BADBOT_UA}/1.0' http://${NGINX_IP}/ || true
+curl -sf -o /dev/null -A '${BADBOT_UA}/1.0' http://${NGINX_IP}/ || true
+"
+
 podman run --rm --os=linux --network "$NETWORK" \
     --entrypoint /bin/sh \
     docker.io/curlimages/curl \
-    -c "curl -sS -A '${SQLMAP_UA}' http://${NGINX_IP}/ ; curl -sS -A '${SQLMAP_UA}' http://${NGINX_IP}/ ; curl -sS -A '${MOZILLA_UA}' http://${NGINX_IP}/" \
+    -c "$ATTACK_SCRIPT" \
     >/dev/null 2>&1 \
     || echo "[nginx] curl attacker exited non-zero (still check the access log)"
 echo "[nginx] attacks sent"
 
 # ---------------------------------------------------------------------
-# Step 7: poll the threat log for non-empty content (~20s timeout).
-# Mirrors 088 run-smoke.sh step 5.
+# Step 7: poll the threat log for non-empty content.
+# Timeout RAISED from 20s → 40s as part of Task A1 (Flow 092
+# Decision 7): the previous 3-request Step 6 finished in <1s of
+# attack traffic; the new 8-block Step 6 sends ~7 + 6 + 15 + 6 + 8
+# + 60 + 1 + 2 = 105 attack requests, with the rate block's 1s
+# sleep and the sentinel's per-request scoring adding wall-clock
+# cost on top. 40s is a conservative budget for the polling loop
+# (the actual elapsed time in CI is typically 3-5s, the rest is
+# margin for first-podman-pull + cold blocklist-fetch). Mirrors
+# 088 run-smoke.sh step 5 (which uses 20s for its much smaller
+# request set).
 # ---------------------------------------------------------------------
 THREAT_LOG="$WORK_DIR/output/threats-nginx.log"
-echo "[nginx] polling $THREAT_LOG (timeout 20s)..."
-DEADLINE=$(($(date +%s) + 20))
+echo "[nginx] polling $THREAT_LOG (timeout 40s)..."
+DEADLINE=$(($(date +%s) + 40))
 WRITTEN=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     if [ -s "$THREAT_LOG" ]; then
@@ -312,7 +444,7 @@ while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     sleep 1
 done
 if [ "$WRITTEN" -ne 1 ]; then
-    echo "[nginx] FAIL: $THREAT_LOG not written within 20s" >&2
+    echo "[nginx] FAIL: $THREAT_LOG not written within 40s" >&2
     echo "[nginx] access log content (if any):" >&2
     cat "$WORK_DIR/nginx/access.log" >&2 || true
     echo "[nginx] sentinel log (last 80 lines):" >&2
@@ -350,9 +482,15 @@ fi
 echo "[nginx] sqlmap request source IP: $SQLMAP_IP"
 
 # ---------------------------------------------------------------------
-# Step 7b: three assertions per DECISIONS §5 (adapted from 088
-# run-smoke.sh — UA-based, not IP-based). A single FAIL on any
-# assertion sets FAIL=1; the script reports all three at the end
+# Step 7b: assertions. Originally 3 per DECISIONS §5 (adapted from
+# 088 run-smoke.sh — UA-based, not IP-based). EXTENDED to 12 per
+# Flow 092 Task A1 / Decision 7: 1-3 retained, 4-10 are one
+# `grep -qw "reason=<module>"` per attack scenario (mirrors
+# tests/integration/verify.sh:144 assert_module's exact grep
+# pattern), 11 is badbot UA presence, 12 is the blocklist
+# automaton-loaded check (mirrors verify.sh:109
+# assert_blocklist_loaded's exact regex). A single FAIL on any
+# assertion sets FAIL=1; the script reports all at the end
 # (does not short-circuit, so the grader can see the full failure
 # shape).
 # ---------------------------------------------------------------------
@@ -360,7 +498,12 @@ FAIL=0
 
 # Assertion 1: ` THREAT ` substring AND sqlmap-attack source IP
 # appear in the threat log. (088 run-smoke.sh assertion 1 with the
-# IP extracted from access.log, NOT a fixed literal.)
+# IP extracted from access.log, NOT a fixed literal.) The sqlmap
+# request from block 2 of Step 6 still appears in the access log
+# (the curl container shares one IP across all 8 blocks), so the
+# IP extracted in Step 7a is the curl container's CNI IP, which is
+# the same IP attributed to the threat log entry that fired the ua
+# module — the assertion remains meaningful.
 if ! printf '%s\n' "$LINES" | grep -q " THREAT " \
    || ! printf '%s\n' "$LINES" | grep -q " $SQLMAP_IP "; then
     echo "[nginx] FAIL: assertion 1 - expected ' THREAT ' and IP '$SQLMAP_IP' in threat log" >&2
@@ -369,11 +512,16 @@ fi
 
 # Assertion 2: Mozilla UA does NOT appear in the threat log.
 # DEPARTURE FROM 088 run-smoke.sh assertion 2 (which used a legit
-# IP-absent check): both curl requests share the curl container's
-# CNI IP (DECISIONS §3 + §5), so IP-based legit-vs-attacker
-# discrimination does not work. Instead we assert the Mozilla UA
-# itself is absent — a stricter test of UA-selectivity (the
-# detector must score on UA, not just on the request itself).
+# IP-absent check): all curl requests share the curl container's
+# CNI IP (single container for all 8 blocks — see Step 6), so
+# IP-based legit-vs-attacker discrimination does not work. Instead
+# we assert the Mozilla UA itself is absent — a stricter test of
+# UA-selectivity (the detector must score on UA, not just on the
+# request itself). The Mozilla request is folded into block 2 of
+# Step 6, AFTER the scanner-UA hits on the same IP, so if the
+# scorer were naively tagging every request from that IP, the
+# Mozilla request would inherit the threat-log entry; absence
+# proves the scorer actually discriminates on UA.
 if printf '%s\n' "$LINES" | grep -q "${MOZILLA_UA}"; then
     echo "[nginx] FAIL: assertion 2 - false positive: Mozilla UA appeared in threat log" >&2
     FAIL=1
@@ -388,6 +536,65 @@ fi
 BAD_COUNT=$(printf '%s\n' "$LINES" | grep -v '^$' | grep -cv 'score=.*reason=' || true)
 if [ "$BAD_COUNT" -gt 0 ]; then
     echo "[nginx] FAIL: assertion 3 - $BAD_COUNT threat line(s) missing score=/reason=" >&2
+    FAIL=1
+fi
+
+# Assertions 4-10: one `grep -qw "reason=<module>"` per attack
+# scenario, mirroring tests/integration/verify.sh:144 assert_module's
+# exact pattern (`grep -qw "$module" "$threat_log"`). The format in
+# the threat log is `reason="<module>:<detail>:<count>,..."` (per
+# internal/threat/format/format.go:110 — `<timestamp> THREAT <ip>
+# score=<N> modules=<list> reason="%s"`; example line from
+# format_test.go:43: `... reason="probe:env:3,bad_bot:known"`).
+# `grep -qw "probe"` matches the `probe` token at the start of
+# `reason="probe:env:3"` because both `"` and `:` are non-word
+# characters and therefore act as word boundaries for `-w`. The
+# same pattern assert_module uses, same word-boundary semantics,
+# same fail-on-miss behaviour. If a module fires but its name does
+# not appear in the threat log (e.g. scorer dropped it under the
+# alert threshold), this assertion catches that case explicitly,
+# block by block.
+for module in probe ua bruteforce crawler noasset rate overflow; do
+    if ! printf '%s\n' "$LINES" | grep -qw "$module"; then
+        echo "[nginx] FAIL: assertion - expected module '$module' in threat log (reason=)" >&2
+        FAIL=1
+    fi
+done
+
+# Assertion 11: the badbot MODULE fired. Checked on the module name
+# (`badbot`), NOT on the upstream pattern string (`$BADBOT_UA`)
+# — the badbot detector's matching path is case-insensitive
+# (`strings.ToLower` in pkg/detectorplugins/badbot/badbot.go and in
+# internal/core/blocklist/parser.go), so the pattern it writes to
+# the threat log's `reason=` field is always lowercase
+# (e.g. `360spider`, not `360Spider`); grep'ing for the original
+# `BADBOT_UA` value as-shipped would case-miss every time. The
+# module name `badbot` is the contract, mirrors the
+# `assert_module "$srv" "badbot"` call at tests/integration/
+# verify.sh:444 (battle-suite parity), and is consistent with
+# Assertions 4-10 above (also `grep -qw "<module>"`).
+if ! printf '%s\n' "$LINES" | grep -qw "badbot"; then
+    echo "[nginx] FAIL: assertion 11 - badbot module not in threat log (expected reason=badbot:...)" >&2
+    FAIL=1
+fi
+
+# Assertion 12: blocklist automaton actually loaded patterns (N > 0).
+# Greps the SENTINEL'S OPERATIONAL LOG (not the threat log) for the
+# line emitted by internal/core/blocklist/manager.go:393
+# (`utils.Log("BLOCKLIST", fmt.Sprintf("list %q: automaton
+# rebuilt (%d patterns)", cfg.Name, len(all)), "info")`). The exact
+# regex `automaton rebuilt \([1-9][0-9]* patterns\)` is copied
+# verbatim from tests/integration/verify.sh:109 (assert_blocklist_
+# loaded) — same match pattern, same non-zero-count requirement
+# (the `[1-9]` leading digit excludes a 0-patterns match, which
+# would mean the fetch succeeded but the upstream list was empty).
+# This proves the end-to-end path: blocklist.lists[0].sources[0].url
+# in sentinel-nginx.yaml → upstream fetch → automaton rebuild → UA
+# matching in block 8's requests.
+SENTINEL_OP_LOG="$WORK_DIR/sentinel-nginx.log"
+if [ ! -s "$SENTINEL_OP_LOG" ] \
+   || ! grep -qE 'automaton rebuilt \([1-9][0-9]* patterns\)' "$SENTINEL_OP_LOG"; then
+    echo "[nginx] FAIL: assertion 12 - blocklist automaton not loaded (no 'automaton rebuilt (N patterns)' with N>0 in $SENTINEL_OP_LOG)" >&2
     FAIL=1
 fi
 
