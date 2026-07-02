@@ -25,17 +25,37 @@ jobs:
   integration:
     uses: ./.github/workflows/integration.yml
 
-  dev-release:
-    name: Build & publish dev pre-release
-    # Flow 090 (Decision 7): expose the dev-tag created in the `tag` step
-    # below to downstream jobs (freebsd-container-image needs it to know
-    # which tag to push the FreeBSD image under). Note: this `outputs:`
-    # block is the ONE-AND-ONLY surgical modification to the existing
-    # dev-release job — no step / trigger / permission is touched.
+  # ─── dev-tag ──────────────────────────────────────────────────────────────
+  # Split out of dev-release (2026-07-02): dev-release (Linux publish) and
+  # freebsd-container-image now run IN PARALLEL as siblings, both consuming
+  # this job's tag output — neither waits on the other. Before this split,
+  # freebsd-container-image needed: dev-release purely to read its tag
+  # output, which forced the FreeBSD image to always start after the full
+  # Linux goreleaser run finished even though the two publishes are
+  # otherwise independent. The tag itself must still be computed exactly
+  # once (git tag/push has retry-on-race logic that only works single-
+  # writer — see below), so it gets its own upstream job rather than being
+  # duplicated in both.
+  #
+  # `go test -race` (defense-in-depth re-run of the full suite immediately
+  # before tagging, on top of the `integration` reusable-workflow's own
+  # tests) stays here, ahead of tag creation — a regression caught here
+  # still blocks the tag from ever being created, same guarantee as before
+  # the split.
+  dev-tag:
+    name: Calculate and create dev tag
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     runs-on: ubuntu-latest
-    needs: integration
+    # A "correct" dev-release cannot tag/publish while FreeBSD tests are
+    # red — live run 28617320029 proved the gap concretely before this fix
+    # existed: fbsd-integration-litespeed failed, yet v2.2.2-dev.14 still
+    # published as a normal GitHub Release seconds later, with the only
+    # failure signal being the overall workflow run's red status (nothing
+    # on the Release page itself). Gating tag creation on both suites
+    # means neither the Linux release nor the FreeBSD container can be
+    # published on a commit whose FreeBSD behavior wasn't just verified.
+    needs: [integration, freebsd-integration-gate]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -85,6 +105,21 @@ jobs:
           echo "::error::failed to create dev tag after 10 attempts" >&2
           exit 1
 
+  dev-release:
+    name: Build & publish dev pre-release
+    runs-on: ubuntu-latest
+    needs: dev-tag
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
@@ -114,7 +149,7 @@ jobs:
 
       - name: Append tested versions to release notes
         run: |
-          tag="${{ steps.tag.outputs.tag }}"
+          tag="${{ needs.dev-tag.outputs.tag }}"
           if [ -f tested-versions.md ]; then
             current=$(gh release view "$tag" --json body -q '.body')
             gh release edit "$tag" \
@@ -124,10 +159,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ─── Flow 090 (Decision 7) — FreeBSD container image ────────────────────────
-  # Runs AFTER the existing dev-release job (Linux release) succeeds. Adds
-  # the FreeBSD amd64 OCI image to the same ghcr.io repo with a -freebsd-amd64
-  # tag suffix (Decision 6). The existing Linux dockers_v2 manifest-list is
-  # untouched; this is a pure additive job.
+  # Runs IN PARALLEL with dev-release (Linux publish), both as siblings off
+  # dev-tag (2026-07-02 split — see dev-tag job comment). Adds the FreeBSD
+  # OCI images to the same ghcr.io repo with a -freebsd-<arch> tag suffix
+  # (Decision 6). The existing Linux dockers_v2 manifest-list is untouched;
+  # this is a pure additive job.
   #
   # Why not in goreleaser dockers_v2: goreleaser uses docker buildx, which
   # does not support building FreeBSD images from a Linux host. The FreeBSD
@@ -137,34 +173,49 @@ jobs:
   # (fresh VM = fresh defaults requiring fresh unblock).
   #
   # Promoted (2026-07-02): continue-on-error dropped after 4 consecutive
-  # green live dispatches (runs 28518101769, 28563608176, 28601198244,
-  # 28605899280), well past Decision 7's "2+ consecutive green" promotion
-  # bar. The 6 SIGABRT failures that preceded the streak (runs 28508814305
-  # through 28516662994) were root-caused and fixed during Flow 090's
-  # original investigation (CGO_ENABLED=0, minimal build context, copyback:
-  # true — see the smoke-test step's inline comments for the full
-  # postmortem); none of those root causes are still present in this job's
-  # current form. Same code path is also exercised by the FreeBSD
-  # integration test suite (`.github/workflows/freebsd-integration.yml`),
-  # so a regression here would already surface there first — this job is
-  # the final packaging step over already-tested code, not a first-line
-  # test itself.
+  # green live dispatches of the amd64-only job (runs 28518101769,
+  # 28563608176, 28601198244, 28605899280), well past Decision 7's "2+
+  # consecutive green" promotion bar. The 6 SIGABRT failures that preceded
+  # the streak (runs 28508814305 through 28516662994) were root-caused and
+  # fixed during Flow 090's original investigation (CGO_ENABLED=0, minimal
+  # build context, copyback: true — see the smoke-test step's inline
+  # comments for the full postmortem); none of those root causes are still
+  # present in this job's current form. Same code path is also exercised
+  # by the FreeBSD integration test suite
+  # (`.github/workflows/freebsd-integration.yml`), so a regression here
+  # would already surface there first — this job is the final packaging
+  # step over already-tested code, not a first-line test itself.
   # NEVER promoted to branch-protection gating on dev/main — only the live
   # dev-release job stays gating there; this FreeBSD job stays workflow-internal.
   #
-  # needs: freebsd-integration-gate added (2026-07-02): the FreeBSD backend
-  # suite is no longer a thin nginx-only smoke test (Flow 089) — Flow
-  # 091/092 brought it to full 7-module+badbot+blocklist+proxy-chain
-  # coverage across all 6 backends, each individually promoted off
-  # continue-on-error after 2+ consecutive green runs (see that suite's own
-  # DECISIONS.md). Publishing a FreeBSD-native container built from code
-  # whose FreeBSD behavior hasn't just been verified defeats the point of
-  # having the suite.
+  # Arch matrix added (2026-07-02): Flow 088's Decision 3 deferred a
+  # 386/arm/arm64 matrix until the amd64 baseline proved stable (now true,
+  # per the promotion above). Checked vmactions/freebsd-vm's current docs
+  # before adding this: the action's `arch:` input only supports
+  # x86_64/aarch64/riscv64/powerpc64 as the FreeBSD GUEST architecture —
+  # 386 and 32-bit arm are NOT bootable via this action at all, regardless
+  # of Go's freebsd/386 and freebsd/arm build support. riscv64 stays
+  # excluded per Flow 088 Decision 3 (Go has no freebsd/riscv64 target,
+  # only linux/riscv64 and openbsd/riscv64 exist — never add it). That
+  # leaves amd64 (x86_64) and arm64 (aarch64) as the only architectures
+  # this job can natively build AND smoke-test inside a real FreeBSD VM —
+  # the base image (Containerfile.freebsd) is already pinned to the
+  # freebsd-static multi-arch OCI index, so no Containerfile change is
+  # needed; podman resolves the correct per-arch leaf at build time based
+  # on the VM's own architecture.
   freebsd-container-image:
-    name: FreeBSD container image (amd64, parallel enrichment)
+    name: FreeBSD container image (${{ matrix.goarch }})
     runs-on: ubuntu-latest
-    needs: [dev-release, freebsd-integration-gate]
+    needs: dev-tag
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            vmarch: x86_64
+          - goarch: arm64
+            vmarch: aarch64
 
     steps:
       - name: Checkout
@@ -181,6 +232,7 @@ jobs:
         id: freebsd_image
         uses: vmactions/freebsd-vm@v1.5.0
         with:
+          arch: ${{ matrix.vmarch }}
           release: "14.3"
           usesh: true
           # copyback: true (matches 088/089's proven-stable jobs, which use
@@ -194,23 +246,24 @@ jobs:
           # difference vs. 088/089's identical smoke-test pattern; reverting
           # to true is the cheapest, most defensible next experiment.
           copyback: true
-          # DEV_TAG is a custom (non-GITHUB_-prefixed) env var - it does NOT
-          # match a GITHUB_* glob and must be listed explicitly, unlike
+          # DEV_TAG/GOARCH are custom (non-GITHUB_-prefixed) env vars - they do
+          # NOT match a GITHUB_* glob and must be listed explicitly, unlike
           # GITHUB_TOKEN/GITHUB_ACTOR which vmactions forwards by name here.
-          envs: 'GITHUB_TOKEN GITHUB_ACTOR DEV_TAG'
+          envs: 'GITHUB_TOKEN GITHUB_ACTOR DEV_TAG GOARCH'
           run: |
             set -eu
 
-            # Pass through the tag from the dev-release job. The new job's
-            # `needs: dev-release` guarantees this is non-empty by the time
-            # we run.
+            # Pass through the tag from the dev-tag job. The job's
+            # `needs: dev-tag` guarantees this is non-empty by the time we
+            # run. GOARCH comes from the matrix (amd64/arm64) via the envs:
+            # directive above.
             TAG="${DEV_TAG}"
             if [ -z "${TAG}" ]; then
               echo "::error::DEV_TAG env var not set; cannot derive image tag" >&2
               exit 1
             fi
-            IMAGE_TAG="ghcr.io/mr-addams/arxsentinel:${TAG}-freebsd-amd64"
-            IMAGE_LATEST="ghcr.io/mr-addams/arxsentinel:freebsd-amd64-latest"
+            IMAGE_TAG="ghcr.io/mr-addams/arxsentinel:${TAG}-freebsd-${GOARCH}"
+            IMAGE_LATEST="ghcr.io/mr-addams/arxsentinel:freebsd-${GOARCH}-latest"
             echo "Target images:"
             echo "  version-tagged: ${IMAGE_TAG}"
             echo "  floating-latest: ${IMAGE_LATEST}"
@@ -258,10 +311,11 @@ jobs:
             # ── Build the arxsentinel binary natively in the VM ─────────────────
             # Same approach as 088 build-test + container-build-freebsd jobs: the
             # FreeBSD VM has go installed via pkg, and a native build produces
-            # the correct FreeBSD/amd64 binary. Cross-compile from a Linux host
-            # would be possible, but running `go build` native on FreeBSD verifies
-            # the toolchain + product code genuinely work on this platform, not
-            # just that they cross-compile.
+            # the correct FreeBSD/${GOARCH} binary. Cross-compile from a Linux
+            # host would be possible, but running `go build` native on FreeBSD
+            # verifies the toolchain + product code genuinely work on this
+            # platform (both host CPU architectures, per the matrix above),
+            # not just that they cross-compile.
             echo "::group::native go build (cmd/arxsentinel + cmd/healthcheck)"
             cd "$GITHUB_WORKSPACE"
             # Stage binaries + config into a MINIMAL /tmp/build/ directory
@@ -292,14 +346,14 @@ jobs:
             # the actual root cause of every SIGABRT crash in this
             # investigation (#242-#247 fixed real but secondary bugs along
             # the way; none of them addressed this).
-            CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+            CGO_ENABLED=0 GOOS=freebsd GOARCH="${GOARCH}" \
                 go build -o /tmp/build/arxsentinel ./cmd/arxsentinel
             # healthcheck binary is needed by the Containerfile.freebsd (088
             # pattern: COPY both into the final-stage image). MUST be named
             # exactly "healthcheck" - Containerfile.freebsd's
             # "COPY --chmod=755 healthcheck /healthcheck" line references
             # this literal filename.
-            CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+            CGO_ENABLED=0 GOOS=freebsd GOARCH="${GOARCH}" \
                 go build -o /tmp/build/healthcheck ./cmd/healthcheck || \
                 echo "::notice::cmd/healthcheck build failed — image will skip healthcheck"
             ls -la /tmp/build/
@@ -318,8 +372,11 @@ jobs:
             # ── podman build against Containerfile.freebsd ───────────────────────
             # Containerfile.freebsd was added by Flow 088 PR #239 — it's a single
             # stage that COPY's pre-built binaries into the digest-pinned
-            # ghcr.io/freebsd/freebsd-static:14.3 base. Single-arch (amd64 only —
-            # the QEMU VM is amd64, no cross-arch buildx analogue for FreeBSD).
+            # ghcr.io/freebsd/freebsd-static:14.3 base. That base is pinned by
+            # OCI image-INDEX digest (multi-arch), so podman resolves the
+            # correct per-arch leaf (amd64/arm64) automatically from the VM's
+            # own architecture — no per-arch FROM line needed (see
+            # Containerfile.freebsd's own comment on the digest pin).
             # Context is /tmp/build/ (3 files: arxsentinel, healthcheck,
             # config.docker.yaml) - NOT $GITHUB_WORKSPACE - matching 088's
             # proven-stable container-build-freebsd job exactly.
@@ -388,10 +445,12 @@ jobs:
             echo "Pushed: ${IMAGE_LATEST}"
             echo "::endgroup::"
         env:
-          # Flow 090 Decision 7: pull the tag from the dev-release job's outputs
+          # Flow 090 Decision 7: pull the tag from the dev-tag job's outputs
           # via the needs context. Env-vars passed into the VM are forwarded by
-          # vmactions/freebsd-vm's `envs:` directive above.
-          DEV_TAG: ${{ needs.dev-release.outputs.tag }}
+          # vmactions/freebsd-vm's `envs:` directive above. GOARCH comes from
+          # this job's own matrix (2026-07-02 arch-matrix addition).
+          DEV_TAG: ${{ needs.dev-tag.outputs.tag }}
+          GOARCH: ${{ matrix.goarch }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
 
@@ -405,17 +464,20 @@ jobs:
   # first-iteration trade-off, see prior revision of this comment in git
   # history for the full reasoning).
   #
-  # Gating added (2026-07-02): Flow 091/092 brought this suite to full
-  # 7-module+badbot+blocklist+proxy-chain coverage across all 6 backends,
-  # each individually promoted off continue-on-error inside
-  # freebsd-integration.yml after 2+ consecutive green runs. With that
-  # bar cleared, `freebsd-container-image` now lists this job in its
-  # `needs:` — a FreeBSD-native container is no longer published unless
-  # the FreeBSD backend suite passed on the same commit. Still NOT in the
-  # needs: chain of `dev-release`/`integration` themselves (Linux release
-  # publishing stays independent of FreeBSD test results).
+  # Gating added (2026-07-02), corrected same day: Flow 091/092 brought
+  # this suite to full 7-module+badbot+blocklist+proxy-chain coverage
+  # across all 6 backends, each individually promoted off
+  # continue-on-error inside freebsd-integration.yml after 2+ consecutive
+  # green runs. The first cut of this gate only added `needs:
+  # freebsd-integration-gate` to freebsd-container-image, leaving the
+  # actual tag+GitHub-Release publish (dev-release) unaffected — live run
+  # 28617320029 proved that gap concretely (fbsd-integration-litespeed
+  # failed, yet v2.2.2-dev.14 still published normally). The fix moved
+  # this job into `dev-tag`'s `needs:` instead (see that job's comment) —
+  # nothing gets tagged/published, Linux OR FreeBSD, unless this suite
+  # passed on the same commit.
   freebsd-integration-gate:
-    name: FreeBSD integration gate (gates freebsd-container-image)
+    name: FreeBSD integration gate (gates dev-tag)
     # Reusable-workflow call: uses: is a JOB-LEVEL field here, mutually
     # exclusive with runs-on:/steps: (GitHub Actions docs: "you call
     # reusable workflows directly within a job, and not from within job
