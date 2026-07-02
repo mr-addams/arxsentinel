@@ -1297,17 +1297,14 @@ jobs:
   # the frontend block for badbot testability per Decision 4 matrix).
   # -------------------------------------------------------------------
   fbsd-integration-haproxy:
-    # Direct-scenario promotion (Task P4.8, superseded by Flow 092 below):
-    # continue-on-error dropped after 2 consecutive green live dispatches
-    # (runs 28557166919, 28557311294 — both "[haproxy] PASS: all 3
-    # assertions green", exit 0) per DECISIONS section 6's promotion
-    # criterion. HAProxy logs to stdout, captured via `podman logs
-    # --follow` instead of a -v bind-mount; the `capture request header
-    # User-Agent` directive lives in haproxy.cfg, NOT the run-script.
-    #
-    # Flow 092: integration.sh now also runs Track A + Track B, both new
-    # and unproven live. RE-ADDING continue-on-error: true per precedent.
-    continue-on-error: true
+    # Flow 092 promotion: continue-on-error dropped after 2 consecutive
+    # green live dispatches of the FULLY EXTENDED script (Track A+B):
+    # runs 28593811380, 28594136763 — both "[haproxy] PASS: all
+    # assertions green" (DECISIONS §"Revised: 2026-07-02 — haproxy
+    # promoted, FIRST TRY"). HAProxy logs to stdout, captured via
+    # `podman logs --follow` — the chain scenario needs a SECOND
+    # background capture process for the chain container (found by
+    # shell-reviewer before the first dispatch, fixed proactively).
     name: fbsd-integration-haproxy
     runs-on: ubuntu-latest
     timeout-minutes: 30
