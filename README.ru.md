@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/license-Elastic--2.0-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64%20%7C%20arm%2Fv7%20%7C%20riscv64%20%7C%20i386-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
+[![FreeBSD](https://img.shields.io/badge/freebsd-386%20%7C%20amd64%20%7C%20arm%20%7C%20arm64-red?logo=freebsd)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
 > 🌐 [English](README.md) | [Українська документація](README.uk.md) | 📖 [Кулинарная книга конфигураций](cookbook/CookBook.ru.md)
@@ -290,6 +291,26 @@ sudo systemctl enable --now arxsentinel
 
 > **Fail2Ban на Arch:** установите перед или после arxsentinel: `sudo pacman -S fail2ban`
 
+### FreeBSD
+
+Скрипт `get.sh` выше не подходит (он рассчитан только на Linux-дистрибутивы с `/etc/os-release`). Скачайте архив `freebsd_<arch>` со страницы [Releases](https://github.com/mr-addams/arxsentinel/releases) и запустите установщик из архива:
+
+```sh
+fetch https://github.com/mr-addams/arxsentinel/releases/latest/download/arxsentinel_<version>_freebsd_<arch>.tar.gz
+tar xzf arxsentinel_<version>_freebsd_<arch>.tar.gz
+cd arxsentinel_<version>_freebsd_<arch>
+sudo sh install.sh
+```
+
+`install.sh` создаёт системного пользователя `arxsentinel`, устанавливает бинарник и rc.d-сервис, сидирует конфиг из встроенного примера (при повторном запуске существующий конфиг не перезаписывается). Включить и запустить:
+
+```sh
+sysrc arxsentinel_enable=YES
+service arxsentinel start
+```
+
+Полное руководство — структура путей на FreeBSD, управление rc.d-сервисом и запуск веб-сервера в `podman` на FreeBSD (драйвер хранилища, настройка firewall, особенности контейнерной сети): [FreeBSD Deployment Cookbook](cookbook/freebsd/CookBook.ru.md).
+
 ### Сборка из исходников
 
 Требуется Go 1.26+:
@@ -398,7 +419,7 @@ deploy/examples/
 
 ## Требования
 
-- Linux amd64 / arm64 / arm/v7 / riscv64 / i386 с systemd
+- Linux amd64 / arm64 / arm/v7 / riscv64 / i386 с systemd, **либо** FreeBSD 386 / amd64 / arm / arm64 с rc.d
 - Fail2Ban
 - HTTP-сервер, пишущий access.log в поддерживаемом формате (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — или произвольный regex)
 
@@ -531,6 +552,10 @@ Score накапливается с линейным decay за `observation_win
 
 Полностью охватывается установщиками пакетов выше. Используйте `systemctl` для управления сервисом и `kill -HUP` для live reload. Смотрите [Управление](#управление) для полного справочника команд.
 
+### FreeBSD — rc.d
+
+Охватывается FreeBSD-установщиком выше. Используйте `service arxsentinel <start|stop|status>` для управления сервисом; `sysrc arxsentinel_enable=YES` включает автозапуск при перезагрузке. Полное руководство, включая запуск веб-сервера в `podman` на FreeBSD: [FreeBSD Deployment Cookbook](cookbook/freebsd/CookBook.ru.md).
+
 ### Docker Compose
 
 ArxSentinel работает как sidecar рядом с HTTP-сервером, читая общие тома логов.
@@ -559,6 +584,7 @@ Helm-чарт с описанием values: [Helm README](deploy/container/k8s/a
 
 ## Недавно доставленные функции
 
+- **Поддержка FreeBSD** — нативные сборки `386`/`amd64`/`arm`/`arm64`, отдельный установщик + rc.d-сервис, покрыто CI против всех 6 поддерживаемых веб-серверов (nginx, Caddy, Traefik, HAProxy, Apache, LiteSpeed), включая сценарии proxy-chain с реальным IP — см. [FreeBSD Deployment Cookbook](cookbook/freebsd/CookBook.ru.md)
 - **`arxsentinel validate`** — автономная валидация конфига с учётом топологии, используя статические манифесты плагинов; ловит сломанную разводку pipeline до деплоя
 - **Pluggable queue backends** — буферизация событий исполнителей через in-memory, bbolt (файл) или Redis; выбираемо на исполнителя для bare-metal / single-host / multi-replica K8s
 - **Named Channel Switch** — маршрутизация событий угроз между независимыми pipeline по имени (один детектит, другой исполняет)
