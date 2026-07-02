@@ -933,17 +933,13 @@ jobs:
   # image, which traefik does not).
   # -------------------------------------------------------------------
   fbsd-integration-traefik:
-    # Direct-scenario promotion (Task P3.8, superseded by Flow 092 below):
-    # continue-on-error dropped after 2 consecutive green live dispatches
-    # (runs 28554864680, 28555057960 — both "[traefik] PASS: all 3
-    # assertions green", exit 0) per DECISIONS section 6's promotion
-    # criterion.
-    #
-    # Flow 092: integration.sh now also runs Track A + Track B, both new
-    # and unproven live. RE-ADDING continue-on-error: true per the
-    # nginx/caddy precedent until 2 consecutive green dispatches of the
-    # EXTENDED script are confirmed.
-    continue-on-error: true
+    # Flow 092 promotion: continue-on-error dropped after 2 consecutive
+    # green live dispatches of the FULLY EXTENDED script (Track A+B):
+    # runs 28592330987, 28592661408 — both "[traefik] PASS: all
+    # assertions green" (DECISIONS §"Revised: 2026-07-02 — traefik
+    # promoted, FIRST TRY"). Zero bugs found — coder verified
+    # forwardedHeaders.trustedIPs against the battle suite source
+    # before implementing, avoiding caddy's G21 mistake.
     name: fbsd-integration-traefik
     runs-on: ubuntu-latest
     timeout-minutes: 30
