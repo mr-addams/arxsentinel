@@ -3,23 +3,35 @@
 ## Overview
 
 ArxSentinel ships a native FreeBSD binary (`freebsd/{386,amd64,arm,arm64}`)
-via goreleaser, plus a dedicated installer and rc.d service script. The
-recommended architecture is **ArxSentinel runs natively on the FreeBSD
-host** — it is not containerized. If your web server (nginx, Caddy,
-Traefik, HAProxy, Apache, LiteSpeed...) runs in a `podman` container on
-the same FreeBSD host, ArxSentinel tails the container's access log via
-a bind-mounted host path or a network source (syslog/HTTP), exactly like
-any other recipe in this cookbook.
+via goreleaser, plus a dedicated installer and rc.d service script.
+There are two ways to run ArxSentinel itself on FreeBSD:
 
-Why native, not containerized: FreeBSD has no Linux-kernel-native
-container runtime — `podman` on FreeBSD runs Linux containers through an
-experimental Linux-compatibility/emulation layer (`ocijail` +
-`linprocfs`/`linsysfs`). That emulation layer is good enough for running
-a web server, but running ArxSentinel itself there gains nothing and
-adds a translation layer between the binary and the OS it needs to
-introspect (file watching, signal handling). Running natively sidesteps
-that entirely — this is also the exact architecture this project's own
-FreeBSD CI suite validates (`tests/integration-freebsd/`).
+1. **Native binary on the host (recommended, most tested)** — via the
+   installer below. If your web server (nginx, Caddy, Traefik, HAProxy,
+   Apache, LiteSpeed...) runs in a `podman` container on the same
+   FreeBSD host, ArxSentinel tails the container's access log via a
+   bind-mounted host path or a network source (syslog/HTTP), exactly
+   like any other recipe in this cookbook.
+2. **A genuinely FreeBSD-native container image** (early access — see
+   [Container image](#container-image) below) — built on
+   `ghcr.io/freebsd/freebsd-static`, a real FreeBSD OCI base image.
+   This is NOT the Linux-emulation path `podman` uses for web-server
+   images: the container's OS matches the FreeBSD host, so it runs as
+   a genuine `ocijail` jail with zero Linux-compat translation layer
+   involved.
+
+Why the native binary is still the recommended default: it's the
+architecture this project's own FreeBSD CI suite
+(`tests/integration-freebsd/`) validates end-to-end, and it sidesteps
+even the FreeBSD-native container image's remaining rough edges (see
+below) entirely — no container runtime dependency at all. The
+container image is a legitimate, real option for users who want a
+uniform container-based deployment story across OSes, not a
+Linux-emulation workaround (that would be Option 3, which this
+cookbook explicitly recommends against — see
+[Running web servers under podman on FreeBSD](#running-web-servers-under-podman-on-freebsd)
+for why Linux-emulated containers are a fundamentally different,
+worse-supported path than either of the two options above).
 
 ## Quick Start
 
@@ -97,6 +109,57 @@ rm /usr/local/bin/arxsentinel /usr/local/etc/rc.d/arxsentinel
 rm -rf /usr/local/etc/arxsentinel /var/log/arxsentinel
 pw userdel arxsentinel
 ```
+
+---
+
+## Container image
+
+ArxSentinel also publishes a genuinely FreeBSD-native OCI container image
+— not a Linux image running under `podman`'s Linux-compatibility
+emulation. The image is built with `GOOS=freebsd GOARCH=amd64` and
+packaged on top of `ghcr.io/freebsd/freebsd-static` (a real FreeBSD OCI
+base image published by the FreeBSD project itself). Since the
+container's OS matches the FreeBSD host, it runs as an ordinary
+`ocijail` jail — no `--os=linux`, no Linux emulation layer, none of the
+gotchas in the [next section](#running-web-servers-under-podman-on-freebsd)
+apply to this image.
+
+```sh
+podman pull ghcr.io/mr-addams/arxsentinel:freebsd-amd64-latest
+podman run -d \
+    --name arxsentinel \
+    -v /var/log/nginx/access.log:/var/log/nginx/access.log:ro \
+    -v /var/log/arxsentinel:/var/log/arxsentinel \
+    -p 127.0.0.1:9117:9117 \
+    ghcr.io/mr-addams/arxsentinel:freebsd-amd64-latest
+```
+
+Version-pinned tags are also published as `:<release-tag>-freebsd-amd64`
+(e.g. `:v2.2.2-dev.12-freebsd-amd64`) alongside the floating
+`:freebsd-amd64-latest`.
+
+**Current limitations, worth knowing before choosing this over the
+native binary:**
+- **amd64 only.** No 386/arm/arm64 builds yet — the build runs inside a
+  single amd64 `vmactions/freebsd-vm` QEMU guest (FreeBSD's podman has
+  no cross-arch `buildx` analogue), so there is no multi-arch manifest
+  to pick a different architecture from.
+- **Runs as root.** The `freebsd-static` base image has no pre-existing
+  non-root user (unlike the Linux image's `distroless:nonroot`), and
+  setting an arbitrary `USER` would resolve to a uid absent from the
+  image's `/etc/passwd` — `ocijail` refuses to start a container under
+  an unknown uid. Nonroot hardening is a known follow-up, not yet done.
+- **CI-validated, not yet long-soaked.** The build pipeline is proven
+  (4+ consecutive green live dispatches as of this writing, after an
+  earlier debugging cycle root-caused a `CGO_ENABLED` build-flag issue),
+  but this is a newer, less battle-tested path than the native-binary
+  installer above, which is what this project's own FreeBSD integration
+  test suite exercises end-to-end.
+
+If none of these limitations matter for your setup, this is a
+legitimate way to get a uniform "everything's a container" deployment
+story across Linux and FreeBSD hosts, without any Linux-emulation
+overhead or gotchas.
 
 ---
 
