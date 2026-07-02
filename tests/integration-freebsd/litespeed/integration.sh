@@ -615,39 +615,45 @@ podman run --rm --os=linux --network "$NETWORK" \
     || echo "[litespeed] curl attacker exited non-zero (still check the access log)"
 echo "[litespeed] attacks sent"
 
-# Settling delay (live run 28598545541 found this necessary): the
-# Step 7 poll loop below breaks as soon as the threat log has ANY
-# content — typically within 1-2s of the FIRST attack block (probe)
-# firing, well before OLS has flushed its own access log for the
-# LAST attack blocks (rate=60 requests, overflow=1 request) sent in
-# this same synchronous curl invocation. All 5 other backends
-# (nginx/caddy/traefik/haproxy/apache) settle fast enough that this
-# race never manifested; OLS's own access-log write/flush latency is
-# evidently slower under this load. 3s is empirical headroom, not a
-# principled bound — if a future run still shows rate/overflow
-# missing, raise this further before suspecting a logic bug.
-sleep 3
-
 # ---------------------------------------------------------------------
-# Step 7: poll the threat log for non-empty content. Timeout RAISED
-# from 20s → 40s as part of Task A6 (Flow 092 Decision 7): the
-# previous 3-request Step 6 finished in <1s of attack traffic; the
-# new 8-block Step 6 sends ~7 + 6 + 15 + 6 + 8 + 60 + 1 + 2 = 105
-# attack requests, with the rate block's 1s sleep and the
-# sentinel's per-request scoring adding wall-clock cost on top. 40s
-# is a conservative budget for the polling loop (the actual elapsed
-# time in CI is typically 3-5s, the rest is margin for first-podman-
-# pull + cold blocklist-fetch). Mirrors apache/integration.sh:558-559
-# + traefik/integration.sh:519-520 (proven green pattern).
+# Step 7: poll the threat log until it STOPS GROWING, not just until
+# it first becomes non-empty. Timeout budget 40s (raised from 20s as
+# part of Task A6 / Flow 092 Decision 7 for the 8-block/105-request
+# attack volume — see apache/integration.sh:558-559 for the same
+# bump's rationale on a backend where "non-empty" alone was
+# sufficient).
+#
+# WHY stability, not just non-empty (live runs 28598545541 —
+# rate+overflow missing — and 28599056604 — bruteforce missing, a
+# DIFFERENT module — after a flat 3s settling sleep failed to fully
+# fix it): breaking on first non-empty content raced OLS's own
+# access-log flush latency for whichever attack blocks hadn't been
+# written yet. A flat sleep only shifts WHEN the race happens, it
+# doesn't eliminate it — different runs showed different "unlucky"
+# modules, the signature of a timing race, not a logic bug. Polling
+# until the file SIZE is unchanged across 2 consecutive 1s checks
+# adapts to however long OLS actually needs to flush all 105
+# requests' worth of log lines, instead of guessing a constant.
 # ---------------------------------------------------------------------
 THREAT_LOG="$WORK_DIR/output/threats-litespeed.log"
-echo "[litespeed] polling $THREAT_LOG (timeout 40s)..."
+echo "[litespeed] polling $THREAT_LOG for stable content (timeout 40s)..."
 DEADLINE=$(($(date +%s) + 40))
 WRITTEN=0
+PREV_SIZE=-1
+STABLE_COUNT=0
 while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     if [ -s "$THREAT_LOG" ]; then
-        WRITTEN=1
-        break
+        CUR_SIZE=$(wc -c < "$THREAT_LOG" 2>/dev/null || echo 0)
+        if [ "$CUR_SIZE" -eq "$PREV_SIZE" ]; then
+            STABLE_COUNT=$((STABLE_COUNT + 1))
+            if [ "$STABLE_COUNT" -ge 2 ]; then
+                WRITTEN=1
+                break
+            fi
+        else
+            STABLE_COUNT=0
+        fi
+        PREV_SIZE="$CUR_SIZE"
     fi
     sleep 1
 done
