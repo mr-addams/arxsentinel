@@ -95,15 +95,19 @@ jobs:
     # (runs 28478529310, 28478698670 - both "[nginx] PASS: all 3 assertions
     # green", exit 0) per Flow 089 DECISIONS section 6's promotion criterion.
     #
-    # Flow 092 Decision 6: RE-ADDED continue-on-error: true — this job's
-    # integration.sh now also runs a NEW proxy-chain scenario (Steps 10-15,
-    # not yet proven live). Re-promotion after 2 consecutive green dispatches
-    # of the EXTENDED script (both direct AND chain assertions) will be
-    # recorded here per the same discipline, then continue-on-error dropped
-    # again. Job-level blocking applies ONLY within this isolated workflow
-    # (workflow_dispatch + push to the flow branch) - it does not gate
-    # dev/main branch protection.
-    continue-on-error: true
+    # Flow 092: integration.sh now also runs a NEW proxy-chain scenario
+    # (Steps 10-15, being actively debugged as of this commit). Deliberately
+    # NOT using continue-on-error: true during this active debug loop — live
+    # run 28583294976 showed continue-on-error masks a real script failure
+    # (exit 1) as a job-level "success" in the Actions UI, forcing a manual
+    # log-grep every dispatch instead of reading the job status directly.
+    # This branch does not gate dev/main (feature branch, no PR open yet),
+    # so there is nothing continue-on-error would protect here — accurate
+    # red/green on every dispatch is strictly more useful while iterating.
+    # Once the chain scenario proves 2 consecutive green dispatches, this
+    # job's true state IS "promoted" already (no re-add/re-drop dance
+    # needed) — a Revised note will still record the promoting run IDs
+    # here per Flow 091/092's Decision 6 discipline.
     name: integration-nginx
     runs-on: ubuntu-latest
     timeout-minutes: 30
