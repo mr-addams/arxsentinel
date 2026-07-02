@@ -30,7 +30,7 @@
       "@type": "SoftwareApplication",
       "name": "ArxSentinel",
       "applicationCategory": "SecurityApplication",
-      "operatingSystem": "Linux",
+      "operatingSystem": "Linux, FreeBSD",
       "description": "Вісім поведінкових детекторів аналізують кожен HTTP-запит у реальному часі та передають підтверджених нападників напряму до Fail2Ban. Працює з nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed та OpenLiteSpeed. Підтримка Cloudflare.",
       "url": "https://mr-addams.github.io/arxsentinel/uk.html",
       "downloadUrl": "https://github.com/mr-addams/arxsentinel/releases/latest",
@@ -572,6 +572,7 @@
             <span class="badge">Source Available</span>
             <span class="badge">Go</span>
             <span class="badge">Linux</span>
+            <span class="badge">FreeBSD</span>
         </div>
         <h1>
             <span class="shimmer-text">Від одного VPS</span><br>
@@ -823,6 +824,7 @@
             <li><button class="tab-btn active" onclick="switchTab(event, 'script-install')">Встановлення скриптом</button></li>
             <li><button class="tab-btn" onclick="switchTab(event, 'source-install')">З вихідного коду</button></li>
             <li><button class="tab-btn" onclick="switchTab(event, 'container-install')">Контейнер</button></li>
+            <li><button class="tab-btn" onclick="switchTab(event, 'freebsd-install')">FreeBSD</button></li>
         </ul>
 
         <div class="terminal-container">
@@ -861,6 +863,21 @@ sudo systemctl enable --now arxsentinel</span></pre>
                     Docker Compose та Kubernetes (Helm DaemonSet) — докладні посібники:
                     <a href="https://github.com/mr-addams/arxsentinel/blob/dev/README.docker.md" style="color: var(--accent-blue);">README.docker.md</a> ·
                     <a href="https://github.com/mr-addams/arxsentinel/blob/dev/deploy/container/k8s/arxsentinel/README.md" style="color: var(--accent-blue);">Kubernetes (Helm) README</a>
+                </p>
+            </div>
+
+            <div id="freebsd-install" class="tab-content">
+                <pre><span class="comment"># Нативний бінарник — 386 / amd64 / arm / arm64. Окремий інсталятор + rc.d-сервіс.</span>
+<span class="command">fetch https://github.com/mr-addams/arxsentinel/releases/latest/download/arxsentinel_&lt;version&gt;_freebsd_&lt;arch&gt;.tar.gz
+tar xzf arxsentinel_&lt;version&gt;_freebsd_&lt;arch&gt;.tar.gz
+cd arxsentinel_&lt;version&gt;_freebsd_&lt;arch&gt;
+sudo sh install.sh
+sysrc arxsentinel_enable=YES
+service arxsentinel start</span></pre>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">
+                    Створює системного користувача <code>arxsentinel</code>, встановлює rc.d-сервіс і засіває конфіг із прикладу (при повторному запуску наявний конфіг не перезаписується).
+                    Запускаєте веб-сервер у <code>podman</code> на FreeBSD? Повний посібник — драйвер сховища, налаштування firewall, особливості контейнерної мережі:
+                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/cookbook/freebsd/CookBook.uk.md" style="color: var(--accent-blue);">FreeBSD Deployment Cookbook</a>
                 </p>
             </div>
         </div>
