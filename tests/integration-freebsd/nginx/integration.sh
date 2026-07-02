@@ -275,13 +275,20 @@ echo "[nginx] nginx container IP: $NGINX_IP"
 
 # Generate the long URL path for the overflow scenario (block 7) on
 # the HOST (not inside the curl container) so the value can be
-# embedded as a literal in the -c "..." script string below. Same
-# recipe as tests/integration/scenarios.sh:169 — /dev/urandom is ~24%
-# alphanumeric, so we read 20000 bytes to guarantee 2200 clean chars.
-# pipefail is disabled because head -c 2200 closes stdin before tr
-# finishes reading — SIGPIPE on tr is expected and benign. stderr is
-# suppressed for the same reason.
-LONG_PATH="/$(set +o pipefail; head -c 20000 /dev/urandom | tr -dc 'a-zA-Z0-9' 2>/dev/null | head -c 2200)"
+# embedded as a literal in the -c "..." script string below.
+#
+# NOT scenarios.sh:169's `/dev/urandom | tr -dc 'a-zA-Z0-9'` recipe:
+# live run 28587170404 found it produces EMPTY output on this FreeBSD
+# VM's native sh — LONG_PATH came out as "/" (1 byte), so the overflow
+# detector (which only checks byte length, not content — see
+# pkg/detectorplugins/overflow/overflow.go's ALGORITHM comment) never
+# fired. Root cause not pinned down further (FreeBSD's tr(1) vs GNU
+# tr, or /dev/urandom access under the vmactions SSH session — either
+# way, not worth chasing since the detector doesn't need randomness).
+# `awk` generates a deterministic 2200-char string in one process,
+# POSIX-standard and present on every FreeBSD base install — no
+# /dev/urandom or tr(1) portability surface at all.
+LONG_PATH="/$(awk 'BEGIN { s = ""; for (i = 0; i < 2200; i++) s = s "a"; print s }')"
 # Diagnostic (live run 28585617384 found the overflow assertion failing
 # with no obvious quoting bug on static read) — print the byte length so
 # a re-dispatch can confirm/rule out FreeBSD's tr(1) behaving differently
