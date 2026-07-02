@@ -2077,7 +2077,13 @@ jobs:
   #   `%{X-Forwarded-For}i` in the client-IP field position — the
   #   SAME class of fix as caddy's G21 (XFF-fallback log FORMAT
   #   STRING, not a runtime-mountable "trust" config directive). This
-  #   requires the host-build + podman-load pattern (Decision 4
+  #   flow uses a LOCAL FORK of that Dockerfile+patch (tests/
+  #   integration-freebsd/litespeed/LiteSpeedChain.Dockerfile +
+  #   patch-ols-logformat-chain.py) — the upstream patch's logFormat
+  #   has no trailing Referer/User-Agent fields, which broke this
+  #   flow's UA-based chain assertion (live run 28598033404); the
+  #   fork adds those fields without touching the shared upstream
+  #   file. Requires the host-build + podman-load pattern (Decision 4
   #   Revised / G11), same as caddy's P2.4 step — see below.
   # -------------------------------------------------------------------
   fbsd-integration-litespeed:
@@ -2109,13 +2115,25 @@ jobs:
       # (Step 11 of integration.sh) — the direct scenario (Step 3)
       # still uses the stock docker.io/litespeedtech/openlitespeed
       # image per the P6 design note above.
+      #
+      # Uses tests/integration-freebsd/litespeed/LiteSpeedChain.
+      # Dockerfile — a FreeBSD-flow-local FORK of the battle suite's
+      # tests/integration/dockerfiles/LiteSpeedBackend.Dockerfile, NOT
+      # the upstream file itself. Live run 28598033404 found the
+      # upstream patch's logFormat has NO trailing Referer/User-Agent
+      # fields, breaking this flow's chain assertion (which, like all
+      # 5 other backends, identifies the sqlmap request by grep'ing
+      # the chain access log for the sqlmap User-Agent string). The
+      # fork's patch-ols-logformat-chain.py adds those trailing
+      # fields; the upstream file is left untouched (unknown blast
+      # radius on the Docker battle suite's own CI if edited).
       # ---------------------------------------------------------------
       - name: Build litespeed-arxsentinel image on host (native Docker, no FreeBSD Linux-emul)
         run: |
           docker build \
             -t litespeed-arxsentinel:local \
-            -f tests/integration/dockerfiles/LiteSpeedBackend.Dockerfile \
-            tests/integration/
+            -f tests/integration-freebsd/litespeed/LiteSpeedChain.Dockerfile \
+            tests/integration-freebsd/litespeed/
           docker save litespeed-arxsentinel:local -o litespeed-arxsentinel.tar
           ls -l litespeed-arxsentinel.tar
 
