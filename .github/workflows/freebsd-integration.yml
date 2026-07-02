@@ -2058,30 +2058,39 @@ jobs:
   # highest Linux-emulation risk per 089's Deferred 089.1 prediction;
   # saved for last so its risk doesn't gate the other four).
   #
-  # P6 KEY DESIGN CHOICE — STOCK image, NO custom build, NO
-  # patch-ols-logformat.py:
+  # P6 KEY DESIGN CHOICE — STOCK image for the DIRECT scenario, NO
+  # custom build there:
   #   Per DECISIONS §4 litespeed row + arx-core
   #   pkg/parser/profiles.go:103-117, OLS by default emits Apache CLF
   #   with User-Agent — exactly what the `litespeed` parser profile
-  #   (apacheCLFPattern) expects. The brief explicitly recommends
-  #   this path (the G11-avoidance pattern, see DECISIONS §4 Revised
-  #   + G11): using the stock image avoids the entire class of
-  #   risks G11 enumerates (Go-toolchain / network-in-build-container
-  #   bugs that cost 5 iterations on the caddy backend). This job
-  #   therefore has NO host-build step (no `docker build` before the
-  #   vmactions/freebsd-vm step) and the integration.sh script
-  #   invokes the stock image with a plain `podman run --os=linux
-  #   docker.io/litespeedtech/openlitespeed:latest` — no build,
-  #   no patched variant, no log-format patch (the patch script
-  #   from tests/integration/dockerfiles/ is for the proxy-chain
-  #   XFF scenario in Deferred 091.1, out of P6 scope).
+  #   (apacheCLFPattern) expects. Using the stock image for the DIRECT
+  #   scenario avoids the entire class of risks G11 enumerates
+  #   (Go-toolchain / network-in-build-container bugs that cost 5
+  #   iterations on the caddy backend).
+  #
+  #   Flow 092 Track B (proxy-chain) DOES need a custom image: OLS's
+  #   XFF-trust mechanism (per Deferred 091.1's original note and the
+  #   battle suite's `tests/integration/dockerfiles/
+  #   LiteSpeedBackend.Dockerfile` + `patch-ols-logformat.py`) is a
+  #   Dockerfile-time PATCH to `/usr/local/lsws/conf/templates/
+  #   docker.conf` that injects a `logFormat` directive putting
+  #   `%{X-Forwarded-For}i` in the client-IP field position — the
+  #   SAME class of fix as caddy's G21 (XFF-fallback log FORMAT
+  #   STRING, not a runtime-mountable "trust" config directive). This
+  #   requires the host-build + podman-load pattern (Decision 4
+  #   Revised / G11), same as caddy's P2.4 step — see below.
   # -------------------------------------------------------------------
   fbsd-integration-litespeed:
-    # Promoted (Task P6.8): continue-on-error dropped after 2 consecutive
-    # green live dispatches (runs 28561678194, 28561845522 — both
-    # "[litespeed] PASS: all 3 assertions green", exit 0) per DECISIONS
-    # section 6's promotion criterion. Final backend of Flow 091 — all
-    # 6 direct-server integration jobs are now in-workflow gating.
+    # Direct-scenario promotion (Task P6.8, superseded by Flow 092
+    # below): continue-on-error dropped after 2 consecutive green live
+    # dispatches (runs 28561678194, 28561845522 — both "[litespeed]
+    # PASS: all 3 assertions green", exit 0) per DECISIONS section 6's
+    # promotion criterion.
+    #
+    # Flow 092: integration.sh now also runs Track A + Track B, both
+    # new and unproven live. RE-ADDING continue-on-error: true per
+    # precedent.
+    continue-on-error: true
     name: fbsd-integration-litespeed
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -2089,6 +2098,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      # ---------------------------------------------------------------
+      # Flow 092 Track B host build — litespeed-arxsentinel:local.
+      # Same pattern as caddy's P2.4 step (Decision 4 Revised / G11):
+      # build on ubuntu-latest's native Docker (no FreeBSD Linux-emul
+      # surface), save to a tar, let vmactions/freebsd-vm's pre-run
+      # rsync carry it into the VM, `podman load` there is a pure
+      # local import. This image is ONLY used by the chain scenario
+      # (Step 11 of integration.sh) — the direct scenario (Step 3)
+      # still uses the stock docker.io/litespeedtech/openlitespeed
+      # image per the P6 design note above.
+      # ---------------------------------------------------------------
+      - name: Build litespeed-arxsentinel image on host (native Docker, no FreeBSD Linux-emul)
+        run: |
+          docker build \
+            -t litespeed-arxsentinel:local \
+            -f tests/integration/dockerfiles/LiteSpeedBackend.Dockerfile \
+            tests/integration/
+          docker save litespeed-arxsentinel:local -o litespeed-arxsentinel.tar
+          ls -l litespeed-arxsentinel.tar
 
       - name: Run litespeed integration smoke inside FreeBSD VM
         uses: vmactions/freebsd-vm@v1.5.0
@@ -2402,6 +2431,10 @@ jobs:
             fi
             echo "::endgroup::"
             echo "litespeed-access.log size: $(wc -c < "$GITHUB_WORKSPACE/litespeed-access.log" 2>/dev/null || echo 0) bytes"
+
+            # Final line of the run: block — propagate integration.sh's
+            # real exit code as THIS STEP's exit code (G19).
+            exit "$SCRIPT_EXIT"
 
       - name: Upload fbsd-integration-litespeed artifacts
         # smoke-log.txt: the full VM run log (P6.4)
