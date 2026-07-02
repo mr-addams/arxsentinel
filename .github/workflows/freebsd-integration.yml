@@ -1916,10 +1916,14 @@ jobs:
   #   XFF scenario in Deferred 091.1, out of P6 scope).
   # -------------------------------------------------------------------
   integration-litespeed:
+    # Promoted (Task P6.8): continue-on-error dropped after 2 consecutive
+    # green live dispatches (runs 28561678194, 28561845522 — both
+    # "[litespeed] PASS: all 3 assertions green", exit 0) per DECISIONS
+    # section 6's promotion criterion. Final backend of Flow 091 — all
+    # 6 direct-server integration jobs are now in-workflow gating.
     name: integration-litespeed
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true  # DECISIONS §6 — research-grade first dispatch; promote after 2+ green
 
     steps:
       - name: Checkout
