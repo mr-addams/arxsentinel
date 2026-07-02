@@ -1569,15 +1569,13 @@ jobs:
   #   httpd use the upstream image directly).
   # -------------------------------------------------------------------
   integration-apache:
-    # DECISIONS §6 — continue-on-error: true on FIRST dispatch
-    # (research-grade; promote after 2+ green, see Decision 6
-    # promotion mechanism in DECISIONS.md). This is the first
-    # commit of integration-apache, so the flag is on. Drop it in
-    # P5.8 after 2+ consecutive green live dispatches.
+    # Promoted (Task P5.8): continue-on-error dropped after 2 consecutive
+    # green live dispatches (runs 28559336031, 28559509626 — both
+    # "[apache] PASS: all 3 assertions green", exit 0) per DECISIONS
+    # section 6's promotion criterion.
     name: integration-apache
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true
 
     steps:
       - name: Checkout
