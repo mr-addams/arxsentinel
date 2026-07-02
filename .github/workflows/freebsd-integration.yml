@@ -361,9 +361,29 @@ jobs:
             # final `exit "$SCRIPT_EXIT"` (end of this run: block, after
             # all diagnostic cat output) makes the step's — and now the
             # job's — reported result match the script's actual outcome.
+            #
+            # CRITICAL: `|| SCRIPT_EXIT=$?`, NOT a bare statement followed
+            # by `SCRIPT_EXIT=$?` on its own line. vmactions/freebsd-vm's
+            # index.js PREPENDS `set -eu` to the entire run: script
+            # unconditionally (confirmed by reading the action's source —
+            # this workflow's own header comment claiming "NO set -e...
+            # this job is exploratory" is WRONG, the action overrides it
+            # regardless of what we write here). Under `set -e`, a bare
+            # failing command that is NOT part of an `&&`/`||`/`if`
+            # construct aborts the ENTIRE remaining script immediately —
+            # live runs 28586137901/28586481760/28586828621 (3 consecutive,
+            # identical ~58s-silence-then-"ssh exited with code 1" symptom)
+            # were this exact bug: `sh integration.sh` failing (real
+            # assertion failure) killed the outer script via `set -e`
+            # before `SCRIPT_EXIT=$?` ever ran, before the smoke-log cat
+            # ever ran, before ANY diagnostic output could reach the
+            # Actions log — the SSH session just silently died mid-script.
+            # `||` keeps the failing command inside an or-list, which
+            # `set -e` exempts from the abort rule (POSIX 2.8.1), while
+            # still capturing the real exit code into SCRIPT_EXIT.
             echo "[fbsd-integration-nginx] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/nginx/integration.sh
-            SCRIPT_EXIT=$?
+            SCRIPT_EXIT=0
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/nginx/integration.sh || SCRIPT_EXIT=$?
             if [ "$SCRIPT_EXIT" -eq 0 ]; then
                 echo "[fbsd-integration-nginx] integration.sh exit: 0 (all assertions green)"
             else
