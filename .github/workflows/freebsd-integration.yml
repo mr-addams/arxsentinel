@@ -347,16 +347,28 @@ jobs:
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The integration.sh exit code is recorded but not
-            # short-circuited to a workflow failure: the job runs
-            # with continue-on-error: true (DECISIONS §6 research-
-            # grade). A red run is a recorded finding in the
-            # downloadable smoke-log.txt, not a flow-blocker.
-            # ----------------------------------------------------------------
+            # SCRIPT_EXIT capture (not `&&/||` echo): this run: block has
+            # NO `set -e` (see the block's own header comment above), and
+            # the ORIGINAL `cmd && echo ok || echo fail` form always ends
+            # on an `echo` — echo always succeeds, so the step's reported
+            # exit code was ALWAYS 0 regardless of integration.sh's real
+            # result, even after continue-on-error: true was dropped from
+            # this job. Live run 28585617384 exposed this: the script
+            # printed a FAIL assertion and exited 1, but the job showed
+            # green in the Actions UI. `{ }` here is a grouping construct
+            # (POSIX sh), NOT a subshell — SCRIPT_EXIT set here stays
+            # visible after the block's closing `}` below, where the
+            # final `exit "$SCRIPT_EXIT"` (end of this run: block, after
+            # all diagnostic cat output) makes the step's — and now the
+            # job's — reported result match the script's actual outcome.
             echo "[fbsd-integration-nginx] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/nginx/integration.sh \
-                && echo "[fbsd-integration-nginx] integration.sh exit: 0 (3 assertions green)" \
-                || echo "[fbsd-integration-nginx] integration.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/nginx/integration.sh
+            SCRIPT_EXIT=$?
+            if [ "$SCRIPT_EXIT" -eq 0 ]; then
+                echo "[fbsd-integration-nginx] integration.sh exit: 0 (all assertions green)"
+            else
+                echo "[fbsd-integration-nginx] integration.sh exit: $SCRIPT_EXIT (assertion failure — see log above)"
+            fi
 
             echo
             echo "=== fbsd-integration-nginx integration.sh end @ $(date -u +%FT%TZ) ==="
@@ -409,6 +421,14 @@ jobs:
             fi
             echo "::endgroup::"
             echo "nginx-access.log size: $(wc -c < "$GITHUB_WORKSPACE/nginx-access.log" 2>/dev/null || echo 0) bytes"
+
+            # Final line of the run: block — propagate integration.sh's
+            # real exit code as THIS STEP's exit code (see the
+            # SCRIPT_EXIT capture comment above). All diagnostic output
+            # above (smoke-log, threat log, access log) has already
+            # printed regardless of pass/fail; this exit only affects
+            # the step/job's reported conclusion, not what gets logged.
+            exit "$SCRIPT_EXIT"
 
       - name: Upload fbsd-integration-nginx artifacts
         # smoke-log.txt: the full VM run log (Task 2.5)

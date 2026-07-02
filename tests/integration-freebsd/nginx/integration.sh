@@ -282,6 +282,11 @@ echo "[nginx] nginx container IP: $NGINX_IP"
 # finishes reading — SIGPIPE on tr is expected and benign. stderr is
 # suppressed for the same reason.
 LONG_PATH="/$(set +o pipefail; head -c 20000 /dev/urandom | tr -dc 'a-zA-Z0-9' 2>/dev/null | head -c 2200)"
+# Diagnostic (live run 28585617384 found the overflow assertion failing
+# with no obvious quoting bug on static read) — print the byte length so
+# a re-dispatch can confirm/rule out FreeBSD's tr(1) behaving differently
+# from scenarios.sh's Linux/GNU-tr assumption for `-dc 'a-zA-Z0-9'`.
+echo "[nginx] LONG_PATH length: $(printf '%s' "$LONG_PATH" | wc -c) bytes"
 
 # Pick the badbot UA the same way scenarios.sh:179 does: prefer the
 # committed test fixture ($REPO_ROOT/tests/integration/blocklist/
@@ -480,6 +485,18 @@ if [ -z "$SQLMAP_IP" ]; then
     exit 1
 fi
 echo "[nginx] sqlmap request source IP: $SQLMAP_IP"
+
+# Diagnostic (live run 28585617384 — overflow assertion failing, LONG_PATH
+# byte-length echoed near generation to compare against this): print the
+# access-log line matching the long-path request, and its request-field
+# byte length, to see what nginx actually logged for it (full URI vs
+# truncated vs never received).
+OVERFLOW_LOG_LINE=$(grep -E '"GET /[a-zA-Z0-9]{100,}' "$ACCESS_LOG" | head -1)
+if [ -n "$OVERFLOW_LOG_LINE" ]; then
+    echo "[nginx] overflow request access-log line length: $(printf '%s' "$OVERFLOW_LOG_LINE" | wc -c) bytes"
+else
+    echo "[nginx] overflow request NOT FOUND in access log (long-path GET never logged)"
+fi
 
 # ---------------------------------------------------------------------
 # Step 7b: assertions. Originally 3 per DECISIONS §5 (adapted from
