@@ -615,6 +615,19 @@ podman run --rm --os=linux --network "$NETWORK" \
     || echo "[litespeed] curl attacker exited non-zero (still check the access log)"
 echo "[litespeed] attacks sent"
 
+# Settling delay (live run 28598545541 found this necessary): the
+# Step 7 poll loop below breaks as soon as the threat log has ANY
+# content — typically within 1-2s of the FIRST attack block (probe)
+# firing, well before OLS has flushed its own access log for the
+# LAST attack blocks (rate=60 requests, overflow=1 request) sent in
+# this same synchronous curl invocation. All 5 other backends
+# (nginx/caddy/traefik/haproxy/apache) settle fast enough that this
+# race never manifested; OLS's own access-log write/flush latency is
+# evidently slower under this load. 3s is empirical headroom, not a
+# principled bound — if a future run still shows rate/overflow
+# missing, raise this further before suspecting a logic bug.
+sleep 3
+
 # ---------------------------------------------------------------------
 # Step 7: poll the threat log for non-empty content. Timeout RAISED
 # from 20s → 40s as part of Task A6 (Flow 092 Decision 7): the
@@ -1176,7 +1189,17 @@ fi
 # logFormat — the real client IP when XFF is present). head -1
 # to pick the first match — same convention as Step 7a
 # (deterministic, survives multiple hits).
-CHAIN_SQLMAP_IP=$(grep "${SQLMAP_UA}" "$CHAIN_ACCESS_LOG" | awk '{print $1}' | head -1)
+#
+# sed 's/^"//': live run 28598545541 found the patched OLS logFormat
+# emits a stray leading `"` before the first field in the actual
+# access log output (an OLS logFormat-string quirk, present before
+# this flow's Dockerfile fork too — not introduced by the
+# Referer/User-Agent fields this fork added). Stripping it here is a
+# defensive normalization rather than a fix at the source: OLS's
+# exact logFormat parsing rule for a leading quoted-placeholder
+# wasn't worth chasing further for a single stray character that
+# only affects string comparison, not the IP value itself.
+CHAIN_SQLMAP_IP=$(grep "${SQLMAP_UA}" "$CHAIN_ACCESS_LOG" | awk '{print $1}' | head -1 | sed 's/^"//')
 if [ -z "$CHAIN_SQLMAP_IP" ]; then
     echo "[litespeed] FAIL: could not extract sqlmap request IP from chain access log" >&2
     echo "[litespeed] chain access log content:" >&2
