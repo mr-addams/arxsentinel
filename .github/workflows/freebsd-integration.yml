@@ -1704,15 +1704,12 @@ jobs:
   #   httpd use the upstream image directly).
   # -------------------------------------------------------------------
   fbsd-integration-apache:
-    # Direct-scenario promotion (Task P5.8, superseded by Flow 092 below):
-    # continue-on-error dropped after 2 consecutive green live dispatches
-    # (runs 28559336031, 28559509626 — both "[apache] PASS: all 3
-    # assertions green", exit 0) per DECISIONS section 6's promotion
-    # criterion.
-    #
-    # Flow 092: integration.sh now also runs Track A + Track B, both new
-    # and unproven live. RE-ADDING continue-on-error: true per precedent.
-    continue-on-error: true
+    # Flow 092 promotion: continue-on-error dropped after 2 consecutive
+    # green live dispatches of the FULLY EXTENDED script (Track A+B):
+    # runs 28596033242, 28596426994 — both "[apache] PASS: all
+    # assertions green" (DECISIONS §"Revised: 2026-07-02 — apache
+    # promoted, FIRST TRY"). mod_remoteip confirmed present in stock
+    # httpd:latest — no custom build needed.
     name: fbsd-integration-apache
     runs-on: ubuntu-latest
     timeout-minutes: 30
