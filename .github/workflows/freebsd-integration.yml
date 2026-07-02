@@ -2087,16 +2087,16 @@ jobs:
   #   Revised / G11), same as caddy's P2.4 step — see below.
   # -------------------------------------------------------------------
   fbsd-integration-litespeed:
-    # Direct-scenario promotion (Task P6.8, superseded by Flow 092
-    # below): continue-on-error dropped after 2 consecutive green live
-    # dispatches (runs 28561678194, 28561845522 — both "[litespeed]
-    # PASS: all 3 assertions green", exit 0) per DECISIONS section 6's
-    # promotion criterion.
-    #
-    # Flow 092: integration.sh now also runs Track A + Track B, both
-    # new and unproven live. RE-ADDING continue-on-error: true per
-    # precedent.
-    continue-on-error: true
+    # Flow 092 promotion: continue-on-error dropped after 2 consecutive
+    # green live dispatches of the FULLY EXTENDED script (Track A+B):
+    # runs 28599499451, 28599862225 — both "[litespeed] PASS: all
+    # assertions green" (DECISIONS §"Revised: 2026-07-02 — litespeed
+    # promoted, FINAL BACKEND OF FLOW 092"). Three bugs found: G22
+    # (forked Dockerfile+patch to add missing UA/Referer fields), G23
+    # (stray leading quote in patched log output, normalized
+    # defensively), G24 (flaky "poll until non-empty" race under
+    # 105-request attack volume — fixed with size-stability polling).
+    # This was the LAST backend — all 6 now have Track A+B proven.
     name: fbsd-integration-litespeed
     runs-on: ubuntu-latest
     timeout-minutes: 30
