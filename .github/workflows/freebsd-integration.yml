@@ -1187,19 +1187,16 @@ jobs:
   # the frontend block for badbot testability per Decision 4 matrix).
   # -------------------------------------------------------------------
   integration-haproxy:
-    # Phase P4 — research-grade first dispatch (DECISIONS §6). The
-    # unblock chain + run-script invocation are verbatim from
-    # integration-traefik (P3 already promoted — same storage sed +
-    # pf setup + native go build sequence). The haproxy-specific
-    # divergence is in tests/integration-freebsd/haproxy/run-haproxy.sh
-    # (P4.3: HAProxy logs to stdout, captured via `podman logs --follow`
-    # instead of a -v bind-mount; the `capture request header
-    # User-Agent` directive lives in haproxy.cfg, NOT the run-script).
-    # P4.8 — drop continue-on-error after 2+ green.
+    # Promoted (Task P4.8): continue-on-error dropped after 2 consecutive
+    # green live dispatches (runs 28557166919, 28557311294 — both
+    # "[haproxy] PASS: all 3 assertions green", exit 0) per DECISIONS
+    # section 6's promotion criterion. HAProxy logs to stdout, captured
+    # via `podman logs --follow` instead of a -v bind-mount; the
+    # `capture request header User-Agent` directive lives in
+    # haproxy.cfg, NOT the run-script.
     name: integration-haproxy
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true  # DECISIONS §6 — research-grade first dispatch; promote after 2+ green
 
     steps:
       - name: Checkout
