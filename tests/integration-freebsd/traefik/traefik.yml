@@ -1,7 +1,7 @@
 # tests/integration-freebsd/traefik/traefik.yml — Traefik v3 static
 # config for Flow 091 integration-traefik job.
 #
-# Used by tests/integration-freebsd/traefik/run-traefik.sh (Phase P3 of
+# Used by tests/integration-freebsd/traefik/integration.sh (Phase P3 of
 # Flow 091). The traefik container runs under FreeBSD's Linux emulation
 # (`podman run --os=linux docker.io/library/traefik:v3-alpine` — per
 # Flow 088 DECISIONS §"A.2" Linux compat path, same flag as Flow 089's
@@ -40,7 +40,7 @@
 #      five profiles use RegexParser instead."
 #
 # Therefore: this traefik.yml leaves the accessLog `format` field at
-# its CLF default. The bind-mount in run-traefik.sh places $WORK_DIR/
+# its CLF default. The bind-mount in integration.sh places $WORK_DIR/
 # logs on /logs, so the host-side file is $WORK_DIR/logs/access.log.
 # sentinel-traefik.yaml then points general.log_file at the host
 # bind-mount path and parser.profile at "traefik" — the two halves of
@@ -79,14 +79,14 @@ api:
 
 entryPoints:
   # web: standard HTTP entrypoint on :80. Matches caddy/Apache/nginx
-  # defaults; the curl attacker in run-traefik.sh step 6 hits this
+  # defaults; the curl attacker in integration.sh step 6 hits this
   # port. No TLS — see header.
   web:
     address: ":80"
 
 accessLog:
   # file path inside the container. Combined with the -v bind-mount
-  # in run-traefik.sh that maps $WORK_DIR/logs onto /logs, the host
+  # in integration.sh that maps $WORK_DIR/logs onto /logs, the host
   # path is $WORK_DIR/logs/access.log — the file sentinel-traefik.yaml
   # tails. Per Decision 4 traefik row.
   filePath: "/logs/access.log"
@@ -108,7 +108,7 @@ accessLog:
   # explicitly specified"). Without this, Referer AND User-Agent both
   # render as literal "-" in the CLF line regardless of what the
   # client actually sent — the badbot/UA-scanner detection (Decision 9)
-  # has no signal to key on, and run-traefik.sh's sqlmap-IP extraction
+  # has no signal to key on, and integration.sh's sqlmap-IP extraction
   # (grep on the UA string) fails outright.
   fields:
     headers:
@@ -126,7 +126,7 @@ accessLog:
 log:
   # level: INFO — quiet enough to not pollute the smoke log with
   # debug chatter, loud enough to see the startup line that
-  # run-traefik.sh's readiness check greps for. The readiness check
-  # uses a log-grep pattern (not wget — see run-traefik.sh header for
+  # integration.sh's readiness check greps for. The readiness check
+  # uses a log-grep pattern (not wget — see integration.sh header for
   # the caddy lesson that we apply to traefik too).
   level: INFO

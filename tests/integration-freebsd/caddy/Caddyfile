@@ -1,7 +1,7 @@
 # tests/integration-freebsd/caddy/Caddyfile — minimal Caddy v2 config
 # for Flow 091 integration-caddy job.
 #
-# Used by tests/integration-freebsd/caddy/run-caddy.sh (Phase P2 of
+# Used by tests/integration-freebsd/caddy/integration.sh (Phase P2 of
 # Flow 091). The caddy container runs under FreeBSD's Linux emulation
 # (`podman run --os=linux <caddy-with-transform-encoder>` — per Flow
 # 088 DECISIONS §"A.2" Linux compat path, same flag as Flow 089's
@@ -54,7 +54,7 @@
 # log path: /var/log/caddy/access.log (matches the path the
 # battle suite uses — tests/integration/configs/Caddyfile:49,
 # deploy/examples/caddy/Caddyfile:17, and the Caddy default). The
-# bind-mount in run-caddy.sh places $WORK_DIR/log on
+# bind-mount in integration.sh places $WORK_DIR/log on
 # /var/log/caddy (NOT /data/log — the latter is the project's
 # hardcoded pattern but the standard Caddy path is /var/log/caddy
 # and consistency with the battle suite + deploy/examples is
@@ -70,7 +70,7 @@
     # challenge against a public address) would fail in the
     # vmactions VM (no public DNS, no inbound 80/443). With
     # auto_https off Caddy serves plain HTTP only, which is what
-    # run-caddy.sh expects.
+    # integration.sh expects.
     auto_https off
 }
 
@@ -83,7 +83,7 @@ http:// {
 
     log {
         # Bind-mount path on the host (Caddyfile lives in
-        # $WORK_DIR/log/access.log via the -v bind in run-caddy.sh).
+        # $WORK_DIR/log/access.log via the -v bind in integration.sh).
         output file /var/log/caddy/access.log {
             roll_size 0
         }

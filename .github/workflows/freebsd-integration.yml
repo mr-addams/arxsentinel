@@ -113,7 +113,7 @@ jobs:
           envs: 'GITHUB_*'
           # Phase 2 fills in the unblock chain (storage sed + pf setup +
           # native go build) starting at Task 2.2. Phase 3 invokes
-          # tests/integration-freebsd/nginx/run-nginx.sh. Phase 4 wraps
+          # tests/integration-freebsd/nginx/integration.sh. Phase 4 wraps
           # it with scoped TMPDIR + artifact upload. The empty `run: |`
           # placeholder below is replaced across Tasks 2.2-4.3.
           run: |
@@ -140,7 +140,7 @@ jobs:
             # Task 4.1 — podman install + Linux compat layer enable.
             # ----------------------------------------------------------------
             # `nginx:alpine` (used by tests/integration-freebsd/nginx/
-            # run-nginx.sh step 3) is a Linux OCI image. FreeBSD's
+            # integration.sh step 3) is a Linux OCI image. FreeBSD's
             # sysutils/podman pulls Linux images under the Linux
             # compatibility layer, which must be enabled BEFORE the
             # first `podman run --os=linux`. Per the FreeBSD podman
@@ -155,7 +155,7 @@ jobs:
             # (DECISIONS §"A.2" "Linux compat may need a reboot we
             # can't do in-CI"). We log the failure to smoke-log.txt
             # but do not abort: the native FreeBSD run-smoke.sh case
-            # doesn't need Linux compat, and the run-nginx.sh nginx
+            # doesn't need Linux compat, and the integration.sh nginx
             # pull may still succeed on a VM where linux.ko was
             # already loaded by the vmactions image's first-boot
             # rc sequence.
@@ -282,7 +282,7 @@ jobs:
             #
             # No scoped TMPDIR here: native `go build` does not need
             # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # run-nginx.sh (Task 4.2) per Flow 088 DECISIONS §"Decision
+            # integration.sh (Task 4.2) per Flow 088 DECISIONS §"Decision
             # G.1e" (exported TMPDIR poisons Go module-mode detection
             # for any go build that runs after it).
             # ----------------------------------------------------------------
@@ -302,14 +302,14 @@ jobs:
                 echo "[integration-nginx] arxsentinel --version FAILED"
 
             # Marker for the log artifact's last line (Phase 3-4 will
-            # append the run-nginx.sh output below this block — kept
+            # append the integration.sh output below this block — kept
             # for the cat-after-write emit point).
             echo
             echo "=== integration-nginx unblock chain end @ $(date -u +%FT%TZ) ==="
             echo
 
             # ----------------------------------------------------------------
-            # Task 4.2 — invoke run-nginx.sh with SCOPED TMPDIR (per
+            # Task 4.2 — invoke integration.sh with SCOPED TMPDIR (per
             # Flow 088 Decision G.1e).
             # ----------------------------------------------------------------
             # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
@@ -327,7 +327,7 @@ jobs:
             # fix. We invoke the same pattern verbatim here.
             #
             # Why this matters even though the go build runs BEFORE
-            # the run-nginx.sh invocation: defensively, the scoped
+            # the integration.sh invocation: defensively, the scoped
             # form also protects any future step added below this
             # point (e.g. a follow-up integration-nginx iteration
             # adding a `go test` after the smoke). 088 G.1e says
@@ -335,19 +335,19 @@ jobs:
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The run-nginx.sh exit code is recorded but not
+            # The integration.sh exit code is recorded but not
             # short-circuited to a workflow failure: the job runs
             # with continue-on-error: true (DECISIONS §6 research-
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
-            echo "[integration-nginx] invoking run-nginx.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/nginx/run-nginx.sh \
-                && echo "[integration-nginx] run-nginx.sh exit: 0 (3 assertions green)" \
-                || echo "[integration-nginx] run-nginx.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            echo "[integration-nginx] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/nginx/integration.sh \
+                && echo "[integration-nginx] integration.sh exit: 0 (3 assertions green)" \
+                || echo "[integration-nginx] integration.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
 
             echo
-            echo "=== integration-nginx run-nginx.sh end @ $(date -u +%FT%TZ) ==="
+            echo "=== integration-nginx integration.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
@@ -384,7 +384,7 @@ jobs:
             if [ -s "$GITHUB_WORKSPACE/threats-nginx.log.smoke" ]; then
                 cat "$GITHUB_WORKSPACE/threats-nginx.log.smoke"
             else
-                echo "[integration-nginx] threats-nginx.log.smoke missing or empty (run-nginx.sh likely did not reach the artifact-persist step)"
+                echo "[integration-nginx] threats-nginx.log.smoke missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "threats-nginx.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-nginx.log.smoke" 2>/dev/null || echo 0) bytes"
@@ -393,7 +393,7 @@ jobs:
             if [ -s "$GITHUB_WORKSPACE/nginx-access.log" ]; then
                 cat "$GITHUB_WORKSPACE/nginx-access.log"
             else
-                echo "[integration-nginx] nginx-access.log missing or empty (run-nginx.sh likely did not reach the artifact-persist step)"
+                echo "[integration-nginx] nginx-access.log missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "nginx-access.log size: $(wc -c < "$GITHUB_WORKSPACE/nginx-access.log" 2>/dev/null || echo 0) bytes"
@@ -431,7 +431,7 @@ jobs:
   # validates the trigger wiring (push: branches: + pull_request: branches:
   # on the flow base), and emits a smoke-log.txt artifact. The empty
   # run: makes the first dispatch trivially green, so the trigger wiring
-  # is verified before Phase P2 invests in a real run-caddy.sh body.
+  # is verified before Phase P2 invests in a real integration.sh body.
   # =====================================================================
 
   # -------------------------------------------------------------------
@@ -508,7 +508,7 @@ jobs:
           envs: 'GITHUB_*'
           # Phase 2 fills in the unblock chain (storage sed + pf setup +
           # native go build) starting at Task 2.2. Phase 3 invokes
-          # tests/integration-freebsd/caddy/run-caddy.sh. Phase 4 wraps
+          # tests/integration-freebsd/caddy/integration.sh. Phase 4 wraps
           # it with scoped TMPDIR + artifact upload. The empty `run: |`
           # placeholder below is replaced across Tasks 2.2-4.3.
           run: |
@@ -535,7 +535,7 @@ jobs:
             # Task 4.1 — podman install + Linux compat layer enable.
             # ----------------------------------------------------------------
             # `caddy:2-alpine` (used by tests/integration-freebsd/caddy/
-            # run-caddy.sh step 3) is a Linux OCI image. FreeBSD's
+            # integration.sh step 3) is a Linux OCI image. FreeBSD's
             # sysutils/podman pulls Linux images under the Linux
             # compatibility layer, which must be enabled BEFORE the
             # first `podman run --os=linux`. Per the FreeBSD podman
@@ -550,7 +550,7 @@ jobs:
             # (DECISIONS §"A.2" "Linux compat may need a reboot we
             # can't do in-CI"). We log the failure to smoke-log.txt
             # but do not abort: the native FreeBSD run-smoke.sh case
-            # doesn't need Linux compat, and the run-caddy.sh caddy
+            # doesn't need Linux compat, and the integration.sh caddy
             # pull may still succeed on a VM where linux.ko was
             # already loaded by the vmactions image's first-boot
             # rc sequence.
@@ -677,7 +677,7 @@ jobs:
             #
             # No scoped TMPDIR here: native `go build` does not need
             # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # run-caddy.sh (Task 4.2) per Flow 088 DECISIONS §"Decision
+            # integration.sh (Task 4.2) per Flow 088 DECISIONS §"Decision
             # G.1e" (exported TMPDIR poisons Go module-mode detection
             # for any go build that runs after it).
             # ----------------------------------------------------------------
@@ -715,17 +715,17 @@ jobs:
             # ----------------------------------------------------------------
             echo "[integration-caddy] loading pre-built caddy-arxsentinel image (built on host, synced via rsync)..."
             podman load -i "$GITHUB_WORKSPACE/caddy-arxsentinel.tar" || \
-                echo "[integration-caddy] podman load caddy-arxsentinel FAILED (run-caddy.sh will fail to start the container)"
+                echo "[integration-caddy] podman load caddy-arxsentinel FAILED (integration.sh will fail to start the container)"
 
             # Marker for the log artifact's last line (Phase 3-4 will
-            # append the run-caddy.sh output below this block — kept
+            # append the integration.sh output below this block — kept
             # for the cat-after-write emit point).
             echo
             echo "=== integration-caddy unblock chain end @ $(date -u +%FT%TZ) ==="
             echo
 
             # ----------------------------------------------------------------
-            # Task 4.2 — invoke run-caddy.sh with SCOPED TMPDIR (per
+            # Task 4.2 — invoke integration.sh with SCOPED TMPDIR (per
             # Flow 088 Decision G.1e).
             # ----------------------------------------------------------------
             # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
@@ -743,7 +743,7 @@ jobs:
             # fix. We invoke the same pattern verbatim here.
             #
             # Why this matters even though the go build runs BEFORE
-            # the run-caddy.sh invocation: defensively, the scoped
+            # the integration.sh invocation: defensively, the scoped
             # form also protects any future step added below this
             # point (e.g. a follow-up integration-caddy iteration
             # adding a `go test` after the smoke). 088 G.1e says
@@ -751,19 +751,19 @@ jobs:
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The run-caddy.sh exit code is recorded but not
+            # The integration.sh exit code is recorded but not
             # short-circuited to a workflow failure: the job runs
             # with continue-on-error: true (DECISIONS §6 research-
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
-            echo "[integration-caddy] invoking run-caddy.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/caddy/run-caddy.sh \
-                && echo "[integration-caddy] run-caddy.sh exit: 0 (3 assertions green)" \
-                || echo "[integration-caddy] run-caddy.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            echo "[integration-caddy] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/caddy/integration.sh \
+                && echo "[integration-caddy] integration.sh exit: 0 (3 assertions green)" \
+                || echo "[integration-caddy] integration.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
 
             echo
-            echo "=== integration-caddy run-caddy.sh end @ $(date -u +%FT%TZ) ==="
+            echo "=== integration-caddy integration.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
@@ -800,7 +800,7 @@ jobs:
             if [ -s "$GITHUB_WORKSPACE/threats-caddy.log.smoke" ]; then
                 cat "$GITHUB_WORKSPACE/threats-caddy.log.smoke"
             else
-                echo "[integration-caddy] threats-caddy.log.smoke missing or empty (run-caddy.sh likely did not reach the artifact-persist step)"
+                echo "[integration-caddy] threats-caddy.log.smoke missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "threats-caddy.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-caddy.log.smoke" 2>/dev/null || echo 0) bytes"
@@ -809,7 +809,7 @@ jobs:
             if [ -s "$GITHUB_WORKSPACE/caddy-access.log" ]; then
                 cat "$GITHUB_WORKSPACE/caddy-access.log"
             else
-                echo "[integration-caddy] caddy-access.log missing or empty (run-caddy.sh likely did not reach the artifact-persist step)"
+                echo "[integration-caddy] caddy-access.log missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "caddy-access.log size: $(wc -c < "$GITHUB_WORKSPACE/caddy-access.log" 2>/dev/null || echo 0) bytes"
@@ -871,7 +871,7 @@ jobs:
           envs: 'GITHUB_*'
           # Phase P3 fills in the unblock chain (storage sed + pf setup
           # + native go build) starting at Task 2.2. Phase P3 invokes
-          # tests/integration-freebsd/traefik/run-traefik.sh. Phase P3.4
+          # tests/integration-freebsd/traefik/integration.sh. Phase P3.4
           # wraps it with scoped TMPDIR + artifact upload. The body
           # below is verbatim from the 089 nginx + 091 caddy unblock
           # chains, with the caddy-specific host-build / podman-load
@@ -903,7 +903,7 @@ jobs:
             # Task 4.1 — podman install + Linux compat layer enable.
             # ----------------------------------------------------------------
             # `docker.io/library/traefik:v3-alpine` (used by
-            # tests/integration-freebsd/traefik/run-traefik.sh step 3)
+            # tests/integration-freebsd/traefik/integration.sh step 3)
             # is a Linux OCI image. FreeBSD's sysutils/podman pulls
             # Linux images under the Linux compatibility layer, which
             # must be enabled BEFORE the first `podman run --os=linux`.
@@ -919,7 +919,7 @@ jobs:
             # (DECISIONS §"A.2" "Linux compat may need a reboot we
             # can't do in-CI"). We log the failure to smoke-log.txt
             # but do not abort: the native FreeBSD run-smoke.sh case
-            # doesn't need Linux compat, and the run-traefik.sh
+            # doesn't need Linux compat, and the integration.sh
             # traefik pull may still succeed on a VM where linux.ko
             # was already loaded by the vmactions image's first-boot
             # rc sequence.
@@ -1047,7 +1047,7 @@ jobs:
             #
             # No scoped TMPDIR here: native `go build` does not need
             # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # run-traefik.sh (P3.4) per Flow 088 DECISIONS §"Decision
+            # integration.sh (P3.4) per Flow 088 DECISIONS §"Decision
             # G.1e" (exported TMPDIR poisons Go module-mode detection
             # for any go build that runs after it).
             # ----------------------------------------------------------------
@@ -1067,14 +1067,14 @@ jobs:
                 echo "[integration-traefik] arxsentinel --version FAILED"
 
             # Marker for the log artifact's last line (Phase P3 will
-            # append the run-traefik.sh output below this block — kept
+            # append the integration.sh output below this block — kept
             # for the cat-after-write emit point).
             echo
             echo "=== integration-traefik unblock chain end @ $(date -u +%FT%TZ) ==="
             echo
 
             # ----------------------------------------------------------------
-            # P3.4 — invoke run-traefik.sh with SCOPED TMPDIR (per
+            # P3.4 — invoke integration.sh with SCOPED TMPDIR (per
             # Flow 088 Decision G.1e).
             # ----------------------------------------------------------------
             # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
@@ -1092,7 +1092,7 @@ jobs:
             # fix. We invoke the same pattern verbatim here.
             #
             # Why this matters even though the go build runs BEFORE
-            # the run-traefik.sh invocation: defensively, the scoped
+            # the integration.sh invocation: defensively, the scoped
             # form also protects any future step added below this
             # point (e.g. a follow-up integration-traefik iteration
             # adding a `go test` after the smoke). 088 G.1e says
@@ -1100,19 +1100,19 @@ jobs:
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The run-traefik.sh exit code is recorded but not
+            # The integration.sh exit code is recorded but not
             # short-circuited to a workflow failure: the job runs
             # with continue-on-error: true (DECISIONS §6 research-
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
-            echo "[integration-traefik] invoking run-traefik.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/traefik/run-traefik.sh \
-                && echo "[integration-traefik] run-traefik.sh exit: 0 (3 assertions green)" \
-                || echo "[integration-traefik] run-traefik.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            echo "[integration-traefik] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/traefik/integration.sh \
+                && echo "[integration-traefik] integration.sh exit: 0 (3 assertions green)" \
+                || echo "[integration-traefik] integration.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
 
             echo
-            echo "=== integration-traefik run-traefik.sh end @ $(date -u +%FT%TZ) ==="
+            echo "=== integration-traefik integration.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
@@ -1149,7 +1149,7 @@ jobs:
             if [ -s "$GITHUB_WORKSPACE/threats-traefik.log.smoke" ]; then
                 cat "$GITHUB_WORKSPACE/threats-traefik.log.smoke"
             else
-                echo "[integration-traefik] threats-traefik.log.smoke missing or empty (run-traefik.sh likely did not reach the artifact-persist step)"
+                echo "[integration-traefik] threats-traefik.log.smoke missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "threats-traefik.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-traefik.log.smoke" 2>/dev/null || echo 0) bytes"
@@ -1158,7 +1158,7 @@ jobs:
             if [ -s "$GITHUB_WORKSPACE/traefik-access.log" ]; then
                 cat "$GITHUB_WORKSPACE/traefik-access.log"
             else
-                echo "[integration-traefik] traefik-access.log missing or empty (run-traefik.sh likely did not reach the artifact-persist step)"
+                echo "[integration-traefik] traefik-access.log missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "traefik-access.log size: $(wc -c < "$GITHUB_WORKSPACE/traefik-access.log" 2>/dev/null || echo 0) bytes"
@@ -1211,7 +1211,7 @@ jobs:
           envs: 'GITHUB_*'
           # Phase P4 fills in the unblock chain (storage sed + pf setup
           # + native go build) + tests/integration-freebsd/haproxy/
-          # run-haproxy.sh invocation. The body below is verbatim from
+          # integration.sh invocation. The body below is verbatim from
           # the traefik job (P3 already promoted, P3.4 wrap of unblock
           # chain + scoped TMPDIR + cat-after-write + upload-artifact)
           # with two textual substitutions:
@@ -1219,7 +1219,7 @@ jobs:
           #      the leading run-script log tag (P4.6 triage scoping).
           #   2. "traefik" → "haproxy" in:
           #      - the run-script path (tests/integration-freebsd/haproxy/
-          #        run-haproxy.sh)
+          #        integration.sh)
           #      - the threat-log copy (threats-haproxy.log.smoke)
           #      - the access-log copy (haproxy-access.log)
           #      - the artifact name (integration-haproxy, unchanged)
@@ -1257,7 +1257,7 @@ jobs:
             # Task 4.1 — podman install + Linux compat layer enable.
             # ----------------------------------------------------------------
             # `docker.io/library/haproxy:latest` (used by
-            # tests/integration-freebsd/haproxy/run-haproxy.sh step 3)
+            # tests/integration-freebsd/haproxy/integration.sh step 3)
             # is a Linux OCI image. FreeBSD's sysutils/podman pulls
             # Linux images under the Linux compatibility layer, which
             # must be enabled BEFORE the first `podman run --os=linux`.
@@ -1273,7 +1273,7 @@ jobs:
             # (DECISIONS §"A.2" "Linux compat may need a reboot we
             # can't do in-CI"). We log the failure to smoke-log.txt
             # but do not abort: the native FreeBSD run-smoke.sh case
-            # doesn't need Linux compat, and the run-haproxy.sh
+            # doesn't need Linux compat, and the integration.sh
             # haproxy pull may still succeed on a VM where linux.ko
             # was already loaded by the vmactions image's first-boot
             # rc sequence.
@@ -1401,7 +1401,7 @@ jobs:
             #
             # No scoped TMPDIR here: native `go build` does not need
             # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # run-haproxy.sh (P4.4) per Flow 088 DECISIONS §"Decision
+            # integration.sh (P4.4) per Flow 088 DECISIONS §"Decision
             # G.1e" (exported TMPDIR poisons Go module-mode detection
             # for any go build that runs after it).
             # ----------------------------------------------------------------
@@ -1421,14 +1421,14 @@ jobs:
                 echo "[integration-haproxy] arxsentinel --version FAILED"
 
             # Marker for the log artifact's last line (Phase P4 will
-            # append the run-haproxy.sh output below this block — kept
+            # append the integration.sh output below this block — kept
             # for the cat-after-write emit point).
             echo
             echo "=== integration-haproxy unblock chain end @ $(date -u +%FT%TZ) ==="
             echo
 
             # ----------------------------------------------------------------
-            # P4.4 — invoke run-haproxy.sh with SCOPED TMPDIR (per
+            # P4.4 — invoke integration.sh with SCOPED TMPDIR (per
             # Flow 088 Decision G.1e).
             # ----------------------------------------------------------------
             # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
@@ -1446,7 +1446,7 @@ jobs:
             # fix. We invoke the same pattern verbatim here.
             #
             # Why this matters even though the go build runs BEFORE
-            # the run-haproxy.sh invocation: defensively, the scoped
+            # the integration.sh invocation: defensively, the scoped
             # form also protects any future step added below this
             # point (e.g. a follow-up integration-haproxy iteration
             # adding a `go test` after the smoke). 088 G.1e says
@@ -1454,19 +1454,19 @@ jobs:
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The run-haproxy.sh exit code is recorded but not
+            # The integration.sh exit code is recorded but not
             # short-circuited to a workflow failure: the job runs
             # with continue-on-error: true (DECISIONS §6 research-
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
-            echo "[integration-haproxy] invoking run-haproxy.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/haproxy/run-haproxy.sh \
-                && echo "[integration-haproxy] run-haproxy.sh exit: 0 (3 assertions green)" \
-                || echo "[integration-haproxy] run-haproxy.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            echo "[integration-haproxy] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/haproxy/integration.sh \
+                && echo "[integration-haproxy] integration.sh exit: 0 (3 assertions green)" \
+                || echo "[integration-haproxy] integration.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
 
             echo
-            echo "=== integration-haproxy run-haproxy.sh end @ $(date -u +%FT%TZ) ==="
+            echo "=== integration-haproxy integration.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
@@ -1503,7 +1503,7 @@ jobs:
             if [ -s "$GITHUB_WORKSPACE/threats-haproxy.log.smoke" ]; then
                 cat "$GITHUB_WORKSPACE/threats-haproxy.log.smoke"
             else
-                echo "[integration-haproxy] threats-haproxy.log.smoke missing or empty (run-haproxy.sh likely did not reach the artifact-persist step)"
+                echo "[integration-haproxy] threats-haproxy.log.smoke missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "threats-haproxy.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-haproxy.log.smoke" 2>/dev/null || echo 0) bytes"
@@ -1512,7 +1512,7 @@ jobs:
             if [ -s "$GITHUB_WORKSPACE/haproxy-access.log" ]; then
                 cat "$GITHUB_WORKSPACE/haproxy-access.log"
             else
-                echo "[integration-haproxy] haproxy-access.log missing or empty (run-haproxy.sh likely did not reach the artifact-persist step)"
+                echo "[integration-haproxy] haproxy-access.log missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "haproxy-access.log size: $(wc -c < "$GITHUB_WORKSPACE/haproxy-access.log" 2>/dev/null || echo 0) bytes"
@@ -1547,7 +1547,7 @@ jobs:
   #      leading run-script log tag (P5.6 triage scoping).
   #   2. "haproxy" → "apache" in:
   #      - the run-script path (tests/integration-freebsd/apache/
-  #        run-apache.sh)
+  #        integration.sh)
   #      - the threat-log copy (threats-apache.log.smoke)
   #      - the access-log copy (apache-access.log)
   #      - the artifact name (integration-apache, unchanged)
@@ -1614,7 +1614,7 @@ jobs:
             # Task 4.1 — podman install + Linux compat layer enable.
             # ----------------------------------------------------------------
             # `docker.io/library/httpd:latest` (used by
-            # tests/integration-freebsd/apache/run-apache.sh step 3)
+            # tests/integration-freebsd/apache/integration.sh step 3)
             # is a Linux OCI image. FreeBSD's sysutils/podman pulls
             # Linux images under the Linux compatibility layer, which
             # must be enabled BEFORE the first `podman run --os=linux`.
@@ -1630,7 +1630,7 @@ jobs:
             # (DECISIONS §"A.2" "Linux compat may need a reboot we
             # can't do in-CI"). We log the failure to smoke-log.txt
             # but do not abort: the native FreeBSD run-smoke.sh case
-            # doesn't need Linux compat, and the run-apache.sh
+            # doesn't need Linux compat, and the integration.sh
             # httpd pull may still succeed on a VM where linux.ko was
             # already loaded by the vmactions image's first-boot
             # rc sequence.
@@ -1758,7 +1758,7 @@ jobs:
             #
             # No scoped TMPDIR here: native `go build` does not need
             # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # run-apache.sh (P5.4) per Flow 088 DECISIONS §"Decision
+            # integration.sh (P5.4) per Flow 088 DECISIONS §"Decision
             # G.1e" (exported TMPDIR poisons Go module-mode detection
             # for any go build that runs after it).
             # ----------------------------------------------------------------
@@ -1778,14 +1778,14 @@ jobs:
                 echo "[integration-apache] arxsentinel --version FAILED"
 
             # Marker for the log artifact's last line (Phase P5 will
-            # append the run-apache.sh output below this block — kept
+            # append the integration.sh output below this block — kept
             # for the cat-after-write emit point).
             echo
             echo "=== integration-apache unblock chain end @ $(date -u +%FT%TZ) ==="
             echo
 
             # ----------------------------------------------------------------
-            # P5.4 — invoke run-apache.sh with SCOPED TMPDIR (per
+            # P5.4 — invoke integration.sh with SCOPED TMPDIR (per
             # Flow 088 Decision G.1e).
             # ----------------------------------------------------------------
             # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
@@ -1803,7 +1803,7 @@ jobs:
             # fix. We invoke the same pattern verbatim here.
             #
             # Why this matters even though the go build runs BEFORE
-            # the run-apache.sh invocation: defensively, the scoped
+            # the integration.sh invocation: defensively, the scoped
             # form also protects any future step added below this
             # point (e.g. a follow-up integration-apache iteration
             # adding a `go test` after the smoke). 088 G.1e says
@@ -1811,19 +1811,19 @@ jobs:
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The run-apache.sh exit code is recorded but not
+            # The integration.sh exit code is recorded but not
             # short-circuited to a workflow failure: the job runs
             # with continue-on-error: true (DECISIONS §6 research-
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
-            echo "[integration-apache] invoking run-apache.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/apache/run-apache.sh \
-                && echo "[integration-apache] run-apache.sh exit: 0 (3 assertions green)" \
-                || echo "[integration-apache] run-apache.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            echo "[integration-apache] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/apache/integration.sh \
+                && echo "[integration-apache] integration.sh exit: 0 (3 assertions green)" \
+                || echo "[integration-apache] integration.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
 
             echo
-            echo "=== integration-apache run-apache.sh end @ $(date -u +%FT%TZ) ==="
+            echo "=== integration-apache integration.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
@@ -1860,7 +1860,7 @@ jobs:
             if [ -s "$GITHUB_WORKSPACE/threats-apache.log.smoke" ]; then
                 cat "$GITHUB_WORKSPACE/threats-apache.log.smoke"
             else
-                echo "[integration-apache] threats-apache.log.smoke missing or empty (run-apache.sh likely did not reach the artifact-persist step)"
+                echo "[integration-apache] threats-apache.log.smoke missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "threats-apache.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-apache.log.smoke" 2>/dev/null || echo 0) bytes"
@@ -1869,7 +1869,7 @@ jobs:
             if [ -s "$GITHUB_WORKSPACE/apache-access.log" ]; then
                 cat "$GITHUB_WORKSPACE/apache-access.log"
             else
-                echo "[integration-apache] apache-access.log missing or empty (run-apache.sh likely did not reach the artifact-persist step)"
+                echo "[integration-apache] apache-access.log missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "apache-access.log size: $(wc -c < "$GITHUB_WORKSPACE/apache-access.log" 2>/dev/null || echo 0) bytes"
@@ -1908,7 +1908,7 @@ jobs:
   #   risks G11 enumerates (Go-toolchain / network-in-build-container
   #   bugs that cost 5 iterations on the caddy backend). This job
   #   therefore has NO host-build step (no `docker build` before the
-  #   vmactions/freebsd-vm step) and the run-litespeed.sh script
+  #   vmactions/freebsd-vm step) and the integration.sh script
   #   invokes the stock image with a plain `podman run --os=linux
   #   docker.io/litespeedtech/openlitespeed:latest` — no build,
   #   no patched variant, no log-format patch (the patch script
@@ -1962,7 +1962,7 @@ jobs:
             # Task 4.1 — podman install + Linux compat layer enable.
             # ----------------------------------------------------------------
             # `docker.io/litespeedtech/openlitespeed:latest` (used by
-            # tests/integration-freebsd/litespeed/run-litespeed.sh
+            # tests/integration-freebsd/litespeed/integration.sh
             # step 3) is a Linux OCI image. FreeBSD's sysutils/podman
             # pulls Linux images under the Linux compatibility
             # layer, which must be enabled BEFORE the first
@@ -1978,7 +1978,7 @@ jobs:
             # (DECISIONS §"A.2" "Linux compat may need a reboot we
             # can't do in-CI"). We log the failure to smoke-log.txt
             # but do not abort: the native FreeBSD run-smoke.sh case
-            # doesn't need Linux compat, and the run-litespeed.sh
+            # doesn't need Linux compat, and the integration.sh
             # OLS pull may still succeed on a VM where linux.ko was
             # already loaded by the vmactions image's first-boot
             # rc sequence.
@@ -2106,7 +2106,7 @@ jobs:
             #
             # No scoped TMPDIR here: native `go build` does not need
             # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # run-litespeed.sh (P6.4) per Flow 088 DECISIONS §"Decision
+            # integration.sh (P6.4) per Flow 088 DECISIONS §"Decision
             # G.1e" (exported TMPDIR poisons Go module-mode detection
             # for any go build that runs after it).
             # ----------------------------------------------------------------
@@ -2126,14 +2126,14 @@ jobs:
                 echo "[integration-litespeed] arxsentinel --version FAILED"
 
             # Marker for the log artifact's last line (Phase P6 will
-            # append the run-litespeed.sh output below this block —
+            # append the integration.sh output below this block —
             # kept for the cat-after-write emit point).
             echo
             echo "=== integration-litespeed unblock chain end @ $(date -u +%FT%TZ) ==="
             echo
 
             # ----------------------------------------------------------------
-            # P6.4 — invoke run-litespeed.sh with SCOPED TMPDIR (per
+            # P6.4 — invoke integration.sh with SCOPED TMPDIR (per
             # Flow 088 Decision G.1e).
             # ----------------------------------------------------------------
             # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
@@ -2151,7 +2151,7 @@ jobs:
             # fix. We invoke the same pattern verbatim here.
             #
             # Why this matters even though the go build runs BEFORE
-            # the run-litespeed.sh invocation: defensively, the scoped
+            # the integration.sh invocation: defensively, the scoped
             # form also protects any future step added below this
             # point (e.g. a follow-up integration-litespeed iteration
             # adding a `go test` after the smoke). 088 G.1e says
@@ -2159,19 +2159,19 @@ jobs:
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The run-litespeed.sh exit code is recorded but not
+            # The integration.sh exit code is recorded but not
             # short-circuited to a workflow failure: the job runs
             # with continue-on-error: true (DECISIONS §6 research-
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
-            echo "[integration-litespeed] invoking run-litespeed.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/litespeed/run-litespeed.sh \
-                && echo "[integration-litespeed] run-litespeed.sh exit: 0 (3 assertions green)" \
-                || echo "[integration-litespeed] run-litespeed.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            echo "[integration-litespeed] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/litespeed/integration.sh \
+                && echo "[integration-litespeed] integration.sh exit: 0 (3 assertions green)" \
+                || echo "[integration-litespeed] integration.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
 
             echo
-            echo "=== integration-litespeed run-litespeed.sh end @ $(date -u +%FT%TZ) ==="
+            echo "=== integration-litespeed integration.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
@@ -2208,7 +2208,7 @@ jobs:
             if [ -s "$GITHUB_WORKSPACE/threats-litespeed.log.smoke" ]; then
                 cat "$GITHUB_WORKSPACE/threats-litespeed.log.smoke"
             else
-                echo "[integration-litespeed] threats-litespeed.log.smoke missing or empty (run-litespeed.sh likely did not reach the artifact-persist step)"
+                echo "[integration-litespeed] threats-litespeed.log.smoke missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "threats-litespeed.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-litespeed.log.smoke" 2>/dev/null || echo 0) bytes"
@@ -2217,7 +2217,7 @@ jobs:
             if [ -s "$GITHUB_WORKSPACE/litespeed-access.log" ]; then
                 cat "$GITHUB_WORKSPACE/litespeed-access.log"
             else
-                echo "[integration-litespeed] litespeed-access.log missing or empty (run-litespeed.sh likely did not reach the artifact-persist step)"
+                echo "[integration-litespeed] litespeed-access.log missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "litespeed-access.log size: $(wc -c < "$GITHUB_WORKSPACE/litespeed-access.log" 2>/dev/null || echo 0) bytes"

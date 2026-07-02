@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
-# tests/integration-freebsd/apache/run-apache.sh — Flow 091 integration
+# tests/integration-freebsd/apache/integration.sh — Flow 091 integration
 # smoke for the apache (httpd) backend under FreeBSD/podman.
 #
-# Adapted from run-haproxy.sh — Flow 089/091 paid 9+ iterations to make
+# Adapted from integration.sh — Flow 089/091 paid 9+ iterations to make
 #  this structure green across nginx/caddy/traefik/haproxy; do NOT
 #  restructure without re-verifying all assertions.
 #
@@ -33,11 +33,11 @@
 #   `log stdout ... format raw local0 info`, which has no file path)
 #   does NOT apply here — CustomLog with a file path is a first-class
 #   Apache feature, no special capture process needed. This means
-#   run-apache.sh is simpler than run-haproxy.sh (no step 3b
+#   integration.sh is simpler than integration.sh (no step 3b
 #   `podman logs --follow` backgrounding, no $LOGS_PID for cleanup).
 #
 # Per Flow 091 DECISIONS §2 (copy-then-adapt, no premature library
-# extraction) the script structure is verbatim from run-haproxy.sh;
+# extraction) the script structure is verbatim from integration.sh;
 # backend-specific divergences are documented inline as WHY-comments
 # at the point of divergence.
 #
@@ -95,7 +95,7 @@ set -eu
 # Step 0: locate inputs. REPO_ROOT is the workspace root ($GITHUB_WORKSPACE
 # at workflow runtime). All three inputs are committed in this directory.
 #
-# This script lives at tests/integration-freebsd/apache/run-apache.sh —
+# This script lives at tests/integration-freebsd/apache/integration.sh —
 # three path segments below the repo root, so dirname($0) needs three
 # "../" to reach it (NOT two, which is what 088's
 # tests/integration-freebsd/run-smoke.sh used, since that script is
@@ -213,7 +213,7 @@ podman network create "$NETWORK"
 # unqualified-search-registries entry, so a short name fails with
 # "did not resolve to an alias and no unqualified-search registries
 # are defined" (G1; same class of bug as Flow 088 Decision F.4 and
-# 091 run-nginx.sh / run-caddy.sh / run-traefik.sh / run-haproxy.sh
+# 091 integration.sh / integration.sh / integration.sh / integration.sh
 # use of fully-qualified names). The "latest" tag was verified
 # against tests/integration/docker-compose.yml:35 (G13): the battle
 # suite uses exactly `image: httpd:latest` on the same
@@ -226,7 +226,7 @@ podman network create "$NETWORK"
 # freebsd-OS manifest and fails with "no image found in image
 # index for architecture amd64 ... OS freebsd" (G2; same flag
 # 088 podman-spike step 5 used for docker.io/alpine and 089
-# run-nginx.sh / 091 run-caddy.sh / run-traefik.sh / run-haproxy.sh
+# integration.sh / 091 integration.sh / integration.sh / integration.sh
 # use for their respective images).
 #
 # Why standalone `podman run` (NO `--pod`, per G7): podman on FreeBSD
@@ -243,7 +243,7 @@ podman network create "$NETWORK"
 #   the G15 risk (root CAN bind :80). HOWEVER, to keep all five
 #   per-backend run scripts on the SAME port — reducing the
 #   number of G15-style runtime surprises — we use :8080 (matching
-#   run-haproxy.sh's port). The CNI network is internal-only
+#   integration.sh's port). The CNI network is internal-only
 #   (no host port-publish), so the port is arbitrary; 8080 just
 #   matches the established per-backend convention. The curl
 #   attacker in step 6 hits :8080 directly via the container's
@@ -255,7 +255,7 @@ podman network create "$NETWORK"
 # has no trailing backslash) breaks the continuation chain -- the
 # $(...) closes early and the image name becomes a separate broken
 # command. sh -n and shellcheck do NOT catch this class of bug; it is
-# a runtime bug, not a syntax bug. Same caveat as run-haproxy.sh:253
+# a runtime bug, not a syntax bug. Same caveat as integration.sh:253
 # and the caddy post-mortem in .tmp/coder-brief-091-p2-fix2.md.
 # ---------------------------------------------------------------------
 echo "[apache] starting httpd container..."
@@ -409,7 +409,7 @@ echo "[apache] driving attacks from curl container (8 scenarios + 2 sqlmap repea
 # container-start overhead and race the TailReader).
 #
 # Port 8080 — the same G15-mitigation / per-backend-convention port
-# the run-haproxy.sh curl attacker uses. The CNI-internal :8080 is
+# the integration.sh curl attacker uses. The CNI-internal :8080 is
 # the only Listen port in our httpd.conf.
 ATTACK_CMD=""
 for UA in $SCENARIO_UAS; do

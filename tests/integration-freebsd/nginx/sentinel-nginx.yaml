@@ -1,10 +1,10 @@
 # tests/integration-freebsd/nginx/sentinel-nginx.yaml — arxsentinel
 # config for Flow 089 integration-nginx job.
 #
-# Used by tests/integration-freebsd/nginx/run-nginx.sh (Phase 3 of
+# Used by tests/integration-freebsd/nginx/integration.sh (Phase 3 of
 # Flow 089). arxsentinel runs NATIVE on the FreeBSD VM host (per
 # Flow 089 DECISIONS §2 — sentinel on host, NOT in a container),
-# with its CWD set to $WORK_DIR by run-nginx.sh's `cd $WORK_DIR &&
+# with its CWD set to $WORK_DIR by integration.sh's `cd $WORK_DIR &&
 # ./arxsentinel ...`. The paths below are RELATIVE to $WORK_DIR:
 # nginx/access.log is the bind-mounted nginx access log (host path
 # = $WORK_DIR/nginx/access.log = /var/log/nginx/access.log inside
@@ -12,7 +12,7 @@
 # the grader reads.
 #
 # Why debug: true is REQUIRED (not a nice-to-have):
-#   The run-nginx.sh script (Task 3.3) syncs on the "watching
+#   The integration.sh script (Task 3.3) syncs on the "watching
 #   started" log line that TailReader emits immediately after
 #   seek(EOF). Without debug: true, the TAIL log tag is suppressed
 #   and the polling loop in step 3.3 never sees the sync marker —
@@ -30,13 +30,13 @@
 # Why pid_file: /tmp/arxsentinel.pid is kept for parity:
 #   The pid file is harmless on FreeBSD (the sentinel writes it on
 #   start, removes it on clean shutdown). It matches the smoke.yaml
-#   pattern and gives run-nginx.sh a known file to read for sentinel
-#   liveness checks. run-nginx.sh does not depend on it but may
+#   pattern and gives integration.sh a known file to read for sentinel
+#   liveness checks. integration.sh does not depend on it but may
 #   use it in future iterations.
 
 general:
   # Host bind-mounted nginx access log (relative to $WORK_DIR, which
-  # is the sentinel's CWD when run-nginx.sh starts it).
+  # is the sentinel's CWD when integration.sh starts it).
   log_file: nginx/access.log
   pid_file: /tmp/arxsentinel.pid
   tail_retry_interval: "1s"
@@ -60,7 +60,7 @@ metrics:
   username: ""
   password_hash: ""
 
-# output.threat_log: relative to $WORK_DIR. run-nginx.sh copies
+# output.threat_log: relative to $WORK_DIR. integration.sh copies
 # this file (after assertions) to $TMPDIR/threats-nginx.log.smoke
 # for the workflow artifact upload (Task 3.6 + 4.3).
 output:

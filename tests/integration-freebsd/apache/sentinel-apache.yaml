@@ -1,15 +1,15 @@
 # tests/integration-freebsd/apache/sentinel-apache.yaml — arxsentinel
 # config for Flow 091 integration-apache job.
 #
-# Used by tests/integration-freebsd/apache/run-apache.sh (Phase P5 of
+# Used by tests/integration-freebsd/apache/integration.sh (Phase P5 of
 # Flow 091). arxsentinel runs NATIVE on the FreeBSD VM host (per Flow
 # 089 DECISIONS §2 — sentinel on host, NOT in a container), with its
-# CWD set to $WORK_DIR by run-apache.sh's `cd $WORK_DIR && ./arxsentinel
+# CWD set to $WORK_DIR by integration.sh's `cd $WORK_DIR && ./arxsentinel
 # ...`. The paths below are RELATIVE to $WORK_DIR: logs/access.log is
 # the host-side file written by the httpd container's worker into the
 # bind-mounted $WORK_DIR/logs/ directory (mirror of the nginx/caddy/
 # traefik bind-mount pattern, NOT the haproxy stdout-capture pattern
-# — see run-apache.sh header for the architectural choice rationale);
+# — see integration.sh header for the architectural choice rationale);
 # output/threats-apache.log is the threat log the grader reads.
 #
 # Why this is a near-verbatim copy of sentinel-haproxy.yaml (per Flow
@@ -38,7 +38,7 @@
 # log path + parser profile).
 #
 # Why debug: true is REQUIRED (not a nice-to-have):
-#   The run-apache.sh script polls the "watching started" log line
+#   The integration.sh script polls the "watching started" log line
 #   that TailReader emits immediately after seek(EOF). Without debug:
 #   true, the TAIL log tag is suppressed and the polling loop in step
 #   5 never sees the sync marker — it would time out at 30s on every
@@ -58,8 +58,8 @@
 #   The pid file is harmless on FreeBSD (the sentinel writes it on
 #   start, removes it on clean shutdown). It matches the
 #   sentinel-nginx.yaml / sentinel-caddy.yaml / sentinel-traefik.yaml /
-#   sentinel-haproxy.yaml pattern and gives run-apache.sh a known file
-#   to read for sentinel liveness checks. run-apache.sh does not
+#   sentinel-haproxy.yaml pattern and gives integration.sh a known file
+#   to read for sentinel liveness checks. integration.sh does not
 #   depend on it but may use it in future iterations.
 #
 # SOURCE-VERIFIED parser.profile contract (NOT a guess from the brief):
@@ -87,7 +87,7 @@
 
 general:
   # Host-side access log (relative to $WORK_DIR, which is the sentinel's
-  # CWD when run-apache.sh starts it). Written by the httpd worker's
+  # CWD when integration.sh starts it). Written by the httpd worker's
   # CustomLog directive into /usr/local/apache2/logs/access.log, which
   # the bind-mount surfaces as $WORK_DIR/logs/access.log on the host.
   # The `logs/` subdir name matches the nginx/caddy/traefik precedent
@@ -131,7 +131,7 @@ metrics:
   username: ""
   password_hash: ""
 
-# output.threat_log: relative to $WORK_DIR. run-apache.sh copies
+# output.threat_log: relative to $WORK_DIR. integration.sh copies
 # this file (after assertions) to $TMPDIR/threats-apache.log.smoke
 # for the workflow artifact upload (P5.4 carry of 089 Task 3.6 +
 # 4.3 pattern, with per-backend naming).

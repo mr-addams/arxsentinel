@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
-# tests/integration-freebsd/caddy/run-caddy.sh — Flow 091 integration
+# tests/integration-freebsd/caddy/integration.sh — Flow 091 integration
 # smoke for the caddy backend under FreeBSD/podman.
 #
-# Adapted from run-nginx.sh — Flow 089 paid 9 iterations to make this
+# Adapted from integration.sh — Flow 089 paid 9 iterations to make this
 #  structure green; do NOT restructure without re-verifying all assertions.
 #
 # Architecture (per Flow 089 DECISIONS §2 + §3, carried over verbatim):
@@ -21,7 +21,7 @@
 #   container's CNI IP (DECISIONS §3).
 #
 # Per Flow 091 DECISIONS §2 (copy-then-adapt, no premature library
-# extraction) the script structure is verbatim from run-nginx.sh;
+# extraction) the script structure is verbatim from integration.sh;
 # backend-specific divergences are documented inline as WHY-comments
 # at the point of divergence.
 #
@@ -63,7 +63,7 @@ set -eu
 # Step 0: locate inputs. REPO_ROOT is the workspace root ($GITHUB_WORKSPACE
 # at workflow runtime). All three inputs are committed in this directory.
 #
-# This script lives at tests/integration-freebsd/nginx/run-nginx.sh — three
+# This script lives at tests/integration-freebsd/nginx/integration.sh — three
 # path segments below the repo root, so dirname($0) needs three "../" to
 # reach it (NOT two, which is what 088's tests/integration-freebsd/
 # run-smoke.sh used, since that script is only two segments deep).
@@ -217,7 +217,7 @@ echo "[caddy] container $CADDY_CID started"
 # (caddy's JSON startup log, confirmed via live dispatch 28550879869)
 # signals caddy has fully started serving.
 #
-# NOT wget-based (unlike run-nginx.sh's original check): live dispatch
+# NOT wget-based (unlike integration.sh's original check): live dispatch
 # 28550879869 found `caddy:latest` (Debian-based upstream, unlike
 # alpine/busybox images) does NOT ship wget — `podman exec caddy wget
 # ...` silently failed on every poll for the full 30s timeout even

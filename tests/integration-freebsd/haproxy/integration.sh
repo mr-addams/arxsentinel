@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
-# tests/integration-freebsd/haproxy/run-haproxy.sh — Flow 091 integration
+# tests/integration-freebsd/haproxy/integration.sh — Flow 091 integration
 # smoke for the haproxy backend under FreeBSD/podman.
 #
-# Adapted from run-traefik.sh — Flow 089/091 paid 9+ iterations to make
+# Adapted from integration.sh — Flow 089/091 paid 9+ iterations to make
 #  this structure green across nginx/caddy/traefik; do NOT restructure
 #  without re-verifying all assertions.
 #
@@ -40,7 +40,7 @@
 #   exactly like it would a bind-mounted log.
 #
 # Per Flow 091 DECISIONS §2 (copy-then-adapt, no premature library
-# extraction) the script structure is verbatim from run-traefik.sh;
+# extraction) the script structure is verbatim from integration.sh;
 # backend-specific divergences are documented inline as WHY-comments
 # at the point of divergence.
 #
@@ -92,7 +92,7 @@ set -eu
 # Step 0: locate inputs. REPO_ROOT is the workspace root ($GITHUB_WORKSPACE
 # at workflow runtime). All three inputs are committed in this directory.
 #
-# This script lives at tests/integration-freebsd/haproxy/run-haproxy.sh —
+# This script lives at tests/integration-freebsd/haproxy/integration.sh —
 # three path segments below the repo root, so dirname($0) needs three
 # "../" to reach it (NOT two, which is what 088's
 # tests/integration-freebsd/run-smoke.sh used, since that script is
@@ -219,7 +219,7 @@ podman network create "$NETWORK"
 # unqualified-search-registries entry, so a short name fails with
 # "did not resolve to an alias and no unqualified-search registries
 # are defined" (G1; same class of bug as 088 podman-spike step 5
-# and 091 run-nginx.sh / run-caddy.sh / run-traefik.sh use of
+# and 091 integration.sh / integration.sh / integration.sh use of
 # fully-qualified names). The "latest" tag was verified against
 # tests/integration/docker-compose.yml:75-89 (G13): the battle suite
 # uses exactly `image: haproxy:latest` on the same
@@ -232,7 +232,7 @@ podman network create "$NETWORK"
 # freebsd-OS manifest and fails with "no image found in image
 # index for architecture amd64 ... OS freebsd" (G2; same flag
 # 088 podman-spike step 5 used for docker.io/alpine and 089
-# run-nginx.sh / 091 run-caddy.sh / 091 run-traefik.sh use for
+# integration.sh / 091 integration.sh / 091 integration.sh use for
 # their respective images).
 #
 # Why standalone `podman run` (NO `--pod`, per G7): podman on FreeBSD
@@ -248,7 +248,7 @@ podman network create "$NETWORK"
 # has no trailing backslash) breaks the continuation chain -- the
 # $(...) closes early and the image name becomes a separate broken
 # command. sh -n and shellcheck do NOT catch this class of bug; it is
-# a runtime bug, not a syntax bug. Same caveat as run-traefik.sh:218
+# a runtime bug, not a syntax bug. Same caveat as integration.sh:218
 # and the caddy post-mortem in .tmp/coder-brief-091-p2-fix2.md.
 # ---------------------------------------------------------------------
 echo "[haproxy] starting haproxy container..."

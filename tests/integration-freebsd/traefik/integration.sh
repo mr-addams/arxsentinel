@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
-# tests/integration-freebsd/traefik/run-traefik.sh — Flow 091 integration
+# tests/integration-freebsd/traefik/integration.sh — Flow 091 integration
 # smoke for the traefik backend under FreeBSD/podman.
 #
-# Adapted from run-caddy.sh — Flow 089/091 paid 9 iterations to make
+# Adapted from integration.sh — Flow 089/091 paid 9 iterations to make
 #  this structure green; do NOT restructure without re-verifying all
 #  assertions.
 #
@@ -22,7 +22,7 @@
 #   container's CNI IP (DECISIONS §3).
 #
 # Per Flow 091 DECISIONS §2 (copy-then-adapt, no premature library
-# extraction) the script structure is verbatim from run-caddy.sh;
+# extraction) the script structure is verbatim from integration.sh;
 # backend-specific divergences are documented inline as WHY-comments
 # at the point of divergence.
 #
@@ -84,7 +84,7 @@ set -eu
 # Step 0: locate inputs. REPO_ROOT is the workspace root ($GITHUB_WORKSPACE
 # at workflow runtime). All three inputs are committed in this directory.
 #
-# This script lives at tests/integration-freebsd/traefik/run-traefik.sh —
+# This script lives at tests/integration-freebsd/traefik/integration.sh —
 # three path segments below the repo root, so dirname($0) needs three
 # "../" to reach it (NOT two, which is what 088's
 # tests/integration-freebsd/run-smoke.sh used, since that script is
@@ -198,7 +198,7 @@ podman network create "$NETWORK"
 # FreeBSD defaults to looking for a freebsd-OS manifest and fails
 # with "no image found in image index for architecture amd64 ...
 # OS freebsd" (G2; same flag 088 podman-spike step 5 used for
-# docker.io/alpine and 089 run-nginx.sh / 091 run-caddy.sh use for
+# docker.io/alpine and 089 integration.sh / 091 integration.sh use for
 # nginx/caddy).
 #
 # Why standalone `podman run` (NO `--pod`, per G7): podman on FreeBSD
@@ -214,7 +214,7 @@ podman network create "$NETWORK"
 # has no trailing backslash) breaks the continuation chain -- the
 # $(...) closes early and the image name becomes a separate broken
 # command. sh -n and shellcheck do NOT catch this class of bug; it is
-# a runtime bug, not a syntax bug. Same caveat as run-caddy.sh:206
+# a runtime bug, not a syntax bug. Same caveat as integration.sh:206
 # and the caddy post-mortem in .tmp/coder-brief-091-p2-fix2.md.
 # ---------------------------------------------------------------------
 echo "[traefik] starting traefik container..."

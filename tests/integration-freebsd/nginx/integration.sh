@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# tests/integration-freebsd/nginx/run-nginx.sh — Flow 089 integration
+# tests/integration-freebsd/nginx/integration.sh — Flow 089 integration
 # smoke for the nginx backend under FreeBSD/podman.
 #
 # Architecture (per Flow 089 DECISIONS §2 + §3):
@@ -43,7 +43,7 @@ set -eu
 # Step 0: locate inputs. REPO_ROOT is the workspace root ($GITHUB_WORKSPACE
 # at workflow runtime). All three inputs are committed in this directory.
 #
-# This script lives at tests/integration-freebsd/nginx/run-nginx.sh — three
+# This script lives at tests/integration-freebsd/nginx/integration.sh — three
 # path segments below the repo root, so dirname($0) needs three "../" to
 # reach it (NOT two, which is what 088's tests/integration-freebsd/
 # run-smoke.sh used, since that script is only two segments deep).

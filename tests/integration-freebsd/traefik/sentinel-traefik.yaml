@@ -1,15 +1,15 @@
 # tests/integration-freebsd/traefik/sentinel-traefik.yaml — arxsentinel
 # config for Flow 091 integration-traefik job.
 #
-# Used by tests/integration-freebsd/traefik/run-traefik.sh (Phase P3 of
+# Used by tests/integration-freebsd/traefik/integration.sh (Phase P3 of
 # Flow 091). arxsentinel runs NATIVE on the FreeBSD VM host (per Flow
 # 089 DECISIONS §2 — sentinel on host, NOT in a container), with its
-# CWD set to $WORK_DIR by run-traefik.sh's `cd $WORK_DIR && ./arxsentinel
+# CWD set to $WORK_DIR by integration.sh's `cd $WORK_DIR && ./arxsentinel
 # ...`. The paths below are RELATIVE to $WORK_DIR: logs/access.log is
 # the bind-mounted traefik access log (host path = $WORK_DIR/logs/
 # access.log = /logs/access.log inside the traefik container, per
 # traefik.yml: filePath: "/logs/access.log" + the -v bind in
-# run-traefik.sh step 3); output/threats-traefik.log is the threat log
+# integration.sh step 3); output/threats-traefik.log is the threat log
 # the grader reads.
 #
 # Why this is a near-verbatim copy of sentinel-caddy.yaml (per Flow 091
@@ -18,7 +18,7 @@
 #   1. general.log_file: log/access.log → logs/access.log
 #      (traefik.yml writes to /logs/access.log = $WORK_DIR/logs/
 #      access.log on host via the -v bind-mount of $WORK_DIR/logs onto
-#      /logs, see traefik.yml header + run-traefik.sh step 3 for why
+#      /logs, see traefik.yml header + integration.sh step 3 for why
 #      /logs is the chosen in-container path).
 #   2. parser.profile: caddy → traefik
 #      (per Decision 4 traefik row + arx-core contract — see the
@@ -35,7 +35,7 @@
 # path + parser profile).
 #
 # Why debug: true is REQUIRED (not a nice-to-have):
-#   The run-traefik.sh script polls the "watching started" log line
+#   The integration.sh script polls the "watching started" log line
 #   that TailReader emits immediately after seek(EOF). Without debug:
 #   true, the TAIL log tag is suppressed and the polling loop in step
 #   5 never sees the sync marker — it would time out at 30s on every
@@ -53,16 +53,16 @@
 #   The pid file is harmless on FreeBSD (the sentinel writes it on
 #   start, removes it on clean shutdown). It matches the
 #   sentinel-nginx.yaml / sentinel-caddy.yaml pattern and gives
-#   run-traefik.sh a known file to read for sentinel liveness checks.
-#   run-traefik.sh does not depend on it but may use it in future
+#   integration.sh a known file to read for sentinel liveness checks.
+#   integration.sh does not depend on it but may use it in future
 #   iterations.
 
 general:
   # Host bind-mounted traefik access log (relative to $WORK_DIR, which
-  # is the sentinel's CWD when run-traefik.sh starts it).
+  # is the sentinel's CWD when integration.sh starts it).
   # traefik.yml writes to /logs/access.log (the path the arx-core
   # "traefik" parser profile expects — CLF format, see below). The
-  # bind-mount in run-traefik.sh maps $WORK_DIR/logs onto /logs, so
+  # bind-mount in integration.sh maps $WORK_DIR/logs onto /logs, so
   # the host-side file is $WORK_DIR/logs/access.log = /logs/access.log
   # inside the container.
   log_file: logs/access.log
@@ -129,7 +129,7 @@ metrics:
   username: ""
   password_hash: ""
 
-# output.threat_log: relative to $WORK_DIR. run-traefik.sh copies
+# output.threat_log: relative to $WORK_DIR. integration.sh copies
 # this file (after assertions) to $TMPDIR/threats-traefik.log.smoke
 # for the workflow artifact upload (P3.4 carry of 089 Task 3.6 +
 # 4.3 pattern, with caddy per-backend naming applied to traefik).

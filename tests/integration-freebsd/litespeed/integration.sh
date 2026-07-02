@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
-# tests/integration-freebsd/litespeed/run-litespeed.sh — Flow 091
+# tests/integration-freebsd/litespeed/integration.sh — Flow 091
 # integration smoke for the OpenLiteSpeed backend under FreeBSD/podman.
 #
-# Adapted from run-apache.sh — Flow 089/091 paid 9+ iterations to make
+# Adapted from integration.sh — Flow 089/091 paid 9+ iterations to make
 #  this structure green across nginx/caddy/traefik/haproxy/apache; do NOT
 #  restructure without re-verifying all assertions.
 #
@@ -45,7 +45,7 @@
 #   format = CLF with UA).
 #
 # Per Flow 091 DECISIONS §2 (copy-then-adapt, no premature library
-# extraction) the script structure is verbatim from run-apache.sh;
+# extraction) the script structure is verbatim from integration.sh;
 # backend-specific divergences are documented inline as WHY-comments
 # at the point of divergence.
 #
@@ -62,7 +62,7 @@
 #   assertions green" on an empty threat log.
 #
 # Why log-grep readiness check (NOT wget):
-#   Same rationale as run-apache.sh: every per-backend run script in
+#   Same rationale as integration.sh: every per-backend run script in
 #   this flow has converged on log-grep for readiness, never wget
 #   (caddy image has no wget, wget also has the stdio-buffering
 #   gotcha that haproxy surfaced). The OLS master process writes a
@@ -95,7 +95,7 @@ set -eu
 # Step 0: locate inputs. REPO_ROOT is the workspace root ($GITHUB_WORKSPACE
 # at workflow runtime). All three inputs are committed in this directory.
 #
-# This script lives at tests/integration-freebsd/litespeed/run-litespeed.sh —
+# This script lives at tests/integration-freebsd/litespeed/integration.sh —
 # three path segments below the repo root, so dirname($0) needs three
 # "../" to reach it (NOT two, which is what 088's
 # tests/integration-freebsd/run-smoke.sh used, since that script is
@@ -252,8 +252,8 @@ podman network create "$NETWORK"
 # unqualified-search-registries entry, so a short name fails with
 # "did not resolve to an alias and no unqualified-search registries
 # are defined" (G1; same class of bug as Flow 088 Decision F.4 and
-# 091 run-nginx.sh / run-caddy.sh / run-traefik.sh / run-haproxy.sh
-# / run-apache.sh use of fully-qualified names). The "latest" tag
+# 091 integration.sh / integration.sh / integration.sh / integration.sh
+# / integration.sh use of fully-qualified names). The "latest" tag
 # was verified against tests/integration/docker-compose.yml:111
 # (G13): the battle suite uses exactly `image:
 # litespeedtech/openlitespeed:latest` on the same upstream, so
@@ -265,8 +265,8 @@ podman network create "$NETWORK"
 # freebsd-OS manifest and fails with "no image found in image
 # index for architecture amd64 ... OS freebsd" (G2; same flag
 # 088 podman-spike step 5 used for docker.io/alpine and 089
-# run-nginx.sh / 091 run-caddy.sh / run-traefik.sh / run-haproxy.sh
-# / run-apache.sh use for their respective images).
+# integration.sh / 091 integration.sh / integration.sh / integration.sh
+# / integration.sh use for their respective images).
 #
 # Why standalone `podman run` (NO `--pod`, per G7): podman on
 # FreeBSD (podman 5.8.3, ocijail 0.6.0) breaks the linuxulator for
@@ -299,7 +299,7 @@ podman network create "$NETWORK"
 # has no trailing backslash) breaks the continuation chain -- the
 # $(...) closes early and the image name becomes a separate broken
 # command. sh -n and shellcheck do NOT catch this class of bug; it is
-# a runtime bug, not a syntax bug. Same caveat as run-haproxy.sh:253
+# a runtime bug, not a syntax bug. Same caveat as integration.sh:253
 # and the caddy post-mortem in .tmp/coder-brief-091-p2-fix2.md.
 # ---------------------------------------------------------------------
 echo "[litespeed] starting OLS container (image: docker.io/litespeedtech/openlitespeed:latest, port: $LSWS_PORT)..."
@@ -409,7 +409,7 @@ echo "[litespeed] TailReader ready"
 SQLMAP_UA='sqlmap/1.7.11'
 MOZILLA_UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 
-# 8 attack UAs (Decision 9) — identical to run-apache.sh's set
+# 8 attack UAs (Decision 9) — identical to integration.sh's set
 # (the per-backend run scripts all share the same Decision 9
 # UA set; this is the byte-for-byte parity signal the brief
 # mandates).
