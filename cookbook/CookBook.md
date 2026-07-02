@@ -33,6 +33,7 @@ Sources → Processors → Sinks → Executors
 - [Infrastructure: Server Configs](#server-configs)
 - [Infrastructure: Reverse Proxy / Real-IP](#reverse-proxy)
 - [Infrastructure: Kubernetes](#kubernetes)
+- [Infrastructure: FreeBSD Deployment](#freebsd-deployment)
 
 ---
 
@@ -217,3 +218,19 @@ the proxy's IP instead of the real visitor. These configs fix that.
 | [kubernetes/daemonset.yaml](kubernetes/daemonset.yaml) | DaemonSet: one ArxSentinel per node, tailing host logs |
 | [kubernetes/sidecar.yaml](kubernetes/sidecar.yaml) | Sidecar: one ArxSentinel per pod, tailing container logs |
 | [kubernetes/configmap.yaml](kubernetes/configmap.yaml) | ConfigMap with default ArxSentinel configuration |
+
+---
+
+## FreeBSD Deployment
+
+ArxSentinel ships a native FreeBSD binary + a dedicated installer (creates
+a system user, installs an rc.d service) — no containerization needed for
+ArxSentinel itself. If your web server runs in a `podman` container on the
+same FreeBSD host, the FreeBSD `podman` runtime has real differences from
+Docker/Linux podman (storage driver, firewall setup, no container-name DNS,
+no `podman pod`/`podman-compose` support) that are easy to lose an afternoon
+to without knowing them upfront.
+
+| Recipe | Description | File |
+|--------|-------------|------|
+| Full reference | Install/rc.d quickstart, FreeBSD path layout, podman-on-FreeBSD setup + gotchas | [freebsd/CookBook.md](freebsd/CookBook.md) |
