@@ -1,10 +1,10 @@
 # tests/integration-freebsd/litespeed/sentinel-litespeed.yaml — arxsentinel
 # config for Flow 091 integration-litespeed job.
 #
-# Used by tests/integration-freebsd/litespeed/run-litespeed.sh (Phase P6 of
+# Used by tests/integration-freebsd/litespeed/integration.sh (Phase P6 of
 # Flow 091). arxsentinel runs NATIVE on the FreeBSD VM host (per Flow
 # 089 DECISIONS §2 — sentinel on host, NOT in a container), with its
-# CWD set to $WORK_DIR by run-litespeed.sh's `cd $WORK_DIR && ./arxsentinel
+# CWD set to $WORK_DIR by integration.sh's `cd $WORK_DIR && ./arxsentinel
 # ...`. The paths below are RELATIVE to $WORK_DIR: logs/access.log is
 # the host-side file written by the OLS worker into the bind-mounted
 # $WORK_DIR/logs/ directory (mirror of the nginx/caddy/traefik/apache
@@ -33,7 +33,7 @@
 # log path + parser profile).
 #
 # Why debug: true is REQUIRED (not a nice-to-have):
-#   The run-litespeed.sh script polls the "watching started" log line
+#   The integration.sh script polls the "watching started" log line
 #   that TailReader emits immediately after seek(EOF). Without debug:
 #   true, the TAIL log tag is suppressed and the polling loop in step
 #   5 never sees the sync marker — it would time out at 30s on every
@@ -54,8 +54,8 @@
 #   The pid file is harmless on FreeBSD (the sentinel writes it on
 #   start, removes it on clean shutdown). It matches the
 #   sentinel-<backend>.yaml precedent across all five per-backend
-#   configs and gives run-litespeed.sh a known file to read for
-#   sentinel liveness checks. run-litespeed.sh does not depend on
+#   configs and gives integration.sh a known file to read for
+#   sentinel liveness checks. integration.sh does not depend on
 #   it but may use it in future iterations.
 #
 # SOURCE-VERIFIED parser.profile contract (NOT a guess from the brief):
@@ -96,12 +96,12 @@
 
 general:
   # Host-side access log (relative to $WORK_DIR, which is the sentinel's
-  # CWD when run-litespeed.sh starts it). OLS's docker template names
+  # CWD when integration.sh starts it). OLS's docker template names
   # the file after the vhost, NOT a plain "access.log" (found live,
   # run 28561348731: sentinel was tailing logs/access.log while OLS
   # actually wrote to logs/localhost.access.log — a leftover from the
   # nginx/caddy/traefik/apache precedent that this file's own header
-  # and run-litespeed.sh's comments already correctly documented but
+  # and integration.sh's comments already correctly documented but
   # this value wasn't updated to match). Written by the OLS worker
   # into /usr/local/lsws/logs/localhost.access.log, which the
   # bind-mount surfaces as $WORK_DIR/logs/localhost.access.log.
@@ -144,10 +144,44 @@ metrics:
   username: ""
   password_hash: ""
 
-# output.threat_log: relative to $WORK_DIR. run-litespeed.sh copies
+# output.threat_log: relative to $WORK_DIR. integration.sh copies
 # this file (after assertions) to $TMPDIR/threats-litespeed.log.smoke
 # for the workflow artifact upload (P6.4 carry of 089 Task 3.6 +
 # 4.3 pattern, with per-backend naming).
 output:
   threat_log: output/threats-litespeed.log
   operational_log: sentinel-litespeed.log
+
+# blocklist: added per Flow 092 Task A6 / Decision 7 (close the
+# Flow 091 Decision 9 gap — assert blocklist automaton actually
+# loaded patterns from upstream, mirroring tests/integration/
+# verify.sh:109 assert_blocklist_loaded). Verbatim port of the
+# sentinel-traefik.yaml blocklist block (lines 164-171) per Flow
+# 092 Decision 4 (copy-then-adapt, no per-backend divergence
+# unless functionally required): the parser contract is identical
+# between FreeBSD-native and battle binaries, and the upstream
+# URL is the same mitchellkrogza bad-user-agents list the battle
+# suite + run.sh:70 already use.
+#
+# Why direct upstream fetch (https://raw.githubusercontent.com/...)
+# and NOT http://localhost:8090/... as in the battle suite: the
+# FreeBSD job has no dedicated blocklist-server container (per
+# the sentinel-caddy.yaml WHY-comment at the same block, carried
+# here). GH runner image already has internet access for the
+# podman pull of docker.io/litespeedtech/openlitespeed:latest and
+# curlimages/curl in Steps 3 + 6, so it has the connectivity this
+# fetch needs.
+#
+# Why storage: "" (in-memory only, no on-disk persistence): the
+# FreeBSD sentinel is a per-job smoke instance — the VM is
+# destroyed on job exit, so there is no value in caching the
+# fetched patterns to disk. In-memory only matches the battle
+# suite's exact same value and the smoke's ephemeral lifecycle.
+blocklist:
+  storage: ""
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text

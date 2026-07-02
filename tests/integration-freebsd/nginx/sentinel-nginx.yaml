@@ -1,10 +1,10 @@
 # tests/integration-freebsd/nginx/sentinel-nginx.yaml — arxsentinel
 # config for Flow 089 integration-nginx job.
 #
-# Used by tests/integration-freebsd/nginx/run-nginx.sh (Phase 3 of
+# Used by tests/integration-freebsd/nginx/integration.sh (Phase 3 of
 # Flow 089). arxsentinel runs NATIVE on the FreeBSD VM host (per
 # Flow 089 DECISIONS §2 — sentinel on host, NOT in a container),
-# with its CWD set to $WORK_DIR by run-nginx.sh's `cd $WORK_DIR &&
+# with its CWD set to $WORK_DIR by integration.sh's `cd $WORK_DIR &&
 # ./arxsentinel ...`. The paths below are RELATIVE to $WORK_DIR:
 # nginx/access.log is the bind-mounted nginx access log (host path
 # = $WORK_DIR/nginx/access.log = /var/log/nginx/access.log inside
@@ -12,7 +12,7 @@
 # the grader reads.
 #
 # Why debug: true is REQUIRED (not a nice-to-have):
-#   The run-nginx.sh script (Task 3.3) syncs on the "watching
+#   The integration.sh script (Task 3.3) syncs on the "watching
 #   started" log line that TailReader emits immediately after
 #   seek(EOF). Without debug: true, the TAIL log tag is suppressed
 #   and the polling loop in step 3.3 never sees the sync marker —
@@ -30,13 +30,13 @@
 # Why pid_file: /tmp/arxsentinel.pid is kept for parity:
 #   The pid file is harmless on FreeBSD (the sentinel writes it on
 #   start, removes it on clean shutdown). It matches the smoke.yaml
-#   pattern and gives run-nginx.sh a known file to read for sentinel
-#   liveness checks. run-nginx.sh does not depend on it but may
+#   pattern and gives integration.sh a known file to read for sentinel
+#   liveness checks. integration.sh does not depend on it but may
 #   use it in future iterations.
 
 general:
   # Host bind-mounted nginx access log (relative to $WORK_DIR, which
-  # is the sentinel's CWD when run-nginx.sh starts it).
+  # is the sentinel's CWD when integration.sh starts it).
   log_file: nginx/access.log
   pid_file: /tmp/arxsentinel.pid
   tail_retry_interval: "1s"
@@ -60,9 +60,44 @@ metrics:
   username: ""
   password_hash: ""
 
-# output.threat_log: relative to $WORK_DIR. run-nginx.sh copies
+# output.threat_log: relative to $WORK_DIR. integration.sh copies
 # this file (after assertions) to $TMPDIR/threats-nginx.log.smoke
 # for the workflow artifact upload (Task 3.6 + 4.3).
 output:
   threat_log: output/threats-nginx.log
   operational_log: sentinel-nginx.log
+
+# blocklist: matches the structure used by tests/integration/
+# arxsentinel/nginx.yaml:16-28 (the battle suite) so the parser
+# contract is identical between the FreeBSD-native and battle
+# binaries. ONLY the badbot-ua list is wired — referrer-based
+# badbot detection is NOT exercised by Step 6 in integration.sh
+# (only UA-based, per Flow 091 Decision 9 spec).
+#
+# Why direct upstream fetch (https://raw.githubusercontent.com/...)
+# and NOT http://localhost:8090/... as in the battle suite:
+#   The FreeBSD job has no dedicated blocklist-server container.
+#   Adding one (Docker compose / podman run + bind mount + wait-for-
+#   healthcheck) is engineering work that does not buy us anything
+#   the direct fetch does not already give: the GH runner image
+#   already has internet access for the podman pull of nginx:alpine
+#   and curlimages/curl in Steps 3 + 6, so it has the connectivity
+#   this fetch needs. Direct fetch is also identical to the upstream
+#   URL `tests/integration/run.sh:70` already uses to materialise the
+#   test-ua.txt fixture for scenarios.sh — same source, same format,
+#   no extra failure surface.
+#
+# Why storage: "" (in-memory only, no on-disk persistence):
+#   The FreeBSD sentinel is a per-job smoke instance — the VM is
+#   destroyed on job exit, so there is no value in caching the
+#   fetched patterns to disk. In-memory only matches the battle
+#   suite's exact same value and the smoke's ephemeral lifecycle.
+#   Source: tests/integration/arxsentinel/nginx.yaml:17.
+blocklist:
+  storage: ""
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text

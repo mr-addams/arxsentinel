@@ -1,10 +1,10 @@
 # tests/integration-freebsd/caddy/sentinel-caddy.yaml — arxsentinel
 # config for Flow 091 integration-caddy job.
 #
-# Used by tests/integration-freebsd/caddy/run-caddy.sh (Phase P2 of
+# Used by tests/integration-freebsd/caddy/integration.sh (Phase P2 of
 # Flow 091). arxsentinel runs NATIVE on the FreeBSD VM host (per
 # Flow 089 DECISIONS §2 — sentinel on host, NOT in a container),
-# with its CWD set to $WORK_DIR by run-caddy.sh's `cd $WORK_DIR &&
+# with its CWD set to $WORK_DIR by integration.sh's `cd $WORK_DIR &&
 # ./arxsentinel ...`. The paths below are RELATIVE to $WORK_DIR:
 # log/access.log is the bind-mounted caddy access log (host path =
 # $WORK_DIR/log/access.log = /var/log/caddy/access.log inside the
@@ -17,7 +17,7 @@
 #   1. general.log_file: nginx/access.log → log/access.log
 #      (Caddyfile emits to /var/log/caddy/access.log = $WORK_DIR/log/
 #      access.log on host via the -v bind-mount of $WORK_DIR/log onto
-#      /var/log/caddy, see Caddyfile header + run-caddy.sh step 3 for
+#      /var/log/caddy, see Caddyfile header + integration.sh step 3 for
 #      why the standard Caddy path is used over the project's earlier
 #      /data/log hardcoded path).
 #   2. output.threat_log: output/threats-nginx.log →
@@ -31,7 +31,7 @@
 # signal (same config, different upstream log path).
 #
 # Why debug: true is REQUIRED (not a nice-to-have):
-#   The run-caddy.sh script polls the "watching started" log line
+#   The integration.sh script polls the "watching started" log line
 #   that TailReader emits immediately after seek(EOF). Without
 #   debug: true, the TAIL log tag is suppressed and the polling
 #   loop in step 5 never sees the sync marker — it would time
@@ -49,17 +49,17 @@
 # Why pid_file: /tmp/arxsentinel.pid is kept for parity:
 #   The pid file is harmless on FreeBSD (the sentinel writes it on
 #   start, removes it on clean shutdown). It matches the
-#   sentinel-nginx.yaml pattern and gives run-caddy.sh a known
-#   file to read for sentinel liveness checks. run-caddy.sh does
+#   sentinel-nginx.yaml pattern and gives integration.sh a known
+#   file to read for sentinel liveness checks. integration.sh does
 #   not depend on it but may use it in future iterations.
 
 general:
   # Host bind-mounted caddy access log (relative to $WORK_DIR, which
-  # is the sentinel's CWD when run-caddy.sh starts it).
+  # is the sentinel's CWD when integration.sh starts it).
   # Caddyfile writes to /var/log/caddy/access.log (the standard
   # Caddy log path, matching the battle suite's tests/integration/
   # configs/Caddyfile:49 + deploy/examples/caddy/Caddyfile:17).
-  # The bind-mount in run-caddy.sh maps $WORK_DIR/log onto
+  # The bind-mount in integration.sh maps $WORK_DIR/log onto
   # /var/log/caddy, so the host-side file is $WORK_DIR/log/access.log
   # = /var/log/caddy/access.log inside the container.
   log_file: log/access.log
@@ -106,10 +106,48 @@ metrics:
   username: ""
   password_hash: ""
 
-# output.threat_log: relative to $WORK_DIR. run-caddy.sh copies
+# output.threat_log: relative to $WORK_DIR. integration.sh copies
 # this file (after assertions) to $TMPDIR/threats-caddy.log.smoke
 # for the workflow artifact upload (P2.4 carry of 089 Task 3.6 +
 # 4.3 pattern).
 output:
   threat_log: output/threats-caddy.log
   operational_log: sentinel-caddy.log
+
+# blocklist: added per Flow 092 Task A1 / Decision 7 (close the
+# Flow 091 Decision 9 gap — assert blocklist automaton actually
+# loaded patterns from upstream, mirroring tests/integration/
+# verify.sh:109 assert_blocklist_loaded). Same shape as the
+# battle suite's tests/integration/arxsentinel/caddy.yaml
+# blocklist config (when present) and as sentinel-nginx.yaml's
+# blocklist section — parser contract is identical between
+# FreeBSD-native and battle binaries.
+#
+# Why direct upstream fetch (https://raw.githubusercontent.com/...)
+# and NOT http://localhost:8090/... as in the battle suite:
+#   The FreeBSD job has no dedicated blocklist-server container.
+#   Adding one (Docker compose / podman run + bind mount + wait-for-
+#   healthcheck) is engineering work that does not buy us anything
+#   the direct fetch does not already give: the GH runner image
+#   already has internet access for the podman pull of caddy-arxsentinel
+#   and curlimages/curl in Steps 3 + 6, so it has the connectivity
+#   this fetch needs. Direct fetch is also identical to the upstream
+#   URL `tests/integration/run.sh:70` already uses to materialise the
+#   test-ua.txt fixture for scenarios.sh — same source, same format,
+#   no extra failure surface. Carries the sentinel-nginx.yaml
+#   blocklist design verbatim (copy-then-adapt per Flow 091
+#   Decision 2).
+#
+# Why storage: "" (in-memory only, no on-disk persistence):
+#   The FreeBSD sentinel is a per-job smoke instance — the VM is
+#   destroyed on job exit, so there is no value in caching the
+#   fetched patterns to disk. In-memory only matches the battle
+#   suite's exact same value and the smoke's ephemeral lifecycle.
+blocklist:
+  storage: ""
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text

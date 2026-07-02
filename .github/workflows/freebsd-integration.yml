@@ -79,7 +79,7 @@ permissions:
 # one job — see Task 2.1 for the first real job).
 jobs:
   # -------------------------------------------------------------------
-  # integration-nginx — Phase 2-4 deliverable: real-HTTP-source test
+  # fbsd-integration-nginx — Phase 2-4 deliverable: real-HTTP-source test
   # under FreeBSD/podman. nginx runs in a Linux-emulated nginx:alpine
   # container; native arxsentinel (built in the same VM) tails the
   # bind-mounted access log; a curl attacker container drives sqlmap
@@ -89,14 +89,26 @@ jobs:
   # (native CNI `podman network create`, no podman-compose), §6
   # (continue-on-error: true on first iterations — research-grade).
   # -------------------------------------------------------------------
-  integration-nginx:
-    # Promoted (Task 5.4): continue-on-error dropped after 2 consecutive
-    # green live dispatches (runs 28478529310, 28478698670 - both
-    # "[nginx] PASS: all 3 assertions green", exit 0) per DECISIONS section
-    # 6's promotion criterion. Job-level blocking applies ONLY within this
-    # isolated workflow (workflow_dispatch + push to the flow branch) -
-    # it does not gate dev/main branch protection.
-    name: integration-nginx
+  fbsd-integration-nginx:
+    # Direct-scenario promotion (Task 5.4, superseded by Flow 092 below):
+    # continue-on-error dropped after 2 consecutive green live dispatches
+    # (runs 28478529310, 28478698670 - both "[nginx] PASS: all 3 assertions
+    # green", exit 0) per Flow 089 DECISIONS section 6's promotion criterion.
+    #
+    # Flow 092: integration.sh now also runs a NEW proxy-chain scenario
+    # (Steps 10-15, being actively debugged as of this commit). Deliberately
+    # NOT using continue-on-error: true during this active debug loop — live
+    # run 28583294976 showed continue-on-error masks a real script failure
+    # (exit 1) as a job-level "success" in the Actions UI, forcing a manual
+    # log-grep every dispatch instead of reading the job status directly.
+    # This branch does not gate dev/main (feature branch, no PR open yet),
+    # so there is nothing continue-on-error would protect here — accurate
+    # red/green on every dispatch is strictly more useful while iterating.
+    # Once the chain scenario proves 2 consecutive green dispatches, this
+    # job's true state IS "promoted" already (no re-add/re-drop dance
+    # needed) — a Revised note will still record the promoting run IDs
+    # here per Flow 091/092's Decision 6 discipline.
+    name: fbsd-integration-nginx
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -113,7 +125,7 @@ jobs:
           envs: 'GITHUB_*'
           # Phase 2 fills in the unblock chain (storage sed + pf setup +
           # native go build) starting at Task 2.2. Phase 3 invokes
-          # tests/integration-freebsd/nginx/run-nginx.sh. Phase 4 wraps
+          # tests/integration-freebsd/nginx/integration.sh. Phase 4 wraps
           # it with scoped TMPDIR + artifact upload. The empty `run: |`
           # placeholder below is replaced across Tasks 2.2-4.3.
           run: |
@@ -132,7 +144,7 @@ jobs:
             # an artifact — Flow 088 TD-13 cat-after-write pattern.
             {
             # Marker for the log artifact's first line.
-            echo "=== integration-nginx run @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-nginx run @ $(date -u +%FT%TZ) ==="
             echo "=== host: $(uname -a) ==="
             echo
 
@@ -140,7 +152,7 @@ jobs:
             # Task 4.1 — podman install + Linux compat layer enable.
             # ----------------------------------------------------------------
             # `nginx:alpine` (used by tests/integration-freebsd/nginx/
-            # run-nginx.sh step 3) is a Linux OCI image. FreeBSD's
+            # integration.sh step 3) is a Linux OCI image. FreeBSD's
             # sysutils/podman pulls Linux images under the Linux
             # compatibility layer, which must be enabled BEFORE the
             # first `podman run --os=linux`. Per the FreeBSD podman
@@ -155,7 +167,7 @@ jobs:
             # (DECISIONS §"A.2" "Linux compat may need a reboot we
             # can't do in-CI"). We log the failure to smoke-log.txt
             # but do not abort: the native FreeBSD run-smoke.sh case
-            # doesn't need Linux compat, and the run-nginx.sh nginx
+            # doesn't need Linux compat, and the integration.sh nginx
             # pull may still succeed on a VM where linux.ko was
             # already loaded by the vmactions image's first-boot
             # rc sequence.
@@ -168,20 +180,20 @@ jobs:
             # from FreeBSD's pkg mirror; expect ~30-60s on first run.
             # ----------------------------------------------------------------
             pkg install -y sysutils/podman || \
-                echo "[integration-nginx] pkg install podman FAILED"
+                echo "[fbsd-integration-nginx] pkg install podman FAILED"
             podman --version || \
-                echo "[integration-nginx] podman --version FAILED"
+                echo "[fbsd-integration-nginx] podman --version FAILED"
             sysrc linux_enable=YES || \
-                echo "[integration-nginx] sysrc linux_enable=YES FAILED"
+                echo "[fbsd-integration-nginx] sysrc linux_enable=YES FAILED"
             # service linux start: best-effort, log failure but do not
             # abort. The 088 §B.3 spike step 2 has the same
             # disposition. A red run here is a finding for the
             # triage-run-1.md, not a flow-blocker (DECISIONS.md §6).
             if service linux start; then
-                echo "[integration-nginx] service linux start: ok"
+                echo "[fbsd-integration-nginx] service linux start: ok"
             else
-                echo "[integration-nginx] WARN: service linux start failed" >&2
-                echo "[integration-nginx] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
+                echo "[fbsd-integration-nginx] WARN: service linux start failed" >&2
+                echo "[fbsd-integration-nginx] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
             fi
 
             # ----------------------------------------------------------------
@@ -209,7 +221,7 @@ jobs:
                 /usr/local/etc/containers/storage.conf
             # Reaffirm effective driver — should now print "vfs".
             podman info --format '{{.Store.GraphDriverName}}' || \
-                echo "[integration-nginx] post-storage-sed podman info FAILED"
+                echo "[fbsd-integration-nginx] post-storage-sed podman info FAILED"
 
             # ----------------------------------------------------------------
             # Task 2.3 — pf kernel module setup.
@@ -243,7 +255,7 @@ jobs:
             # second CI run.
             ifconfig -l
             cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf || \
-                echo "[integration-nginx] pf.conf.sample copy FAILED"
+                echo "[fbsd-integration-nginx] pf.conf.sample copy FAILED"
             # sed -i '' is the in-place edit syntax on FreeBSD (BSD sed).
             # v4egress_if / v6egress_if are top-level shell assignments
             # in the sample; substitute both to vtnet0.
@@ -251,9 +263,9 @@ jobs:
                 -e 's/^v4egress_if=.*/v4egress_if="vtnet0"/' \
                 -e 's/^v6egress_if=.*/v6egress_if="vtnet0"/' \
                 /etc/pf.conf || \
-                echo "[integration-nginx] pf.conf interface substitution FAILED"
+                echo "[fbsd-integration-nginx] pf.conf interface substitution FAILED"
             kldload pf || \
-                echo "[integration-nginx] kldload pf FAILED (already loaded?)"
+                echo "[fbsd-integration-nginx] kldload pf FAILED (already loaded?)"
             # net.pf.filter_local=1 enables host↔container traffic
             # through pf. CNI bridge ipMasq uses pf for the SNAT; if
             # filter_local=0, host-sent packets are dropped. This is
@@ -261,12 +273,12 @@ jobs:
             sysctl net.pf.filter_local=1 || true
             sysrc pf_enable=YES
             service pf start || \
-                echo "[integration-nginx] service pf start FAILED"
+                echo "[fbsd-integration-nginx] service pf start FAILED"
             # Restart to make filter_local=1 take effect on the running
             # service (sysctl alone does not re-evaluate an already-
             # running pf ruleset).
             service pf restart || \
-                echo "[integration-nginx] service pf restart FAILED"
+                echo "[fbsd-integration-nginx] service pf restart FAILED"
 
             # ----------------------------------------------------------------
             # Task 2.4 — native go build of arxsentinel.
@@ -282,12 +294,12 @@ jobs:
             #
             # No scoped TMPDIR here: native `go build` does not need
             # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # run-nginx.sh (Task 4.2) per Flow 088 DECISIONS §"Decision
+            # integration.sh (Task 4.2) per Flow 088 DECISIONS §"Decision
             # G.1e" (exported TMPDIR poisons Go module-mode detection
             # for any go build that runs after it).
             # ----------------------------------------------------------------
             pkg install -y go || \
-                echo "[integration-nginx] pkg install go FAILED"
+                echo "[fbsd-integration-nginx] pkg install go FAILED"
             cd "$GITHUB_WORKSPACE"
             VERSION=$(cat VERSION 2>/dev/null || echo "dev")
             CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
@@ -295,21 +307,21 @@ jobs:
                     -ldflags="-s -w -X main.version=${VERSION}" \
                     -o ./arxsentinel \
                     ./cmd/arxsentinel || \
-                echo "[integration-nginx] arxsentinel build FAILED"
+                echo "[fbsd-integration-nginx] arxsentinel build FAILED"
             # version-check: --version is a supported flag (cmd/arxsentinel/
             # main.go: flag.Bool("version", ...)).
             ./arxsentinel --version || \
-                echo "[integration-nginx] arxsentinel --version FAILED"
+                echo "[fbsd-integration-nginx] arxsentinel --version FAILED"
 
             # Marker for the log artifact's last line (Phase 3-4 will
-            # append the run-nginx.sh output below this block — kept
+            # append the integration.sh output below this block — kept
             # for the cat-after-write emit point).
             echo
-            echo "=== integration-nginx unblock chain end @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-nginx unblock chain end @ $(date -u +%FT%TZ) ==="
             echo
 
             # ----------------------------------------------------------------
-            # Task 4.2 — invoke run-nginx.sh with SCOPED TMPDIR (per
+            # Task 4.2 — invoke integration.sh with SCOPED TMPDIR (per
             # Flow 088 Decision G.1e).
             # ----------------------------------------------------------------
             # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
@@ -327,27 +339,59 @@ jobs:
             # fix. We invoke the same pattern verbatim here.
             #
             # Why this matters even though the go build runs BEFORE
-            # the run-nginx.sh invocation: defensively, the scoped
+            # the integration.sh invocation: defensively, the scoped
             # form also protects any future step added below this
-            # point (e.g. a follow-up integration-nginx iteration
+            # point (e.g. a follow-up fbsd-integration-nginx iteration
             # adding a `go test` after the smoke). 088 G.1e says
             # "any future VM-action job that mixes go build with a
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The run-nginx.sh exit code is recorded but not
-            # short-circuited to a workflow failure: the job runs
-            # with continue-on-error: true (DECISIONS §6 research-
-            # grade). A red run is a recorded finding in the
-            # downloadable smoke-log.txt, not a flow-blocker.
-            # ----------------------------------------------------------------
-            echo "[integration-nginx] invoking run-nginx.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/nginx/run-nginx.sh \
-                && echo "[integration-nginx] run-nginx.sh exit: 0 (3 assertions green)" \
-                || echo "[integration-nginx] run-nginx.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            # SCRIPT_EXIT capture (not `&&/||` echo): this run: block has
+            # NO `set -e` (see the block's own header comment above), and
+            # the ORIGINAL `cmd && echo ok || echo fail` form always ends
+            # on an `echo` — echo always succeeds, so the step's reported
+            # exit code was ALWAYS 0 regardless of integration.sh's real
+            # result, even after continue-on-error: true was dropped from
+            # this job. Live run 28585617384 exposed this: the script
+            # printed a FAIL assertion and exited 1, but the job showed
+            # green in the Actions UI. `{ }` here is a grouping construct
+            # (POSIX sh), NOT a subshell — SCRIPT_EXIT set here stays
+            # visible after the block's closing `}` below, where the
+            # final `exit "$SCRIPT_EXIT"` (end of this run: block, after
+            # all diagnostic cat output) makes the step's — and now the
+            # job's — reported result match the script's actual outcome.
+            #
+            # CRITICAL: `|| SCRIPT_EXIT=$?`, NOT a bare statement followed
+            # by `SCRIPT_EXIT=$?` on its own line. vmactions/freebsd-vm's
+            # index.js PREPENDS `set -eu` to the entire run: script
+            # unconditionally (confirmed by reading the action's source —
+            # this workflow's own header comment claiming "NO set -e...
+            # this job is exploratory" is WRONG, the action overrides it
+            # regardless of what we write here). Under `set -e`, a bare
+            # failing command that is NOT part of an `&&`/`||`/`if`
+            # construct aborts the ENTIRE remaining script immediately —
+            # live runs 28586137901/28586481760/28586828621 (3 consecutive,
+            # identical ~58s-silence-then-"ssh exited with code 1" symptom)
+            # were this exact bug: `sh integration.sh` failing (real
+            # assertion failure) killed the outer script via `set -e`
+            # before `SCRIPT_EXIT=$?` ever ran, before the smoke-log cat
+            # ever ran, before ANY diagnostic output could reach the
+            # Actions log — the SSH session just silently died mid-script.
+            # `||` keeps the failing command inside an or-list, which
+            # `set -e` exempts from the abort rule (POSIX 2.8.1), while
+            # still capturing the real exit code into SCRIPT_EXIT.
+            echo "[fbsd-integration-nginx] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            SCRIPT_EXIT=0
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/nginx/integration.sh || SCRIPT_EXIT=$?
+            if [ "$SCRIPT_EXIT" -eq 0 ]; then
+                echo "[fbsd-integration-nginx] integration.sh exit: 0 (all assertions green)"
+            else
+                echo "[fbsd-integration-nginx] integration.sh exit: $SCRIPT_EXIT (assertion failure — see log above)"
+            fi
 
             echo
-            echo "=== integration-nginx run-nginx.sh end @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-nginx integration.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
@@ -364,7 +408,7 @@ jobs:
             # ----------------------------------------------------------------
             # Task 4.3 — inline ::group:: + cat for the threat log and
             # the nginx access log. Both are also uploaded as artifacts
-            # by the `Upload integration-nginx artifacts` step below
+            # by the `Upload fbsd-integration-nginx artifacts` step below
             # (Task 3.6 — already in place, if: always() + if-no-files-
             # found: warn so red runs still produce the artifact for
             # triage). The ::group:: blocks here are for INLINE run-log
@@ -380,25 +424,33 @@ jobs:
             # commands are best-effort, missing files just print an
             # ls-not-found message inline, no abort).
             # ----------------------------------------------------------------
-            echo "::group::threats-nginx.log (also in uploaded artifact integration-nginx/threats-nginx.log.smoke)"
+            echo "::group::threats-nginx.log (also in uploaded artifact fbsd-integration-nginx/threats-nginx.log.smoke)"
             if [ -s "$GITHUB_WORKSPACE/threats-nginx.log.smoke" ]; then
                 cat "$GITHUB_WORKSPACE/threats-nginx.log.smoke"
             else
-                echo "[integration-nginx] threats-nginx.log.smoke missing or empty (run-nginx.sh likely did not reach the artifact-persist step)"
+                echo "[fbsd-integration-nginx] threats-nginx.log.smoke missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "threats-nginx.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-nginx.log.smoke" 2>/dev/null || echo 0) bytes"
 
-            echo "::group::nginx access log (also in uploaded artifact integration-nginx/nginx-access.log)"
+            echo "::group::nginx access log (also in uploaded artifact fbsd-integration-nginx/nginx-access.log)"
             if [ -s "$GITHUB_WORKSPACE/nginx-access.log" ]; then
                 cat "$GITHUB_WORKSPACE/nginx-access.log"
             else
-                echo "[integration-nginx] nginx-access.log missing or empty (run-nginx.sh likely did not reach the artifact-persist step)"
+                echo "[fbsd-integration-nginx] nginx-access.log missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "nginx-access.log size: $(wc -c < "$GITHUB_WORKSPACE/nginx-access.log" 2>/dev/null || echo 0) bytes"
 
-      - name: Upload integration-nginx artifacts
+            # Final line of the run: block — propagate integration.sh's
+            # real exit code as THIS STEP's exit code (see the
+            # SCRIPT_EXIT capture comment above). All diagnostic output
+            # above (smoke-log, threat log, access log) has already
+            # printed regardless of pass/fail; this exit only affects
+            # the step/job's reported conclusion, not what gets logged.
+            exit "$SCRIPT_EXIT"
+
+      - name: Upload fbsd-integration-nginx artifacts
         # smoke-log.txt: the full VM run log (Task 2.5)
         # threats-nginx.log.smoke: the sentinel threat log (Task 3.6
         #   copy, mirrored to $GITHUB_WORKSPACE so copyback returns it)
@@ -409,7 +461,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: integration-nginx
+          name: fbsd-integration-nginx
           path: |
             smoke-log.txt
             threats-nginx.log.smoke
@@ -431,22 +483,26 @@ jobs:
   # validates the trigger wiring (push: branches: + pull_request: branches:
   # on the flow base), and emits a smoke-log.txt artifact. The empty
   # run: makes the first dispatch trivially green, so the trigger wiring
-  # is verified before Phase P2 invests in a real run-caddy.sh body.
+  # is verified before Phase P2 invests in a real integration.sh body.
   # =====================================================================
 
   # -------------------------------------------------------------------
-  # integration-caddy — Flow 091 P2 (DECISIONS §1: caddy first, cheapest
+  # fbsd-integration-caddy — Flow 091 P2 (DECISIONS §1: caddy first, cheapest
   # port — alpine-base single binary, access log format closest to
   # nginx's combined).
   # -------------------------------------------------------------------
-  integration-caddy:
-    # Promoted (Task P2.8): continue-on-error dropped after 2 consecutive
-    # green live dispatches (runs 28551946529, 28552167223 — both
-    # "[caddy] PASS: all 3 assertions green", exit 0) per DECISIONS
-    # section 6's promotion criterion. Job-level blocking applies ONLY
-    # within this isolated workflow — it does not gate dev/main branch
-    # protection.
-    name: integration-caddy
+  fbsd-integration-caddy:
+    # Flow 092 promotion: continue-on-error dropped after 2 consecutive
+    # green live dispatches of the FULLY EXTENDED script (Track A
+    # 7-module+badbot+blocklist coverage AND Track B proxy-chain
+    # together): runs 28590755312, 28591049267 — both "[caddy] PASS:
+    # all assertions green - direct + proxy-chain FreeBSD/podman caddy
+    # integration end-to-end works" (DECISIONS §"Revised: 2026-07-02 —
+    # caddy promoted"). One real bug found before green: G21 —
+    # `trusted_proxies` does not affect transform-encoder's
+    # `{request>remote_ip}`; fixed via an XFF-fallback log format
+    # string instead.
+    name: fbsd-integration-caddy
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -508,7 +564,7 @@ jobs:
           envs: 'GITHUB_*'
           # Phase 2 fills in the unblock chain (storage sed + pf setup +
           # native go build) starting at Task 2.2. Phase 3 invokes
-          # tests/integration-freebsd/caddy/run-caddy.sh. Phase 4 wraps
+          # tests/integration-freebsd/caddy/integration.sh. Phase 4 wraps
           # it with scoped TMPDIR + artifact upload. The empty `run: |`
           # placeholder below is replaced across Tasks 2.2-4.3.
           run: |
@@ -527,7 +583,7 @@ jobs:
             # an artifact — Flow 088 TD-13 cat-after-write pattern.
             {
             # Marker for the log artifact's first line.
-            echo "=== integration-caddy run @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-caddy run @ $(date -u +%FT%TZ) ==="
             echo "=== host: $(uname -a) ==="
             echo
 
@@ -535,7 +591,7 @@ jobs:
             # Task 4.1 — podman install + Linux compat layer enable.
             # ----------------------------------------------------------------
             # `caddy:2-alpine` (used by tests/integration-freebsd/caddy/
-            # run-caddy.sh step 3) is a Linux OCI image. FreeBSD's
+            # integration.sh step 3) is a Linux OCI image. FreeBSD's
             # sysutils/podman pulls Linux images under the Linux
             # compatibility layer, which must be enabled BEFORE the
             # first `podman run --os=linux`. Per the FreeBSD podman
@@ -550,7 +606,7 @@ jobs:
             # (DECISIONS §"A.2" "Linux compat may need a reboot we
             # can't do in-CI"). We log the failure to smoke-log.txt
             # but do not abort: the native FreeBSD run-smoke.sh case
-            # doesn't need Linux compat, and the run-caddy.sh caddy
+            # doesn't need Linux compat, and the integration.sh caddy
             # pull may still succeed on a VM where linux.ko was
             # already loaded by the vmactions image's first-boot
             # rc sequence.
@@ -563,20 +619,20 @@ jobs:
             # from FreeBSD's pkg mirror; expect ~30-60s on first run.
             # ----------------------------------------------------------------
             pkg install -y sysutils/podman || \
-                echo "[integration-caddy] pkg install podman FAILED"
+                echo "[fbsd-integration-caddy] pkg install podman FAILED"
             podman --version || \
-                echo "[integration-caddy] podman --version FAILED"
+                echo "[fbsd-integration-caddy] podman --version FAILED"
             sysrc linux_enable=YES || \
-                echo "[integration-caddy] sysrc linux_enable=YES FAILED"
+                echo "[fbsd-integration-caddy] sysrc linux_enable=YES FAILED"
             # service linux start: best-effort, log failure but do not
             # abort. The 088 §B.3 spike step 2 has the same
             # disposition. A red run here is a finding for the
             # triage-run-1.md, not a flow-blocker (DECISIONS.md §6).
             if service linux start; then
-                echo "[integration-caddy] service linux start: ok"
+                echo "[fbsd-integration-caddy] service linux start: ok"
             else
-                echo "[integration-caddy] WARN: service linux start failed" >&2
-                echo "[integration-caddy] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
+                echo "[fbsd-integration-caddy] WARN: service linux start failed" >&2
+                echo "[fbsd-integration-caddy] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
             fi
 
             # ----------------------------------------------------------------
@@ -604,7 +660,7 @@ jobs:
                 /usr/local/etc/containers/storage.conf
             # Reaffirm effective driver — should now print "vfs".
             podman info --format '{{.Store.GraphDriverName}}' || \
-                echo "[integration-caddy] post-storage-sed podman info FAILED"
+                echo "[fbsd-integration-caddy] post-storage-sed podman info FAILED"
 
             # ----------------------------------------------------------------
             # Task 2.3 — pf kernel module setup.
@@ -638,7 +694,7 @@ jobs:
             # second CI run.
             ifconfig -l
             cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf || \
-                echo "[integration-caddy] pf.conf.sample copy FAILED"
+                echo "[fbsd-integration-caddy] pf.conf.sample copy FAILED"
             # sed -i '' is the in-place edit syntax on FreeBSD (BSD sed).
             # v4egress_if / v6egress_if are top-level shell assignments
             # in the sample; substitute both to vtnet0.
@@ -646,9 +702,9 @@ jobs:
                 -e 's/^v4egress_if=.*/v4egress_if="vtnet0"/' \
                 -e 's/^v6egress_if=.*/v6egress_if="vtnet0"/' \
                 /etc/pf.conf || \
-                echo "[integration-caddy] pf.conf interface substitution FAILED"
+                echo "[fbsd-integration-caddy] pf.conf interface substitution FAILED"
             kldload pf || \
-                echo "[integration-caddy] kldload pf FAILED (already loaded?)"
+                echo "[fbsd-integration-caddy] kldload pf FAILED (already loaded?)"
             # net.pf.filter_local=1 enables host↔container traffic
             # through pf. CNI bridge ipMasq uses pf for the SNAT; if
             # filter_local=0, host-sent packets are dropped. This is
@@ -656,12 +712,12 @@ jobs:
             sysctl net.pf.filter_local=1 || true
             sysrc pf_enable=YES
             service pf start || \
-                echo "[integration-caddy] service pf start FAILED"
+                echo "[fbsd-integration-caddy] service pf start FAILED"
             # Restart to make filter_local=1 take effect on the running
             # service (sysctl alone does not re-evaluate an already-
             # running pf ruleset).
             service pf restart || \
-                echo "[integration-caddy] service pf restart FAILED"
+                echo "[fbsd-integration-caddy] service pf restart FAILED"
 
             # ----------------------------------------------------------------
             # Task 2.4 — native go build of arxsentinel.
@@ -677,12 +733,12 @@ jobs:
             #
             # No scoped TMPDIR here: native `go build` does not need
             # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # run-caddy.sh (Task 4.2) per Flow 088 DECISIONS §"Decision
+            # integration.sh (Task 4.2) per Flow 088 DECISIONS §"Decision
             # G.1e" (exported TMPDIR poisons Go module-mode detection
             # for any go build that runs after it).
             # ----------------------------------------------------------------
             pkg install -y go || \
-                echo "[integration-caddy] pkg install go FAILED"
+                echo "[fbsd-integration-caddy] pkg install go FAILED"
             cd "$GITHUB_WORKSPACE"
             VERSION=$(cat VERSION 2>/dev/null || echo "dev")
             CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
@@ -690,11 +746,11 @@ jobs:
                     -ldflags="-s -w -X main.version=${VERSION}" \
                     -o ./arxsentinel \
                     ./cmd/arxsentinel || \
-                echo "[integration-caddy] arxsentinel build FAILED"
+                echo "[fbsd-integration-caddy] arxsentinel build FAILED"
             # version-check: --version is a supported flag (cmd/arxsentinel/
             # main.go: flag.Bool("version", ...)).
             ./arxsentinel --version || \
-                echo "[integration-caddy] arxsentinel --version FAILED"
+                echo "[fbsd-integration-caddy] arxsentinel --version FAILED"
 
             # ----------------------------------------------------------------
             # P2.4 -- load pre-built caddy-arxsentinel image (host build).
@@ -713,19 +769,19 @@ jobs:
             # the full rationale + bug history; G11 for the precedent
             # it sets for future backends.
             # ----------------------------------------------------------------
-            echo "[integration-caddy] loading pre-built caddy-arxsentinel image (built on host, synced via rsync)..."
+            echo "[fbsd-integration-caddy] loading pre-built caddy-arxsentinel image (built on host, synced via rsync)..."
             podman load -i "$GITHUB_WORKSPACE/caddy-arxsentinel.tar" || \
-                echo "[integration-caddy] podman load caddy-arxsentinel FAILED (run-caddy.sh will fail to start the container)"
+                echo "[fbsd-integration-caddy] podman load caddy-arxsentinel FAILED (integration.sh will fail to start the container)"
 
             # Marker for the log artifact's last line (Phase 3-4 will
-            # append the run-caddy.sh output below this block — kept
+            # append the integration.sh output below this block — kept
             # for the cat-after-write emit point).
             echo
-            echo "=== integration-caddy unblock chain end @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-caddy unblock chain end @ $(date -u +%FT%TZ) ==="
             echo
 
             # ----------------------------------------------------------------
-            # Task 4.2 — invoke run-caddy.sh with SCOPED TMPDIR (per
+            # Task 4.2 — invoke integration.sh with SCOPED TMPDIR (per
             # Flow 088 Decision G.1e).
             # ----------------------------------------------------------------
             # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
@@ -743,27 +799,47 @@ jobs:
             # fix. We invoke the same pattern verbatim here.
             #
             # Why this matters even though the go build runs BEFORE
-            # the run-caddy.sh invocation: defensively, the scoped
+            # the integration.sh invocation: defensively, the scoped
             # form also protects any future step added below this
-            # point (e.g. a follow-up integration-caddy iteration
+            # point (e.g. a follow-up fbsd-integration-caddy iteration
             # adding a `go test` after the smoke). 088 G.1e says
             # "any future VM-action job that mixes go build with a
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The run-caddy.sh exit code is recorded but not
+            # The integration.sh exit code is recorded but not
             # short-circuited to a workflow failure: the job runs
             # with continue-on-error: true (DECISIONS §6 research-
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
-            echo "[integration-caddy] invoking run-caddy.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/caddy/run-caddy.sh \
-                && echo "[integration-caddy] run-caddy.sh exit: 0 (3 assertions green)" \
-                || echo "[integration-caddy] run-caddy.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            # CRITICAL (Flow 092 G18/G19 — see nginx job's postmortem
+            # comment above and DECISIONS.md): the ORIGINAL
+            # `cmd && echo ok || echo fail` form always exits 0 regardless
+            # of integration.sh's real result (the last executed command
+            # is always an echo). Fixed the same way as nginx (live runs
+            # 28586137901/28586481760/28586828621 root-caused this):
+            # `cmd || SCRIPT_EXIT=$?` keeps the failing command inside an
+            # or-list, which vmactions/freebsd-vm's silently-prepended
+            # `set -eu` exempts from its abort-on-error rule — a bare
+            # `cmd; SCRIPT_EXIT=$?` would abort the whole remaining script
+            # on failure, before SCRIPT_EXIT is ever set. This job still
+            # has `continue-on-error: true` (see the job header above) so
+            # a real failure here does not currently block the workflow,
+            # but a red run will now show correctly in the job status
+            # once continue-on-error is dropped, instead of showing a
+            # false green like every backend did before this fix.
+            echo "[fbsd-integration-caddy] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            SCRIPT_EXIT=0
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/caddy/integration.sh || SCRIPT_EXIT=$?
+            if [ "$SCRIPT_EXIT" -eq 0 ]; then
+                echo "[fbsd-integration-caddy] integration.sh exit: 0 (all assertions green)"
+            else
+                echo "[fbsd-integration-caddy] integration.sh exit: $SCRIPT_EXIT (assertion failure — see log above; DECISIONS §6 — research-grade, not yet a flow-blocker while continue-on-error is set)"
+            fi
 
             echo
-            echo "=== integration-caddy run-caddy.sh end @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-caddy integration.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
@@ -780,7 +856,7 @@ jobs:
             # ----------------------------------------------------------------
             # Task 4.3 — inline ::group:: + cat for the threat log and
             # the caddy access log. Both are also uploaded as artifacts
-            # by the `Upload integration-caddy artifacts` step below
+            # by the `Upload fbsd-integration-caddy artifacts` step below
             # (Task 3.6 — already in place, if: always() + if-no-files-
             # found: warn so red runs still produce the artifact for
             # triage). The ::group:: blocks here are for INLINE run-log
@@ -796,25 +872,32 @@ jobs:
             # commands are best-effort, missing files just print an
             # ls-not-found message inline, no abort).
             # ----------------------------------------------------------------
-            echo "::group::threats-caddy.log (also in uploaded artifact integration-caddy/threats-caddy.log.smoke)"
+            echo "::group::threats-caddy.log (also in uploaded artifact fbsd-integration-caddy/threats-caddy.log.smoke)"
             if [ -s "$GITHUB_WORKSPACE/threats-caddy.log.smoke" ]; then
                 cat "$GITHUB_WORKSPACE/threats-caddy.log.smoke"
             else
-                echo "[integration-caddy] threats-caddy.log.smoke missing or empty (run-caddy.sh likely did not reach the artifact-persist step)"
+                echo "[fbsd-integration-caddy] threats-caddy.log.smoke missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "threats-caddy.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-caddy.log.smoke" 2>/dev/null || echo 0) bytes"
 
-            echo "::group::caddy access log (also in uploaded artifact integration-caddy/caddy-access.log)"
+            echo "::group::caddy access log (also in uploaded artifact fbsd-integration-caddy/caddy-access.log)"
             if [ -s "$GITHUB_WORKSPACE/caddy-access.log" ]; then
                 cat "$GITHUB_WORKSPACE/caddy-access.log"
             else
-                echo "[integration-caddy] caddy-access.log missing or empty (run-caddy.sh likely did not reach the artifact-persist step)"
+                echo "[fbsd-integration-caddy] caddy-access.log missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "caddy-access.log size: $(wc -c < "$GITHUB_WORKSPACE/caddy-access.log" 2>/dev/null || echo 0) bytes"
 
-      - name: Upload integration-caddy artifacts
+            # Final line of the run: block — propagate integration.sh's
+            # real exit code as THIS STEP's exit code (G19 — same fix
+            # as nginx's job). continue-on-error: true still masks this
+            # at the job level for now, but the step's own conclusion
+            # will be accurate once that flag is dropped at promotion.
+            exit "$SCRIPT_EXIT"
+
+      - name: Upload fbsd-integration-caddy artifacts
         # smoke-log.txt: the full VM run log (Task 2.5)
         # threats-caddy.log.smoke: the sentinel threat log (Task 3.6
         #   copy, mirrored to $GITHUB_WORKSPACE so copyback returns it)
@@ -825,7 +908,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: integration-caddy
+          name: fbsd-integration-caddy
           path: |
             smoke-log.txt
             threats-caddy.log.smoke
@@ -833,7 +916,7 @@ jobs:
           if-no-files-found: warn
 
   # -------------------------------------------------------------------
-  # integration-traefik — Flow 091 P3 (DECISIONS §1: traefik second,
+  # fbsd-integration-traefik — Flow 091 P3 (DECISIONS §1: traefik second,
   # Go-static binary, runs under FreeBSD/podman Linux-emul with minimal
   # friction; access log configurable to CLF with full UA field).
   #
@@ -849,12 +932,15 @@ jobs:
   # applies to backends that need a custom Go-toolchain-built
   # image, which traefik does not).
   # -------------------------------------------------------------------
-  integration-traefik:
-    # Promoted (Task P3.8): continue-on-error dropped after 2 consecutive
-    # green live dispatches (runs 28554864680, 28555057960 — both
-    # "[traefik] PASS: all 3 assertions green", exit 0) per DECISIONS
-    # section 6's promotion criterion.
-    name: integration-traefik
+  fbsd-integration-traefik:
+    # Flow 092 promotion: continue-on-error dropped after 2 consecutive
+    # green live dispatches of the FULLY EXTENDED script (Track A+B):
+    # runs 28592330987, 28592661408 — both "[traefik] PASS: all
+    # assertions green" (DECISIONS §"Revised: 2026-07-02 — traefik
+    # promoted, FIRST TRY"). Zero bugs found — coder verified
+    # forwardedHeaders.trustedIPs against the battle suite source
+    # before implementing, avoiding caddy's G21 mistake.
+    name: fbsd-integration-traefik
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -871,7 +957,7 @@ jobs:
           envs: 'GITHUB_*'
           # Phase P3 fills in the unblock chain (storage sed + pf setup
           # + native go build) starting at Task 2.2. Phase P3 invokes
-          # tests/integration-freebsd/traefik/run-traefik.sh. Phase P3.4
+          # tests/integration-freebsd/traefik/integration.sh. Phase P3.4
           # wraps it with scoped TMPDIR + artifact upload. The body
           # below is verbatim from the 089 nginx + 091 caddy unblock
           # chains, with the caddy-specific host-build / podman-load
@@ -895,7 +981,7 @@ jobs:
             # cat-after-write pattern.
             {
             # Marker for the log artifact's first line.
-            echo "=== integration-traefik run @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-traefik run @ $(date -u +%FT%TZ) ==="
             echo "=== host: $(uname -a) ==="
             echo
 
@@ -903,7 +989,7 @@ jobs:
             # Task 4.1 — podman install + Linux compat layer enable.
             # ----------------------------------------------------------------
             # `docker.io/library/traefik:v3-alpine` (used by
-            # tests/integration-freebsd/traefik/run-traefik.sh step 3)
+            # tests/integration-freebsd/traefik/integration.sh step 3)
             # is a Linux OCI image. FreeBSD's sysutils/podman pulls
             # Linux images under the Linux compatibility layer, which
             # must be enabled BEFORE the first `podman run --os=linux`.
@@ -919,7 +1005,7 @@ jobs:
             # (DECISIONS §"A.2" "Linux compat may need a reboot we
             # can't do in-CI"). We log the failure to smoke-log.txt
             # but do not abort: the native FreeBSD run-smoke.sh case
-            # doesn't need Linux compat, and the run-traefik.sh
+            # doesn't need Linux compat, and the integration.sh
             # traefik pull may still succeed on a VM where linux.ko
             # was already loaded by the vmactions image's first-boot
             # rc sequence.
@@ -932,21 +1018,21 @@ jobs:
             # from FreeBSD's pkg mirror; expect ~30-60s on first run.
             # ----------------------------------------------------------------
             pkg install -y sysutils/podman || \
-                echo "[integration-traefik] pkg install podman FAILED"
+                echo "[fbsd-integration-traefik] pkg install podman FAILED"
             podman --version || \
-                echo "[integration-traefik] podman --version FAILED"
+                echo "[fbsd-integration-traefik] podman --version FAILED"
             sysrc linux_enable=YES || \
-                echo "[integration-traefik] sysrc linux_enable=YES FAILED"
+                echo "[fbsd-integration-traefik] sysrc linux_enable=YES FAILED"
             # service linux start: best-effort, log failure but do not
             # abort. The 088 §B.3 spike step 2 has the same
             # disposition. A red run here is a finding for the
             # triage-traefik-1.md (when it gets written), not a
             # flow-blocker (DECISIONS.md §6).
             if service linux start; then
-                echo "[integration-traefik] service linux start: ok"
+                echo "[fbsd-integration-traefik] service linux start: ok"
             else
-                echo "[integration-traefik] WARN: service linux start failed" >&2
-                echo "[integration-traefik] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
+                echo "[fbsd-integration-traefik] WARN: service linux start failed" >&2
+                echo "[fbsd-integration-traefik] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
             fi
 
             # ----------------------------------------------------------------
@@ -974,7 +1060,7 @@ jobs:
                 /usr/local/etc/containers/storage.conf
             # Reaffirm effective driver — should now print "vfs".
             podman info --format '{{.Store.GraphDriverName}}' || \
-                echo "[integration-traefik] post-storage-sed podman info FAILED"
+                echo "[fbsd-integration-traefik] post-storage-sed podman info FAILED"
 
             # ----------------------------------------------------------------
             # Task 2.3 — pf kernel module setup.
@@ -1008,7 +1094,7 @@ jobs:
             # second CI run.
             ifconfig -l
             cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf || \
-                echo "[integration-traefik] pf.conf.sample copy FAILED"
+                echo "[fbsd-integration-traefik] pf.conf.sample copy FAILED"
             # sed -i '' is the in-place edit syntax on FreeBSD (BSD
             # sed). v4egress_if / v6egress_if are top-level shell
             # assignments in the sample; substitute both to vtnet0.
@@ -1016,9 +1102,9 @@ jobs:
                 -e 's/^v4egress_if=.*/v4egress_if="vtnet0"/' \
                 -e 's/^v6egress_if=.*/v6egress_if="vtnet0"/' \
                 /etc/pf.conf || \
-                echo "[integration-traefik] pf.conf interface substitution FAILED"
+                echo "[fbsd-integration-traefik] pf.conf interface substitution FAILED"
             kldload pf || \
-                echo "[integration-traefik] kldload pf FAILED (already loaded?)"
+                echo "[fbsd-integration-traefik] kldload pf FAILED (already loaded?)"
             # net.pf.filter_local=1 enables host↔container traffic
             # through pf. CNI bridge ipMasq uses pf for the SNAT; if
             # filter_local=0, host-sent packets are dropped. This is
@@ -1026,12 +1112,12 @@ jobs:
             sysctl net.pf.filter_local=1 || true
             sysrc pf_enable=YES
             service pf start || \
-                echo "[integration-traefik] service pf start FAILED"
+                echo "[fbsd-integration-traefik] service pf start FAILED"
             # Restart to make filter_local=1 take effect on the running
             # service (sysctl alone does not re-evaluate an already-
             # running pf ruleset).
             service pf restart || \
-                echo "[integration-traefik] service pf restart FAILED"
+                echo "[fbsd-integration-traefik] service pf restart FAILED"
 
             # ----------------------------------------------------------------
             # Task 2.4 — native go build of arxsentinel.
@@ -1047,12 +1133,12 @@ jobs:
             #
             # No scoped TMPDIR here: native `go build` does not need
             # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # run-traefik.sh (P3.4) per Flow 088 DECISIONS §"Decision
+            # integration.sh (P3.4) per Flow 088 DECISIONS §"Decision
             # G.1e" (exported TMPDIR poisons Go module-mode detection
             # for any go build that runs after it).
             # ----------------------------------------------------------------
             pkg install -y go || \
-                echo "[integration-traefik] pkg install go FAILED"
+                echo "[fbsd-integration-traefik] pkg install go FAILED"
             cd "$GITHUB_WORKSPACE"
             VERSION=$(cat VERSION 2>/dev/null || echo "dev")
             CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
@@ -1060,21 +1146,21 @@ jobs:
                     -ldflags="-s -w -X main.version=${VERSION}" \
                     -o ./arxsentinel \
                     ./cmd/arxsentinel || \
-                echo "[integration-traefik] arxsentinel build FAILED"
+                echo "[fbsd-integration-traefik] arxsentinel build FAILED"
             # version-check: --version is a supported flag
             # (cmd/arxsentinel/main.go: flag.Bool("version", ...)).
             ./arxsentinel --version || \
-                echo "[integration-traefik] arxsentinel --version FAILED"
+                echo "[fbsd-integration-traefik] arxsentinel --version FAILED"
 
             # Marker for the log artifact's last line (Phase P3 will
-            # append the run-traefik.sh output below this block — kept
+            # append the integration.sh output below this block — kept
             # for the cat-after-write emit point).
             echo
-            echo "=== integration-traefik unblock chain end @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-traefik unblock chain end @ $(date -u +%FT%TZ) ==="
             echo
 
             # ----------------------------------------------------------------
-            # P3.4 — invoke run-traefik.sh with SCOPED TMPDIR (per
+            # P3.4 — invoke integration.sh with SCOPED TMPDIR (per
             # Flow 088 Decision G.1e).
             # ----------------------------------------------------------------
             # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
@@ -1092,27 +1178,47 @@ jobs:
             # fix. We invoke the same pattern verbatim here.
             #
             # Why this matters even though the go build runs BEFORE
-            # the run-traefik.sh invocation: defensively, the scoped
+            # the integration.sh invocation: defensively, the scoped
             # form also protects any future step added below this
-            # point (e.g. a follow-up integration-traefik iteration
+            # point (e.g. a follow-up fbsd-integration-traefik iteration
             # adding a `go test` after the smoke). 088 G.1e says
             # "any future VM-action job that mixes go build with a
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The run-traefik.sh exit code is recorded but not
+            # The integration.sh exit code is recorded but not
             # short-circuited to a workflow failure: the job runs
             # with continue-on-error: true (DECISIONS §6 research-
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
-            echo "[integration-traefik] invoking run-traefik.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/traefik/run-traefik.sh \
-                && echo "[integration-traefik] run-traefik.sh exit: 0 (3 assertions green)" \
-                || echo "[integration-traefik] run-traefik.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            # CRITICAL (Flow 092 G18/G19 — see nginx job's postmortem
+            # comment above and DECISIONS.md): the ORIGINAL
+            # `cmd && echo ok || echo fail` form always exits 0 regardless
+            # of integration.sh's real result (the last executed command
+            # is always an echo). Fixed the same way as nginx (live runs
+            # 28586137901/28586481760/28586828621 root-caused this):
+            # `cmd || SCRIPT_EXIT=$?` keeps the failing command inside an
+            # or-list, which vmactions/freebsd-vm's silently-prepended
+            # `set -eu` exempts from its abort-on-error rule — a bare
+            # `cmd; SCRIPT_EXIT=$?` would abort the whole remaining script
+            # on failure, before SCRIPT_EXIT is ever set. This job still
+            # has `continue-on-error: true` (see the job header above) so
+            # a real failure here does not currently block the workflow,
+            # but a red run will now show correctly in the job status
+            # once continue-on-error is dropped, instead of showing a
+            # false green like every backend did before this fix.
+            echo "[fbsd-integration-traefik] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            SCRIPT_EXIT=0
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/traefik/integration.sh || SCRIPT_EXIT=$?
+            if [ "$SCRIPT_EXIT" -eq 0 ]; then
+                echo "[fbsd-integration-traefik] integration.sh exit: 0 (all assertions green)"
+            else
+                echo "[fbsd-integration-traefik] integration.sh exit: $SCRIPT_EXIT (assertion failure — see log above; DECISIONS §6 — research-grade, not yet a flow-blocker while continue-on-error is set)"
+            fi
 
             echo
-            echo "=== integration-traefik run-traefik.sh end @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-traefik integration.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
@@ -1129,7 +1235,7 @@ jobs:
             # ----------------------------------------------------------------
             # P3.4 — inline ::group:: + cat for the threat log and
             # the traefik access log. Both are also uploaded as
-            # artifacts by the `Upload integration-traefik artifacts`
+            # artifacts by the `Upload fbsd-integration-traefik artifacts`
             # step below (P3.4 — if: always() + if-no-files-found:
             # warn so red runs still produce the artifact for
             # triage). The ::group:: blocks here are for INLINE
@@ -1145,25 +1251,29 @@ jobs:
             # — the cat commands are best-effort, missing files just
             # print an ls-not-found message inline, no abort).
             # ----------------------------------------------------------------
-            echo "::group::threats-traefik.log (also in uploaded artifact integration-traefik/threats-traefik.log.smoke)"
+            echo "::group::threats-traefik.log (also in uploaded artifact fbsd-integration-traefik/threats-traefik.log.smoke)"
             if [ -s "$GITHUB_WORKSPACE/threats-traefik.log.smoke" ]; then
                 cat "$GITHUB_WORKSPACE/threats-traefik.log.smoke"
             else
-                echo "[integration-traefik] threats-traefik.log.smoke missing or empty (run-traefik.sh likely did not reach the artifact-persist step)"
+                echo "[fbsd-integration-traefik] threats-traefik.log.smoke missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "threats-traefik.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-traefik.log.smoke" 2>/dev/null || echo 0) bytes"
 
-            echo "::group::traefik access log (also in uploaded artifact integration-traefik/traefik-access.log)"
+            echo "::group::traefik access log (also in uploaded artifact fbsd-integration-traefik/traefik-access.log)"
             if [ -s "$GITHUB_WORKSPACE/traefik-access.log" ]; then
                 cat "$GITHUB_WORKSPACE/traefik-access.log"
             else
-                echo "[integration-traefik] traefik-access.log missing or empty (run-traefik.sh likely did not reach the artifact-persist step)"
+                echo "[fbsd-integration-traefik] traefik-access.log missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "traefik-access.log size: $(wc -c < "$GITHUB_WORKSPACE/traefik-access.log" 2>/dev/null || echo 0) bytes"
 
-      - name: Upload integration-traefik artifacts
+            # Final line of the run: block — propagate integration.sh's
+            # real exit code as THIS STEP's exit code (G19).
+            exit "$SCRIPT_EXIT"
+
+      - name: Upload fbsd-integration-traefik artifacts
         # smoke-log.txt: the full VM run log (P3.4)
         # threats-traefik.log.smoke: the sentinel threat log (P3.4
         #   copy, mirrored to $GITHUB_WORKSPACE so copyback returns it)
@@ -1174,7 +1284,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: integration-traefik
+          name: fbsd-integration-traefik
           path: |
             smoke-log.txt
             threats-traefik.log.smoke
@@ -1182,19 +1292,20 @@ jobs:
           if-no-files-found: warn
 
   # -------------------------------------------------------------------
-  # integration-haproxy — Flow 091 P4 (DECISIONS §1: haproxy third, log-
+  # fbsd-integration-haproxy — Flow 091 P4 (DECISIONS §1: haproxy third, log-
   # format engineering needed — `capture request header User-Agent` in
   # the frontend block for badbot testability per Decision 4 matrix).
   # -------------------------------------------------------------------
-  integration-haproxy:
-    # Promoted (Task P4.8): continue-on-error dropped after 2 consecutive
-    # green live dispatches (runs 28557166919, 28557311294 — both
-    # "[haproxy] PASS: all 3 assertions green", exit 0) per DECISIONS
-    # section 6's promotion criterion. HAProxy logs to stdout, captured
-    # via `podman logs --follow` instead of a -v bind-mount; the
-    # `capture request header User-Agent` directive lives in
-    # haproxy.cfg, NOT the run-script.
-    name: integration-haproxy
+  fbsd-integration-haproxy:
+    # Flow 092 promotion: continue-on-error dropped after 2 consecutive
+    # green live dispatches of the FULLY EXTENDED script (Track A+B):
+    # runs 28593811380, 28594136763 — both "[haproxy] PASS: all
+    # assertions green" (DECISIONS §"Revised: 2026-07-02 — haproxy
+    # promoted, FIRST TRY"). HAProxy logs to stdout, captured via
+    # `podman logs --follow` — the chain scenario needs a SECOND
+    # background capture process for the chain container (found by
+    # shell-reviewer before the first dispatch, fixed proactively).
+    name: fbsd-integration-haproxy
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -1211,18 +1322,18 @@ jobs:
           envs: 'GITHUB_*'
           # Phase P4 fills in the unblock chain (storage sed + pf setup
           # + native go build) + tests/integration-freebsd/haproxy/
-          # run-haproxy.sh invocation. The body below is verbatim from
+          # integration.sh invocation. The body below is verbatim from
           # the traefik job (P3 already promoted, P3.4 wrap of unblock
           # chain + scoped TMPDIR + cat-after-write + upload-artifact)
           # with two textual substitutions:
-          #   1. "[integration-traefik]" → "[integration-haproxy]" in
+          #   1. "[fbsd-integration-traefik]" → "[fbsd-integration-haproxy]" in
           #      the leading run-script log tag (P4.6 triage scoping).
           #   2. "traefik" → "haproxy" in:
           #      - the run-script path (tests/integration-freebsd/haproxy/
-          #        run-haproxy.sh)
+          #        integration.sh)
           #      - the threat-log copy (threats-haproxy.log.smoke)
           #      - the access-log copy (haproxy-access.log)
-          #      - the artifact name (integration-haproxy, unchanged)
+          #      - the artifact name (fbsd-integration-haproxy, unchanged)
           #   No other divergences — the unblock chain is identical
           #   (same podman pkg, same storage.conf fix, same pf setup,
           #   same go build). haproxy uses the upstream
@@ -1249,7 +1360,7 @@ jobs:
             # cat-after-write pattern.
             {
             # Marker for the log artifact's first line.
-            echo "=== integration-haproxy run @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-haproxy run @ $(date -u +%FT%TZ) ==="
             echo "=== host: $(uname -a) ==="
             echo
 
@@ -1257,7 +1368,7 @@ jobs:
             # Task 4.1 — podman install + Linux compat layer enable.
             # ----------------------------------------------------------------
             # `docker.io/library/haproxy:latest` (used by
-            # tests/integration-freebsd/haproxy/run-haproxy.sh step 3)
+            # tests/integration-freebsd/haproxy/integration.sh step 3)
             # is a Linux OCI image. FreeBSD's sysutils/podman pulls
             # Linux images under the Linux compatibility layer, which
             # must be enabled BEFORE the first `podman run --os=linux`.
@@ -1273,7 +1384,7 @@ jobs:
             # (DECISIONS §"A.2" "Linux compat may need a reboot we
             # can't do in-CI"). We log the failure to smoke-log.txt
             # but do not abort: the native FreeBSD run-smoke.sh case
-            # doesn't need Linux compat, and the run-haproxy.sh
+            # doesn't need Linux compat, and the integration.sh
             # haproxy pull may still succeed on a VM where linux.ko
             # was already loaded by the vmactions image's first-boot
             # rc sequence.
@@ -1286,21 +1397,21 @@ jobs:
             # from FreeBSD's pkg mirror; expect ~30-60s on first run.
             # ----------------------------------------------------------------
             pkg install -y sysutils/podman || \
-                echo "[integration-haproxy] pkg install podman FAILED"
+                echo "[fbsd-integration-haproxy] pkg install podman FAILED"
             podman --version || \
-                echo "[integration-haproxy] podman --version FAILED"
+                echo "[fbsd-integration-haproxy] podman --version FAILED"
             sysrc linux_enable=YES || \
-                echo "[integration-haproxy] sysrc linux_enable=YES FAILED"
+                echo "[fbsd-integration-haproxy] sysrc linux_enable=YES FAILED"
             # service linux start: best-effort, log failure but do not
             # abort. The 088 §B.3 spike step 2 has the same
             # disposition. A red run here is a finding for the
             # triage-haproxy-1.md (when it gets written), not a
             # flow-blocker (DECISIONS.md §6).
             if service linux start; then
-                echo "[integration-haproxy] service linux start: ok"
+                echo "[fbsd-integration-haproxy] service linux start: ok"
             else
-                echo "[integration-haproxy] WARN: service linux start failed" >&2
-                echo "[integration-haproxy] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
+                echo "[fbsd-integration-haproxy] WARN: service linux start failed" >&2
+                echo "[fbsd-integration-haproxy] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
             fi
 
             # ----------------------------------------------------------------
@@ -1328,7 +1439,7 @@ jobs:
                 /usr/local/etc/containers/storage.conf
             # Reaffirm effective driver — should now print "vfs".
             podman info --format '{{.Store.GraphDriverName}}' || \
-                echo "[integration-haproxy] post-storage-sed podman info FAILED"
+                echo "[fbsd-integration-haproxy] post-storage-sed podman info FAILED"
 
             # ----------------------------------------------------------------
             # Task 2.3 — pf kernel module setup.
@@ -1362,7 +1473,7 @@ jobs:
             # second CI run.
             ifconfig -l
             cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf || \
-                echo "[integration-haproxy] pf.conf.sample copy FAILED"
+                echo "[fbsd-integration-haproxy] pf.conf.sample copy FAILED"
             # sed -i '' is the in-place edit syntax on FreeBSD (BSD
             # sed). v4egress_if / v6egress_if are top-level shell
             # assignments in the sample; substitute both to vtnet0.
@@ -1370,9 +1481,9 @@ jobs:
                 -e 's/^v4egress_if=.*/v4egress_if="vtnet0"/' \
                 -e 's/^v6egress_if=.*/v6egress_if="vtnet0"/' \
                 /etc/pf.conf || \
-                echo "[integration-haproxy] pf.conf interface substitution FAILED"
+                echo "[fbsd-integration-haproxy] pf.conf interface substitution FAILED"
             kldload pf || \
-                echo "[integration-haproxy] kldload pf FAILED (already loaded?)"
+                echo "[fbsd-integration-haproxy] kldload pf FAILED (already loaded?)"
             # net.pf.filter_local=1 enables host↔container traffic
             # through pf. CNI bridge ipMasq uses pf for the SNAT; if
             # filter_local=0, host-sent packets are dropped. This is
@@ -1380,12 +1491,12 @@ jobs:
             sysctl net.pf.filter_local=1 || true
             sysrc pf_enable=YES
             service pf start || \
-                echo "[integration-haproxy] service pf start FAILED"
+                echo "[fbsd-integration-haproxy] service pf start FAILED"
             # Restart to make filter_local=1 take effect on the running
             # service (sysctl alone does not re-evaluate an already-
             # running pf ruleset).
             service pf restart || \
-                echo "[integration-haproxy] service pf restart FAILED"
+                echo "[fbsd-integration-haproxy] service pf restart FAILED"
 
             # ----------------------------------------------------------------
             # Task 2.4 — native go build of arxsentinel.
@@ -1401,12 +1512,12 @@ jobs:
             #
             # No scoped TMPDIR here: native `go build` does not need
             # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # run-haproxy.sh (P4.4) per Flow 088 DECISIONS §"Decision
+            # integration.sh (P4.4) per Flow 088 DECISIONS §"Decision
             # G.1e" (exported TMPDIR poisons Go module-mode detection
             # for any go build that runs after it).
             # ----------------------------------------------------------------
             pkg install -y go || \
-                echo "[integration-haproxy] pkg install go FAILED"
+                echo "[fbsd-integration-haproxy] pkg install go FAILED"
             cd "$GITHUB_WORKSPACE"
             VERSION=$(cat VERSION 2>/dev/null || echo "dev")
             CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
@@ -1414,21 +1525,21 @@ jobs:
                     -ldflags="-s -w -X main.version=${VERSION}" \
                     -o ./arxsentinel \
                     ./cmd/arxsentinel || \
-                echo "[integration-haproxy] arxsentinel build FAILED"
+                echo "[fbsd-integration-haproxy] arxsentinel build FAILED"
             # version-check: --version is a supported flag
             # (cmd/arxsentinel/main.go: flag.Bool("version", ...)).
             ./arxsentinel --version || \
-                echo "[integration-haproxy] arxsentinel --version FAILED"
+                echo "[fbsd-integration-haproxy] arxsentinel --version FAILED"
 
             # Marker for the log artifact's last line (Phase P4 will
-            # append the run-haproxy.sh output below this block — kept
+            # append the integration.sh output below this block — kept
             # for the cat-after-write emit point).
             echo
-            echo "=== integration-haproxy unblock chain end @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-haproxy unblock chain end @ $(date -u +%FT%TZ) ==="
             echo
 
             # ----------------------------------------------------------------
-            # P4.4 — invoke run-haproxy.sh with SCOPED TMPDIR (per
+            # P4.4 — invoke integration.sh with SCOPED TMPDIR (per
             # Flow 088 Decision G.1e).
             # ----------------------------------------------------------------
             # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
@@ -1446,27 +1557,47 @@ jobs:
             # fix. We invoke the same pattern verbatim here.
             #
             # Why this matters even though the go build runs BEFORE
-            # the run-haproxy.sh invocation: defensively, the scoped
+            # the integration.sh invocation: defensively, the scoped
             # form also protects any future step added below this
-            # point (e.g. a follow-up integration-haproxy iteration
+            # point (e.g. a follow-up fbsd-integration-haproxy iteration
             # adding a `go test` after the smoke). 088 G.1e says
             # "any future VM-action job that mixes go build with a
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The run-haproxy.sh exit code is recorded but not
+            # The integration.sh exit code is recorded but not
             # short-circuited to a workflow failure: the job runs
             # with continue-on-error: true (DECISIONS §6 research-
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
-            echo "[integration-haproxy] invoking run-haproxy.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/haproxy/run-haproxy.sh \
-                && echo "[integration-haproxy] run-haproxy.sh exit: 0 (3 assertions green)" \
-                || echo "[integration-haproxy] run-haproxy.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            # CRITICAL (Flow 092 G18/G19 — see nginx job's postmortem
+            # comment above and DECISIONS.md): the ORIGINAL
+            # `cmd && echo ok || echo fail` form always exits 0 regardless
+            # of integration.sh's real result (the last executed command
+            # is always an echo). Fixed the same way as nginx (live runs
+            # 28586137901/28586481760/28586828621 root-caused this):
+            # `cmd || SCRIPT_EXIT=$?` keeps the failing command inside an
+            # or-list, which vmactions/freebsd-vm's silently-prepended
+            # `set -eu` exempts from its abort-on-error rule — a bare
+            # `cmd; SCRIPT_EXIT=$?` would abort the whole remaining script
+            # on failure, before SCRIPT_EXIT is ever set. This job still
+            # has `continue-on-error: true` (see the job header above) so
+            # a real failure here does not currently block the workflow,
+            # but a red run will now show correctly in the job status
+            # once continue-on-error is dropped, instead of showing a
+            # false green like every backend did before this fix.
+            echo "[fbsd-integration-haproxy] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            SCRIPT_EXIT=0
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/haproxy/integration.sh || SCRIPT_EXIT=$?
+            if [ "$SCRIPT_EXIT" -eq 0 ]; then
+                echo "[fbsd-integration-haproxy] integration.sh exit: 0 (all assertions green)"
+            else
+                echo "[fbsd-integration-haproxy] integration.sh exit: $SCRIPT_EXIT (assertion failure — see log above; DECISIONS §6 — research-grade, not yet a flow-blocker while continue-on-error is set)"
+            fi
 
             echo
-            echo "=== integration-haproxy run-haproxy.sh end @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-haproxy integration.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
@@ -1483,7 +1614,7 @@ jobs:
             # ----------------------------------------------------------------
             # P4.4 — inline ::group:: + cat for the threat log and
             # the haproxy access log. Both are also uploaded as
-            # artifacts by the `Upload integration-haproxy artifacts`
+            # artifacts by the `Upload fbsd-integration-haproxy artifacts`
             # step below (P4.4 — if: always() + if-no-files-found:
             # warn so red runs still produce the artifact for
             # triage). The ::group:: blocks here are for INLINE
@@ -1499,25 +1630,29 @@ jobs:
             # — the cat commands are best-effort, missing files just
             # print an ls-not-found message inline, no abort).
             # ----------------------------------------------------------------
-            echo "::group::threats-haproxy.log (also in uploaded artifact integration-haproxy/threats-haproxy.log.smoke)"
+            echo "::group::threats-haproxy.log (also in uploaded artifact fbsd-integration-haproxy/threats-haproxy.log.smoke)"
             if [ -s "$GITHUB_WORKSPACE/threats-haproxy.log.smoke" ]; then
                 cat "$GITHUB_WORKSPACE/threats-haproxy.log.smoke"
             else
-                echo "[integration-haproxy] threats-haproxy.log.smoke missing or empty (run-haproxy.sh likely did not reach the artifact-persist step)"
+                echo "[fbsd-integration-haproxy] threats-haproxy.log.smoke missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "threats-haproxy.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-haproxy.log.smoke" 2>/dev/null || echo 0) bytes"
 
-            echo "::group::haproxy access log (also in uploaded artifact integration-haproxy/haproxy-access.log)"
+            echo "::group::haproxy access log (also in uploaded artifact fbsd-integration-haproxy/haproxy-access.log)"
             if [ -s "$GITHUB_WORKSPACE/haproxy-access.log" ]; then
                 cat "$GITHUB_WORKSPACE/haproxy-access.log"
             else
-                echo "[integration-haproxy] haproxy-access.log missing or empty (run-haproxy.sh likely did not reach the artifact-persist step)"
+                echo "[fbsd-integration-haproxy] haproxy-access.log missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "haproxy-access.log size: $(wc -c < "$GITHUB_WORKSPACE/haproxy-access.log" 2>/dev/null || echo 0) bytes"
 
-      - name: Upload integration-haproxy artifacts
+            # Final line of the run: block — propagate integration.sh's
+            # real exit code as THIS STEP's exit code (G19).
+            exit "$SCRIPT_EXIT"
+
+      - name: Upload fbsd-integration-haproxy artifacts
         # smoke-log.txt: the full VM run log (P4.4)
         # threats-haproxy.log.smoke: the sentinel threat log (P4.4
         #   copy, mirrored to $GITHUB_WORKSPACE so copyback returns it)
@@ -1528,7 +1663,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: integration-haproxy
+          name: fbsd-integration-haproxy
           path: |
             smoke-log.txt
             threats-haproxy.log.smoke
@@ -1536,21 +1671,21 @@ jobs:
           if-no-files-found: warn
 
   # -------------------------------------------------------------------
-  # integration-apache — Flow 091 P5 (DECISIONS §1: apache fourth, mod_
+  # fbsd-integration-apache — Flow 091 P5 (DECISIONS §1: apache fourth, mod_
   # log_config most config-heavy of the five, deferred to mid-suite so
   # its complexity doesn't gate early stability feedback).
   #
   # The body below is verbatim from the haproxy job (P4 already
   # promoted, P4.4 wrap of unblock chain + scoped TMPDIR +
   # cat-after-write + upload-artifact) with five textual substitutions:
-  #   1. "[integration-haproxy]" → "[integration-apache]" in the
+  #   1. "[fbsd-integration-haproxy]" → "[fbsd-integration-apache]" in the
   #      leading run-script log tag (P5.6 triage scoping).
   #   2. "haproxy" → "apache" in:
   #      - the run-script path (tests/integration-freebsd/apache/
-  #        run-apache.sh)
+  #        integration.sh)
   #      - the threat-log copy (threats-apache.log.smoke)
   #      - the access-log copy (apache-access.log)
-  #      - the artifact name (integration-apache, unchanged)
+  #      - the artifact name (fbsd-integration-apache, unchanged)
   #   3. "haproxy.cfg" → "httpd.conf" in the in-line comment about
   #      upstream image (commented-out reference; no semantic effect).
   #   4. "haproxy" → "httpd" in the docker.io/library/ image comment
@@ -1568,12 +1703,14 @@ jobs:
   #   needed (caddy needed that for transform-encoder; haproxy and
   #   httpd use the upstream image directly).
   # -------------------------------------------------------------------
-  integration-apache:
-    # Promoted (Task P5.8): continue-on-error dropped after 2 consecutive
-    # green live dispatches (runs 28559336031, 28559509626 — both
-    # "[apache] PASS: all 3 assertions green", exit 0) per DECISIONS
-    # section 6's promotion criterion.
-    name: integration-apache
+  fbsd-integration-apache:
+    # Flow 092 promotion: continue-on-error dropped after 2 consecutive
+    # green live dispatches of the FULLY EXTENDED script (Track A+B):
+    # runs 28596033242, 28596426994 — both "[apache] PASS: all
+    # assertions green" (DECISIONS §"Revised: 2026-07-02 — apache
+    # promoted, FIRST TRY"). mod_remoteip confirmed present in stock
+    # httpd:latest — no custom build needed.
+    name: fbsd-integration-apache
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -1606,7 +1743,7 @@ jobs:
             # cat-after-write pattern.
             {
             # Marker for the log artifact's first line.
-            echo "=== integration-apache run @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-apache run @ $(date -u +%FT%TZ) ==="
             echo "=== host: $(uname -a) ==="
             echo
 
@@ -1614,7 +1751,7 @@ jobs:
             # Task 4.1 — podman install + Linux compat layer enable.
             # ----------------------------------------------------------------
             # `docker.io/library/httpd:latest` (used by
-            # tests/integration-freebsd/apache/run-apache.sh step 3)
+            # tests/integration-freebsd/apache/integration.sh step 3)
             # is a Linux OCI image. FreeBSD's sysutils/podman pulls
             # Linux images under the Linux compatibility layer, which
             # must be enabled BEFORE the first `podman run --os=linux`.
@@ -1630,7 +1767,7 @@ jobs:
             # (DECISIONS §"A.2" "Linux compat may need a reboot we
             # can't do in-CI"). We log the failure to smoke-log.txt
             # but do not abort: the native FreeBSD run-smoke.sh case
-            # doesn't need Linux compat, and the run-apache.sh
+            # doesn't need Linux compat, and the integration.sh
             # httpd pull may still succeed on a VM where linux.ko was
             # already loaded by the vmactions image's first-boot
             # rc sequence.
@@ -1643,21 +1780,21 @@ jobs:
             # from FreeBSD's pkg mirror; expect ~30-60s on first run.
             # ----------------------------------------------------------------
             pkg install -y sysutils/podman || \
-                echo "[integration-apache] pkg install podman FAILED"
+                echo "[fbsd-integration-apache] pkg install podman FAILED"
             podman --version || \
-                echo "[integration-apache] podman --version FAILED"
+                echo "[fbsd-integration-apache] podman --version FAILED"
             sysrc linux_enable=YES || \
-                echo "[integration-apache] sysrc linux_enable=YES FAILED"
+                echo "[fbsd-integration-apache] sysrc linux_enable=YES FAILED"
             # service linux start: best-effort, log failure but do not
             # abort. The 088 §B.3 spike step 2 has the same
             # disposition. A red run here is a finding for the
             # triage-apache-1.md (when it gets written), not a
             # flow-blocker (DECISIONS.md §6).
             if service linux start; then
-                echo "[integration-apache] service linux start: ok"
+                echo "[fbsd-integration-apache] service linux start: ok"
             else
-                echo "[integration-apache] WARN: service linux start failed" >&2
-                echo "[integration-apache] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
+                echo "[fbsd-integration-apache] WARN: service linux start failed" >&2
+                echo "[fbsd-integration-apache] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
             fi
 
             # ----------------------------------------------------------------
@@ -1685,7 +1822,7 @@ jobs:
                 /usr/local/etc/containers/storage.conf
             # Reaffirm effective driver — should now print "vfs".
             podman info --format '{{.Store.GraphDriverName}}' || \
-                echo "[integration-apache] post-storage-sed podman info FAILED"
+                echo "[fbsd-integration-apache] post-storage-sed podman info FAILED"
 
             # ----------------------------------------------------------------
             # Task 2.3 — pf kernel module setup.
@@ -1719,7 +1856,7 @@ jobs:
             # second CI run.
             ifconfig -l
             cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf || \
-                echo "[integration-apache] pf.conf.sample copy FAILED"
+                echo "[fbsd-integration-apache] pf.conf.sample copy FAILED"
             # sed -i '' is the in-place edit syntax on FreeBSD (BSD
             # sed). v4egress_if / v6egress_if are top-level shell
             # assignments in the sample; substitute both to vtnet0.
@@ -1727,9 +1864,9 @@ jobs:
                 -e 's/^v4egress_if=.*/v4egress_if="vtnet0"/' \
                 -e 's/^v6egress_if=.*/v6egress_if="vtnet0"/' \
                 /etc/pf.conf || \
-                echo "[integration-apache] pf.conf interface substitution FAILED"
+                echo "[fbsd-integration-apache] pf.conf interface substitution FAILED"
             kldload pf || \
-                echo "[integration-apache] kldload pf FAILED (already loaded?)"
+                echo "[fbsd-integration-apache] kldload pf FAILED (already loaded?)"
             # net.pf.filter_local=1 enables host↔container traffic
             # through pf. CNI bridge ipMasq uses pf for the SNAT; if
             # filter_local=0, host-sent packets are dropped. This is
@@ -1737,12 +1874,12 @@ jobs:
             sysctl net.pf.filter_local=1 || true
             sysrc pf_enable=YES
             service pf start || \
-                echo "[integration-apache] service pf start FAILED"
+                echo "[fbsd-integration-apache] service pf start FAILED"
             # Restart to make filter_local=1 take effect on the running
             # service (sysctl alone does not re-evaluate an already-
             # running pf ruleset).
             service pf restart || \
-                echo "[integration-apache] service pf restart FAILED"
+                echo "[fbsd-integration-apache] service pf restart FAILED"
 
             # ----------------------------------------------------------------
             # Task 2.4 — native go build of arxsentinel.
@@ -1758,12 +1895,12 @@ jobs:
             #
             # No scoped TMPDIR here: native `go build` does not need
             # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # run-apache.sh (P5.4) per Flow 088 DECISIONS §"Decision
+            # integration.sh (P5.4) per Flow 088 DECISIONS §"Decision
             # G.1e" (exported TMPDIR poisons Go module-mode detection
             # for any go build that runs after it).
             # ----------------------------------------------------------------
             pkg install -y go || \
-                echo "[integration-apache] pkg install go FAILED"
+                echo "[fbsd-integration-apache] pkg install go FAILED"
             cd "$GITHUB_WORKSPACE"
             VERSION=$(cat VERSION 2>/dev/null || echo "dev")
             CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
@@ -1771,21 +1908,21 @@ jobs:
                     -ldflags="-s -w -X main.version=${VERSION}" \
                     -o ./arxsentinel \
                     ./cmd/arxsentinel || \
-                echo "[integration-apache] arxsentinel build FAILED"
+                echo "[fbsd-integration-apache] arxsentinel build FAILED"
             # version-check: --version is a supported flag
             # (cmd/arxsentinel/main.go: flag.Bool("version", ...)).
             ./arxsentinel --version || \
-                echo "[integration-apache] arxsentinel --version FAILED"
+                echo "[fbsd-integration-apache] arxsentinel --version FAILED"
 
             # Marker for the log artifact's last line (Phase P5 will
-            # append the run-apache.sh output below this block — kept
+            # append the integration.sh output below this block — kept
             # for the cat-after-write emit point).
             echo
-            echo "=== integration-apache unblock chain end @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-apache unblock chain end @ $(date -u +%FT%TZ) ==="
             echo
 
             # ----------------------------------------------------------------
-            # P5.4 — invoke run-apache.sh with SCOPED TMPDIR (per
+            # P5.4 — invoke integration.sh with SCOPED TMPDIR (per
             # Flow 088 Decision G.1e).
             # ----------------------------------------------------------------
             # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
@@ -1803,27 +1940,47 @@ jobs:
             # fix. We invoke the same pattern verbatim here.
             #
             # Why this matters even though the go build runs BEFORE
-            # the run-apache.sh invocation: defensively, the scoped
+            # the integration.sh invocation: defensively, the scoped
             # form also protects any future step added below this
-            # point (e.g. a follow-up integration-apache iteration
+            # point (e.g. a follow-up fbsd-integration-apache iteration
             # adding a `go test` after the smoke). 088 G.1e says
             # "any future VM-action job that mixes go build with a
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The run-apache.sh exit code is recorded but not
+            # The integration.sh exit code is recorded but not
             # short-circuited to a workflow failure: the job runs
             # with continue-on-error: true (DECISIONS §6 research-
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
-            echo "[integration-apache] invoking run-apache.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/apache/run-apache.sh \
-                && echo "[integration-apache] run-apache.sh exit: 0 (3 assertions green)" \
-                || echo "[integration-apache] run-apache.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            # CRITICAL (Flow 092 G18/G19 — see nginx job's postmortem
+            # comment above and DECISIONS.md): the ORIGINAL
+            # `cmd && echo ok || echo fail` form always exits 0 regardless
+            # of integration.sh's real result (the last executed command
+            # is always an echo). Fixed the same way as nginx (live runs
+            # 28586137901/28586481760/28586828621 root-caused this):
+            # `cmd || SCRIPT_EXIT=$?` keeps the failing command inside an
+            # or-list, which vmactions/freebsd-vm's silently-prepended
+            # `set -eu` exempts from its abort-on-error rule — a bare
+            # `cmd; SCRIPT_EXIT=$?` would abort the whole remaining script
+            # on failure, before SCRIPT_EXIT is ever set. This job still
+            # has `continue-on-error: true` (see the job header above) so
+            # a real failure here does not currently block the workflow,
+            # but a red run will now show correctly in the job status
+            # once continue-on-error is dropped, instead of showing a
+            # false green like every backend did before this fix.
+            echo "[fbsd-integration-apache] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            SCRIPT_EXIT=0
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/apache/integration.sh || SCRIPT_EXIT=$?
+            if [ "$SCRIPT_EXIT" -eq 0 ]; then
+                echo "[fbsd-integration-apache] integration.sh exit: 0 (all assertions green)"
+            else
+                echo "[fbsd-integration-apache] integration.sh exit: $SCRIPT_EXIT (assertion failure — see log above; DECISIONS §6 — research-grade, not yet a flow-blocker while continue-on-error is set)"
+            fi
 
             echo
-            echo "=== integration-apache run-apache.sh end @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-apache integration.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
@@ -1840,7 +1997,7 @@ jobs:
             # ----------------------------------------------------------------
             # P5.4 — inline ::group:: + cat for the threat log and
             # the apache access log. Both are also uploaded as
-            # artifacts by the `Upload integration-apache artifacts`
+            # artifacts by the `Upload fbsd-integration-apache artifacts`
             # step below (P5.4 — if: always() + if-no-files-found:
             # warn so red runs still produce the artifact for
             # triage). The ::group:: blocks here are for INLINE
@@ -1856,25 +2013,29 @@ jobs:
             # — the cat commands are best-effort, missing files just
             # print an ls-not-found message inline, no abort).
             # ----------------------------------------------------------------
-            echo "::group::threats-apache.log (also in uploaded artifact integration-apache/threats-apache.log.smoke)"
+            echo "::group::threats-apache.log (also in uploaded artifact fbsd-integration-apache/threats-apache.log.smoke)"
             if [ -s "$GITHUB_WORKSPACE/threats-apache.log.smoke" ]; then
                 cat "$GITHUB_WORKSPACE/threats-apache.log.smoke"
             else
-                echo "[integration-apache] threats-apache.log.smoke missing or empty (run-apache.sh likely did not reach the artifact-persist step)"
+                echo "[fbsd-integration-apache] threats-apache.log.smoke missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "threats-apache.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-apache.log.smoke" 2>/dev/null || echo 0) bytes"
 
-            echo "::group::apache access log (also in uploaded artifact integration-apache/apache-access.log)"
+            echo "::group::apache access log (also in uploaded artifact fbsd-integration-apache/apache-access.log)"
             if [ -s "$GITHUB_WORKSPACE/apache-access.log" ]; then
                 cat "$GITHUB_WORKSPACE/apache-access.log"
             else
-                echo "[integration-apache] apache-access.log missing or empty (run-apache.sh likely did not reach the artifact-persist step)"
+                echo "[fbsd-integration-apache] apache-access.log missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "apache-access.log size: $(wc -c < "$GITHUB_WORKSPACE/apache-access.log" 2>/dev/null || echo 0) bytes"
 
-      - name: Upload integration-apache artifacts
+            # Final line of the run: block — propagate integration.sh's
+            # real exit code as THIS STEP's exit code (G19).
+            exit "$SCRIPT_EXIT"
+
+      - name: Upload fbsd-integration-apache artifacts
         # smoke-log.txt: the full VM run log (P5.4)
         # threats-apache.log.smoke: the sentinel threat log (P5.4
         #   copy, mirrored to $GITHUB_WORKSPACE so copyback returns it)
@@ -1885,7 +2046,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: integration-apache
+          name: fbsd-integration-apache
           path: |
             smoke-log.txt
             threats-apache.log.smoke
@@ -1893,41 +2054,88 @@ jobs:
           if-no-files-found: warn
 
   # -------------------------------------------------------------------
-  # integration-litespeed — Flow 091 P6 (DECISIONS §1: litespeed last,
+  # fbsd-integration-litespeed — Flow 091 P6 (DECISIONS §1: litespeed last,
   # highest Linux-emulation risk per 089's Deferred 089.1 prediction;
   # saved for last so its risk doesn't gate the other four).
   #
-  # P6 KEY DESIGN CHOICE — STOCK image, NO custom build, NO
-  # patch-ols-logformat.py:
+  # P6 KEY DESIGN CHOICE — STOCK image for the DIRECT scenario, NO
+  # custom build there:
   #   Per DECISIONS §4 litespeed row + arx-core
   #   pkg/parser/profiles.go:103-117, OLS by default emits Apache CLF
   #   with User-Agent — exactly what the `litespeed` parser profile
-  #   (apacheCLFPattern) expects. The brief explicitly recommends
-  #   this path (the G11-avoidance pattern, see DECISIONS §4 Revised
-  #   + G11): using the stock image avoids the entire class of
-  #   risks G11 enumerates (Go-toolchain / network-in-build-container
-  #   bugs that cost 5 iterations on the caddy backend). This job
-  #   therefore has NO host-build step (no `docker build` before the
-  #   vmactions/freebsd-vm step) and the run-litespeed.sh script
-  #   invokes the stock image with a plain `podman run --os=linux
-  #   docker.io/litespeedtech/openlitespeed:latest` — no build,
-  #   no patched variant, no log-format patch (the patch script
-  #   from tests/integration/dockerfiles/ is for the proxy-chain
-  #   XFF scenario in Deferred 091.1, out of P6 scope).
+  #   (apacheCLFPattern) expects. Using the stock image for the DIRECT
+  #   scenario avoids the entire class of risks G11 enumerates
+  #   (Go-toolchain / network-in-build-container bugs that cost 5
+  #   iterations on the caddy backend).
+  #
+  #   Flow 092 Track B (proxy-chain) DOES need a custom image: OLS's
+  #   XFF-trust mechanism (per Deferred 091.1's original note and the
+  #   battle suite's `tests/integration/dockerfiles/
+  #   LiteSpeedBackend.Dockerfile` + `patch-ols-logformat.py`) is a
+  #   Dockerfile-time PATCH to `/usr/local/lsws/conf/templates/
+  #   docker.conf` that injects a `logFormat` directive putting
+  #   `%{X-Forwarded-For}i` in the client-IP field position — the
+  #   SAME class of fix as caddy's G21 (XFF-fallback log FORMAT
+  #   STRING, not a runtime-mountable "trust" config directive). This
+  #   flow uses a LOCAL FORK of that Dockerfile+patch (tests/
+  #   integration-freebsd/litespeed/LiteSpeedChain.Dockerfile +
+  #   patch-ols-logformat-chain.py) — the upstream patch's logFormat
+  #   has no trailing Referer/User-Agent fields, which broke this
+  #   flow's UA-based chain assertion (live run 28598033404); the
+  #   fork adds those fields without touching the shared upstream
+  #   file. Requires the host-build + podman-load pattern (Decision 4
+  #   Revised / G11), same as caddy's P2.4 step — see below.
   # -------------------------------------------------------------------
-  integration-litespeed:
-    # Promoted (Task P6.8): continue-on-error dropped after 2 consecutive
-    # green live dispatches (runs 28561678194, 28561845522 — both
-    # "[litespeed] PASS: all 3 assertions green", exit 0) per DECISIONS
-    # section 6's promotion criterion. Final backend of Flow 091 — all
-    # 6 direct-server integration jobs are now in-workflow gating.
-    name: integration-litespeed
+  fbsd-integration-litespeed:
+    # Flow 092 promotion: continue-on-error dropped after 2 consecutive
+    # green live dispatches of the FULLY EXTENDED script (Track A+B):
+    # runs 28599499451, 28599862225 — both "[litespeed] PASS: all
+    # assertions green" (DECISIONS §"Revised: 2026-07-02 — litespeed
+    # promoted, FINAL BACKEND OF FLOW 092"). Three bugs found: G22
+    # (forked Dockerfile+patch to add missing UA/Referer fields), G23
+    # (stray leading quote in patched log output, normalized
+    # defensively), G24 (flaky "poll until non-empty" race under
+    # 105-request attack volume — fixed with size-stability polling).
+    # This was the LAST backend — all 6 now have Track A+B proven.
+    name: fbsd-integration-litespeed
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      # ---------------------------------------------------------------
+      # Flow 092 Track B host build — litespeed-arxsentinel:local.
+      # Same pattern as caddy's P2.4 step (Decision 4 Revised / G11):
+      # build on ubuntu-latest's native Docker (no FreeBSD Linux-emul
+      # surface), save to a tar, let vmactions/freebsd-vm's pre-run
+      # rsync carry it into the VM, `podman load` there is a pure
+      # local import. This image is ONLY used by the chain scenario
+      # (Step 11 of integration.sh) — the direct scenario (Step 3)
+      # still uses the stock docker.io/litespeedtech/openlitespeed
+      # image per the P6 design note above.
+      #
+      # Uses tests/integration-freebsd/litespeed/LiteSpeedChain.
+      # Dockerfile — a FreeBSD-flow-local FORK of the battle suite's
+      # tests/integration/dockerfiles/LiteSpeedBackend.Dockerfile, NOT
+      # the upstream file itself. Live run 28598033404 found the
+      # upstream patch's logFormat has NO trailing Referer/User-Agent
+      # fields, breaking this flow's chain assertion (which, like all
+      # 5 other backends, identifies the sqlmap request by grep'ing
+      # the chain access log for the sqlmap User-Agent string). The
+      # fork's patch-ols-logformat-chain.py adds those trailing
+      # fields; the upstream file is left untouched (unknown blast
+      # radius on the Docker battle suite's own CI if edited).
+      # ---------------------------------------------------------------
+      - name: Build litespeed-arxsentinel image on host (native Docker, no FreeBSD Linux-emul)
+        run: |
+          docker build \
+            -t litespeed-arxsentinel:local \
+            -f tests/integration-freebsd/litespeed/LiteSpeedChain.Dockerfile \
+            tests/integration-freebsd/litespeed/
+          docker save litespeed-arxsentinel:local -o litespeed-arxsentinel.tar
+          ls -l litespeed-arxsentinel.tar
 
       - name: Run litespeed integration smoke inside FreeBSD VM
         uses: vmactions/freebsd-vm@v1.5.0
@@ -1954,7 +2162,7 @@ jobs:
             # cat-after-write pattern.
             {
             # Marker for the log artifact's first line.
-            echo "=== integration-litespeed run @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-litespeed run @ $(date -u +%FT%TZ) ==="
             echo "=== host: $(uname -a) ==="
             echo
 
@@ -1962,7 +2170,7 @@ jobs:
             # Task 4.1 — podman install + Linux compat layer enable.
             # ----------------------------------------------------------------
             # `docker.io/litespeedtech/openlitespeed:latest` (used by
-            # tests/integration-freebsd/litespeed/run-litespeed.sh
+            # tests/integration-freebsd/litespeed/integration.sh
             # step 3) is a Linux OCI image. FreeBSD's sysutils/podman
             # pulls Linux images under the Linux compatibility
             # layer, which must be enabled BEFORE the first
@@ -1978,7 +2186,7 @@ jobs:
             # (DECISIONS §"A.2" "Linux compat may need a reboot we
             # can't do in-CI"). We log the failure to smoke-log.txt
             # but do not abort: the native FreeBSD run-smoke.sh case
-            # doesn't need Linux compat, and the run-litespeed.sh
+            # doesn't need Linux compat, and the integration.sh
             # OLS pull may still succeed on a VM where linux.ko was
             # already loaded by the vmactions image's first-boot
             # rc sequence.
@@ -1991,21 +2199,21 @@ jobs:
             # from FreeBSD's pkg mirror; expect ~30-60s on first run.
             # ----------------------------------------------------------------
             pkg install -y sysutils/podman || \
-                echo "[integration-litespeed] pkg install podman FAILED"
+                echo "[fbsd-integration-litespeed] pkg install podman FAILED"
             podman --version || \
-                echo "[integration-litespeed] podman --version FAILED"
+                echo "[fbsd-integration-litespeed] podman --version FAILED"
             sysrc linux_enable=YES || \
-                echo "[integration-litespeed] sysrc linux_enable=YES FAILED"
+                echo "[fbsd-integration-litespeed] sysrc linux_enable=YES FAILED"
             # service linux start: best-effort, log failure but do not
             # abort. The 088 §B.3 spike step 2 has the same
             # disposition. A red run here is a finding for the
             # triage-litespeed-1.md (when it gets written), not a
             # flow-blocker (DECISIONS.md §6).
             if service linux start; then
-                echo "[integration-litespeed] service linux start: ok"
+                echo "[fbsd-integration-litespeed] service linux start: ok"
             else
-                echo "[integration-litespeed] WARN: service linux start failed" >&2
-                echo "[integration-litespeed] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
+                echo "[fbsd-integration-litespeed] WARN: service linux start failed" >&2
+                echo "[fbsd-integration-litespeed] WARN: Linux emul may need a reboot the VM can't do; podman run --os=linux may fail"
             fi
 
             # ----------------------------------------------------------------
@@ -2033,7 +2241,7 @@ jobs:
                 /usr/local/etc/containers/storage.conf
             # Reaffirm effective driver — should now print "vfs".
             podman info --format '{{.Store.GraphDriverName}}' || \
-                echo "[integration-litespeed] post-storage-sed podman info FAILED"
+                echo "[fbsd-integration-litespeed] post-storage-sed podman info FAILED"
 
             # ----------------------------------------------------------------
             # Task 2.3 — pf kernel module setup.
@@ -2067,7 +2275,7 @@ jobs:
             # second CI run.
             ifconfig -l
             cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf || \
-                echo "[integration-litespeed] pf.conf.sample copy FAILED"
+                echo "[fbsd-integration-litespeed] pf.conf.sample copy FAILED"
             # sed -i '' is the in-place edit syntax on FreeBSD (BSD
             # sed). v4egress_if / v6egress_if are top-level shell
             # assignments in the sample; substitute both to vtnet0.
@@ -2075,9 +2283,9 @@ jobs:
                 -e 's/^v4egress_if=.*/v4egress_if="vtnet0"/' \
                 -e 's/^v6egress_if=.*/v6egress_if="vtnet0"/' \
                 /etc/pf.conf || \
-                echo "[integration-litespeed] pf.conf interface substitution FAILED"
+                echo "[fbsd-integration-litespeed] pf.conf interface substitution FAILED"
             kldload pf || \
-                echo "[integration-litespeed] kldload pf FAILED (already loaded?)"
+                echo "[fbsd-integration-litespeed] kldload pf FAILED (already loaded?)"
             # net.pf.filter_local=1 enables host↔container traffic
             # through pf. CNI bridge ipMasq uses pf for the SNAT; if
             # filter_local=0, host-sent packets are dropped. This is
@@ -2085,12 +2293,12 @@ jobs:
             sysctl net.pf.filter_local=1 || true
             sysrc pf_enable=YES
             service pf start || \
-                echo "[integration-litespeed] service pf start FAILED"
+                echo "[fbsd-integration-litespeed] service pf start FAILED"
             # Restart to make filter_local=1 take effect on the running
             # service (sysctl alone does not re-evaluate an already-
             # running pf ruleset).
             service pf restart || \
-                echo "[integration-litespeed] service pf restart FAILED"
+                echo "[fbsd-integration-litespeed] service pf restart FAILED"
 
             # ----------------------------------------------------------------
             # Task 2.4 — native go build of arxsentinel.
@@ -2106,12 +2314,12 @@ jobs:
             #
             # No scoped TMPDIR here: native `go build` does not need
             # TMPDIR for any step. Scoped TMPDIR is reserved for
-            # run-litespeed.sh (P6.4) per Flow 088 DECISIONS §"Decision
+            # integration.sh (P6.4) per Flow 088 DECISIONS §"Decision
             # G.1e" (exported TMPDIR poisons Go module-mode detection
             # for any go build that runs after it).
             # ----------------------------------------------------------------
             pkg install -y go || \
-                echo "[integration-litespeed] pkg install go FAILED"
+                echo "[fbsd-integration-litespeed] pkg install go FAILED"
             cd "$GITHUB_WORKSPACE"
             VERSION=$(cat VERSION 2>/dev/null || echo "dev")
             CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
@@ -2119,21 +2327,21 @@ jobs:
                     -ldflags="-s -w -X main.version=${VERSION}" \
                     -o ./arxsentinel \
                     ./cmd/arxsentinel || \
-                echo "[integration-litespeed] arxsentinel build FAILED"
+                echo "[fbsd-integration-litespeed] arxsentinel build FAILED"
             # version-check: --version is a supported flag
             # (cmd/arxsentinel/main.go: flag.Bool("version", ...)).
             ./arxsentinel --version || \
-                echo "[integration-litespeed] arxsentinel --version FAILED"
+                echo "[fbsd-integration-litespeed] arxsentinel --version FAILED"
 
             # Marker for the log artifact's last line (Phase P6 will
-            # append the run-litespeed.sh output below this block —
+            # append the integration.sh output below this block —
             # kept for the cat-after-write emit point).
             echo
-            echo "=== integration-litespeed unblock chain end @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-litespeed unblock chain end @ $(date -u +%FT%TZ) ==="
             echo
 
             # ----------------------------------------------------------------
-            # P6.4 — invoke run-litespeed.sh with SCOPED TMPDIR (per
+            # P6.4 — invoke integration.sh with SCOPED TMPDIR (per
             # Flow 088 Decision G.1e).
             # ----------------------------------------------------------------
             # CRITICAL: `TMPDIR="$GITHUB_WORKSPACE"` is a per-command
@@ -2151,27 +2359,47 @@ jobs:
             # fix. We invoke the same pattern verbatim here.
             #
             # Why this matters even though the go build runs BEFORE
-            # the run-litespeed.sh invocation: defensively, the scoped
+            # the integration.sh invocation: defensively, the scoped
             # form also protects any future step added below this
-            # point (e.g. a follow-up integration-litespeed iteration
+            # point (e.g. a follow-up fbsd-integration-litespeed iteration
             # adding a `go test` after the smoke). 088 G.1e says
             # "any future VM-action job that mixes go build with a
             # script using TMPDIR MUST scope TMPDIR per-command,
             # not export it" — we obey unconditionally.
             #
-            # The run-litespeed.sh exit code is recorded but not
+            # The integration.sh exit code is recorded but not
             # short-circuited to a workflow failure: the job runs
             # with continue-on-error: true (DECISIONS §6 research-
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
-            echo "[integration-litespeed] invoking run-litespeed.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/litespeed/run-litespeed.sh \
-                && echo "[integration-litespeed] run-litespeed.sh exit: 0 (3 assertions green)" \
-                || echo "[integration-litespeed] run-litespeed.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            # CRITICAL (Flow 092 G18/G19 — see nginx job's postmortem
+            # comment above and DECISIONS.md): the ORIGINAL
+            # `cmd && echo ok || echo fail` form always exits 0 regardless
+            # of integration.sh's real result (the last executed command
+            # is always an echo). Fixed the same way as nginx (live runs
+            # 28586137901/28586481760/28586828621 root-caused this):
+            # `cmd || SCRIPT_EXIT=$?` keeps the failing command inside an
+            # or-list, which vmactions/freebsd-vm's silently-prepended
+            # `set -eu` exempts from its abort-on-error rule — a bare
+            # `cmd; SCRIPT_EXIT=$?` would abort the whole remaining script
+            # on failure, before SCRIPT_EXIT is ever set. This job still
+            # has `continue-on-error: true` (see the job header above) so
+            # a real failure here does not currently block the workflow,
+            # but a red run will now show correctly in the job status
+            # once continue-on-error is dropped, instead of showing a
+            # false green like every backend did before this fix.
+            echo "[fbsd-integration-litespeed] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
+            SCRIPT_EXIT=0
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/litespeed/integration.sh || SCRIPT_EXIT=$?
+            if [ "$SCRIPT_EXIT" -eq 0 ]; then
+                echo "[fbsd-integration-litespeed] integration.sh exit: 0 (all assertions green)"
+            else
+                echo "[fbsd-integration-litespeed] integration.sh exit: $SCRIPT_EXIT (assertion failure — see log above; DECISIONS §6 — research-grade, not yet a flow-blocker while continue-on-error is set)"
+            fi
 
             echo
-            echo "=== integration-litespeed run-litespeed.sh end @ $(date -u +%FT%TZ) ==="
+            echo "=== fbsd-integration-litespeed integration.sh end @ $(date -u +%FT%TZ) ==="
             } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
 
             # Flow 088 TD-13 cat-after-write pattern: re-emit the log
@@ -2188,7 +2416,7 @@ jobs:
             # ----------------------------------------------------------------
             # P6.4 — inline ::group:: + cat for the threat log and
             # the litespeed access log. Both are also uploaded as
-            # artifacts by the `Upload integration-litespeed
+            # artifacts by the `Upload fbsd-integration-litespeed
             # artifacts` step below (P6.4 — if: always() +
             # if-no-files-found: warn so red runs still produce the
             # artifact for triage). The ::group:: blocks here are for
@@ -2204,25 +2432,29 @@ jobs:
             # — the cat commands are best-effort, missing files just
             # print an ls-not-found message inline, no abort).
             # ----------------------------------------------------------------
-            echo "::group::threats-litespeed.log (also in uploaded artifact integration-litespeed/threats-litespeed.log.smoke)"
+            echo "::group::threats-litespeed.log (also in uploaded artifact fbsd-integration-litespeed/threats-litespeed.log.smoke)"
             if [ -s "$GITHUB_WORKSPACE/threats-litespeed.log.smoke" ]; then
                 cat "$GITHUB_WORKSPACE/threats-litespeed.log.smoke"
             else
-                echo "[integration-litespeed] threats-litespeed.log.smoke missing or empty (run-litespeed.sh likely did not reach the artifact-persist step)"
+                echo "[fbsd-integration-litespeed] threats-litespeed.log.smoke missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "threats-litespeed.log.smoke size: $(wc -c < "$GITHUB_WORKSPACE/threats-litespeed.log.smoke" 2>/dev/null || echo 0) bytes"
 
-            echo "::group::litespeed access log (also in uploaded artifact integration-litespeed/litespeed-access.log)"
+            echo "::group::litespeed access log (also in uploaded artifact fbsd-integration-litespeed/litespeed-access.log)"
             if [ -s "$GITHUB_WORKSPACE/litespeed-access.log" ]; then
                 cat "$GITHUB_WORKSPACE/litespeed-access.log"
             else
-                echo "[integration-litespeed] litespeed-access.log missing or empty (run-litespeed.sh likely did not reach the artifact-persist step)"
+                echo "[fbsd-integration-litespeed] litespeed-access.log missing or empty (integration.sh likely did not reach the artifact-persist step)"
             fi
             echo "::endgroup::"
             echo "litespeed-access.log size: $(wc -c < "$GITHUB_WORKSPACE/litespeed-access.log" 2>/dev/null || echo 0) bytes"
 
-      - name: Upload integration-litespeed artifacts
+            # Final line of the run: block — propagate integration.sh's
+            # real exit code as THIS STEP's exit code (G19).
+            exit "$SCRIPT_EXIT"
+
+      - name: Upload fbsd-integration-litespeed artifacts
         # smoke-log.txt: the full VM run log (P6.4)
         # threats-litespeed.log.smoke: the sentinel threat log (P6.4
         #   copy, mirrored to $GITHUB_WORKSPACE so copyback returns it)
@@ -2233,7 +2465,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: integration-litespeed
+          name: fbsd-integration-litespeed
           path: |
             smoke-log.txt
             threats-litespeed.log.smoke
