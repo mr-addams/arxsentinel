@@ -37,11 +37,13 @@ jobs:
   # writer — see below), so it gets its own upstream job rather than being
   # duplicated in both.
   #
-  # `go test -race` (defense-in-depth re-run of the full suite immediately
-  # before tagging, on top of the `integration` reusable-workflow's own
-  # tests) stays here, ahead of tag creation — a regression caught here
-  # still blocks the tag from ever being created, same guarantee as before
-  # the split.
+  # No `go test` step here (dropped 2026-07-02): it duplicated
+  # `integration.yml:88`'s own `go test -race -count=1 ./...` verbatim —
+  # `dev-tag` checks out the identical commit that `integration` (a hard
+  # `needs:` prerequisite) already tested, so a second run added ~1 minute
+  # per dev-release with zero additional safety. Pre-commit's local hook
+  # (`scripts/hooks/pre-commit`) runs the same command too, but that's a
+  # separate, bypassable, non-CI safety net — irrelevant to this job.
   dev-tag:
     name: Calculate and create dev tag
     outputs:
@@ -61,18 +63,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
-      - name: Run tests
-        # -race is mandatory under the Transformation Safety Protocol:
-        # the telemetry pipeline moves concurrent code, and silent data races
-        # would corrupt scoring state across module boundaries.
-        # -count=1 disables Go's test-result cache so a regression cannot be masked.
-        run: go test -race -count=1 ./...
 
       - name: Configure git
         run: |
@@ -221,12 +211,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Go (host cache; VM installs its own go via pkg)
-        # Same host-cache-then-VM-installs-go pattern as 088 freebsd-ci.yml
-        # build-test job — go-version-file pins both to the same version.
+      - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+
+      - name: Cross-compile FreeBSD binaries (host, no emulation)
+        # Added 2026-07-02: previously this build ran natively INSIDE the
+        # FreeBSD VM (088's original design — see the VM script's own
+        # comment below for why native-in-VM was chosen in the first
+        # place). Live run 28621885498 proved why that's costly for
+        # arm64 specifically: the amd64 leg finished in 3m05s, the arm64
+        # leg took 17m03s — vmactions/freebsd-vm's own docs warn of a
+        # "significant performance penalty ... particularly with ARM
+        # runners" for QEMU-emulated aarch64 guests, and `go build` was
+        # the single most CPU-heavy step running inside that emulation.
+        # Go's cross-compiler needs no emulation at all (GOOS=freebsd
+        # just targets a different ELF/ABI, same as goreleaser's own
+        # freebsd/{386,amd64,arm,arm64} tarball builds), so building here
+        # on the plain ubuntu-latest host is seconds instead of minutes.
+        #
+        # Deliberately NOT reusing goreleaser's already-built dev-tag
+        # release assets instead: that would force this job to wait on
+        # `dev-release` publishing first, undoing the same-day split that
+        # made dev-release and freebsd-container-image parallel siblings
+        # (see the dev-tag job comment above). Rebuilding here with an
+        # identical `go build` invocation is cheap and keeps the two jobs
+        # independent.
+        #
+        # Output goes under $GITHUB_WORKSPACE (not /tmp) because
+        # vmactions/freebsd-vm mounts the entire workspace tree into the
+        # VM at the same path before `run:` executes (confirmed via
+        # vmactions/freebsd-vm's own docs: "All the source code tree in
+        # the Host machine are mounted into the VM" — rsync/scp/sshfs/nfs
+        # sync methods all honor this) — a plain /tmp/ file on the host
+        # would never appear inside the VM.
+        run: |
+          mkdir -p .ci-freebsd-build
+          CGO_ENABLED=0 GOOS=freebsd GOARCH="${{ matrix.goarch }}" \
+              go build -o .ci-freebsd-build/arxsentinel ./cmd/arxsentinel
+          CGO_ENABLED=0 GOOS=freebsd GOARCH="${{ matrix.goarch }}" \
+              go build -o .ci-freebsd-build/healthcheck ./cmd/healthcheck || \
+              echo "::notice::cmd/healthcheck build failed — image will skip healthcheck"
+          ls -la .ci-freebsd-build/
 
       - name: Build FreeBSD image and push to ghcr.io
         id: freebsd_image
@@ -275,8 +302,12 @@ jobs:
             # and pf kernel module required for CNI bridge is not loaded by
             # default. Both must be fixed before any `podman build`/`podman run`.
 
-            echo "::group::pkg install podman + go"
-            pkg install -y sysutils/podman go jq
+            echo "::group::pkg install podman"
+            # No `go` here (dropped 2026-07-02): binaries are now
+            # cross-compiled on the Linux host before this VM even boots
+            # (see the "Cross-compile FreeBSD binaries" step above) — this
+            # VM only needs podman to build/push/smoke-test the image.
+            pkg install -y sysutils/podman jq
             echo "::endgroup::"
 
             echo "::group::storage fix (zfs→vfs)"
@@ -308,54 +339,42 @@ jobs:
             sysctl net.pf.filter_local=1
             echo "::endgroup::"
 
-            # ── Build the arxsentinel binary natively in the VM ─────────────────
-            # Same approach as 088 build-test + container-build-freebsd jobs: the
-            # FreeBSD VM has go installed via pkg, and a native build produces
-            # the correct FreeBSD/${GOARCH} binary. Cross-compile from a Linux
-            # host would be possible, but running `go build` native on FreeBSD
-            # verifies the toolchain + product code genuinely work on this
-            # platform (both host CPU architectures, per the matrix above),
-            # not just that they cross-compile.
-            echo "::group::native go build (cmd/arxsentinel + cmd/healthcheck)"
+            # ── Stage the host-cross-compiled binaries ───────────────────────────
+            # Changed 2026-07-02: this used to run `go build` natively
+            # INSIDE the VM (088's original design, kept for a long time
+            # because native-on-FreeBSD felt like the more honest test of
+            # "does the toolchain genuinely work here"). Dropped after live
+            # run 28621885498 showed the real cost: the amd64 leg finished
+            # in 3m05s, arm64 took 17m03s — almost entirely QEMU-emulated
+            # `go build` time. The binaries are now cross-compiled on the
+            # plain Linux host BEFORE this VM even boots (see the
+            # "Cross-compile FreeBSD binaries" step in the job's steps: —
+            # $GITHUB_WORKSPACE/.ci-freebsd-build/), and the workspace sync
+            # vmactions/freebsd-vm already does (same path, host → VM)
+            # makes those files show up here for free. What's lost: this
+            # VM no longer proves the Go toolchain itself compiles cleanly
+            # on FreeBSD — but the FreeBSD integration test suite
+            # (freebsd-integration.yml, this same dev-release run's own
+            # `freebsd-integration-gate` job) already does a real native
+            # `go build` on every one of its 6 backends, so that coverage
+            # isn't actually lost, just moved.
+            echo "::group::stage host-built binaries (cmd/arxsentinel + cmd/healthcheck)"
             cd "$GITHUB_WORKSPACE"
-            # Stage binaries + config into a MINIMAL /tmp/build/ directory
-            # (088's exact pattern), NOT $GITHUB_WORKSPACE. Live run
-            # 28513793247 crashed with "ssh exited with code 134" (SIGABRT)
-            # immediately after a fully successful `podman build .` when the
-            # build context was the full repo checkout ($GITHUB_WORKSPACE,
-            # includes .git/ and the whole source tree - much larger than
-            # 088's 3-file /tmp/build/ context). A same-day dispatch of the
-            # isolated 088 container-build-freebsd job (run 28514538119)
-            # confirmed the identical smoke test succeeds today with the
-            # small-context pattern, ruling out an environment regression -
-            # the large build context was the actual difference.
+            # Stage into a MINIMAL /tmp/build/ directory (088's exact
+            # pattern), NOT $GITHUB_WORKSPACE — live run 28513793247
+            # crashed with "ssh exited with code 134" (SIGABRT) immediately
+            # after a fully successful `podman build .` when the build
+            # context was the full repo checkout (includes .git/ and the
+            # whole source tree — much larger than a 3-file context). This
+            # constraint is about the podman build CONTEXT, unrelated to
+            # where the binaries were compiled, so it still applies.
             mkdir -p /tmp/build
-            # CGO_ENABLED=0 is REQUIRED, not optional: without it, a FreeBSD
-            # pkg go toolchain with a C compiler available may link
-            # dynamically against libc. The Containerfile.freebsd base image
-            # (ghcr.io/freebsd/freebsd-static:14.3) ships NO dynamic linker
-            # or libc - it is a static-binaries-only image (the name says
-            # so). A dynamically-linked binary exec'd there aborts in the
-            # dynamic loader before main() runs - a silent SIGABRT with
-            # ZERO stdout output, exit code 134, in well under a second.
-            # This exact signature was captured via debug instrumentation
-            # (#247) on live run 28516662994: `podman run --version`
-            # returned exit 134 in 0.49s with no output at all. 088's
-            # proven-stable container-build-freebsd job (freebsd-ci.yml)
-            # always set CGO_ENABLED=0 explicitly; this job omitted it -
-            # the actual root cause of every SIGABRT crash in this
-            # investigation (#242-#247 fixed real but secondary bugs along
-            # the way; none of them addressed this).
-            CGO_ENABLED=0 GOOS=freebsd GOARCH="${GOARCH}" \
-                go build -o /tmp/build/arxsentinel ./cmd/arxsentinel
-            # healthcheck binary is needed by the Containerfile.freebsd (088
-            # pattern: COPY both into the final-stage image). MUST be named
-            # exactly "healthcheck" - Containerfile.freebsd's
-            # "COPY --chmod=755 healthcheck /healthcheck" line references
-            # this literal filename.
-            CGO_ENABLED=0 GOOS=freebsd GOARCH="${GOARCH}" \
-                go build -o /tmp/build/healthcheck ./cmd/healthcheck || \
-                echo "::notice::cmd/healthcheck build failed — image will skip healthcheck"
+            cp .ci-freebsd-build/arxsentinel /tmp/build/arxsentinel
+            if [ -f .ci-freebsd-build/healthcheck ]; then
+              cp .ci-freebsd-build/healthcheck /tmp/build/healthcheck
+            else
+              echo "::notice::cmd/healthcheck build failed on host — image will skip healthcheck"
+            fi
             ls -la /tmp/build/
             echo "::endgroup::"
 
