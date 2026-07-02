@@ -136,3 +136,36 @@ metrics:
 output:
   threat_log: output/threats-traefik.log
   operational_log: sentinel-traefik.log
+
+# blocklist: added per Flow 092 Task A2 / Decision 7 (close the
+# Flow 091 Decision 9 gap — assert blocklist automaton actually
+# loaded patterns from upstream, mirroring tests/integration/
+# verify.sh:109 assert_blocklist_loaded). Verbatim port of the
+# sentinel-caddy.yaml blocklist block (lines 146-153) per Flow
+# 092 Decision 4 (copy-then-adapt, no per-backend divergence
+# unless functionally required): the parser contract is identical
+# between FreeBSD-native and battle binaries, and the upstream
+# URL is the same mitchellkrogza bad-user-agents list the battle
+# suite + run.sh:70 already use.
+#
+# Why direct upstream fetch (https://raw.githubusercontent.com/...)
+# and NOT http://localhost:8090/... as in the battle suite: the
+# FreeBSD job has no dedicated blocklist-server container (per
+# the sentinel-caddy.yaml WHY-comment at the same block, carried
+# here). GH runner image already has internet access for the
+# podman pull of traefik:latest and curlimages/curl in Steps 3 + 6,
+# so it has the connectivity this fetch needs.
+#
+# Why storage: "" (in-memory only, no on-disk persistence): the
+# FreeBSD sentinel is a per-job smoke instance — the VM is
+# destroyed on job exit, so there is no value in caching the
+# fetched patterns to disk. In-memory only matches the battle
+# suite's exact same value and the smoke's ephemeral lifecycle.
+blocklist:
+  storage: ""
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text
