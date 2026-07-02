@@ -1704,10 +1704,15 @@ jobs:
   #   httpd use the upstream image directly).
   # -------------------------------------------------------------------
   fbsd-integration-apache:
-    # Promoted (Task P5.8): continue-on-error dropped after 2 consecutive
-    # green live dispatches (runs 28559336031, 28559509626 — both
-    # "[apache] PASS: all 3 assertions green", exit 0) per DECISIONS
-    # section 6's promotion criterion.
+    # Direct-scenario promotion (Task P5.8, superseded by Flow 092 below):
+    # continue-on-error dropped after 2 consecutive green live dispatches
+    # (runs 28559336031, 28559509626 — both "[apache] PASS: all 3
+    # assertions green", exit 0) per DECISIONS section 6's promotion
+    # criterion.
+    #
+    # Flow 092: integration.sh now also runs Track A + Track B, both new
+    # and unproven live. RE-ADDING continue-on-error: true per precedent.
+    continue-on-error: true
     name: fbsd-integration-apache
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -2028,6 +2033,10 @@ jobs:
             fi
             echo "::endgroup::"
             echo "apache-access.log size: $(wc -c < "$GITHUB_WORKSPACE/apache-access.log" 2>/dev/null || echo 0) bytes"
+
+            # Final line of the run: block — propagate integration.sh's
+            # real exit code as THIS STEP's exit code (G19).
+            exit "$SCRIPT_EXIT"
 
       - name: Upload fbsd-integration-apache artifacts
         # smoke-log.txt: the full VM run log (P5.4)
