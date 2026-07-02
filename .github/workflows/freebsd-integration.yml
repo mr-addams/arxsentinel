@@ -809,10 +809,30 @@ jobs:
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
+            # CRITICAL (Flow 092 G18/G19 — see nginx job's postmortem
+            # comment above and DECISIONS.md): the ORIGINAL
+            # `cmd && echo ok || echo fail` form always exits 0 regardless
+            # of integration.sh's real result (the last executed command
+            # is always an echo). Fixed the same way as nginx (live runs
+            # 28586137901/28586481760/28586828621 root-caused this):
+            # `cmd || SCRIPT_EXIT=$?` keeps the failing command inside an
+            # or-list, which vmactions/freebsd-vm's silently-prepended
+            # `set -eu` exempts from its abort-on-error rule — a bare
+            # `cmd; SCRIPT_EXIT=$?` would abort the whole remaining script
+            # on failure, before SCRIPT_EXIT is ever set. This job still
+            # has `continue-on-error: true` (see the job header above) so
+            # a real failure here does not currently block the workflow,
+            # but a red run will now show correctly in the job status
+            # once continue-on-error is dropped, instead of showing a
+            # false green like every backend did before this fix.
             echo "[fbsd-integration-caddy] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/caddy/integration.sh \
-                && echo "[fbsd-integration-caddy] integration.sh exit: 0 (3 assertions green)" \
-                || echo "[fbsd-integration-caddy] integration.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            SCRIPT_EXIT=0
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/caddy/integration.sh || SCRIPT_EXIT=$?
+            if [ "$SCRIPT_EXIT" -eq 0 ]; then
+                echo "[fbsd-integration-caddy] integration.sh exit: 0 (all assertions green)"
+            else
+                echo "[fbsd-integration-caddy] integration.sh exit: $SCRIPT_EXIT (assertion failure — see log above; DECISIONS §6 — research-grade, not yet a flow-blocker while continue-on-error is set)"
+            fi
 
             echo
             echo "=== fbsd-integration-caddy integration.sh end @ $(date -u +%FT%TZ) ==="
@@ -1158,10 +1178,30 @@ jobs:
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
+            # CRITICAL (Flow 092 G18/G19 — see nginx job's postmortem
+            # comment above and DECISIONS.md): the ORIGINAL
+            # `cmd && echo ok || echo fail` form always exits 0 regardless
+            # of integration.sh's real result (the last executed command
+            # is always an echo). Fixed the same way as nginx (live runs
+            # 28586137901/28586481760/28586828621 root-caused this):
+            # `cmd || SCRIPT_EXIT=$?` keeps the failing command inside an
+            # or-list, which vmactions/freebsd-vm's silently-prepended
+            # `set -eu` exempts from its abort-on-error rule — a bare
+            # `cmd; SCRIPT_EXIT=$?` would abort the whole remaining script
+            # on failure, before SCRIPT_EXIT is ever set. This job still
+            # has `continue-on-error: true` (see the job header above) so
+            # a real failure here does not currently block the workflow,
+            # but a red run will now show correctly in the job status
+            # once continue-on-error is dropped, instead of showing a
+            # false green like every backend did before this fix.
             echo "[fbsd-integration-traefik] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/traefik/integration.sh \
-                && echo "[fbsd-integration-traefik] integration.sh exit: 0 (3 assertions green)" \
-                || echo "[fbsd-integration-traefik] integration.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            SCRIPT_EXIT=0
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/traefik/integration.sh || SCRIPT_EXIT=$?
+            if [ "$SCRIPT_EXIT" -eq 0 ]; then
+                echo "[fbsd-integration-traefik] integration.sh exit: 0 (all assertions green)"
+            else
+                echo "[fbsd-integration-traefik] integration.sh exit: $SCRIPT_EXIT (assertion failure — see log above; DECISIONS §6 — research-grade, not yet a flow-blocker while continue-on-error is set)"
+            fi
 
             echo
             echo "=== fbsd-integration-traefik integration.sh end @ $(date -u +%FT%TZ) ==="
@@ -1512,10 +1552,30 @@ jobs:
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
+            # CRITICAL (Flow 092 G18/G19 — see nginx job's postmortem
+            # comment above and DECISIONS.md): the ORIGINAL
+            # `cmd && echo ok || echo fail` form always exits 0 regardless
+            # of integration.sh's real result (the last executed command
+            # is always an echo). Fixed the same way as nginx (live runs
+            # 28586137901/28586481760/28586828621 root-caused this):
+            # `cmd || SCRIPT_EXIT=$?` keeps the failing command inside an
+            # or-list, which vmactions/freebsd-vm's silently-prepended
+            # `set -eu` exempts from its abort-on-error rule — a bare
+            # `cmd; SCRIPT_EXIT=$?` would abort the whole remaining script
+            # on failure, before SCRIPT_EXIT is ever set. This job still
+            # has `continue-on-error: true` (see the job header above) so
+            # a real failure here does not currently block the workflow,
+            # but a red run will now show correctly in the job status
+            # once continue-on-error is dropped, instead of showing a
+            # false green like every backend did before this fix.
             echo "[fbsd-integration-haproxy] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/haproxy/integration.sh \
-                && echo "[fbsd-integration-haproxy] integration.sh exit: 0 (3 assertions green)" \
-                || echo "[fbsd-integration-haproxy] integration.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            SCRIPT_EXIT=0
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/haproxy/integration.sh || SCRIPT_EXIT=$?
+            if [ "$SCRIPT_EXIT" -eq 0 ]; then
+                echo "[fbsd-integration-haproxy] integration.sh exit: 0 (all assertions green)"
+            else
+                echo "[fbsd-integration-haproxy] integration.sh exit: $SCRIPT_EXIT (assertion failure — see log above; DECISIONS §6 — research-grade, not yet a flow-blocker while continue-on-error is set)"
+            fi
 
             echo
             echo "=== fbsd-integration-haproxy integration.sh end @ $(date -u +%FT%TZ) ==="
@@ -1869,10 +1929,30 @@ jobs:
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
+            # CRITICAL (Flow 092 G18/G19 — see nginx job's postmortem
+            # comment above and DECISIONS.md): the ORIGINAL
+            # `cmd && echo ok || echo fail` form always exits 0 regardless
+            # of integration.sh's real result (the last executed command
+            # is always an echo). Fixed the same way as nginx (live runs
+            # 28586137901/28586481760/28586828621 root-caused this):
+            # `cmd || SCRIPT_EXIT=$?` keeps the failing command inside an
+            # or-list, which vmactions/freebsd-vm's silently-prepended
+            # `set -eu` exempts from its abort-on-error rule — a bare
+            # `cmd; SCRIPT_EXIT=$?` would abort the whole remaining script
+            # on failure, before SCRIPT_EXIT is ever set. This job still
+            # has `continue-on-error: true` (see the job header above) so
+            # a real failure here does not currently block the workflow,
+            # but a red run will now show correctly in the job status
+            # once continue-on-error is dropped, instead of showing a
+            # false green like every backend did before this fix.
             echo "[fbsd-integration-apache] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/apache/integration.sh \
-                && echo "[fbsd-integration-apache] integration.sh exit: 0 (3 assertions green)" \
-                || echo "[fbsd-integration-apache] integration.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            SCRIPT_EXIT=0
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/apache/integration.sh || SCRIPT_EXIT=$?
+            if [ "$SCRIPT_EXIT" -eq 0 ]; then
+                echo "[fbsd-integration-apache] integration.sh exit: 0 (all assertions green)"
+            else
+                echo "[fbsd-integration-apache] integration.sh exit: $SCRIPT_EXIT (assertion failure — see log above; DECISIONS §6 — research-grade, not yet a flow-blocker while continue-on-error is set)"
+            fi
 
             echo
             echo "=== fbsd-integration-apache integration.sh end @ $(date -u +%FT%TZ) ==="
@@ -2217,10 +2297,30 @@ jobs:
             # grade). A red run is a recorded finding in the
             # downloadable smoke-log.txt, not a flow-blocker.
             # ----------------------------------------------------------------
+            # CRITICAL (Flow 092 G18/G19 — see nginx job's postmortem
+            # comment above and DECISIONS.md): the ORIGINAL
+            # `cmd && echo ok || echo fail` form always exits 0 regardless
+            # of integration.sh's real result (the last executed command
+            # is always an echo). Fixed the same way as nginx (live runs
+            # 28586137901/28586481760/28586828621 root-caused this):
+            # `cmd || SCRIPT_EXIT=$?` keeps the failing command inside an
+            # or-list, which vmactions/freebsd-vm's silently-prepended
+            # `set -eu` exempts from its abort-on-error rule — a bare
+            # `cmd; SCRIPT_EXIT=$?` would abort the whole remaining script
+            # on failure, before SCRIPT_EXIT is ever set. This job still
+            # has `continue-on-error: true` (see the job header above) so
+            # a real failure here does not currently block the workflow,
+            # but a red run will now show correctly in the job status
+            # once continue-on-error is dropped, instead of showing a
+            # false green like every backend did before this fix.
             echo "[fbsd-integration-litespeed] invoking integration.sh with scoped TMPDIR=\$GITHUB_WORKSPACE"
-            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/litespeed/integration.sh \
-                && echo "[fbsd-integration-litespeed] integration.sh exit: 0 (3 assertions green)" \
-                || echo "[fbsd-integration-litespeed] integration.sh exit: non-zero (recorded in smoke-log; DECISIONS §6 — research-grade, not a flow-blocker)"
+            SCRIPT_EXIT=0
+            TMPDIR="$GITHUB_WORKSPACE" sh tests/integration-freebsd/litespeed/integration.sh || SCRIPT_EXIT=$?
+            if [ "$SCRIPT_EXIT" -eq 0 ]; then
+                echo "[fbsd-integration-litespeed] integration.sh exit: 0 (all assertions green)"
+            else
+                echo "[fbsd-integration-litespeed] integration.sh exit: $SCRIPT_EXIT (assertion failure — see log above; DECISIONS §6 — research-grade, not yet a flow-blocker while continue-on-error is set)"
+            fi
 
             echo
             echo "=== fbsd-integration-litespeed integration.sh end @ $(date -u +%FT%TZ) ==="
