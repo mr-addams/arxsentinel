@@ -113,3 +113,41 @@ metrics:
 output:
   threat_log: output/threats-caddy.log
   operational_log: sentinel-caddy.log
+
+# blocklist: added per Flow 092 Task A1 / Decision 7 (close the
+# Flow 091 Decision 9 gap — assert blocklist automaton actually
+# loaded patterns from upstream, mirroring tests/integration/
+# verify.sh:109 assert_blocklist_loaded). Same shape as the
+# battle suite's tests/integration/arxsentinel/caddy.yaml
+# blocklist config (when present) and as sentinel-nginx.yaml's
+# blocklist section — parser contract is identical between
+# FreeBSD-native and battle binaries.
+#
+# Why direct upstream fetch (https://raw.githubusercontent.com/...)
+# and NOT http://localhost:8090/... as in the battle suite:
+#   The FreeBSD job has no dedicated blocklist-server container.
+#   Adding one (Docker compose / podman run + bind mount + wait-for-
+#   healthcheck) is engineering work that does not buy us anything
+#   the direct fetch does not already give: the GH runner image
+#   already has internet access for the podman pull of caddy-arxsentinel
+#   and curlimages/curl in Steps 3 + 6, so it has the connectivity
+#   this fetch needs. Direct fetch is also identical to the upstream
+#   URL `tests/integration/run.sh:70` already uses to materialise the
+#   test-ua.txt fixture for scenarios.sh — same source, same format,
+#   no extra failure surface. Carries the sentinel-nginx.yaml
+#   blocklist design verbatim (copy-then-adapt per Flow 091
+#   Decision 2).
+#
+# Why storage: "" (in-memory only, no on-disk persistence):
+#   The FreeBSD sentinel is a per-job smoke instance — the VM is
+#   destroyed on job exit, so there is no value in caching the
+#   fetched patterns to disk. In-memory only matches the battle
+#   suite's exact same value and the smoke's ephemeral lifecycle.
+blocklist:
+  storage: ""
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text
