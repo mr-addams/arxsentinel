@@ -263,7 +263,15 @@ jobs:
       # stable version (pages.yml self-patches version strings via gh release list).
       # Runs AFTER the bump (order matters: if this trigger hiccups, the bump
       # is already committed — the reverse order could lose the bump).
+      #
+      # !cancelled(): a FAILED bump step must not skip this deploy — the
+      # landing page's version comes from `gh release list` inside pages.yml,
+      # not from the bump. On the v2.2.2 release (run 28649765331) the old
+      # in-release-job layout skipped this exact step after the bump failure,
+      # leaving the live landing on v2.2.1 until the bump was completed
+      # manually ~30 minutes later.
       - name: Trigger Pages deploy
+        if: ${{ !cancelled() }}
         run: gh workflow run pages.yml --ref dev
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
