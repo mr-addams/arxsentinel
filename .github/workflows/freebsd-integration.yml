@@ -531,7 +531,7 @@ jobs:
         #   threat log entries with the access-log line that triggered
         #   them during triage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fbsd-integration-litespeed
           path: |
@@ -921,7 +921,7 @@ jobs:
         #   threat log entries with the access-log line that triggered
         #   them during triage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fbsd-integration-nginx
           path: |
@@ -1376,7 +1376,7 @@ jobs:
         #   threat log entries with the access-log line that triggered
         #   them during triage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fbsd-integration-caddy
           path: |
@@ -1760,7 +1760,7 @@ jobs:
         #   threat log entries with the access-log line that triggered
         #   them during triage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fbsd-integration-traefik
           path: |
@@ -2147,7 +2147,7 @@ jobs:
         #   threat log entries with the access-log line that triggered
         #   them during triage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fbsd-integration-haproxy
           path: |
@@ -2538,7 +2538,7 @@ jobs:
         #   threat log entries with the access-log line that triggered
         #   them during triage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fbsd-integration-apache
           path: |
