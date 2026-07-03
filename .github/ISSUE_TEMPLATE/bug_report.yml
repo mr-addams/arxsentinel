@@ -12,7 +12,7 @@ body:
     attributes:
       label: arxsentinel version
       description: Run `arxsentinel --version` or check the release tag
-      placeholder: "v0.1.3"
+      placeholder: "v2.2.2"
     validations:
       required: true
 
@@ -25,6 +25,7 @@ body:
         - Fedora / RHEL / AlmaLinux / Rocky Linux
         - Arch Linux / Manjaro
         - Other Linux
+        - FreeBSD
     validations:
       required: true
 
