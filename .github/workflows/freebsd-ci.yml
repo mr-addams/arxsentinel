@@ -44,7 +44,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Go (host cache)
         # Host step only — it warms the Actions Go toolchain cache. The VM
@@ -180,7 +180,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Run podman spike inside FreeBSD VM
         uses: vmactions/freebsd-vm@v1.5.0
@@ -331,7 +331,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Build ArxSentinel FreeBSD image inside FreeBSD VM
         uses: vmactions/freebsd-vm@v1.5.0
@@ -504,7 +504,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Run synthetic-log integration smoke inside FreeBSD VM
         uses: vmactions/freebsd-vm@v1.5.0
