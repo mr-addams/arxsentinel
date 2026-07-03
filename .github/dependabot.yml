@@ -10,3 +10,28 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Europe/Kiev"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+
+  # Only the production image. Test dockerfiles (tests/integration/*) pin
+  # server versions on purpose — that set IS the "Tested product versions"
+  # matrix and is bumped deliberately, never automatically.
+  - package-ecosystem: docker
+    directory: "/deploy/container/docker"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: "Europe/Kiev"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
