@@ -128,18 +128,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Configure git
-        # Required by the "Bump VERSION" step's `git commit` below — git
-        # identity does NOT carry over from release-tag's own "Configure
-        # git" step, since that ran in a different job (different runner,
-        # different workspace). Live run 28649765331 hit this exact gap:
-        # "fatal: empty ident name ... not allowed" killed the version-bump
-        # step after goreleaser had already published successfully — the
-        # release itself was fine, only this housekeeping step failed.
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
@@ -182,8 +170,38 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ─── post-release ─────────────────────────────────────────────────────────
+  # Split out of `release` (2026-07-03) so release housekeeping is
+  # RETRYABLE IN ISOLATION. When the VERSION bump failed on live run
+  # 28649765331 (missing git identity), the only recovery was manual git
+  # surgery: re-running the `release` job would have re-run goreleaser
+  # against the already-published tag+Release. With bump + Pages trigger in
+  # their own job, "Re-run failed jobs" re-executes just this job and never
+  # touches goreleaser. The bump script itself is idempotent (skips when
+  # dev is already at next) and resilient to partial previous attempts
+  # (force-push over a stale bump branch, reuses an already-open bump PR).
+  post-release:
+    name: Bump dev VERSION & trigger Pages
+    runs-on: ubuntu-latest
+    needs: [release-tag, release]
+    if: needs.release-tag.outputs.skip != 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        # Fresh runner — git identity never carries over from other jobs.
+        # This exact gap (identity configured only in release-tag) is what
+        # killed the bump step on run 28649765331 with "fatal: empty ident
+        # name ... not allowed".
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Bump VERSION for next development cycle
-        if: success()
         run: |
           released="${{ needs.release-tag.outputs.tag }}"
           released="${released#v}"
@@ -198,7 +216,9 @@ jobs:
           fi
 
           branch="chore/bump-version-${next}"
-          git checkout -b "$branch" origin/dev
+          # -B (not -b): tolerate a leftover local branch from any earlier
+          # step in a re-run of this job.
+          git checkout -B "$branch" origin/dev
           git merge -X ours --no-edit origin/main
           echo "$next" > VERSION
 
@@ -209,14 +229,30 @@ jobs:
 
           git add VERSION docs/*.html
           git commit -m "chore: bump VERSION to ${next}"
-          git push origin "$branch"
+          # --force: a stale remote branch left by a previously interrupted
+          # bump attempt must not block the retry — this job is designed to
+          # be safely re-runnable.
+          git push --force origin "$branch"
 
-          pr_url=$(gh pr create \
-            --title "chore: bump VERSION to ${next}" \
-            --body "Automatic version bump after stable release v${released}. Next dev cycle: v${next}-dev.1" \
-            --base dev)
+          # Reuse an already-open bump PR from a previous attempt — `gh pr
+          # create` fails outright when one already exists for this head.
+          pr_url=$(gh pr list --head "$branch" --base dev --state open \
+            --json url -q '.[0].url')
+          if [ -z "$pr_url" ]; then
+            pr_url=$(gh pr create \
+              --title "chore: bump VERSION to ${next}" \
+              --body "Automatic version bump after stable release v${released}. Next dev cycle: v${next}-dev.1" \
+              --base dev)
+          fi
 
-          # --admin bypasses required_signatures ruleset — bot commits are unsigned.
+          # --squash is load-bearing, not stylistic: the single squash
+          # commit is created (and signed) server-side by GitHub, satisfying
+          # dev's required_signatures ruleset even though the underlying bot
+          # commit is unsigned AND the bump branch carries main's historical
+          # unsigned merge commits (16 of them, pre-ruleset era — they block
+          # any true merge-commit into dev, proven live on PR #268).
+          # --admin bypasses the CLI's BLOCKED pre-flight for those same
+          # unverified underlying commits.
           gh pr merge "$pr_url" --squash --delete-branch --admin
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -225,8 +261,17 @@ jobs:
       # workflow_run trigger in pages.yml does not fire in the dispatch→run chain.
       # Trigger the deploy explicitly so the landing page always reflects the new
       # stable version (pages.yml self-patches version strings via gh release list).
+      # Runs AFTER the bump (order matters: if this trigger hiccups, the bump
+      # is already committed — the reverse order could lose the bump).
+      #
+      # !cancelled(): a FAILED bump step must not skip this deploy — the
+      # landing page's version comes from `gh release list` inside pages.yml,
+      # not from the bump. On the v2.2.2 release (run 28649765331) the old
+      # in-release-job layout skipped this exact step after the bump failure,
+      # leaving the live landing on v2.2.1 until the bump was completed
+      # manually ~30 minutes later.
       - name: Trigger Pages deploy
-        if: success()
+        if: ${{ !cancelled() }}
         run: gh workflow run pages.yml --ref dev
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
