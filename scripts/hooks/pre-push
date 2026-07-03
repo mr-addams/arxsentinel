@@ -8,11 +8,72 @@
 #   backstop, but must run BEFORE the local work enters the shared remote. This hook
 #   enforces that behavioral lock locally, complementing per-task acceptance gate
 #   (agent runs integration manually) and CI (integration.yml on PR→dev).
+#
+# Path-aware skip (2026-07-03): the suite is skipped when EVERY file in the
+# pushed range is one the suite provably cannot observe (docs, markdown,
+# GitHub workflows, flow notes, these hooks themselves). On 2026-07-02/03 the
+# unconditional form burned ~6 minutes × 8 pushes on pure workflow/docs
+# changes. Fail-safe direction: any uncertainty (unknown remote sha, no
+# merge-base) or any other file → full run. CI on the PR remains the
+# authority either way — this hook is a local backstop, not the gate.
 
 set -euo pipefail
 
 # Resolve the repo root via git so the hook works from any working dir.
 REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+ZERO=0000000000000000000000000000000000000000
+need_suite=0
+
+# Hook stdin: one "<local ref> <local sha> <remote ref> <remote sha>" line
+# per ref being pushed.
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+    # Branch deletion — nothing new reaches the remote, nothing to test.
+    [ "$local_sha" = "$ZERO" ] && continue
+
+    if [ "$remote_sha" = "$ZERO" ]; then
+        # New remote branch: diff against the fork point from origin/dev
+        # (the integration branch all feature work targets).
+        base=$(git merge-base "$local_sha" origin/dev 2>/dev/null || true)
+    elif git cat-file -e "$remote_sha" 2>/dev/null; then
+        base="$remote_sha"
+    else
+        # Remote sha not present locally (stale tracking ref) — can't
+        # compute the range reliably.
+        base=""
+    fi
+
+    if [ -z "$base" ]; then
+        echo "[pre-push] cannot determine diff base for $local_sha — running full suite (fail-safe)"
+        need_suite=1
+        break
+    fi
+
+    while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        case "$f" in
+            # Paths the integration suite provably never reads. Note: case
+            # globs are string matches, so * crosses '/' — "*.md" covers
+            # markdown at any depth. Everything NOT listed here (Go code,
+            # go.mod/sum, tests/, deploy/, cookbook YAML, VERSION, other
+            # scripts/) triggers the full run.
+            docs/*|*.md|.github/*|.opencode/*|.gitignore|LICENSE|scripts/hooks/*)
+                ;;
+            *)
+                echo "[pre-push] behavior-relevant change: $f"
+                need_suite=1
+                break
+                ;;
+        esac
+    done <<< "$(git diff --name-only "$base" "$local_sha")"
+
+    [ "$need_suite" -eq 1 ] && break
+done
+
+if [ "$need_suite" -eq 0 ]; then
+    echo "[pre-push] docs/workflows/hooks-only push — skipping integration suite (CI on the PR still runs it)"
+    exit 0
+fi
 
 echo "[pre-push] running integration tests (tests/integration/run.sh)..."
 bash "$REPO_ROOT/tests/integration/run.sh"
