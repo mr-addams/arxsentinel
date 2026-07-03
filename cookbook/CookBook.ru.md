@@ -35,6 +35,7 @@ Sources → Processors → Sinks → Executors
 - [Инфраструктура: Конфигурации серверов](#server-configs)
 - [Инфраструктура: Обратный прокси / Real-IP](#reverse-proxy)
 - [Инфраструктура: Kubernetes](#kubernetes)
+- [Инфраструктура: Развёртывание на FreeBSD](#развёртывание-на-freebsd)
 
 ---
 
@@ -218,3 +219,19 @@ ArxSentinel записывает IP угроз в файл блокировки,
 | [kubernetes/daemonset.yaml](kubernetes/daemonset.yaml) | DaemonSet: один ArxSentinel на узел, чтение хостовых логов |
 | [kubernetes/sidecar.yaml](kubernetes/sidecar.yaml) | Sidecar: один ArxSentinel на pod, чтение контейнерных логов |
 | [kubernetes/configmap.yaml](kubernetes/configmap.yaml) | ConfigMap с типовой конфигурацией ArxSentinel |
+
+---
+
+## Развёртывание на FreeBSD
+
+ArxSentinel поставляется с собственным бинарником для FreeBSD + выделенным инсталлятором
+(создаёт системного пользователя, устанавливает rc.d-сервис) — контейнеризация самого ArxSentinel
+не требуется. Если веб-сервер работает в контейнере `podman` на том же хосте FreeBSD,
+рантайм FreeBSD `podman` имеет реальные отличия от Docker/Linux podman (storage driver,
+настройка firewall, отсутствие DNS-разрешения имён контейнеров, отсутствие поддержки
+`podman pod`/`podman-compose`), которые легко провести отпуск без предварительного
+понимания.
+
+| Рецепт | Описание | Файл |
+|--------|----------|------|
+| Полный справочник | Quickstart установки/rc.d, расположение файлов FreeBSD, настройка podman + подводные камни | [freebsd/CookBook.ru.md](freebsd/CookBook.ru.md) |

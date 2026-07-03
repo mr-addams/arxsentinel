@@ -8,6 +8,14 @@ on:
       - 'README*.md'
       - 'VERSION'
       - '.github/workflows/**'
+  # Manual trigger for workflow-only changes to this file: the push
+  # trigger above excludes .github/workflows/** via paths-ignore, so a
+  # commit that ONLY touches this file (e.g. a CI-fix like the
+  # freebsd-container-image healthcheck-filename fix) does not
+  # auto-dispatch a live run. workflow_dispatch lets an operator verify
+  # such a fix on demand without needing an unrelated code change to
+  # piggyback a push trigger.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,27 +25,44 @@ jobs:
   integration:
     uses: ./.github/workflows/integration.yml
 
-  dev-release:
-    name: Build & publish dev pre-release
+  # ─── dev-tag ──────────────────────────────────────────────────────────────
+  # Split out of dev-release (2026-07-02): dev-release (Linux publish) and
+  # freebsd-container-image now run IN PARALLEL as siblings, both consuming
+  # this job's tag output — neither waits on the other. Before this split,
+  # freebsd-container-image needed: dev-release purely to read its tag
+  # output, which forced the FreeBSD image to always start after the full
+  # Linux goreleaser run finished even though the two publishes are
+  # otherwise independent. The tag itself must still be computed exactly
+  # once (git tag/push has retry-on-race logic that only works single-
+  # writer — see below), so it gets its own upstream job rather than being
+  # duplicated in both.
+  #
+  # No `go test` step here (dropped 2026-07-02): it duplicated
+  # `integration.yml:88`'s own `go test -race -count=1 ./...` verbatim —
+  # `dev-tag` checks out the identical commit that `integration` (a hard
+  # `needs:` prerequisite) already tested, so a second run added ~1 minute
+  # per dev-release with zero additional safety. Pre-commit's local hook
+  # (`scripts/hooks/pre-commit`) runs the same command too, but that's a
+  # separate, bypassable, non-CI safety net — irrelevant to this job.
+  dev-tag:
+    name: Calculate and create dev tag
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     runs-on: ubuntu-latest
-    needs: integration
+    # A "correct" dev-release cannot tag/publish while FreeBSD tests are
+    # red — live run 28617320029 proved the gap concretely before this fix
+    # existed: fbsd-integration-litespeed failed, yet v2.2.2-dev.14 still
+    # published as a normal GitHub Release seconds later, with the only
+    # failure signal being the overall workflow run's red status (nothing
+    # on the Release page itself). Gating tag creation on both suites
+    # means neither the Linux release nor the FreeBSD container can be
+    # published on a commit whose FreeBSD behavior wasn't just verified.
+    needs: [integration, freebsd-integration-gate]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
-      - name: Run tests
-        # -race is mandatory under the Transformation Safety Protocol:
-        # the telemetry pipeline moves concurrent code, and silent data races
-        # would corrupt scoring state across module boundaries.
-        # -count=1 disables Go's test-result cache so a regression cannot be masked.
-        run: go test -race -count=1 ./...
 
       - name: Configure git
         run: |
@@ -70,6 +95,21 @@ jobs:
           echo "::error::failed to create dev tag after 10 attempts" >&2
           exit 1
 
+  dev-release:
+    name: Build & publish dev pre-release
+    runs-on: ubuntu-latest
+    needs: dev-tag
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
@@ -99,7 +139,7 @@ jobs:
 
       - name: Append tested versions to release notes
         run: |
-          tag="${{ steps.tag.outputs.tag }}"
+          tag="${{ needs.dev-tag.outputs.tag }}"
           if [ -f tested-versions.md ]; then
             current=$(gh release view "$tag" --json body -q '.body')
             gh release edit "$tag" \
@@ -107,3 +147,365 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Flow 090 (Decision 7) — FreeBSD container image ────────────────────────
+  # Runs IN PARALLEL with dev-release (Linux publish), both as siblings off
+  # dev-tag (2026-07-02 split — see dev-tag job comment). Adds the FreeBSD
+  # OCI images to the same ghcr.io repo with a -freebsd-<arch> tag suffix
+  # (Decision 6). The existing Linux dockers_v2 manifest-list is untouched;
+  # this is a pure additive job.
+  #
+  # Why not in goreleaser dockers_v2: goreleaser uses docker buildx, which
+  # does not support building FreeBSD images from a Linux host. The FreeBSD
+  # image must be built inside a vmactions/freebsd-vm QEMU guest via
+  # podman build — the same mechanism Flow 088 validated in container-build-freebsd.
+  # Re-encodes the storage/pf unblock chain verbatim per 088 Decision E.2b
+  # (fresh VM = fresh defaults requiring fresh unblock).
+  #
+  # Promoted (2026-07-02): continue-on-error dropped after 4 consecutive
+  # green live dispatches of the amd64-only job (runs 28518101769,
+  # 28563608176, 28601198244, 28605899280), well past Decision 7's "2+
+  # consecutive green" promotion bar. The 6 SIGABRT failures that preceded
+  # the streak (runs 28508814305 through 28516662994) were root-caused and
+  # fixed during Flow 090's original investigation (CGO_ENABLED=0, minimal
+  # build context, copyback: true — see the smoke-test step's inline
+  # comments for the full postmortem); none of those root causes are still
+  # present in this job's current form. Same code path is also exercised
+  # by the FreeBSD integration test suite
+  # (`.github/workflows/freebsd-integration.yml`), so a regression here
+  # would already surface there first — this job is the final packaging
+  # step over already-tested code, not a first-line test itself.
+  # NEVER promoted to branch-protection gating on dev/main — only the live
+  # dev-release job stays gating there; this FreeBSD job stays workflow-internal.
+  #
+  # Arch matrix added (2026-07-02): Flow 088's Decision 3 deferred a
+  # 386/arm/arm64 matrix until the amd64 baseline proved stable (now true,
+  # per the promotion above). Checked vmactions/freebsd-vm's current docs
+  # before adding this: the action's `arch:` input only supports
+  # x86_64/aarch64/riscv64/powerpc64 as the FreeBSD GUEST architecture —
+  # 386 and 32-bit arm are NOT bootable via this action at all, regardless
+  # of Go's freebsd/386 and freebsd/arm build support. riscv64 stays
+  # excluded per Flow 088 Decision 3 (Go has no freebsd/riscv64 target,
+  # only linux/riscv64 and openbsd/riscv64 exist — never add it). That
+  # leaves amd64 (x86_64) and arm64 (aarch64) as the only architectures
+  # this job can natively build AND smoke-test inside a real FreeBSD VM —
+  # the base image (Containerfile.freebsd) is already pinned to the
+  # freebsd-static multi-arch OCI index, so no Containerfile change is
+  # needed; podman resolves the correct per-arch leaf at build time based
+  # on the VM's own architecture.
+  freebsd-container-image:
+    name: FreeBSD container image (${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    needs: dev-tag
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            vmarch: x86_64
+          - goarch: arm64
+            vmarch: aarch64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Cross-compile FreeBSD binaries (host, no emulation)
+        # Added 2026-07-02: previously this build ran natively INSIDE the
+        # FreeBSD VM (088's original design — see the VM script's own
+        # comment below for why native-in-VM was chosen in the first
+        # place). Live run 28621885498 proved why that's costly for
+        # arm64 specifically: the amd64 leg finished in 3m05s, the arm64
+        # leg took 17m03s — vmactions/freebsd-vm's own docs warn of a
+        # "significant performance penalty ... particularly with ARM
+        # runners" for QEMU-emulated aarch64 guests, and `go build` was
+        # the single most CPU-heavy step running inside that emulation.
+        # Go's cross-compiler needs no emulation at all (GOOS=freebsd
+        # just targets a different ELF/ABI, same as goreleaser's own
+        # freebsd/{386,amd64,arm,arm64} tarball builds), so building here
+        # on the plain ubuntu-latest host is seconds instead of minutes.
+        #
+        # Deliberately NOT reusing goreleaser's already-built dev-tag
+        # release assets instead: that would force this job to wait on
+        # `dev-release` publishing first, undoing the same-day split that
+        # made dev-release and freebsd-container-image parallel siblings
+        # (see the dev-tag job comment above). Rebuilding here with an
+        # identical `go build` invocation is cheap and keeps the two jobs
+        # independent.
+        #
+        # Output goes under $GITHUB_WORKSPACE (not /tmp) because
+        # vmactions/freebsd-vm mounts the entire workspace tree into the
+        # VM at the same path before `run:` executes (confirmed via
+        # vmactions/freebsd-vm's own docs: "All the source code tree in
+        # the Host machine are mounted into the VM" — rsync/scp/sshfs/nfs
+        # sync methods all honor this) — a plain /tmp/ file on the host
+        # would never appear inside the VM.
+        run: |
+          mkdir -p .ci-freebsd-build
+          CGO_ENABLED=0 GOOS=freebsd GOARCH="${{ matrix.goarch }}" \
+              go build -o .ci-freebsd-build/arxsentinel ./cmd/arxsentinel
+          CGO_ENABLED=0 GOOS=freebsd GOARCH="${{ matrix.goarch }}" \
+              go build -o .ci-freebsd-build/healthcheck ./cmd/healthcheck || \
+              echo "::notice::cmd/healthcheck build failed — image will skip healthcheck"
+          ls -la .ci-freebsd-build/
+
+      - name: Build FreeBSD image and push to ghcr.io
+        id: freebsd_image
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          arch: ${{ matrix.vmarch }}
+          release: "14.3"
+          usesh: true
+          # copyback: true (matches 088/089's proven-stable jobs, which use
+          # the same podman run --version smoke test successfully many
+          # times). copyback: false was tried first (the artifact IS the
+          # image pushed to ghcr, no file needs copying back) but live runs
+          # 28511957455 (both the original dispatch and a manual retry)
+          # crashed with "ssh exited with code 134" (SIGABRT) immediately
+          # after a fully successful `podman build`, before the smoke-test
+          # step printed anything. copyback: false is the one config
+          # difference vs. 088/089's identical smoke-test pattern; reverting
+          # to true is the cheapest, most defensible next experiment.
+          copyback: true
+          # DEV_TAG/GOARCH are custom (non-GITHUB_-prefixed) env vars - they do
+          # NOT match a GITHUB_* glob and must be listed explicitly, unlike
+          # GITHUB_TOKEN/GITHUB_ACTOR which vmactions forwards by name here.
+          envs: 'GITHUB_TOKEN GITHUB_ACTOR DEV_TAG GOARCH'
+          run: |
+            set -eu
+
+            # Pass through the tag from the dev-tag job. The job's
+            # `needs: dev-tag` guarantees this is non-empty by the time we
+            # run. GOARCH comes from the matrix (amd64/arm64) via the envs:
+            # directive above.
+            TAG="${DEV_TAG}"
+            if [ -z "${TAG}" ]; then
+              echo "::error::DEV_TAG env var not set; cannot derive image tag" >&2
+              exit 1
+            fi
+            IMAGE_TAG="ghcr.io/mr-addams/arxsentinel:${TAG}-freebsd-${GOARCH}"
+            IMAGE_LATEST="ghcr.io/mr-addams/arxsentinel:freebsd-${GOARCH}-latest"
+            echo "Target images:"
+            echo "  version-tagged: ${IMAGE_TAG}"
+            echo "  floating-latest: ${IMAGE_LATEST}"
+
+            # ── Unblock chain (verbatim from 088 Decision E.2b + F.1, the same
+            # chain 088 container-build-freebsd job uses) ──────────────────────
+            # Each vmactions/freebsd-vm step is a FRESH FreeBSD VM. Storage
+            # defaults to driver=zfs which fails in the QEMU/UFS VM (no zpool),
+            # and pf kernel module required for CNI bridge is not loaded by
+            # default. Both must be fixed before any `podman build`/`podman run`.
+
+            echo "::group::pkg install podman"
+            # No `go` here (dropped 2026-07-02): binaries are now
+            # cross-compiled on the Linux host before this VM even boots
+            # (see the "Cross-compile FreeBSD binaries" step above) — this
+            # VM only needs podman to build/push/smoke-test the image.
+            pkg install -y sysutils/podman jq
+            echo "::endgroup::"
+
+            echo "::group::storage fix (zfs→vfs)"
+            # 088 Decision E.1: storage.conf ships with driver = "zfs" which
+            # hard-fails inside the QEMU VM (no zpool available). Change to vfs.
+            sed -I .bak -e 's/driver = "zfs"/driver = "vfs"/' \
+                /usr/local/etc/containers/storage.conf
+            echo "Effective storage driver:"
+            podman info --format '{{.Store.GraphDriverName}}'
+            echo "::endgroup::"
+
+            echo "::group::pf kernel module + egress interface"
+            # 088 Decision F.1: CNI bridge requires pf loaded + /etc/pf.conf
+            # configured. Same block as 088 — see freebsd-ci.yml verbatim.
+            kldload pf || true
+            if [ ! -f /etc/pf.conf ]; then
+              cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf
+            fi
+            # Detect egress interface at runtime; default vtnet0 (QEMU/virtio NIC).
+            # If ifconfig -l output shows a different default, the diagnostic
+            # in the log will show it (so a future fix is a one-line swap).
+            EGRESS_IF=$(ifconfig -l | awk '{print $1}')
+            echo "Detected interfaces: $(ifconfig -l)"
+            echo "Using egress interface: ${EGRESS_IF:-vtnet0}"
+            sed -I .bak -e "s/^v4egress_if=.*/v4egress_if=${EGRESS_IF:-vtnet0}/" \
+                -e "s/^v6egress_if=.*/v6egress_if=${EGRESS_IF:-vtnet0}/" /etc/pf.conf
+            sysrc pf_enable=YES
+            service pf start || service pf restart
+            sysctl net.pf.filter_local=1
+            echo "::endgroup::"
+
+            # ── Stage the host-cross-compiled binaries ───────────────────────────
+            # Changed 2026-07-02: this used to run `go build` natively
+            # INSIDE the VM (088's original design, kept for a long time
+            # because native-on-FreeBSD felt like the more honest test of
+            # "does the toolchain genuinely work here"). Dropped after live
+            # run 28621885498 showed the real cost: the amd64 leg finished
+            # in 3m05s, arm64 took 17m03s — almost entirely QEMU-emulated
+            # `go build` time. The binaries are now cross-compiled on the
+            # plain Linux host BEFORE this VM even boots (see the
+            # "Cross-compile FreeBSD binaries" step in the job's steps: —
+            # $GITHUB_WORKSPACE/.ci-freebsd-build/), and the workspace sync
+            # vmactions/freebsd-vm already does (same path, host → VM)
+            # makes those files show up here for free. What's lost: this
+            # VM no longer proves the Go toolchain itself compiles cleanly
+            # on FreeBSD — but the FreeBSD integration test suite
+            # (freebsd-integration.yml, this same dev-release run's own
+            # `freebsd-integration-gate` job) already does a real native
+            # `go build` on every one of its 6 backends, so that coverage
+            # isn't actually lost, just moved.
+            echo "::group::stage host-built binaries (cmd/arxsentinel + cmd/healthcheck)"
+            cd "$GITHUB_WORKSPACE"
+            # Stage into a MINIMAL /tmp/build/ directory (088's exact
+            # pattern), NOT $GITHUB_WORKSPACE — live run 28513793247
+            # crashed with "ssh exited with code 134" (SIGABRT) immediately
+            # after a fully successful `podman build .` when the build
+            # context was the full repo checkout (includes .git/ and the
+            # whole source tree — much larger than a 3-file context). This
+            # constraint is about the podman build CONTEXT, unrelated to
+            # where the binaries were compiled, so it still applies.
+            mkdir -p /tmp/build
+            cp .ci-freebsd-build/arxsentinel /tmp/build/arxsentinel
+            if [ -f .ci-freebsd-build/healthcheck ]; then
+              cp .ci-freebsd-build/healthcheck /tmp/build/healthcheck
+            else
+              echo "::notice::cmd/healthcheck build failed on host — image will skip healthcheck"
+            fi
+            ls -la /tmp/build/
+            echo "::endgroup::"
+
+            # Containerfile.freebsd's "COPY config.docker.yaml
+            # /etc/arxsentinel/config.yaml" line (088 pattern) expects this
+            # file at the build context root - stage it into /tmp/build/
+            # alongside the binaries (same directory as the podman build
+            # context below).
+            echo "::group::stage config.docker.yaml into build context"
+            cp "$GITHUB_WORKSPACE/deploy/container/docker/config.docker.yaml" \
+               /tmp/build/config.docker.yaml
+            echo "::endgroup::"
+
+            # ── podman build against Containerfile.freebsd ───────────────────────
+            # Containerfile.freebsd was added by Flow 088 PR #239 — it's a single
+            # stage that COPY's pre-built binaries into the digest-pinned
+            # ghcr.io/freebsd/freebsd-static:14.3 base. That base is pinned by
+            # OCI image-INDEX digest (multi-arch), so podman resolves the
+            # correct per-arch leaf (amd64/arm64) automatically from the VM's
+            # own architecture — no per-arch FROM line needed (see
+            # Containerfile.freebsd's own comment on the digest pin).
+            # Context is /tmp/build/ (3 files: arxsentinel, healthcheck,
+            # config.docker.yaml) - NOT $GITHUB_WORKSPACE - matching 088's
+            # proven-stable container-build-freebsd job exactly.
+            echo "::group::podman build arxsentinel:freebsd-local"
+            podman build \
+                -t arxsentinel:freebsd-local \
+                -f "$GITHUB_WORKSPACE/deploy/container/freebsd/Containerfile.freebsd" \
+                /tmp/build/
+            echo "[debug] podman build finished, exit $?"
+            echo "::endgroup::"
+
+            # DEBUG INSTRUMENTATION (temporary - Flow 090 SIGABRT investigation):
+            # live runs 28508814305 / 28511957455 / 28513793247 / 28515335753
+            # all crashed with "ssh exited with code 134" (SIGABRT)
+            # immediately after `podman build` succeeded, with ZERO output
+            # from the smoke-test `podman run --version` line that follows -
+            # not even its own stdout. copyback:true (#245) and a minimal
+            # /tmp/build/ context (#246) did NOT fix it (ruled out both
+            # hypotheses). This block adds explicit markers + diagnostics
+            # around the exact transition point so the NEXT crash pinpoints
+            # whether the abort happens (a) between build and run (nothing
+            # in `podman run` executes at all), (b) inside `podman run`
+            # itself, or (c) after `podman run` succeeds but before its
+            # stdout flushes over SSH.
+            echo "::group::debug: podman state before smoke test"
+            echo "[debug] about to run podman images"
+            podman images
+            echo "[debug] about to run podman info storage"
+            podman info --format '{{.Store.GraphDriverName}}' || echo "[debug] podman info FAILED rc=$?"
+            echo "[debug] state checks done, about to invoke podman run"
+            echo "::endgroup::"
+
+            echo "::group::smoke test podman run --version"
+            echo "[debug] pre-run marker"
+            set +e
+            podman run --rm arxsentinel:freebsd-local --version
+            SMOKE_RC=$?
+            set -e
+            echo "[debug] post-run marker, podman run exit code=${SMOKE_RC}"
+            if [ "$SMOKE_RC" -ne 0 ]; then
+                echo "::error::smoke test failed with exit code ${SMOKE_RC}"
+                exit "$SMOKE_RC"
+            fi
+            echo "::endgroup::"
+
+            # ── podman login + push to ghcr with both tag variants ───────────────
+            # Decision 6: two tags per image push — :<full-tag>-freebsd-amd64
+            # (version-pinned) and :freebsd-amd64-latest (floating). Both via
+            # the same GITHUB_TOKEN secret that the existing dev-release job
+            # uses for the Linux docker push (line 78-83).
+            echo "::group::podman login + push"
+            # The GITHUB_TOKEN env var is forwarded by the vmactions/freebsd-vm
+            # action via the `envs:` directive above. echo mask before login
+            # so the token never appears in plain text in logs.
+            echo "${GITHUB_TOKEN}" | podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+            # Tag the local image with both target names, then push each.
+            podman tag arxsentinel:freebsd-local "${IMAGE_TAG}"
+            podman tag arxsentinel:freebsd-local "${IMAGE_LATEST}"
+            podman push "${IMAGE_TAG}"
+            podman push "${IMAGE_LATEST}"
+            echo "::endgroup::"
+
+            echo "::group::finalize"
+            echo "Pushed: ${IMAGE_TAG}"
+            echo "Pushed: ${IMAGE_LATEST}"
+            echo "::endgroup::"
+        env:
+          # Flow 090 Decision 7: pull the tag from the dev-tag job's outputs
+          # via the needs context. Env-vars passed into the VM are forwarded by
+          # vmactions/freebsd-vm's `envs:` directive above. GOARCH comes from
+          # this job's own matrix (2026-07-02 arch-matrix addition).
+          DEV_TAG: ${{ needs.dev-tag.outputs.tag }}
+          GOARCH: ${{ matrix.goarch }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+
+  # ─── Flow 090 P5+ (Decision 9 Revised) — FreeBSD integration gate ────────
+  # Reusable-workflow caller for the FreeBSD backend integration suite.
+  # Originally (Flow 090) a thin nginx-only smoke test, run in parallel
+  # with `dev-release`/`integration` and gating nothing — actionlint
+  # forbids `continue-on-error` on a reusable-workflow-call job, so a red
+  # run here always flipped the overall workflow RUN conclusion to
+  # "failure" even though nothing downstream depended on it (accepted
+  # first-iteration trade-off, see prior revision of this comment in git
+  # history for the full reasoning).
+  #
+  # Gating added (2026-07-02), corrected same day: Flow 091/092 brought
+  # this suite to full 7-module+badbot+blocklist+proxy-chain coverage
+  # across all 6 backends, each individually promoted off
+  # continue-on-error inside freebsd-integration.yml after 2+ consecutive
+  # green runs. The first cut of this gate only added `needs:
+  # freebsd-integration-gate` to freebsd-container-image, leaving the
+  # actual tag+GitHub-Release publish (dev-release) unaffected — live run
+  # 28617320029 proved that gap concretely (fbsd-integration-litespeed
+  # failed, yet v2.2.2-dev.14 still published normally). The fix moved
+  # this job into `dev-tag`'s `needs:` instead (see that job's comment) —
+  # nothing gets tagged/published, Linux OR FreeBSD, unless this suite
+  # passed on the same commit.
+  freebsd-integration-gate:
+    name: FreeBSD integration gate (gates dev-tag)
+    # Reusable-workflow call: uses: is a JOB-LEVEL field here, mutually
+    # exclusive with runs-on:/steps: (GitHub Actions docs: "you call
+    # reusable workflows directly within a job, and not from within job
+    # steps"). Matches the existing `integration:` job's pattern (line 17).
+    # freebsd-integration.yml was merged to dev in PR #240 (Flow 089); Edit
+    # 1 above added the workflow_call: trigger that allows this call (089
+    # originally shipped without it — oversight recorded in DECISIONS
+    # Decision 9 Revised). The workflow runs all 6 backends' integration
+    # suites on their own vmactions/freebsd-vm steps: builds arxsentinel
+    # natively, runs each backend + curl attacker via podman, asserts
+    # THREAT+attacker-IP+score+reason on the threats log.
+    uses: ./.github/workflows/freebsd-integration.yml

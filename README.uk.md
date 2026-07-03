@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/license-Elastic--2.0-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64%20%7C%20arm%2Fv7%20%7C%20riscv64%20%7C%20i386-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
+[![FreeBSD](https://img.shields.io/badge/freebsd-386%20%7C%20amd64%20%7C%20arm%20%7C%20arm64-red?logo=freebsd)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 
 > 🌐 [English](README.md) | [Русская документация](README.ru.md) | 📖 [Книга рецептів конфігурацій](cookbook/CookBook.uk.md)
@@ -290,6 +291,26 @@ sudo systemctl enable --now arxsentinel
 
 > **Fail2Ban на Arch:** встановіть перед або після arxsentinel: `sudo pacman -S fail2ban`
 
+### FreeBSD
+
+Скрипт `get.sh` вище не підходить (він розрахований лише на Linux-дистрибутиви з `/etc/os-release`). Завантажте архів `freebsd_<arch>` зі сторінки [Releases](https://github.com/mr-addams/arxsentinel/releases) і запустіть інсталятор з архіву:
+
+```sh
+fetch https://github.com/mr-addams/arxsentinel/releases/latest/download/arxsentinel_<version>_freebsd_<arch>.tar.gz
+tar xzf arxsentinel_<version>_freebsd_<arch>.tar.gz
+cd arxsentinel_<version>_freebsd_<arch>
+sudo sh install.sh
+```
+
+`install.sh` створює системного користувача `arxsentinel`, встановлює бінарник і rc.d-сервіс, засіває конфіг із вбудованого прикладу (при повторному запуску наявний конфіг не перезаписується). Увімкнути та запустити:
+
+```sh
+sysrc arxsentinel_enable=YES
+service arxsentinel start
+```
+
+Повний посібник — структура шляхів на FreeBSD, керування rc.d-сервісом та запуск веб-сервера в `podman` на FreeBSD (драйвер сховища, налаштування firewall, особливості контейнерної мережі): [FreeBSD Deployment Cookbook](cookbook/freebsd/CookBook.uk.md).
+
 ### Збірка з вихідного коду
 
 Потрібен Go 1.26+:
@@ -397,7 +418,7 @@ deploy/examples/
 
 ## Вимоги
 
-- Linux amd64 / arm64 / arm/v7 / riscv64 / i386 з systemd
+- Linux amd64 / arm64 / arm/v7 / riscv64 / i386 з systemd, **або** FreeBSD 386 / amd64 / arm / arm64 з rc.d
 - Fail2Ban
 - HTTP-сервер, що пише access.log у підтримуваному форматі (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — або довільний regex)
 
@@ -530,6 +551,10 @@ Score накопичується з лінійним decay за `observation_win
 
 Охоплено встановниками пакетів вище. Використовуйте `systemctl` для управління сервісом та `kill -HUP` для живого перезавантаження. Повна довідка команд — див. [Керування](#керування).
 
+### FreeBSD — rc.d
+
+Охоплено FreeBSD-інсталятором вище. Використовуйте `service arxsentinel <start|stop|status>` для управління сервісом; `sysrc arxsentinel_enable=YES` вмикає автозапуск після перезавантаження. Повний посібник, включно із запуском веб-сервера в `podman` на FreeBSD: [FreeBSD Deployment Cookbook](cookbook/freebsd/CookBook.uk.md).
+
 ### Docker Compose
 
 ArxSentinel працює як sidecar поряд з HTTP-сервером, читаючи спільні обсяги логів.
@@ -558,6 +583,7 @@ Helm-чарт з довідкою values: [Helm README](deploy/container/k8s/arx
 
 ## Нещодавно доставлені функції
 
+- **Підтримка FreeBSD** — нативні збірки `386`/`amd64`/`arm`/`arm64`, окремий інсталятор + rc.d-сервіс, покрито CI проти всіх 6 підтримуваних веб-серверів (nginx, Caddy, Traefik, HAProxy, Apache, LiteSpeed), включно зі сценаріями proxy-chain з реальним IP — див. [FreeBSD Deployment Cookbook](cookbook/freebsd/CookBook.uk.md)
 - **`arxsentinel validate`** — автономна валідація конфігу з урахуванням топології, використовуючи статичні маніфести плагінів; ловить зламану розводку pipeline до деплою
 - **Pluggable queue backends** — буферизація подій виконавців через in-memory, bbolt (файл) або Redis; вибір на виконавця для bare-metal / single-host / multi-replica K8s
 - **Named Channel Switch** — маршрутизація подій загроз між незалежними pipeline за іменем (один детектує, інший виконує)

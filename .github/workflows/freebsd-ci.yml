@@ -1,0 +1,751 @@
+# FreeBSD CI (isolated, opt-in)
+# =============================
+# This workflow is an ISOLATED FreeBSD CI harness, NOT a release gate.
+# It lives parallel to integration.yml / release.yml / dev-release.yml /
+# container.yml / nightly.yml / pages.yml and is INERT to all of them.
+#
+# Triggers: only workflow_dispatch + push to the flow branch
+# feat/088-freebsd-ci-harness. NO pull_request, NO schedule, NO release.
+# Branch protection on dev/main is unaffected by this file.
+#
+# Source of truth: .opencode/flows/088_2026-06-30_freebsd-ci-harness/DECISIONS.md
+# — esp. §"A.1 — vmactions/freebsd-vm pinned tag" (v1.5.0 / release: 14.3)
+# and §"A.2 — Spike runtime plan" (verbatim podman spike step order).
+# Exit criteria: TASKS.md Group B, plus the metrics captured in Group D.
+
+name: FreeBSD CI (isolated, opt-in)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/088-freebsd-ci-harness
+
+# One concurrent run per ref; cancel stale runs on the same branch.
+concurrency:
+  group: freebsd-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # -----------------------------------------------------------------------
+  # B.2 — build + test on FreeBSD (amd64 only — Decision 3)
+  # -----------------------------------------------------------------------
+  build-test:
+    name: build + test (freebsd/amd64)
+    outputs:
+      summary: ${{ steps.vmout.outputs.summary }}
+      build_seconds: ${{ steps.vmout.outputs.build_seconds }}
+      test_seconds: ${{ steps.vmout.outputs.test_seconds }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go (host cache)
+        # Host step only — it warms the Actions Go toolchain cache. The VM
+        # installs its own go via pkg below; both must agree on the version
+        # declared in go.mod, hence go-version-file here as a single source
+        # of truth.
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build and test inside FreeBSD VM
+        id: vmtest
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          # Pass through Actions env so the VM can see runner/cache paths.
+          # GITHUB_* are auto-forwarded by the action; being explicit here
+          # per the action README is a no-op safety belt.
+          envs: 'GITHUB_*'
+          # Explicit copyback (matches podman-spike step) — protects return of
+          # the build/test artefacts to the host if upstream changes the default
+          # in a future minor release. Default is true per action.yml.
+          copyback: true
+          run: |
+            set -eu
+            echo "::group::VM environment"
+            uname -a
+            freebsd-version || true
+            echo "::endgroup::"
+
+            # Install jq and go inside the VM. FreeBSD base image has neither
+            # by default; pkg provides both. Pin to a known-good go version
+            # by relying on pkg's current default in the 14.3 repos.
+            echo "::group::pkg install go + jq"
+            pkg install -y go jq
+            echo "::endgroup::"
+
+            echo "::group::go version"
+            go version
+            echo "::endgroup::"
+
+            # go build ./... — capture wall-clock time for the metrics job.
+            echo "::group::go build ./..."
+            BUILD_START=$(date +%s)
+            go build ./...
+            BUILD_END=$(date +%s)
+            BUILD_SEC=$((BUILD_END - BUILD_START))
+            echo "build_seconds=${BUILD_SEC}"
+            echo "::endgroup::"
+
+            # go test -json -short ./... — write the full JSON stream to a
+            # known file so the metrics job can parse it from the artifact.
+            # A small jq summariser collapses the JSONL into a single line:
+            #   passed=N skipped=N failed=N duration=Ms build_seconds=Ns
+            echo "::group::go test -short ./..."
+            TEST_START=$(date +%s)
+            set +e
+            go test -json -short ./... > /tmp/go-test.json
+            TEST_RC=$?
+            set -e
+            TEST_END=$(date +%s)
+            TEST_SEC=$((TEST_END - TEST_START))
+            echo "test_rc=${TEST_RC} test_seconds=${TEST_SEC}"
+
+            # Preserve the raw json first so the jq summariser below and the
+            # artifact upload both read from the same path.
+            cp /tmp/go-test.json "$GITHUB_WORKSPACE/go-test.json"
+            echo "::endgroup::"
+
+            # jq --slurp: go-test.json is JSONL (one obj per line); slurp it
+            # into a JSON array so the map/select filter below works.
+            SUMMARY=$(jq -r --slurp --arg bs "$BUILD_SEC" --arg ts "$TEST_SEC" '
+              def n(k): (. | map(select(.Action==k and .Test)) | length);
+              def dur: ([.[].Elapsed // 0] | add);
+              "passed=\(n("pass")) skipped=\(n("skip")) failed=\(n("fail")) duration=\(dur)s build_seconds=\($bs)s test_seconds=\($ts)s"
+            ' "$GITHUB_WORKSPACE/go-test.json" 2>/dev/null || \
+            echo "passed=0 skipped=0 failed=0 duration=0s build_seconds=${BUILD_SEC} test_seconds=${TEST_SEC}")
+            echo "summary=${SUMMARY}"
+
+            # Write step outputs to a workspace file (rsync'd back to the host
+            # via vmactions default copyback). A host-side post-step reads this
+            # file and pushes the values into the real $GITHUB_OUTPUT, because
+            # $GITHUB_OUTPUT itself lives outside the synced workspace and is
+            # NOT reachable from inside the VM.
+            {
+              echo "summary=${SUMMARY}"
+              echo "build_seconds=${BUILD_SEC}"
+              echo "test_seconds=${TEST_SEC}"
+              echo "test_rc=${TEST_RC}"
+            } > "$GITHUB_WORKSPACE/vm-outputs.txt"
+
+      - name: Publish VM step outputs to $GITHUB_OUTPUT
+        id: vmout
+        # vmactions/freebsd-vm runs the run: block inside the FreeBSD VM,
+        # where $GITHUB_OUTPUT is not reachable (it lives on the host runner's
+        # temp dir, outside the synced $GITHUB_WORKSPACE). The VM step writes
+        # its outputs to vm-outputs.txt inside the workspace, which rsync
+        # (with default copyback: true) returns to the host. This host-side
+        # step then appends them to the real $GITHUB_OUTPUT so the job-level
+        # `outputs:` block declared above can see them.
+        if: always()
+        run: |
+          set -eu
+          if [ ! -f vm-outputs.txt ]; then
+            echo "vm-outputs.txt not present — VM step may not have reached the output block"
+            exit 0
+          fi
+          while IFS= read -r line; do
+            case "$line" in
+              summary=*|build_seconds=*|test_seconds=*|test_rc=*)
+                echo "$line" >> "$GITHUB_OUTPUT"
+                ;;
+            esac
+          done < vm-outputs.txt
+
+      - name: Upload go-test.json
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: go-test-json
+          path: go-test.json
+          if-no-files-found: warn
+
+  # -----------------------------------------------------------------------
+  # B.3 — podman integration spike (exploratory, non-blocking — Decision 6)
+  # -----------------------------------------------------------------------
+  podman-spike:
+    name: podman-spike (exploratory, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run podman spike inside FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          copyback: true
+          envs: 'GITHUB_*'
+          run: |
+            # NO `set -e`: this spike is exploratory and uses `|| true` for
+            # the linux compat step (which may need a reboot we cannot do
+            # in-CI). The job itself is gated by `continue-on-error: true`.
+            set -o pipefail
+
+            {
+              echo "=== podman spike run @ $(date -u +%FT%TZ) ==="
+              echo "=== host: $(uname -a) ==="
+              echo
+
+              # Step 1: install podman (Decision 6 / DECISIONS §"A.2").
+              echo "--- step 1: pkg install sysutils/podman ---"
+              pkg install -y sysutils/podman || echo "[spike] pkg install FAILED"
+
+              # Step 2: enable Linux compat. Best-effort: wrap in `|| true` and
+              # log the failure. The pkg-message explicitly notes that this may
+              # need a reboot we cannot perform in-CI.
+              echo "--- step 2: linux_enable=YES + service linux start ---"
+              sysrc linux_enable=YES || true
+              service linux start || echo "[spike] service linux start FAILED (reboot may be required)"
+
+              # Step 2.5: fix the podman storage driver. The FreeBSD podman pkg
+              # ships /usr/local/etc/containers/storage.conf with `driver = "zfs"`
+              # — correct on real FreeBSD installs backed by a ZFS pool, but WRONG
+              # inside the vmactions/freebsd-vm QEMU VM whose rootfs has no zpool
+              # (UFS/RAW). Without this fix, podman run hard-fails with "no zfs
+              # dataset found for rootdir". Switch to vfs (file-backed) which
+              # works in any filesystem. See DECISIONS §"Decision E.1".
+              echo "--- step 2.5: rewrite storage.conf driver zfs → vfs ---"
+              sed -I .bak -e 's/driver = "zfs"/driver = "vfs"/' \
+                  /usr/local/etc/containers/storage.conf \
+                  || echo "[spike] storage.conf sed fix FAILED"
+              # Reaffirm the effective driver — should now print "vfs".
+              podman info --format '{{.Store.GraphDriverName}}' \
+                  || echo "[spike] post-sed podman info FAILED"
+
+              # Step 2.6: enable pf for podman CNI networking. Live Actions
+              # run 28457774103 confirmed that without this, every `podman
+              # run` (BSD-rooted quay.io/dougrabson/hello, Linux-compat
+              # alpine, AND the container-build-freebsd job's --version
+              # smoke) hard-fails at network init with:
+              #   Error: plugin type="bridge" failed (add): cni plugin
+              #   bridge failed: The pf kernel module must be loaded to
+              #   support ipMasq networks
+              # The FreeBSD podman pkg-message documents the fix verbatim:
+              #   cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf
+              #   # edit v4egress_if / v6egress_if to your egress iface
+              #   sysrc pf_enable=YES
+              #   service pf start
+              #   kldload pf
+              #   sysctl net.pf.filter_local=1
+              #   service pf restart
+              # This block is REPEATED in the container-build-freebsd job
+              # for the same reason the storage sed fix is repeated — see
+              # Decision E.2b (each vmactions/freebsd-vm step = a fresh VM;
+              # /etc/pf.conf and kldload state do not persist across
+              # VM-action steps nor live under the synced $GITHUB_WORKSPACE).
+              # See DECISIONS §"Group F" (Decision F.1, F.2).
+              echo "--- step 2.6: enable pf for podman networking ---"
+              # Diagnostic: capture the actual interface list into the
+              # spike-log artifact so any wrong guess on vtnet0 is visible
+              # in the downloadable log without a second CI run. vtnet0 is
+              # the historical default for QEMU/virtio NICs that
+              # vmactions/freebsd-vm uses — see Decision F.2.
+              ifconfig -l
+              cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf \
+                  || echo "[spike] pf.conf.sample copy FAILED"
+              sed -i .bak \
+                  -e 's/^v4egress_if=.*/v4egress_if="vtnet0"/' \
+                  -e 's/^v6egress_if=.*/v6egress_if="vtnet0"/' \
+                  /etc/pf.conf \
+                  || echo "[spike] pf.conf interface substitution FAILED"
+              kldload pf || echo "[spike] kldload pf FAILED (already loaded?)"
+              sysctl net.pf.filter_local=1 || true
+              sysrc pf_enable=YES
+              service pf start || echo "[spike] service pf start FAILED"
+
+              # Step 3: report podman version and effective storage driver.
+              echo "--- step 3: podman --version + storage driver ---"
+              podman --version || echo "[spike] podman --version FAILED"
+              podman info --format '{{.Store.GraphDriverName}}' \
+                || echo "[spike] podman info FAILED"
+
+              # Step 4: BSD-rooted container.
+              echo "--- step 4: podman run quay.io/dougrabson/hello (BSD-rooted) ---"
+              podman run --rm quay.io/dougrabson/hello \
+                || echo "[spike] BSD-rooted run FAILED"
+
+              # Step 5: Linux OCI image via compat layer.
+              echo "--- step 5: podman run --os=linux alpine (Linux compat) ---"
+              # Fully-qualified docker.io/alpine (not bare 'alpine'): bare
+              # short-names trigger a lookup against unqualified-search-
+              # registries in /usr/local/share/containers/registries.conf,
+              # which on the FreeBSD podman default is empty → error
+              # "no unqualified-search registries are defined". Using the
+              # fully-qualified name bypasses that lookup entirely. See
+              # Decision F.4 (variant b — one-line change vs editing
+              # registries.conf system file).
+              podman run --rm --os=linux docker.io/alpine cat /etc/os-release \
+                || echo "[spike] Linux compat run FAILED"
+
+              # Step 6: podman-compose version (informational only —
+              # Decision 6 forbids running a full integration stack here).
+              echo "--- step 6: podman-compose --version (informational) ---"
+              podman-compose --version || echo "[spike] podman-compose not installed"
+
+              echo
+              echo "=== spike end @ $(date -u +%FT%TZ) ==="
+            } > "$GITHUB_WORKSPACE/spike-log.txt" 2>&1
+
+            echo "::group::Full log (also in the uploaded artifact)"
+            cat "$GITHUB_WORKSPACE/spike-log.txt"
+            echo "::endgroup::"
+
+            echo "spike-log written to $GITHUB_WORKSPACE/spike-log.txt"
+            ls -l "$GITHUB_WORKSPACE/spike-log.txt"
+
+      - name: Upload spike-log.txt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: spike-log
+          path: spike-log.txt
+          if-no-files-found: warn
+
+  # -----------------------------------------------------------------------
+  # E.4 — container-build-freebsd: real ArxSentinel FreeBSD image build
+  # (Task E.4, Decision E.2 + E.2b). Independent from metrics: a red build
+  # is a finding, not a flow-blocker. Runs in its own fresh VM (each
+  # vmactions/freebsd-vm step = a fresh FreeBSD 14.3 with default `zfs`
+  # storage.conf), so the storage-driver sed fix from E.1 is REPEATED here
+  # — see Decision E.2b for why it cannot be shared via a host-side pre-step.
+  # -----------------------------------------------------------------------
+  container-build-freebsd:
+    name: container-build-freebsd (exploratory, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build ArxSentinel FreeBSD image inside FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          copyback: true
+          envs: 'GITHUB_*'
+          run: |
+            # NO `set -e`: this job is exploratory (Decision E.2 + B.3
+            # discipline). A red `podman build` is a recorded finding, not a
+            # flow-blocker. We use `set -o pipefail` only so commands can
+            # fail individually and the build-log captures the failure
+            # context for the artifact.
+            set -o pipefail
+
+            {
+              echo "=== container-build-freebsd run @ $(date -u +%FT%TZ) ==="
+              echo "=== host: $(uname -a) ==="
+              echo
+
+              # Step 1: install go + podman. `pkg install` is independent of
+              # podman's storage state — safe to run before the storage fix.
+              echo "--- step 1: pkg install go podman ---"
+              pkg install -y go podman || echo "[build] pkg install FAILED"
+
+              # Step 2: storage-driver fix. The FreeBSD podman pkg ships
+              # /usr/local/etc/containers/storage.conf with `driver = "zfs"`
+              # — correct on real FreeBSD ZFS installs but WRONG inside the
+              # vmactions/freebsd-vm QEMU VM whose rootfs has no zpool.
+              # Without this fix, `podman build` hard-fails with
+              # "no zfs dataset found for rootdir '/var/db/containers/storage'".
+              # This is the SAME fix as podman-spike step 2.5 (Decision E.1)
+              # — repeated here because each vmactions/freebsd-vm step = a
+              # fresh VM with default storage.conf; the system file does NOT
+              # live under the synced $GITHUB_WORKSPACE, so a host-side
+              # pre-step cannot deduplicate it. See Decision E.2b.
+              echo "--- step 2: storage.conf driver zfs → vfs ---"
+              sed -I .bak -e 's/driver = "zfs"/driver = "vfs"/' \
+                  /usr/local/etc/containers/storage.conf \
+                  || echo "[build] storage.conf sed fix FAILED"
+              podman info --format '{{.Store.GraphDriverName}}' \
+                  || echo "[build] podman info FAILED"
+
+              # Step 2.5: enable pf for podman CNI networking. Same fix as
+              # podman-spike step 2.6 — repeated here because each
+              # vmactions/freebsd-vm step = a fresh VM with no pf loaded
+              # and no /etc/pf.conf (system file, not under the synced
+              # $GITHUB_WORKSPACE — see Decision E.2b). Without this, the
+              # smoke `podman run --rm arxsentinel:freebsd-local --version`
+              # in step 6 below hard-fails at network init with the same
+              # "pf kernel module must be loaded" error live run 28457774103
+              # showed. See DECISIONS §"Group F" (Decision F.1, F.2).
+              echo "--- step 2.5: enable pf for podman networking ---"
+              # Diagnostic: capture the actual interface list into the
+              # build-log artifact. vtnet0 = QEMU/virtio default (Decision
+              # F.2). If this guess is wrong, the ifconfig -l output above
+              # shows the right interface name → one-line fix in both
+              # pf-setup blocks.
+              ifconfig -l
+              cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf \
+                  || echo "[build] pf.conf.sample copy FAILED"
+              sed -i .bak \
+                  -e 's/^v4egress_if=.*/v4egress_if="vtnet0"/' \
+                  -e 's/^v6egress_if=.*/v6egress_if="vtnet0"/' \
+                  /etc/pf.conf \
+                  || echo "[build] pf.conf interface substitution FAILED"
+              kldload pf || echo "[build] kldload pf FAILED (already loaded?)"
+              sysctl net.pf.filter_local=1 || true
+              sysrc pf_enable=YES
+              service pf start || echo "[build] service pf start FAILED"
+
+              # Step 3: native go build of the two binaries into a staging
+              # directory. CGO_ENABLED=0 produces a fully-static binary that
+              # is drop-in compatible with ghcr.io/freebsd/freebsd-static:14.3
+              # (the final-stage base used by deploy/container/freebsd/
+              # Containerfile.freebsd). `-trimpath -ldflags="-s -w -X
+              # main.version=$(cat VERSION)"` mirrors the Linux Dockerfile's
+              # build args (deploy/container/docker/Dockerfile line 34) so the
+              # two images report the same `--version` shape.
+              echo "--- step 3: go build arxsentinel + healthcheck (CGO=0) ---"
+              mkdir -p /tmp/build
+              cd "$GITHUB_WORKSPACE"
+              VERSION=$(cat VERSION 2>/dev/null || echo "dev")
+              echo "[build] VERSION=${VERSION}"
+              CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+                go build -trimpath \
+                  -ldflags="-s -w -X main.version=${VERSION}" \
+                  -o /tmp/build/arxsentinel \
+                  ./cmd/arxsentinel \
+                || echo "[build] arxsentinel build FAILED"
+              CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+                go build -trimpath \
+                  -ldflags="-s -w" \
+                  -o /tmp/build/healthcheck \
+                  ./cmd/healthcheck \
+                || echo "[build] healthcheck build FAILED"
+              ls -l /tmp/build/
+
+              # Step 4: stage config.docker.yaml next to the binaries so it
+              # is in the build context the Containerfile expects (COPY
+              # config.docker.yaml /etc/arxsentinel/config.yaml). Reuse the
+              # existing Linux container-defaults config — FreeBSD and Linux
+              # images share the same container config (pid in /tmp, /var/log/
+              # arxsentinel/ outputs, metrics enabled). See Decision E.2.
+              echo "--- step 4: stage config.docker.yaml into build context ---"
+              cp "$GITHUB_WORKSPACE/deploy/container/docker/config.docker.yaml" \
+                 /tmp/build/config.docker.yaml \
+                || echo "[build] config.docker.yaml copy FAILED"
+
+              # Step 5: podman build. Use the Containerfile.freebsd committed
+              # in Task E.3 (deploy/container/freebsd/Containerfile.freebsd),
+              # with /tmp/build/ as the build context (contains the binaries
+              # and the staged config). Tag arxsentinel:freebsd-local.
+              echo "--- step 5: podman build -f Containerfile.freebsd ---"
+              podman build -f "$GITHUB_WORKSPACE/deploy/container/freebsd/Containerfile.freebsd" \
+                  -t arxsentinel:freebsd-local \
+                  /tmp/build/ \
+                || echo "[build] podman build FAILED"
+
+              # Step 6: smoke. `--version` is a supported flag (cmd/arxsentinel/
+              # main.go: flag.Bool("version", ...)). If podman build succeeded,
+              # this should print the version and exit 0. If podman build
+              # failed above, this will fail too — the `|| echo` captures both
+              # for the build-log.
+              echo "--- step 6: smoke podman run --rm arxsentinel:freebsd-local --version ---"
+              podman run --rm arxsentinel:freebsd-local --version \
+                || echo "[build] podman run --version FAILED"
+
+              # Step 7: list images for the artifact (informational — shows
+              # image size + digest from the local podman store).
+              echo "--- step 7: podman images (informational) ---"
+              podman images arxsentinel:freebsd-local 2>&1 || true
+
+              echo
+              echo "=== build end @ $(date -u +%FT%TZ) ==="
+            } > "$GITHUB_WORKSPACE/build-log.txt" 2>&1
+
+            echo "::group::Full log (also in the uploaded artifact)"
+            cat "$GITHUB_WORKSPACE/build-log.txt"
+            echo "::endgroup::"
+
+            echo "build-log written to $GITHUB_WORKSPACE/build-log.txt"
+            ls -l "$GITHUB_WORKSPACE/build-log.txt"
+
+      - name: Upload build-log.txt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: container-build-freebsd
+          path: build-log.txt
+          if-no-files-found: warn
+
+  # -----------------------------------------------------------------------
+  # G.1 — integration-smoke: synthetic-log end-to-end batch (port of
+  # tests/container/container_test.go::TestContainerDetectsThreat to
+  # FreeBSD/podman). Runs in its own fresh VM (Decision G.1c) — repeats
+  # the full unblock+build chain (storage sed fix per E.1/E.2b, pf setup
+  # per F.1/F.2, native go build, podman build) BEFORE invoking
+  # run-smoke.sh, because container-build-freebsd's image does not persist
+  # across VM-action jobs without a registry push (forbidden by Decision 7
+  # / Deferred 4). Independent from metrics — red smoke must not block the
+  # metrics artifact.
+  # -----------------------------------------------------------------------
+  integration-smoke:
+    name: integration-smoke (exploratory, non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run synthetic-log integration smoke inside FreeBSD VM
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          release: "14.3"
+          usesh: true
+          copyback: true
+          envs: 'GITHUB_*'
+          run: |
+            # NO `set -e`: exploratory job — a red smoke is a recorded
+            # finding to triage in the downloaded smoke-log.txt, not a
+            # flow-blocking event (same discipline as podman-spike B.3
+            # and container-build-freebsd E.4). `set -o pipefail` only.
+            set -o pipefail
+
+            {
+              echo "=== integration-smoke run @ $(date -u +%FT%TZ) ==="
+              echo "=== host: $(uname -a) ==="
+              echo
+
+              # Step 1-5: reproduce the unblock+build chain from
+              # container-build-freebsd (Decision G.1c — images do NOT
+              # persist across VM-action jobs; each vmactions/freebsd-vm
+              # step = fresh VM with default zfs storage.conf and no pf
+              # loaded). Tags prefixed [smoke] to distinguish this job's
+              # log lines from the spike/build jobs in cross-artifact
+              # triage.
+              echo "--- step 1: pkg install go podman ---"
+              pkg install -y go podman || echo "[smoke] pkg install FAILED"
+
+              # Step 2: storage.conf driver fix (repeat of E.1 / E.2b).
+              echo "--- step 2: storage.conf driver zfs → vfs ---"
+              sed -I .bak -e 's/driver = "zfs"/driver = "vfs"/' \
+                  /usr/local/etc/containers/storage.conf \
+                  || echo "[smoke] storage.conf sed fix FAILED"
+              podman info --format '{{.Store.GraphDriverName}}' \
+                  || echo "[smoke] podman info FAILED"
+
+              # Step 3: pf kernel module + /etc/pf.conf setup (repeat of
+              # F.2 / Decision E.2b — fresh VM = no pf loaded). See
+              # Decision F.2 for the ifconfig -l diagnostic rationale.
+              echo "--- step 3: enable pf for podman networking ---"
+              ifconfig -l
+              cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf \
+                  || echo "[smoke] pf.conf.sample copy FAILED"
+              sed -i .bak \
+                  -e 's/^v4egress_if=.*/v4egress_if="vtnet0"/' \
+                  -e 's/^v6egress_if=.*/v6egress_if="vtnet0"/' \
+                  /etc/pf.conf \
+                  || echo "[smoke] pf.conf interface substitution FAILED"
+              kldload pf || echo "[smoke] kldload pf FAILED (already loaded?)"
+              sysctl net.pf.filter_local=1 || true
+              sysrc pf_enable=YES
+              service pf start || echo "[smoke] service pf start FAILED"
+
+              # Step 4: native go build (CGO_ENABLED=0, mirrors Linux
+              # Dockerfile build args — see container-build-freebsd step 3
+              # comment). Binary is built in the VM (not via a Containerfile
+              # golang-builder stage — see Decision E.2).
+              echo "--- step 4: go build arxsentinel + healthcheck (CGO=0) ---"
+              mkdir -p /tmp/build
+              cd "$GITHUB_WORKSPACE"
+              VERSION=$(cat VERSION 2>/dev/null || echo "dev")
+              echo "[smoke] VERSION=${VERSION}"
+              CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+                go build -trimpath \
+                  -ldflags="-s -w -X main.version=${VERSION}" \
+                  -o /tmp/build/arxsentinel \
+                  ./cmd/arxsentinel \
+                || echo "[smoke] arxsentinel build FAILED"
+              CGO_ENABLED=0 GOOS=freebsd GOARCH=amd64 \
+                go build -trimpath \
+                  -ldflags="-s -w" \
+                  -o /tmp/build/healthcheck \
+                  ./cmd/healthcheck \
+                || echo "[smoke] healthcheck build FAILED"
+              ls -l /tmp/build/
+
+              # Step 5: stage config.docker.yaml into build context (same
+              # as container-build-freebsd step 4; reuses the Linux
+              # container-defaults config — Decision E.2).
+              echo "--- step 5: stage config.docker.yaml into build context ---"
+              cp "$GITHUB_WORKSPACE/deploy/container/docker/config.docker.yaml" \
+                 /tmp/build/config.docker.yaml \
+                || echo "[smoke] config.docker.yaml copy FAILED"
+
+              # Step 6: podman build (same as container-build-freebsd step
+              # 5 — Containerfile.freebsd committed in E.3 is the
+              # single-stage FreeBSD analogue of the Linux Dockerfile).
+              echo "--- step 6: podman build arxsentinel:freebsd-local ---"
+              podman build -f "$GITHUB_WORKSPACE/deploy/container/freebsd/Containerfile.freebsd" \
+                  -t arxsentinel:freebsd-local \
+                  /tmp/build/ \
+                || echo "[smoke] podman build FAILED"
+
+              # Step 7: invoke the synthetic-log smoke script with TMPDIR
+              # scoped to $GITHUB_WORKSPACE (NOT export): the script needs
+              # $TMPDIR for work dir and threats.log persistence. Scoped (not
+              # export) because go build (step 4) runs in $GITHUB_WORKSPACE,
+              # and Go refuses module mode when cwd == TMPDIR — built-in
+              # protection against module-mode on temporary directories.
+              # (port of tests/container/container_test.go::
+              # TestContainerDetectsThreat). See Decision G.1b.
+              echo "--- step 7: run tests/integration-freebsd/run-smoke.sh ---"
+              TMPDIR="$GITHUB_WORKSPACE" sh "$GITHUB_WORKSPACE/tests/integration-freebsd/run-smoke.sh" \
+                || echo "[smoke] run-smoke.sh FAILED"
+
+              echo
+              echo "=== smoke end @ $(date -u +%FT%TZ) ==="
+            } > "$GITHUB_WORKSPACE/smoke-log.txt" 2>&1
+
+            echo "::group::Full log (also in the uploaded artifact)"
+            cat "$GITHUB_WORKSPACE/smoke-log.txt"
+            echo "::endgroup::"
+
+            # The smoke script copies threats.log to
+            # $TMPDIR/threats.log.smoke (i.e. $GITHUB_WORKSPACE/...) so
+            # the artifact upload below can pick it up. If the script
+            # failed before that copy, the file is absent and the upload
+            # step uses if-no-files-found: warn — the smoke-log.txt still
+            # contains the full threat log dump for triage.
+            echo "smoke-log written to $GITHUB_WORKSPACE/smoke-log.txt"
+            ls -l "$GITHUB_WORKSPACE/smoke-log.txt" \
+                  "$GITHUB_WORKSPACE/threats.log.smoke" 2>&1 || true
+
+      - name: Upload smoke-log.txt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-smoke
+          path: |
+            smoke-log.txt
+            threats.log.smoke
+          if-no-files-found: warn
+
+  # -----------------------------------------------------------------------
+  # B.4 — metrics consolidation (depends on both B.2 and B.3)
+  # -----------------------------------------------------------------------
+  metrics:
+    name: freebsd-metrics
+    needs: [build-test, podman-spike]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        # No `merge-multiple`: default behavior puts each artifact in its
+        # own subdirectory named after the artifact (go-test-json/,
+        # spike-log/), which is exactly what the metrics script's hardcoded
+        # paths below expect.
+
+      - name: Compose freebsd-metrics.md
+        env:
+          BUILD_TEST_OUTCOME: ${{ needs.build-test.result }}
+          PODMAN_SPIKE_OUTCOME: ${{ needs.podman-spike.result }}
+          VM_SUMMARY: ${{ needs.build-test.outputs.summary }}
+          VM_BUILD_SECONDS: ${{ needs.build-test.outputs.build_seconds }}
+          VM_TEST_SECONDS: ${{ needs.build-test.outputs.test_seconds }}
+        run: |
+          set -eu
+          cd "$GITHUB_WORKSPACE"
+
+          # Build step outputs come from the B.2 step `id: vmtest`, published
+          # to job-level outputs via the host-side "Publish VM step outputs"
+          # step. They are available regardless of build-test result (the host
+          # post-step uses `if: always()` and the VM writes vm-outputs.txt
+          # before the failing test command can short-circuit it). Fall back
+          # to "see run logs" if absent.
+          SUMMARY="${VM_SUMMARY:-see run logs}"
+          BUILD_SEC="${VM_BUILD_SECONDS:-?}"
+          TEST_SEC="${VM_TEST_SECONDS:-?}"
+
+          # VM boot time: the vmactions/freebsd-vm step's own host-side
+          # duration is the best available proxy (it includes VM boot +
+          # pkg installs + go build/test). We do not invent a number; the
+          # authoritative value lives in the Actions run UI for this job.
+          VM_STEP_DURATION="see run logs (build-test job: vmactions/freebsd-vm step duration)"
+
+          # go test summary re-parse from the downloaded artifact (in case
+          # the step output is missing on a red build).
+          if [ -f go-test-json/go-test.json ] && command -v jq >/dev/null 2>&1; then
+            JQ_SUMMARY=$(jq -r --slurp '
+              def n(k): (. | map(select(.Action==k and .Test)) | length);
+              def dur: ([.[].Elapsed // 0] | add);
+              def arr: .;
+              "passed=\(arr | n("pass")) skipped=\(arr | n("skip")) failed=\(arr | n("fail")) duration=\(arr | dur)s"
+            ' go-test-json/go-test.json 2>/dev/null || echo "see run logs")
+          else
+            JQ_SUMMARY="see run logs"
+          fi
+
+          # Spike verdict: extract a short raw verdict line from the spike
+          # log. We do not editorialise — just surface what the log says.
+          if [ -f spike-log/spike-log.txt ]; then
+            SPIKE_VERDICT=$(grep -E '^\[spike\]|^--- step|^=== spike' spike-log/spike-log.txt | head -40 || true)
+            SPIKE_RAW_HEAD=$(head -120 spike-log/spike-log.txt || true)
+          else
+            SPIKE_VERDICT="spike-log artifact not present (job did not run or did not upload)"
+            SPIKE_RAW_HEAD=""
+          fi
+
+          METRICS=freebsd-metrics.md
+          : > "$METRICS"
+          {
+            printf '# FreeBSD CI metrics (auto-generated)\n\n'
+            printf '> **Auto-generated artifact.** The curated human review is\n'
+            printf '> \`SUMMARY.md\` in\n'
+            printf '> \`.opencode/flows/088_2026-06-30_freebsd-ci-harness/\`, written\n'
+            printf '> after this run by the implementer (Task D.1).\n\n'
+            printf '## Job outcomes\n\n'
+            printf -- '- **build-test:**   %s\n' "$BUILD_TEST_OUTCOME"
+            printf -- '- **podman-spike:** %s (continue-on-error: true — expected to be informational)\n\n' "$PODMAN_SPIKE_OUTCOME"
+            printf '## VM timing\n\n'
+            printf -- '- **vmactions/freebsd-vm step duration** (proxy for VM boot + setup + build + test): %s\n' "$VM_STEP_DURATION"
+            printf -- '- **go build ./... (in-VM):**           %ss\n' "$BUILD_SEC"
+            printf -- '- **go test -short ./... (in-VM):**     %ss\n\n' "$TEST_SEC"
+            printf '## go test summary\n\n'
+            printf 'From the B.2 step output:\n\n'
+            printf '```\n%s\n```\n\n' "$SUMMARY"
+            printf 'Re-parsed from \`go-test-json/go-test.json\`:\n\n'
+            printf '```\n%s\n```\n\n' "$JQ_SUMMARY"
+            printf '## podman spike outcome\n\n'
+            printf 'Verdicts extracted from \`spike-log/spike-log.txt\` (raw, not summarised):\n\n'
+            printf '```\n%s\n```\n\n' "$SPIKE_VERDICT"
+            if [ -n "$SPIKE_RAW_HEAD" ]; then
+              printf '<details>\n'
+              printf '<summary>spike log head (first 120 lines)</summary>\n\n'
+              printf '```\n%s\n```\n\n' "$SPIKE_RAW_HEAD"
+              printf '</details>\n'
+            fi
+          } >> "$METRICS"
+
+          echo "freebsd-metrics.md composed:"
+          wc -l freebsd-metrics.md
+
+      - name: Upload freebsd-metrics.md
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: freebsd-metrics
+          path: freebsd-metrics.md
+          if-no-files-found: error

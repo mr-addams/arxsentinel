@@ -1,0 +1,175 @@
+# tests/integration-freebsd/haproxy/sentinel-haproxy.yaml — arxsentinel
+# config for Flow 091 integration-haproxy job.
+#
+# Used by tests/integration-freebsd/haproxy/integration.sh (Phase P4 of
+# Flow 091). arxsentinel runs NATIVE on the FreeBSD VM host (per Flow
+# 089 DECISIONS §2 — sentinel on host, NOT in a container), with its
+# CWD set to $WORK_DIR by integration.sh's `cd $WORK_DIR && ./arxsentinel
+# ...`. The paths below are RELATIVE to $WORK_DIR: haproxy/access.log
+# is the host-side file written by the `podman logs --follow haproxy`
+# capture process that integration.sh backgrounds immediately after
+# the haproxy container starts (P4.3 architectural divergence from
+# nginx/caddy/traefik, which use a -v bind-mount for the access log
+# — see integration.sh step 3 header for the full rationale); output/
+# threats-haproxy.log is the threat log the grader reads.
+#
+# Why this is a near-verbatim copy of sentinel-traefik.yaml (per Flow
+# 091 DECISIONS §2 — copy-then-adapt, no premature library extraction).
+# The ONLY differences are:
+#   1. general.log_file: logs/access.log → haproxy/access.log
+#      (HAProxy logs to stdout, captured by `podman logs --follow` into
+#      $WORK_DIR/haproxy/access.log. nginx/caddy/traefik use a -v
+#      bind-mount; HAProxy does NOT, because we want the verbatim
+#      battle-suite `log stdout len 8192 format raw local0 info`
+#      directive, which has no file-path target.)
+#   2. parser.profile: traefik → haproxy-http
+#      (CRUCIAL: the haproxy-http profile is a custom regex parser
+#      distinct from apacheCLFPattern — see below. Do NOT use
+#      parser.profile: traefik for an HAProxy log; the line format
+#      starts with "<ip>:<port> [<time>]" not "<ip> - - [<time>]",
+#      and the trailing field order differs.)
+#   3. output.threat_log: output/threats-traefik.log →
+#      output/threats-haproxy.log (per Decision 4 consequences:
+#      per-backend threat-log suffix to avoid artifact upload
+#      collision when multiple jobs run in the same workflow
+#      dispatch).
+# All other fields are kept identical to sentinel-traefik.yaml so the
+# scorer/pipeline behaviour is byte-for-byte the same; the per-backend
+# test is a true parity signal (same config shape, different upstream
+# log path + parser profile).
+#
+# Why debug: true is REQUIRED (not a nice-to-have):
+#   The integration.sh script polls the "watching started" log line
+#   that TailReader emits immediately after seek(EOF). Without debug:
+#   true, the TAIL log tag is suppressed and the polling loop in step
+#   5 never sees the sync marker — it would time out at 30s on every
+#   run. Same rationale as sentinel-nginx.yaml, sentinel-caddy.yaml,
+#   sentinel-traefik.yaml and tests/integration-freebsd/smoke.yaml
+#   header (Flow 088 G.1b).
+#
+# Why metrics.enabled: false:
+#   The sentinel is a research-grade smoke component, not a production
+#   service. Enabling the metrics endpoint (default :9117) would add
+#   an open port in the VM for no useful measurement; the smoke's
+#   PASS/FAIL signal is the threat log grader, not Prometheus. Matches
+#   sentinel-nginx.yaml / sentinel-caddy.yaml / sentinel-traefik.yaml
+#   precedent.
+#
+# Why pid_file: /tmp/arxsentinel.pid is kept for parity:
+#   The pid file is harmless on FreeBSD (the sentinel writes it on
+#   start, removes it on clean shutdown). It matches the
+#   sentinel-nginx.yaml / sentinel-caddy.yaml / sentinel-traefik.yaml
+#   pattern and gives integration.sh a known file to read for sentinel
+#   liveness checks. integration.sh does not depend on it but may use
+#   it in future iterations.
+#
+# SOURCE-VERIFIED parser.profile contract (NOT a guess from the brief):
+#   arx-core v0.3.1 pkg/parser/profiles.go (verified by reading the
+#   source file directly before this yaml was written):
+#     - Line 8 module header lists the five built-in profiles:
+#       "apache, caddy, traefik, haproxy-http, litespeed".
+#     - Line 40-50 haproxyHTTPPattern:
+#         ^(?P<remote_addr>[^:]+):\d+ \[(?P<time>[^\]]+)\] \S+ \S+ \S+
+#         (?P<status>\d+) (?P<bytes_sent>\d+) \S+ \S+ \S+ \S+ \S+
+#         "(?P<request>[^"]*)"(?: "(?P<http_user_agent>[^"]*)")?
+#     - Line 61 Profiles map key: "haproxy-http" → haproxyHTTPProfile
+#     - Line 95-101 haproxyHTTPProfile returns NewRegexParser(
+#       haproxyHTTPPattern).
+#   The pattern's optional trailing `"(?P<http_user_agent>[^"]*)"`
+#   group REQUIRES the haproxy.cfg to:
+#     (a) capture the UA via `http-request capture req.hdr(user-agent)
+#         len 200` (otherwise the fetch slot is empty), AND
+#     (b) write it via `log-format "...%[capture.req.hdr(0)]"`.
+#   Both directives are present in haproxy.cfg. Without them, the
+#   trailing field renders as "-" and the parser silently drops the
+#   absent http_user_agent — which would break the badbot/UA-scoring
+#   assertions in integration.sh step 7.
+
+general:
+  # Host-side access log (relative to $WORK_DIR, which is the sentinel's
+  # CWD when integration.sh starts it). Written by the backgrounded
+  # `podman logs --follow haproxy > $WORK_DIR/haproxy/access.log`
+  # process (P4.3 step 3b) from HAProxy's stdout stream. Note: the
+  # subdir is `haproxy/` (not `logs/` like caddy/traefik) — the brief
+  # specifies `$WORK_DIR/haproxy/access.log` to keep the per-backend
+  # artifact paths non-overlapping.
+  log_file: haproxy/access.log
+  pid_file: /tmp/arxsentinel.pid
+  tail_retry_interval: "1s"
+
+# parser.profile: haproxy-http — built-in profile from arx-core
+# (github.com/mr-addams/arx-core/pkg/parser/profiles.go:61,
+# haproxyHTTPProfile at :99-101) wraps NewRegexParser(haproxyHTTPPattern).
+# This is the SAME profile the battle suite uses
+# (tests/integration/arxsentinel/haproxy.yaml — see the
+# deploy/examples/haproxy/haproxy.cfg referenced in the profile's
+# source comments). The haproxy.cfg in this directory emits lines that
+# match haproxyHTTPPattern's structure EXACTLY (verified line-by-line
+# in the file's header).
+#
+# The "haproxy-http" profile has priority over parser.log_format in
+# buildParserForInput, so log_format is NOT set here.
+#
+# Per Decision 4 haproxy row: the 8th attack scenario (badbot)
+# asserts that the badbot UA string appears in the threat log —
+# this requires the UA to be in the parsed log line. The
+# haproxy-http profile's regex captures http_user_agent as the
+# OPTIONAL trailing quoted field; haproxy.cfg's `http-request
+# capture req.hdr(user-agent)` + `log-format "...%[capture.req.hdr(0)]"`
+# ensure the optional group is present in the output. Both ends are
+# consistent.
+parser:
+  profile: haproxy-http
+
+logging:
+  debug: true
+  console_color: false
+
+metrics:
+  enabled: false
+  listen_addr: ":9117"
+  username: ""
+  password_hash: ""
+
+# output.threat_log: relative to $WORK_DIR. integration.sh copies
+# this file (after assertions) to $TMPDIR/threats-haproxy.log.smoke
+# for the workflow artifact upload (P3.4 carry of 089 Task 3.6 +
+# 4.3 pattern, with traefik/haproxy per-backend naming).
+output:
+  threat_log: output/threats-haproxy.log
+  operational_log: sentinel-haproxy.log
+
+# blocklist: added per Flow 092 Task A2 / Decision 7 (close the
+# Flow 091 Decision 9 gap — assert blocklist automaton actually
+# loaded patterns from upstream, mirroring tests/integration/
+# verify.sh:109 assert_blocklist_loaded). VERBATIM port of the
+# sentinel-caddy.yaml blocklist block (lines 146-153) and
+# sentinel-traefik.yaml blocklist block (lines 164-171) per Flow
+# 092 Decision 4 (copy-then-adapt, no per-backend divergence
+# unless functionally required): the parser contract is identical
+# between FreeBSD-native and battle binaries, and the upstream
+# URL is the same mitchellkrogza bad-user-agents list the battle
+# suite + run.sh:70 already use.
+#
+# Why direct upstream fetch (https://raw.githubusercontent.com/...)
+# and NOT http://localhost:8090/... as in the battle suite: the
+# FreeBSD job has no dedicated blocklist-server container (per
+# the sentinel-caddy.yaml / sentinel-traefik.yaml WHY-comments
+# at the same block, carried here). GH runner image already has
+# internet access for the podman pull of haproxy:latest and
+# curlimages/curl in Steps 3 + 6, so it has the connectivity
+# this fetch needs.
+#
+# Why storage: "" (in-memory only, no on-disk persistence): the
+# FreeBSD sentinel is a per-job smoke instance — the VM is
+# destroyed on job exit, so there is no value in caching the
+# fetched patterns to disk. In-memory only matches the battle
+# suite's exact same value and the smoke's ephemeral lifecycle.
+blocklist:
+  storage: ""
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text

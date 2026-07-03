@@ -1,0 +1,115 @@
+# tests/integration-freebsd/caddy/Caddyfile — minimal Caddy v2 config
+# for Flow 091 integration-caddy job.
+#
+# Used by tests/integration-freebsd/caddy/integration.sh (Phase P2 of
+# Flow 091). The caddy container runs under FreeBSD's Linux emulation
+# (`podman run --os=linux <caddy-with-transform-encoder>` — per Flow
+# 088 DECISIONS §"A.2" Linux compat path, same flag as Flow 089's
+# nginx container).
+#
+# Why this is a custom caddy build (NOT docker.io/library/caddy:2-alpine):
+#   The arx-core "caddy" built-in parser profile
+#   (github.com/mr-addams/arx-core/pkg/parser/profiles.go:80-82
+#   caddyProfile) uses NewRegexParser(apacheCLFPattern) — Apache
+#   Combined Log Format (text, not JSON). Caddy v2's DEFAULT log
+#   encoder emits nested JSON, which is NOT parseable by
+#   apacheCLFPattern. To produce CLF, the Caddy binary must include
+#   the github.com/caddyserver/transform-encoder plugin (built via
+#   xcaddy -- see tests/integration/dockerfiles/Caddy.Dockerfile,
+#   which is the SAME Dockerfile the battle suite uses for
+#   caddy + caddy-backend in tests/integration/docker-compose.yml).
+#   The plugin is built into a drop-in caddy binary; the image
+#   construction happens in the workflow's unblock chain (P2.4 —
+#   `podman build` step before `podman run`).
+#
+# Per Flow 091 DECISIONS.md §4 (per-backend access-log format matrix,
+# caddy row): image caddy:alpine + log path /var/log/caddy/access.log
+# + UA capture. The matrix image column says "caddy:alpine (or
+# caddy:2-alpine)" — the spirit is "the standard alpine-based caddy
+# image"; in practice we build a custom drop-in replacement from the
+# official upstream because the transform-encoder plugin is REQUIRED
+# for parser compatibility. The custom build uses caddy:latest as
+# the final stage base (matches tests/integration/dockerfiles/
+# Caddy.Dockerfile), so the runtime is bit-for-bit the same as
+# caddy:2.x — just with the plugin pre-compiled in.
+#
+# Per Flow 091 DECISIONS §4 (UA capture): apacheCLFPattern matches
+# CLF's 9-field form with the User-Agent as the 9th quoted field
+# (after Referer). The transform format string below explicitly
+# writes the User-Agent in the 9th position so the regex
+#   ^(\S+) - (\S+) \[([^\]]+)\] "([^"]*)" (\d+) (\d+) "([^"]*)" "([^"]*)"$
+# finds it. Caddy's default JSON would put request.headers.User-
+# Agent in a NESTED array (`{request>headers>User-Agent>[0]}`),
+# which the regex can't parse.
+#
+# Why minimal: we want the access log to be the only output of
+# interest. No PHP, no reverse-proxy chain, no realip module —
+# those are battle-suite surface (Deferred 089.2 / 089.3 in
+# Flow 089 DECISIONS), out of scope for this per-backend first
+# iteration. A request to / returns 404 (Caddy's default when no
+# site block matches the listen address), which is fine: the
+# parser only needs the request line + UA + client IP, not the
+# response code.
+#
+# log path: /var/log/caddy/access.log (matches the path the
+# battle suite uses — tests/integration/configs/Caddyfile:49,
+# deploy/examples/caddy/Caddyfile:17, and the Caddy default). The
+# bind-mount in integration.sh places $WORK_DIR/log on
+# /var/log/caddy (NOT /data/log — the latter is the project's
+# hardcoded pattern but the standard Caddy path is /var/log/caddy
+# and consistency with the battle suite + deploy/examples is
+# prioritised per Decision 2 copy-then-adapt).
+
+{
+    # admin off: Caddy normally opens :2019 for the admin API; we
+    # don't need it and the FreeBSD VM has no reason to expose it.
+    # Matches the battle suite's tests/integration/configs/Caddyfile.
+    admin off
+
+    # auto_https off: the cert provisioning chain (ACME HTTP-01
+    # challenge against a public address) would fail in the
+    # vmactions VM (no public DNS, no inbound 80/443). With
+    # auto_https off Caddy serves plain HTTP only, which is what
+    # integration.sh expects.
+    auto_https off
+}
+
+# Single server block, listening on :80. No host filter (server_name
+# is Caddy's implicit match); any Host header is accepted. respond
+# / "*" 404 returns 404 for everything — the parser doesn't care
+# about the response code, only the request line + UA + client IP.
+http:// {
+    respond / "*" 404
+
+    log {
+        # Bind-mount path on the host (Caddyfile lives in
+        # $WORK_DIR/log/access.log via the -v bind in integration.sh).
+        output file /var/log/caddy/access.log {
+            roll_size 0
+        }
+        # transform-encoder outputs Apache CLF — required by the
+        # arx-core "caddy" parser profile. Pattern fields map to
+        # apacheCLFPattern's named groups in profiles.go:
+        #   remote_addr  ← {request>remote_ip}
+        #   remote_user  ← literal "-" (no auth in this test)
+        #   time         ← [{ts}] with time_format below
+        #   request      ← "{request>method} {request>uri} {request>proto}"
+        #   status       ← {status}
+        #   bytes_sent   ← {size} (Apache CLF allows \S+; Caddy writes digits)
+        #   http_referer ← {request>headers>Referer>[0]}
+        #   http_user_agent ← {request>headers>User-Agent>[0]}  ← THE
+        #     field that badbot scenario depends on (Decision 9)
+        #
+        # transform-encoder path syntax: arrays are indexed as >[N],
+        # not >N — documented in deploy/examples/caddy/Caddyfile:22
+        # and in caddyserver/transform-encoder upstream README.
+        #
+        # {request>remote_ip} (renamed from remote_addr in Caddy v2.8+)
+        # — client IP. {request>headers>Referer>[0]} / {request>headers>
+        # User-Agent>[0]} — first value of the header array, required
+        # for badbot UA matching per Decision 9.
+        format transform `{request>remote_ip} - - [{ts}] "{request>method} {request>uri} {request>proto}" {status} {size} "{request>headers>Referer>[0]}" "{request>headers>User-Agent>[0]}"` {
+            time_format "02/Jan/2006:15:04:05 -0700"
+        }
+    }
+}

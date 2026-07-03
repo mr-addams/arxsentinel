@@ -1,0 +1,187 @@
+# tests/integration-freebsd/litespeed/sentinel-litespeed.yaml — arxsentinel
+# config for Flow 091 integration-litespeed job.
+#
+# Used by tests/integration-freebsd/litespeed/integration.sh (Phase P6 of
+# Flow 091). arxsentinel runs NATIVE on the FreeBSD VM host (per Flow
+# 089 DECISIONS §2 — sentinel on host, NOT in a container), with its
+# CWD set to $WORK_DIR by integration.sh's `cd $WORK_DIR && ./arxsentinel
+# ...`. The paths below are RELATIVE to $WORK_DIR: logs/access.log is
+# the host-side file written by the OLS worker into the bind-mounted
+# $WORK_DIR/logs/ directory (mirror of the nginx/caddy/traefik/apache
+# bind-mount pattern); output/threats-litespeed.log is the threat log
+# the grader reads.
+#
+# Why this is a near-verbatim copy of sentinel-apache.yaml (per Flow
+# 091 DECISIONS §2 — copy-then-adapt, no premature library extraction).
+# The ONLY differences are:
+#   1. parser.profile: apache → litespeed
+#      (litespeed profile is the source-verified built-in profile from
+#      arx-core v0.3.1 — see "SOURCE-VERIFIED parser.profile
+#      contract" below. It wraps the SAME apacheCLFPattern regex that
+#      the apache profile uses, so a default-emit OLS access log is
+#      parsed identically to an httpd access log.)
+#   2. output.threat_log: output/threats-apache.log →
+#      output/threats-litespeed.log (per Decision 4 consequences:
+#      per-backend threat-log suffix to avoid artifact upload
+#      collision when multiple jobs run in the same workflow
+#      dispatch).
+#   3. operational_log: sentinel-apache.log → sentinel-litespeed.log
+#      (same per-backend suffix rationale.)
+# All other fields are kept identical to sentinel-apache.yaml so the
+# scorer/pipeline behaviour is byte-for-byte the same; the per-backend
+# test is a true parity signal (same config shape, different upstream
+# log path + parser profile).
+#
+# Why debug: true is REQUIRED (not a nice-to-have):
+#   The integration.sh script polls the "watching started" log line
+#   that TailReader emits immediately after seek(EOF). Without debug:
+#   true, the TAIL log tag is suppressed and the polling loop in step
+#   5 never sees the sync marker — it would time out at 30s on every
+#   run. Same rationale as sentinel-nginx.yaml, sentinel-caddy.yaml,
+#   sentinel-traefik.yaml, sentinel-haproxy.yaml,
+#   sentinel-apache.yaml, and tests/integration-freebsd/smoke.yaml
+#   header (Flow 088 G.1b).
+#
+# Why metrics.enabled: false:
+#   The sentinel is a research-grade smoke component, not a production
+#   service. Enabling the metrics endpoint (default :9117) would add
+#   an open port in the VM for no useful measurement; the smoke's
+#   PASS/FAIL signal is the threat log grader, not Prometheus. Matches
+#   sentinel-nginx.yaml / sentinel-caddy.yaml / sentinel-traefik.yaml /
+#   sentinel-haproxy.yaml / sentinel-apache.yaml precedent.
+#
+# Why pid_file: /tmp/arxsentinel.pid is kept for parity:
+#   The pid file is harmless on FreeBSD (the sentinel writes it on
+#   start, removes it on clean shutdown). It matches the
+#   sentinel-<backend>.yaml precedent across all five per-backend
+#   configs and gives integration.sh a known file to read for
+#   sentinel liveness checks. integration.sh does not depend on
+#   it but may use it in future iterations.
+#
+# SOURCE-VERIFIED parser.profile contract (NOT a guess from the brief):
+#   arx-core v0.3.1 pkg/parser/profiles.go (verified by reading the
+#   source file directly before this yaml was written):
+#     - Line 8 module header lists the five built-in profiles:
+#       "apache, caddy, traefik, haproxy-http, litespeed".
+#     - Line 30-40 apacheCLFPattern:
+#         ^(?P<remote_addr>\S+) \S+ (?P<remote_user>\S+) \[(?P<time>[^\]]+)\]
+#         "(?P<request>[^"]*)" (?P<status>\d+) (?P<bytes_sent>\S+)
+#         (?: "(?P<http_referer>[^"]*)" "(?P<http_user_agent>[^"]*)")?
+#     - Line 62 Profiles map key: "litespeed" → litespeedProfile
+#     - Line 103-117 litespeedProfile:
+#         "Both LSWS and OLS emit Apache CLF by default — no server-side
+#          log format changes required."
+#         returns NewRegexParser(apacheCLFPattern).
+#   Decision: we use the STOCK docker.io/litespeedtech/openlitespeed
+#   image with NO custom Dockerfile and NO patch-ols-logformat.py
+#   invocation. The default OLS access log (format: combined, which
+#   is Apache CLF with User-Agent) is parsed byte-for-byte by
+#   litespeedProfile → apacheCLFPattern. This is the G11-avoidance
+#   path recommended by the brief: the upstream image is what
+#   tests/integration/docker-compose.yml uses (service `litespeed:`
+#   at lines 108-117, image: litespeedtech/openlitespeed:latest,
+#   NO build section, NO patched variant).
+#
+#   The patch-ols-logformat.py at
+#   tests/integration/dockerfiles/patch-ols-logformat.py is
+#   INTENTIONALLY NOT vendored or invoked here. That script
+#   substitutes %{X-Forwarded-For}i for the client-IP field and
+#   DROPS the trailing %{Referer}i / %{User-Agent}i — its format
+#   string ("%{X-Forwarded-For}i %l %u %t \"%r\" %>s %b") has no
+#   UA capture. It exists for the proxy-chain scenario (XFF
+#   must replace the proxy container IP), which is Deferred
+#   091.1 and out of P6's scope (direct-only, no chain).
+#   Applying the patch in P6 would silently break the badbot
+#   scenario (Decision 9 condition: backend must capture UA).
+
+general:
+  # Host-side access log (relative to $WORK_DIR, which is the sentinel's
+  # CWD when integration.sh starts it). OLS's docker template names
+  # the file after the vhost, NOT a plain "access.log" (found live,
+  # run 28561348731: sentinel was tailing logs/access.log while OLS
+  # actually wrote to logs/localhost.access.log — a leftover from the
+  # nginx/caddy/traefik/apache precedent that this file's own header
+  # and integration.sh's comments already correctly documented but
+  # this value wasn't updated to match). Written by the OLS worker
+  # into /usr/local/lsws/logs/localhost.access.log, which the
+  # bind-mount surfaces as $WORK_DIR/logs/localhost.access.log.
+  log_file: logs/localhost.access.log
+  pid_file: /tmp/arxsentinel.pid
+  tail_retry_interval: "1s"
+
+# parser.profile: litespeed — built-in profile from arx-core
+# (github.com/mr-addams/arx-core/pkg/parser/profiles.go:62,
+# litespeedProfile at :103-117) wraps NewRegexParser(apacheCLFPattern).
+# This is the SAME pattern the apache profile uses — the regex is
+# byte-for-byte identical (verified by reading profiles.go:70-72
+# vs profiles.go:115-116; both call NewRegexParser(apacheCLFPattern)).
+# The default OLS access log format is Combined Log Format, which
+# matches apacheCLFPattern's structure EXACTLY (remote_addr,
+# remote_user, [time], "request", status, bytes, "referer",
+# "user-agent" in that order with the exact quoting the regex
+# expects).
+#
+# The "litespeed" profile has priority over parser.log_format in
+# buildParserForInput, so log_format is NOT set here.
+#
+# Per Decision 4 litespeed row + Decision 9: the 8th attack
+# scenario (badbot) asserts that the badbot UA string appears in
+# the threat log — this requires the UA to be in the parsed log
+# line. The litespeed profile's regex captures http_user_agent
+# as the OPTIONAL trailing quoted field; OLS's default combined
+# format includes the %{User-Agent}i in the trailing quoted
+# position. Both ends are consistent.
+parser:
+  profile: litespeed
+
+logging:
+  debug: true
+  console_color: false
+
+metrics:
+  enabled: false
+  listen_addr: ":9117"
+  username: ""
+  password_hash: ""
+
+# output.threat_log: relative to $WORK_DIR. integration.sh copies
+# this file (after assertions) to $TMPDIR/threats-litespeed.log.smoke
+# for the workflow artifact upload (P6.4 carry of 089 Task 3.6 +
+# 4.3 pattern, with per-backend naming).
+output:
+  threat_log: output/threats-litespeed.log
+  operational_log: sentinel-litespeed.log
+
+# blocklist: added per Flow 092 Task A6 / Decision 7 (close the
+# Flow 091 Decision 9 gap — assert blocklist automaton actually
+# loaded patterns from upstream, mirroring tests/integration/
+# verify.sh:109 assert_blocklist_loaded). Verbatim port of the
+# sentinel-traefik.yaml blocklist block (lines 164-171) per Flow
+# 092 Decision 4 (copy-then-adapt, no per-backend divergence
+# unless functionally required): the parser contract is identical
+# between FreeBSD-native and battle binaries, and the upstream
+# URL is the same mitchellkrogza bad-user-agents list the battle
+# suite + run.sh:70 already use.
+#
+# Why direct upstream fetch (https://raw.githubusercontent.com/...)
+# and NOT http://localhost:8090/... as in the battle suite: the
+# FreeBSD job has no dedicated blocklist-server container (per
+# the sentinel-caddy.yaml WHY-comment at the same block, carried
+# here). GH runner image already has internet access for the
+# podman pull of docker.io/litespeedtech/openlitespeed:latest and
+# curlimages/curl in Steps 3 + 6, so it has the connectivity this
+# fetch needs.
+#
+# Why storage: "" (in-memory only, no on-disk persistence): the
+# FreeBSD sentinel is a per-job smoke instance — the VM is
+# destroyed on job exit, so there is no value in caching the
+# fetched patterns to disk. In-memory only matches the battle
+# suite's exact same value and the smoke's ephemeral lifecycle.
+blocklist:
+  storage: ""
+  lists:
+    - name: badbot-ua
+      refresh_interval: 24h
+      sources:
+        - url: "https://raw.githubusercontent.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker/master/_generator_lists/bad-user-agents.list"
+          format: plain_text

@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/license-Elastic--2.0-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64%20%7C%20arm%2Fv7%20%7C%20riscv64%20%7C%20i386-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
+[![FreeBSD](https://img.shields.io/badge/freebsd-386%20%7C%20amd64%20%7C%20arm%20%7C%20arm64-red?logo=freebsd)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 > 🌐 [Українська документація](README.uk.md) | [Русская документация](README.ru.md) | 📖 [Configuration Cookbook](cookbook/CookBook.md)
 
@@ -295,6 +296,33 @@ sudo systemctl enable --now arxsentinel
 
 > **Fail2Ban on Arch:** install it with `sudo pacman -S fail2ban` before or after installing arxsentinel.
 
+### FreeBSD
+
+Not covered by the `get.sh` quick-install above (that script targets
+Linux `/etc/os-release` distros only). Download the `freebsd_<arch>`
+archive from the [Releases](https://github.com/mr-addams/arxsentinel/releases)
+page and run the bundled installer:
+
+```sh
+fetch https://github.com/mr-addams/arxsentinel/releases/latest/download/arxsentinel_<version>_freebsd_<arch>.tar.gz
+tar xzf arxsentinel_<version>_freebsd_<arch>.tar.gz
+cd arxsentinel_<version>_freebsd_<arch>
+sudo sh install.sh
+```
+
+`install.sh` creates the `arxsentinel` system user, installs the binary
+and an rc.d service script, and seeds a config from the bundled example
+(never overwrites an existing config on re-run). Enable and start:
+
+```sh
+sysrc arxsentinel_enable=YES
+service arxsentinel start
+```
+
+Full guide — FreeBSD path layout, rc.d service management, and running
+your web server under `podman` on FreeBSD (storage driver, firewall
+setup, container networking gotchas): [FreeBSD Deployment Cookbook](cookbook/freebsd/CookBook.md).
+
 ### Build from source
 
 Requires Go 1.26+:
@@ -406,7 +434,7 @@ deploy/examples/
 
 ## Requirements
 
-- Linux amd64 / arm64 / arm/v7 / riscv64 / i386 with systemd
+- Linux amd64 / arm64 / arm/v7 / riscv64 / i386 with systemd, **or** FreeBSD 386 / amd64 / arm / arm64 with rc.d
 - Fail2Ban (optional — recommended for bare-metal; not needed with Cloudflare executor or other API-based integrations)
 - An HTTP server writing access logs in a supported format (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed, OpenLiteSpeed — or custom regex)
 
@@ -539,6 +567,10 @@ Processors run before the detector chain. They short-circuit the pipeline (skip)
 
 Covered by the package installers above. Use `systemctl` to manage the service and `kill -HUP` for live reloads. See [Management](#management) for the full command reference.
 
+### FreeBSD — rc.d
+
+Covered by the FreeBSD installer above. Use `service arxsentinel <start|stop|status>` to manage the service; `sysrc arxsentinel_enable=YES` persists it across reboots. Full guide, including running your web server under `podman` on FreeBSD: [FreeBSD Deployment Cookbook](cookbook/freebsd/CookBook.md).
+
 ### Docker Compose
 
 ArxSentinel runs as a sidecar alongside your HTTP server, reading shared log volumes.
@@ -581,6 +613,7 @@ See [docs/executor-nginx.md](docs/executor-nginx.md) for the nginx blocklist exe
 
 ## Recently Shipped
 
+- **FreeBSD support** — native `386`/`amd64`/`arm`/`arm64` builds, dedicated installer + rc.d service, CI-validated against all 6 supported web servers (nginx, Caddy, Traefik, HAProxy, Apache, LiteSpeed) including proxy-chain real-IP scenarios — see [FreeBSD Deployment Cookbook](cookbook/freebsd/CookBook.md)
 - **`arxsentinel validate`** — offline, topology-aware config validation using static plugin manifests; catches broken pipeline wiring before deploy
 - **Pluggable queue backends** — buffer executor events via in-memory, bbolt (file) or Redis queue; selectable per executor for bare-metal / single-host / multi-replica K8s
 - **Named Channel Switch** — route threat events between independent pipelines by name (one pipeline detects, another enforces)
