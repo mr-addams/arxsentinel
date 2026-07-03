@@ -28,10 +28,40 @@ jobs:
   integration:
     uses: ./.github/workflows/integration.yml
 
-  release:
-    name: Build & publish stable release
+  # ─── freebsd-integration-gate ────────────────────────────────────────────
+  # Added 2026-07-03 — mirrors dev-release.yml's job of the same name
+  # (added 2026-07-02, gating tightened same day after a live gap was
+  # found: see release-tag's comment below). Ported here because
+  # release.yml previously had NO FreeBSD coverage at all — a stable
+  # release could publish with FreeBSD support silently broken. Same
+  # reusable-workflow call, same 6-backend suite.
+  freebsd-integration-gate:
+    name: FreeBSD integration gate (gates release-tag)
+    uses: ./.github/workflows/freebsd-integration.yml
+
+  # ─── release-tag ──────────────────────────────────────────────────────────
+  # Split out of `release` 2026-07-03, mirroring dev-release.yml's dev-tag
+  # split (2026-07-02): `release` (Linux publish) and freebsd-container-image
+  # run in parallel as siblings, both consuming this job's tag output —
+  # neither waits on the other, and neither runs at all unless BOTH
+  # `integration` and `freebsd-integration-gate` passed on this commit.
+  # Before this existed, release.yml had no FreeBSD gating whatsoever —
+  # a stable release could tag and publish even with FreeBSD support
+  # completely broken, the exact gap dev-release.yml closed on 2026-07-02
+  # (live run 28617320029: fbsd-integration-litespeed failed, yet a dev
+  # pre-release still published normally) but that fix was never ported
+  # to this file until now.
+  #
+  # No `go test` step here, matching dev-tag's same fix: it would
+  # duplicate `integration.yml:88`'s identical `go test -race -count=1
+  # ./...`, which `integration` (a hard `needs:` prerequisite) already ran.
+  release-tag:
+    name: Resolve stable version and create tag
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      skip: ${{ steps.tag.outputs.skip }}
     runs-on: ubuntu-latest
-    needs: integration
+    needs: [integration, freebsd-integration-gate]
 
     steps:
       - name: Checkout
@@ -39,18 +69,6 @@ jobs:
         with:
           # fetch-depth: 0 is required by goreleaser to read the full tag history for the changelog.
           fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
-      - name: Run tests
-        # -race is mandatory under the Transformation Safety Protocol:
-        # the telemetry pipeline moves concurrent code, and silent data races
-        # would corrupt scoring state across module boundaries.
-        # -count=1 disables Go's test-result cache so a regression cannot be masked.
-        run: go test -race -count=1 ./...
 
       - name: Configure git
         run: |
@@ -92,8 +110,37 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+  release:
+    name: Build & publish stable release
+    runs-on: ubuntu-latest
+    needs: release-tag
+    if: needs.release-tag.outputs.skip != 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # fetch-depth: 0 is required by goreleaser to read the full tag history for the changelog.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Configure git
+        # Required by the "Bump VERSION" step's `git commit` below — git
+        # identity does NOT carry over from release-tag's own "Configure
+        # git" step, since that ran in a different job (different runner,
+        # different workspace). Live run 28649765331 hit this exact gap:
+        # "fatal: empty ident name ... not allowed" killed the version-bump
+        # step after goreleaser had already published successfully — the
+        # release itself was fine, only this housekeeping step failed.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Set up Docker Buildx
-        if: steps.tag.outputs.skip != 'true'
         uses: docker/setup-buildx-action@v4
         with:
           # docker-container driver is required for multi-platform builds with SBOM attestation.
@@ -102,7 +149,6 @@ jobs:
           driver: docker-container
 
       - name: Login to GitHub Container Registry
-        if: steps.tag.outputs.skip != 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -110,7 +156,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run goreleaser
-        if: steps.tag.outputs.skip != 'true'
         uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
@@ -119,7 +164,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download tested versions
-        if: steps.tag.outputs.skip != 'true'
         uses: actions/download-artifact@v8
         with:
           name: integration-versions
@@ -127,9 +171,9 @@ jobs:
         continue-on-error: true
 
       - name: Append tested versions to release notes
-        if: success() && steps.tag.outputs.skip != 'true'
+        if: success()
         run: |
-          tag="${{ steps.tag.outputs.tag }}"
+          tag="${{ needs.release-tag.outputs.tag }}"
           if [ -f tested-versions.md ]; then
             current=$(gh release view "$tag" --json body -q '.body')
             gh release edit "$tag" \
@@ -139,9 +183,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Bump VERSION for next development cycle
-        if: success() && steps.tag.outputs.skip != 'true'
+        if: success()
         run: |
-          released="${{ steps.tag.outputs.tag }}"
+          released="${{ needs.release-tag.outputs.tag }}"
           released="${released#v}"
           IFS='.' read -r major minor patch <<< "$released"
           next="${major}.${minor}.$((patch + 1))"
@@ -182,7 +226,207 @@ jobs:
       # Trigger the deploy explicitly so the landing page always reflects the new
       # stable version (pages.yml self-patches version strings via gh release list).
       - name: Trigger Pages deploy
-        if: success() && steps.tag.outputs.skip != 'true'
+        if: success()
         run: gh workflow run pages.yml --ref dev
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── freebsd-container-image ─────────────────────────────────────────────
+  # Added 2026-07-03 — ported from dev-release.yml's proven job of the same
+  # name (Flow 090 Decision 7, arch-matrix + host-cross-compile additions
+  # 2026-07-02). release.yml previously had NO FreeBSD-native container at
+  # all — only dev pre-releases got one. Runs IN PARALLEL with `release`
+  # (Linux publish), both as siblings off release-tag; neither waits on
+  # the other, and neither runs unless the FreeBSD integration gate passed.
+  #
+  # Why not in goreleaser dockers_v2: goreleaser uses docker buildx, which
+  # does not support building FreeBSD images from a Linux host. The FreeBSD
+  # image must be built inside a vmactions/freebsd-vm QEMU guest via podman
+  # build.
+  #
+  # Arch matrix: amd64 (x86_64) + arm64 (aarch64) only — vmactions/
+  # freebsd-vm's `arch:` input doesn't support 386 or 32-bit arm as a guest
+  # architecture at all, and Go has no freebsd/riscv64 target. The base
+  # image (Containerfile.freebsd) is pinned to the freebsd-static multi-arch
+  # OCI index, so podman resolves the correct per-arch leaf automatically —
+  # no per-arch FROM line needed.
+  #
+  # Binaries are cross-compiled on the plain Linux host BEFORE the VM boots
+  # (not natively inside the VM): live run 28621885498 showed a native
+  # in-VM arm64 build take 17m03s under QEMU emulation vs 3m05s for amd64;
+  # cross-compiling here cut arm64 down to ~8m. vmactions/freebsd-vm mounts
+  # the entire $GITHUB_WORKSPACE tree into the VM at the same path before
+  # `run:` executes, so the host-built binary shows up inside the VM for
+  # free.
+  #
+  # Tag scheme differs from dev-release.yml's floating tag on purpose:
+  # dev-release.yml's freebsd-container-image job (2026-07-03 fix, same
+  # commit as this job's addition) now pushes ONLY the version-pinned tag
+  # (`<dev-tag>-freebsd-<arch>`) — no floating tag at all, matching
+  # goreleaser's own Linux convention (`.goreleaser.yaml`:
+  # `{{ if not .Prerelease }}latest{{ end }}` — prereleases never get
+  # `latest`). This job, being the STABLE release path, is the only one
+  # that pushes the floating `freebsd-<arch>-latest` tag. Before this fix,
+  # dev-release.yml pushed that same floating tag on every dev push,
+  # meaning any stable "latest" would have been overwritten by the very
+  # next dev pre-release.
+  freebsd-container-image:
+    name: FreeBSD container image (${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    needs: release-tag
+    if: needs.release-tag.outputs.skip != 'true'
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            vmarch: x86_64
+          - goarch: arm64
+            vmarch: aarch64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Cross-compile FreeBSD binaries (host, no emulation)
+        run: |
+          mkdir -p .ci-freebsd-build
+          CGO_ENABLED=0 GOOS=freebsd GOARCH="${{ matrix.goarch }}" \
+              go build -o .ci-freebsd-build/arxsentinel ./cmd/arxsentinel
+          CGO_ENABLED=0 GOOS=freebsd GOARCH="${{ matrix.goarch }}" \
+              go build -o .ci-freebsd-build/healthcheck ./cmd/healthcheck || \
+              echo "::notice::cmd/healthcheck build failed — image will skip healthcheck"
+          ls -la .ci-freebsd-build/
+
+      - name: Build FreeBSD image and push to ghcr.io
+        id: freebsd_image
+        uses: vmactions/freebsd-vm@v1.5.0
+        with:
+          arch: ${{ matrix.vmarch }}
+          release: "14.3"
+          usesh: true
+          copyback: true
+          # RELEASE_TAG/GOARCH are custom (non-GITHUB_-prefixed) env vars -
+          # they do NOT match a GITHUB_* glob and must be listed
+          # explicitly, unlike GITHUB_TOKEN/GITHUB_ACTOR which vmactions
+          # forwards by name here.
+          envs: 'GITHUB_TOKEN GITHUB_ACTOR RELEASE_TAG GOARCH'
+          run: |
+            set -eu
+
+            # Pass through the tag from the release-tag job. The job's
+            # `needs: release-tag` guarantees this is non-empty by the
+            # time we run. GOARCH comes from the matrix (amd64/arm64) via
+            # the envs: directive above.
+            TAG="${RELEASE_TAG}"
+            if [ -z "${TAG}" ]; then
+              echo "::error::RELEASE_TAG env var not set; cannot derive image tag" >&2
+              exit 1
+            fi
+            IMAGE_TAG="ghcr.io/mr-addams/arxsentinel:${TAG}-freebsd-${GOARCH}"
+            # Stable-only floating tag (see job header comment for why
+            # this differs from dev-release.yml's version-pinned-only push).
+            IMAGE_LATEST="ghcr.io/mr-addams/arxsentinel:freebsd-${GOARCH}-latest"
+            echo "Target images:"
+            echo "  version-tagged: ${IMAGE_TAG}"
+            echo "  floating-latest: ${IMAGE_LATEST}"
+
+            # ── Unblock chain (verbatim from 088 Decision E.2b + F.1) ──────────
+            # Each vmactions/freebsd-vm step is a FRESH FreeBSD VM. Storage
+            # defaults to driver=zfs which fails in the QEMU/UFS VM (no zpool),
+            # and pf kernel module required for CNI bridge is not loaded by
+            # default. Both must be fixed before any `podman build`/`podman run`.
+
+            echo "::group::pkg install podman"
+            # No `go` here — binaries are cross-compiled on the Linux host
+            # before this VM even boots (see the "Cross-compile FreeBSD
+            # binaries" step above). This VM only needs podman to
+            # build/push/smoke-test the image.
+            pkg install -y sysutils/podman jq
+            echo "::endgroup::"
+
+            echo "::group::storage fix (zfs→vfs)"
+            sed -I .bak -e 's/driver = "zfs"/driver = "vfs"/' \
+                /usr/local/etc/containers/storage.conf
+            echo "Effective storage driver:"
+            podman info --format '{{.Store.GraphDriverName}}'
+            echo "::endgroup::"
+
+            echo "::group::pf kernel module + egress interface"
+            kldload pf || true
+            if [ ! -f /etc/pf.conf ]; then
+              cp /usr/local/etc/containers/pf.conf.sample /etc/pf.conf
+            fi
+            EGRESS_IF=$(ifconfig -l | awk '{print $1}')
+            echo "Detected interfaces: $(ifconfig -l)"
+            echo "Using egress interface: ${EGRESS_IF:-vtnet0}"
+            sed -I .bak -e "s/^v4egress_if=.*/v4egress_if=${EGRESS_IF:-vtnet0}/" \
+                -e "s/^v6egress_if=.*/v6egress_if=${EGRESS_IF:-vtnet0}/" /etc/pf.conf
+            sysrc pf_enable=YES
+            service pf start || service pf restart
+            sysctl net.pf.filter_local=1
+            echo "::endgroup::"
+
+            # ── Stage the host-cross-compiled binaries ───────────────────────
+            echo "::group::stage host-built binaries (cmd/arxsentinel + cmd/healthcheck)"
+            cd "$GITHUB_WORKSPACE"
+            mkdir -p /tmp/build
+            cp .ci-freebsd-build/arxsentinel /tmp/build/arxsentinel
+            if [ -f .ci-freebsd-build/healthcheck ]; then
+              cp .ci-freebsd-build/healthcheck /tmp/build/healthcheck
+            else
+              echo "::notice::cmd/healthcheck build failed on host — image will skip healthcheck"
+            fi
+            ls -la /tmp/build/
+            echo "::endgroup::"
+
+            echo "::group::stage config.docker.yaml into build context"
+            cp "$GITHUB_WORKSPACE/deploy/container/docker/config.docker.yaml" \
+               /tmp/build/config.docker.yaml
+            echo "::endgroup::"
+
+            # ── podman build against Containerfile.freebsd ───────────────────────
+            echo "::group::podman build arxsentinel:freebsd-local"
+            podman build \
+                -t arxsentinel:freebsd-local \
+                -f "$GITHUB_WORKSPACE/deploy/container/freebsd/Containerfile.freebsd" \
+                /tmp/build/
+            echo "[debug] podman build finished, exit $?"
+            echo "::endgroup::"
+
+            echo "::group::smoke test podman run --version"
+            set +e
+            podman run --rm arxsentinel:freebsd-local --version
+            SMOKE_RC=$?
+            set -e
+            if [ "$SMOKE_RC" -ne 0 ]; then
+                echo "::error::smoke test failed with exit code ${SMOKE_RC}"
+                exit "$SMOKE_RC"
+            fi
+            echo "::endgroup::"
+
+            # ── podman login + push to ghcr with both tag variants ───────────────
+            echo "::group::podman login + push"
+            echo "${GITHUB_TOKEN}" | podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+            podman tag arxsentinel:freebsd-local "${IMAGE_TAG}"
+            podman tag arxsentinel:freebsd-local "${IMAGE_LATEST}"
+            podman push "${IMAGE_TAG}"
+            podman push "${IMAGE_LATEST}"
+            echo "::endgroup::"
+
+            echo "::group::finalize"
+            echo "Pushed: ${IMAGE_TAG}"
+            echo "Pushed: ${IMAGE_LATEST}"
+            echo "::endgroup::"
+        env:
+          RELEASE_TAG: ${{ needs.release-tag.outputs.tag }}
+          GOARCH: ${{ matrix.goarch }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
