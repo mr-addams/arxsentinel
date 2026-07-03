@@ -290,10 +290,16 @@ jobs:
               exit 1
             fi
             IMAGE_TAG="ghcr.io/mr-addams/arxsentinel:${TAG}-freebsd-${GOARCH}"
-            IMAGE_LATEST="ghcr.io/mr-addams/arxsentinel:freebsd-${GOARCH}-latest"
-            echo "Target images:"
-            echo "  version-tagged: ${IMAGE_TAG}"
-            echo "  floating-latest: ${IMAGE_LATEST}"
+            # No floating "-latest" tag here (fixed 2026-07-03): release.yml's
+            # new freebsd-container-image job (ported same day) pushes a
+            # STABLE-only floating `freebsd-${GOARCH}-latest`, matching
+            # goreleaser's own Linux convention (`.goreleaser.yaml`:
+            # `{{ if not .Prerelease }}latest{{ end }}` — prereleases never
+            # get `latest`). Before this fix, this job pushed that exact
+            # floating tag on EVERY dev push, meaning any stable "latest"
+            # published by release.yml would have been overwritten by the
+            # very next dev pre-release. Version-pinned tag only.
+            echo "Target image: ${IMAGE_TAG}"
 
             # ── Unblock chain (verbatim from 088 Decision E.2b + F.1, the same
             # chain 088 container-build-freebsd job uses) ──────────────────────
@@ -441,27 +447,21 @@ jobs:
             fi
             echo "::endgroup::"
 
-            # ── podman login + push to ghcr with both tag variants ───────────────
-            # Decision 6: two tags per image push — :<full-tag>-freebsd-amd64
-            # (version-pinned) and :freebsd-amd64-latest (floating). Both via
-            # the same GITHUB_TOKEN secret that the existing dev-release job
-            # uses for the Linux docker push (line 78-83).
+            # ── podman login + push to ghcr ───────────────────────────────────────
+            # Decision 6: version-pinned tag only (see the IMAGE_TAG comment
+            # above for why there's no floating tag here as of 2026-07-03).
             echo "::group::podman login + push"
             # The GITHUB_TOKEN env var is forwarded by the vmactions/freebsd-vm
             # action via the `envs:` directive above. echo mask before login
             # so the token never appears in plain text in logs.
             echo "${GITHUB_TOKEN}" | podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
-            # Tag the local image with both target names, then push each.
             podman tag arxsentinel:freebsd-local "${IMAGE_TAG}"
-            podman tag arxsentinel:freebsd-local "${IMAGE_LATEST}"
             podman push "${IMAGE_TAG}"
-            podman push "${IMAGE_LATEST}"
             echo "::endgroup::"
 
             echo "::group::finalize"
             echo "Pushed: ${IMAGE_TAG}"
-            echo "Pushed: ${IMAGE_LATEST}"
             echo "::endgroup::"
         env:
           # Flow 090 Decision 7: pull the tag from the dev-tag job's outputs
