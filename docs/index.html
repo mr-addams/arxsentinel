@@ -728,11 +728,11 @@
         </div>
         <h1>
             <span class="shimmer-text">From a single VPS</span><br>
-            to Kubernetes —<br>
+            to a distributed fleet —<br>
             one binary, zero overhead
         </h1>
-        <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Stream-based security event multiprocessing engine for any HTTP server — and far beyond</p>
-        <p>Eight behavioural detectors analyse every HTTP access log in real time and route confirmed attackers to any output — Fail2Ban, Cloudflare WAF, MikroTik RouterOS, or your own exec+JSON sink in any language. Bare-metal, Docker Compose, or Kubernetes DaemonSet.</p>
+        <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Distributed security event processing engine for any HTTP server — and far beyond</p>
+        <p>Eight behavioural detectors analyse every HTTP access log in real time and route confirmed attackers to any output — Fail2Ban, Cloudflare WAF, MikroTik RouterOS, or your own exec+JSON sink in any language. Collect events on one machine, score them on another, ban on a third — over a built-in encrypted node mesh. Bare-metal, Docker Compose, or Kubernetes DaemonSet.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Install</a>
             <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">View on GitHub</a>
@@ -1121,12 +1121,58 @@ service arxsentinel start</span></pre>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Pluggable queue backends</h3>
-                <p>Buffer executor events through an in-memory, file-based (bbolt) or Redis queue — pick per executor to fit bare-metal, single-host or multi-replica Kubernetes setups.</p>
+                <p>Buffer executor events through an in-memory, file-based (bbolt), Redis — or <strong>transport</strong> queue that spans machines over the encrypted node mesh. Pick per executor to fit bare-metal, single-host, Kubernetes, or multi-node setups.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Named Channel Switch</h3>
-                <p>Route threat events between independent pipelines by name — one pipeline can detect while another enforces, fully decoupled.</p>
+                <p>Route events between independent pipelines by name — one pipeline detects while another enforces, fully decoupled. And the same named queue can now terminate on a <strong>different machine</strong>: Distributed NCS.</p>
             </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag" style="color: var(--accent-green); border-color: rgba(0,255,136,0.35); background: rgba(0,255,136,0.08);">NEW · Distributed NCS</span>
+            <h2 class="section-title">Collect anywhere. Detect centrally. Ban at the edge.</h2>
+            <p style="color: var(--text-muted); max-width: 720px; margin: 0 auto;">
+                The same binary becomes a <strong>collector</strong>, a <strong>detector</strong>, or a <strong>responder</strong> —
+                by config alone, connected over a built-in encrypted event mesh.
+                The only tool in its class with node-to-node security event transport inside the engine itself:
+                no message broker, no log shipper, no agent-server hierarchy, no VPN.
+            </p>
+        </div>
+        <div class="pipeline-box" style="margin-bottom: 2rem;">
+            <div class="box-scanline"></div>
+            <div class="pipeline-flow">
+                <div class="flow-line"></div>
+                <div class="pipeline-node">Collectors — Pi · VPS · NAS · branch office (12 MB each, parse only)</div>
+                <div class="pipeline-node">QUIC / TLS 1.3 · Ed25519 node identity · TOFU pinning (like SSH)</div>
+                <div class="pipeline-node">Detector node — 8 detectors · WAF · whitelist · one shared IP score across all sources</div>
+                <div class="pipeline-node">Scored verdicts routed onward — per pipeline, to different nodes</div>
+                <div class="pipeline-node final">Responders → MikroTik router · nginx blocklist · Cloudflare WAF · SIEM feed (raw + scored JSON)</div>
+            </div>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /><path d="M12 11m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M12 12l0 2.5" /></svg></span> Encrypted mesh built in</h3>
+                <p>QUIC over one UDP port, TLS 1.3 always on, Ed25519 node keys generated on first start, TOFU fingerprint pinning like SSH. Mutual authentication before a single event flows — a stranger on your port gets nothing.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M18 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M7.5 7.5l3 7" /><path d="M16.5 7.5l-3 7" /><path d="M8 6h8" /></svg></span> Cross-service correlation</h3>
+                <p>Every collector forwards into one shared per-IP score. An attacker probing your web tier, API and auth service accumulates one combined score on the detector — and crosses the ban threshold sooner than any single service would catch alone.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" /><path d="M4 10h16" /><path d="M10 4v16" /></svg></span> Raw or scored — you route both</h3>
+                <p>Forward raw parsed entries inward for central detection, scored verdicts outward for enforcement — or both into your SIEM. Pre-filter at the edge and let threats, not traffic volume, drive your ingest bill.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 12l2 2l4 -4" /><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> Proven by CI, not promised</h3>
+                <p>Every documented topology — edge fleet aggregation, mixed routing to nginx + MikroTik responders — runs as a real multi-container test on every merge. The diagrams in the docs are executable.</p>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="https://github.com/mr-addams/arxsentinel/blob/main/docs/DISTRIBUTED.md" target="_blank" rel="noopener noreferrer" class="btn btn-primary">Distributed Processing Guide</a>
+            <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="margin-left: 0.75rem;">Ready topologies</a>
         </div>
     </section>
 
