@@ -1,0 +1,39 @@
+# ========================== Distributed NCS — mixed-routing: nginx executor ============
+# Consumes "scored-web" only — the detector's "web" pipeline verdicts. Never sees
+# "scored-auth" traffic; that goes to mikrotik-executor.yaml on a separate node.
+
+transport:
+  enabled: true
+  identity: /etc/arxsentinel/node.key
+  known_nodes: /etc/arxsentinel/known-nodes
+  listen: "0.0.0.0:4097"
+
+streams:
+  - name: idle
+    pipelines:
+      - name: idle
+        inputs:
+          - type: file
+            path: /var/log/arxsentinel/idle.log
+        outputs:
+          - type: file
+            path: /var/log/arxsentinel/idle-out.log
+            format: fail2ban
+
+executors:
+  - name: block-web
+    type: nginx
+    sources:
+      - name: scored-web
+        queue:
+          type: transport
+          mode: recv
+    config:
+      list_file: /etc/nginx/conf.d/arxsentinel_autoblock.list
+      state_file: /var/lib/arxsentinel/nginx-state.json
+      file_format: geo
+      min_level: "WARN"
+      ttl: "24h"
+      batch_size: 10
+      flush_interval: "30s"
+      reload_cmd: "nginx -s reload"

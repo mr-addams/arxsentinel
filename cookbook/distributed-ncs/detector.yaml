@@ -1,0 +1,39 @@
+# ========================== Distributed NCS — detector node ============================
+# Receives raw (unscored) log lines forwarded by the collector node's "edge-raw" queue
+# and runs them through an ORDINARY pipeline — the real detector chain scores each
+# forwarded entry exactly as if it had arrived from a local file tail. See
+# collector.yaml in this same directory for the sending side.
+#
+# Before starting:
+#   1. Replace `node-a.example.net:4097` with the collector node's real host:port.
+#   2. Make sure /etc/arxsentinel/ exists and is writable (same as collector.yaml).
+#   3. Point outputs[].path and any executors at wherever this node should actually
+#      act (ban file, Cloudflare, MikroTik, ...) — this file uses a plain fail2ban
+#      file sink as the simplest illustration.
+
+transport:
+  enabled: true
+  identity: /etc/arxsentinel/node.key
+  known_nodes: /etc/arxsentinel/known-nodes
+  listen: "0.0.0.0:4097"
+  peers:
+    - host: "node-a.example.net:4097"
+      fingerprint: ""  # "" = TOFU on first contact; set explicitly to pre-pin once known
+
+streams:
+  - name: detector
+    pipelines:
+      - name: main
+        # No raw_forward here — this is an ordinary pipeline. The scorer, tracker,
+        # whitelist, and every detector run normally against the forwarded entry.
+        inputs:
+          - type: sentinel
+            addr: ncs://edge-raw    # must match the collector's sentinel-threat "name:"
+            mode: raw               # decode a *parser.LogEntry, not a ThreatEvent
+            queue:
+              type: transport
+              mode: recv           # this node only pulls, never pushes, on this queue
+        outputs:
+          - type: file
+            path: /var/log/arxsentinel/threats.log
+            format: fail2ban

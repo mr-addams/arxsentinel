@@ -9,8 +9,9 @@
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
 > 🌐 [Українська документація](README.uk.md) | [Русская документация](README.ru.md) | 📖 [Configuration Cookbook](cookbook/CookBook.md)
 
-**Security event pipeline for any HTTP server** — from a single nginx VPS to a full K8s cluster.  
-~12 MB RAM · single binary · zero runtime deps · extends via exec+JSON plugins in any language.
+**Distributed security event pipeline for any HTTP server** — from a single nginx VPS to a fleet of nodes.  
+~12 MB RAM · single binary · zero runtime deps · extends via exec+JSON plugins in any language.  
+Collect events on one machine, score them on another, ban on a third — over a built-in encrypted node mesh (QUIC · TLS 1.3 · Ed25519 · TOFU). No Redis, no Kafka, no VPN required. → [Distributed Processing Guide](docs/DISTRIBUTED.md)
 
 > **License:** ArxSentinel is distributed under the [Elastic License 2.0](LICENSE). Free use for your own infrastructure. Commercial use as a managed security or telemetry service, or as part of a managed service, requires a separate agreement. See [LICENSE](LICENSE) for details.
 
@@ -58,7 +59,7 @@
                               │ sentinel-threat sink → AttachWriter()
   ╔═══════════════════════════╧══════════════════════════════════════╗
   ║  NAMED CHANNEL SWITCH  (Point-to-Point Work Queue)               ║
-  ║  memory │ bbolt (file) │ redis                                   ║
+  ║  memory │ bbolt (file) │ redis │ transport (QUIC node mesh)      ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ ncs://<channel-name> → AttachReader()
   ╔═══════════════════════════╧══════════════════════════════════════╗
@@ -125,6 +126,10 @@ streams:
     profile: apache
 ```
 
+When the logs live on *different machines*, don't mount or ship them — run a
+12 MB collector next to each log and forward events over the built-in
+encrypted mesh instead (see [use case 8](#8-distributed-pipeline--collect-anywhere-detect-centrally-ban-at-the-edge)).
+
 ### 5. Custom log format
 
 API gateway, custom app log, any text format — supply a regex with named capture groups:
@@ -156,6 +161,39 @@ sinks:
   - type: exec
     exec: /opt/plugins/send-to-siem.sh
 ```
+
+### 8. Distributed pipeline — collect anywhere, detect centrally, ban at the edge
+
+The same binary becomes a **collector**, **detector**, or **responder** by
+config alone, connected over a built-in mutually-authenticated QUIC mesh —
+no message broker, no log shipper, no VPN:
+
+```
+  Pi / VPS / NAS collectors          detection box               enforcement
+ ┌────────────┐
+ │ nginx logs  │──┐   "edge-raw"   ┌───────────────┐  "scored"  ┌─────────────────┐
+ └────────────┘  ├──────────────▶│ 8 detectors ·  │──────────▶│ MikroTik · nginx │
+ ┌────────────┐  │  QUIC/TLS 1.3  │ WAF · scoring  │            │ CF WAF · SIEM    │
+ │ API logs    │──┘   Ed25519+TOFU └───────────────┘            └─────────────────┘
+ └────────────┘
+```
+
+```yaml
+# collector node — parse only, forward unscored (12 MB, runs on a Pi)
+streams:
+  - pipelines:
+      - raw_forward: true
+        inputs:  [{type: file, path: /var/log/nginx/access.log}]
+        outputs: [{type: sentinel-threat, name: edge-raw, format: raw-line,
+                   queue: {type: transport, mode: send, peer: "brain:4097"}}]
+```
+
+An attacker probing several of your services accumulates **one combined
+score** on the detector node — and gets banned everywhere at once. Full
+operator guide with 5 ready topologies (homelab → enterprise SIEM feed):
+**[docs/DISTRIBUTED.md](docs/DISTRIBUTED.md)** · recipes:
+[cookbook/distributed-ncs/](cookbook/distributed-ncs/README.md) — every
+topology CI-tested with real containers.
 
 ---
 
@@ -423,6 +461,7 @@ deploy/examples/
 - **Chain Guard:** detects Cloudflare/CDN edge IPs and bogon/RFC 1918/CGNAT addresses appearing as client IPs — signals a misconfigured proxy chain before ArxSentinel's detectors go blind
 - **Bot DNS verification:** Googlebot, Bingbot, Yandex, DuckDuckGo and others are verified via rDNS/fDNS — legitimate crawlers are never banned
 - **Multi-stream + Multi-pipeline:** watch multiple log files in one process; within each stream, define independent pipelines with their own detectors, sources, sinks and IP-state tracker (or share state via `tracker_group`)
+- **Distributed pipeline (Distributed NCS):** span the pipeline across machines over a built-in encrypted node mesh (QUIC · TLS 1.3 · Ed25519 identity · TOFU pinning) — forward raw parsed entries to a central detector, or scored verdicts to remote responders; no broker, no log shipper, no VPN. See [docs/DISTRIBUTED.md](docs/DISTRIBUTED.md)
 - **Whitelist:** IPs, CIDRs, UA substrings — configurable exclusion lists
 - **Linear score decay:** points decay over `observation_window`, no false bans from old traffic
 - **Prometheus metrics:** `/metrics` on configurable port (default `:9117`), optional bcrypt basic auth; Grafana dashboard included

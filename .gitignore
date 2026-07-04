@@ -46,6 +46,7 @@ arx-core/examples/logaggregator/logaggregator
 # Интеграционные тесты — runtime-артефакты (логи серверов, threat-логи, загружаемые блеклисты)
 tests/integration/logs/
 tests/integration/blocklist/
+tests/integration/distributed-ncs/data/
 
 # Артефакты goreleaser
 /dist/

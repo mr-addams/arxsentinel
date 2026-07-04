@@ -14,6 +14,7 @@ import (
 
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	pkgdetector "github.com/mr-addams/arx-core/pkg/detector"
+	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	pkgexecutor "github.com/mr-addams/arx-core/pkg/executor"
 	"github.com/mr-addams/arx-core/pkg/pipeline"
 	"github.com/mr-addams/arx-core/pkg/plugin"
@@ -69,6 +70,28 @@ func validateConfig(cfg config.Config) []pipeline.SemanticError {
 	for i, r := range results {
 		for _, name := range sinkChannels[i] {
 			channelTypes[name] = r.ProducedType
+		}
+	}
+
+	// Flow 093 exemption: an executor source whose queue: is a transport
+	// backend in mode=recv has its writer on a REMOTE node — a separate
+	// process/config this validator cannot see — so ValidateExecutorWiring's
+	// "reader without writer" check (step 2, arx-core/pkg/pipeline) would
+	// otherwise reject it as "wired to unknown channel". Synthesizing a
+	// plugin.TypeAny entry satisfies that check AND the type-compatibility
+	// check right after it (TypeAny is the documented "always compatible"
+	// escape hatch) without claiming to know what the remote node actually
+	// produces. Mirrors the sentinelChannelNames exemption on the sink side
+	// of the same cross-node pattern (preRegisterExecutorQueues has the
+	// runtime-registration-time counterpart of this same exemption).
+	for _, ex := range cfg.Executors {
+		for _, src := range ex.Sources {
+			if src.Queue == nil || src.Queue.Type != queue.QueueTypeTransport || src.Queue.EffectiveMode() != "recv" {
+				continue
+			}
+			if _, exists := channelTypes[src.Name]; !exists {
+				channelTypes[src.Name] = plugin.TypeAny
+			}
 		}
 	}
 
@@ -170,17 +193,31 @@ var scorerManifest = plugin.Manifest{
 	OutputType: plugin.TypeScoredEvent,
 }
 
-// sentinelChannelNames returns the names of all sentinel-threat sinks in a pipeline.
+// sentinelChannelNames returns the names of all sentinel-threat sinks in a
+// pipeline that require a LOCAL reader (an executor's sources[].name, per
+// ValidateExecutorWiring's "writer but no reader" check).
 // Called from: validateConfig (line 59).
 // Non-blocking.
 //
-// These are the NamedChannelSwitch channels executors wire to via sources[].name.
+// Flow 093 exemption: a sink whose queue: is a transport backend in
+// mode=send has its reader on a REMOTE node's "sentinel" input (the
+// receiving node's config, a separate process — see
+// preRegisterInboundTransportQueues) — there is no local executor to find,
+// and there never will be, so this channel is deliberately excluded from
+// the "requires a local reader" set. This is the mode=send case ONLY:
+// mode=both (or the default, empty mode) still means "a local reader is
+// also expected on this node" per QueueConfig.Mode's doc comment, so it
+// stays subject to the normal writer-without-reader check.
 func sentinelChannelNames(pl config.PipelineConfig) []string {
 	var names []string
 	for _, out := range pl.Outputs {
-		if out.Type == "sentinel-threat" && out.Name != "" {
-			names = append(names, out.Name)
+		if out.Type != "sentinel-threat" || out.Name == "" {
+			continue
 		}
+		if out.Queue != nil && out.Queue.Type == queue.QueueTypeTransport && out.Queue.EffectiveMode() == "send" {
+			continue
+		}
+		names = append(names, out.Name)
 	}
 	return names
 }

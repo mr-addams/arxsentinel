@@ -1,0 +1,40 @@
+general:
+  pid_file: /tmp/pid
+output:
+  operational_log: ""
+transport:
+  enabled: true
+  identity: /tmp/node.key
+  known_nodes: /tmp/known-nodes
+  listen: 0.0.0.0:4097
+streams:
+  - name: idle
+    pipelines:
+      - name: idle
+        inputs:
+          - type: file
+            path: /data/idle.log
+        outputs:
+          - type: file
+            path: /data/idle-out.log
+            format: fail2ban
+executors:
+  - name: block-auth
+    type: mikrotik
+    sources:
+      - name: scored-auth
+        queue:
+          type: transport
+          mode: recv
+    config:
+      host: ros-api-mock
+      port: 8080
+      use_tls: false
+      username: admin
+      password: test-password
+      list_name: arxsentinel
+      sentinel_id: mixed-routing-test
+      min_level: WARN
+      batch_size: 1
+      flush_interval: 200ms
+      ttl: 1h

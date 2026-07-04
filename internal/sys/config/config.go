@@ -80,6 +80,38 @@ type Config struct {
 	DeprecatedExecutors []ExecutorItem        `yaml:"deprecated_executors,omitempty"` // YAML: deprecated_executors — legacy, replaced by top-level executors: (new format). Consumer: main.go, removed in v0.10.0
 	Executors           []ExecutorTopConfig   `yaml:"executors"`                      // YAML: executors — top-level executor list with named channel switch sources. Consumer: main.go startExecutors
 	Pipeline            PipelineRuntimeConfig `yaml:"pipeline"`                       // YAML: pipeline — buffer_size and shutdown_timeout; top-level default for all pipelines
+
+	// Transport (Flow 093) — arx-core pkg/transport node-to-node mesh, gating
+	// the "transport" queue.Queue backend used by Distributed NCS
+	// (outputs[].queue.type: transport / inputs[].queue.type: transport).
+	// Disabled by default (D21 invariant, inherited from arx-core): an
+	// absent or Enabled:false transport: block means main.go never
+	// constructs a *transport.Transport, and any queue.type: transport
+	// entry elsewhere in this config fails validation (see
+	// validateTransportWiring) rather than failing at runtime with a
+	// confusing transportbridge.ErrNotConfigured three layers deep.
+	Transport TransportConfig `yaml:"transport"` // YAML: transport — node-to-node mesh for Distributed NCS. Consumer: main.go bootstrap
+}
+
+// TransportConfig mirrors arx-core's transport.Config shape for YAML
+// consumption — main.go translates this 1:1 into a transport.Config before
+// calling transport.New (Flow 093 F1). Kept as a separate product-side type
+// (not a direct YAML embed of transport.Config) because transport.Config's
+// fields are plain Go, not yaml-tagged, and because the product owns its own
+// config vocabulary independent of arx-core's internal struct shape.
+type TransportConfig struct {
+	Enabled        bool            `yaml:"enabled"`     // YAML: enabled — master gate (D21); false = no goroutine, no listener, no dial
+	IdentityPath   string          `yaml:"identity"`    // YAML: identity — path to the node's Ed25519 private key file; generated on first start if absent. Required when enabled
+	KnownNodesPath string          `yaml:"known_nodes"` // YAML: known_nodes — path to the TOFU known-nodes file. Required when enabled
+	Listen         string          `yaml:"listen"`      // YAML: listen — QUIC bind address, e.g. "0.0.0.0:4097". Required when enabled
+	Peers          []TransportPeer `yaml:"peers"`       // YAML: peers — outbound dial targets (this node's roster)
+}
+
+// TransportPeer is one entry in TransportConfig.Peers — a node this
+// process dials out to.
+type TransportPeer struct {
+	Host        string `yaml:"host"`        // YAML: host — peer's dial address, "host:port". Required.
+	Fingerprint string `yaml:"fingerprint"` // YAML: fingerprint — pre-shared "sha256:<hex>"; empty = TOFU on first contact (D24 §5)
 }
 
 // ========================== Universal I/O config (Flow #030) ==========================
@@ -104,6 +136,17 @@ type InputConfig struct {
 	PullInterval   string `yaml:"pull_interval"`   // YAML: pull_interval — polling interval for pull mode, e.g. "30s". Consumer: pkg/source/http.New
 	MaxBodyBytes   int    `yaml:"max_body_bytes"`  // YAML: max_body_bytes — max request body size, default 10485760. Consumer: pkg/source/http.New
 	MaxConnections int    `yaml:"max_connections"` // YAML: max_connections — max concurrent TCP connections; syslog only, default 1000. Consumer: pkg/source/syslog.New (H5)
+
+	// Queue (Flow 093) — explicit, opt-in queue backend for a "sentinel"
+	// input's NCS name (parsed from Addr's "ncs://<name>" form). nil means
+	// the existing behaviour: whatever queue is already registered under
+	// that name (typically a plain in-process AttachWriter from a local
+	// sentinel-threat sink — Distributed NCS is NOT implied just because
+	// transport.enabled is true elsewhere in this config). Set
+	// Queue.Type: transport, Queue.Mode: recv to make this input's queue
+	// backed by arx-core's Distributed NCS mesh instead — see
+	// preRegisterInboundTransportQueues (F3).
+	Queue *queue.QueueConfig `yaml:"queue,omitempty"` // YAML: queue — optional backend for type=sentinel inputs; nil = existing AttachWriter/AttachReader behaviour unchanged
 }
 
 // SinkConfig — configuration for a single threat event output.
@@ -113,8 +156,21 @@ type SinkConfig struct {
 	Type   string `yaml:"type"`   // YAML: "file" | "stdout". Consumer: cmd/arxsentinel output.NewFileSink / output.NewStdoutSink
 	Name   string `yaml:"name"`   // YAML: named channel for sentinel-threat sink; used when type="sentinel-threat". Consumer: output.NewSentinelThreatSink
 	Path   string `yaml:"path"`   // YAML: path to output file; required when type=file. Consumer: output.NewFileSink
-	Format string `yaml:"format"` // YAML: "fail2ban" | "json"; default "fail2ban". Consumer: output.FileSink / output.StdoutSink
+	Format string `yaml:"format"` // YAML: "fail2ban" | "json" | "raw-line" (sentinel-threat only, Flow 093); default "fail2ban". Consumer: output.FileSink / output.StdoutSink / formatterForFormat
 	Exec   string `yaml:"exec"`   // YAML: path to exec plugin binary; used when type="exec". Consumer: pkg/execplugin.NewSink
+
+	// Queue (Flow 093) — explicit, opt-in queue backend for a
+	// "sentinel-threat" sink's NCS name. nil means the existing
+	// behaviour: NewSentinelThreatSink's own ncs.AttachWriter(name, 0)
+	// (plain in-process memory queue, or a fan-in join if some other
+	// registration — e.g. an executor source's Queue, or this same field
+	// on another stream — already claimed the name first). Set
+	// Queue.Type: transport, Queue.Mode: send (+ Queue.Peer) to forward
+	// this sink's events to a remote node instead — see
+	// preRegisterSinkQueues (F2), which registers Queue BEFORE the sink's
+	// own AttachWriter call runs, so AttachWriter becomes a no-op fan-in
+	// join onto the already-registered transport-backed queue.
+	Queue *queue.QueueConfig `yaml:"queue,omitempty"` // YAML: queue — optional backend for type=sentinel-threat outputs; nil = existing AttachWriter behaviour unchanged
 }
 
 // ExecutorItem — configuration for a single executor instance (legacy).
@@ -182,6 +238,19 @@ type PipelineConfig struct {
 	Detectors    map[string]DetectorConfig `yaml:"detectors"`     // YAML: pipelines[].detectors — per-detector config; nil → all registered with defaults
 	Processors   []ProcessorConfig         `yaml:"processors"`    // YAML: pipelines[].processors — ordered list of processor plugins; nil → no processors. Consumer: processor_factory.Build
 	Pipeline     PipelineRuntimeConfig     `yaml:"pipeline"`      // YAML: pipelines[].pipeline — buffer_size, shutdown_timeout
+
+	// RawForward (Flow 093) — when true, this pipeline skips detection and
+	// scoring entirely: every line is forwarded to Outputs as-is (the parsed
+	// *parser.LogEntry, unscored). For Distributed NCS's raw-forward
+	// scenario — a collector node with no local detection, forwarding every
+	// line to a remote node's own detector chain (outputs[].queue.type:
+	// transport + outputs[].format: raw-line). Without this flag, a
+	// pipeline with detectors:{} produces NO events at all (the scorer
+	// never crosses the alert threshold with zero detectors, so
+	// securityProcessor.Process's normal level=="" early-return means
+	// sink.Write is never called) — RawForward bypasses that gate on
+	// purpose, it is not a side effect of an empty detector set.
+	RawForward bool `yaml:"raw_forward"` // YAML: pipelines[].raw_forward — bypass detection/scoring, forward every line unscored. Consumer: cmd/arxsentinel securityProcessor.Process
 }
 
 // StreamConfig — a named logical group of pipelines sharing the same namespace for metrics and logs.
@@ -1129,6 +1198,117 @@ func validateConfig(cfg *Config) error {
 	if cfg.Pipeline.ShutdownTimeout < 0 {
 		return fmt.Errorf("pipeline.shutdown_timeout must be >= 0")
 	}
+	if err := validateTransportConfig(cfg.Transport); err != nil {
+		return err
+	}
+	if err := validateTransportWiring(cfg); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateTransportConfig checks TransportConfig's own required fields
+// (Flow 093 E1). Enabled=false is always valid (D21: transport is fully
+// optional) — the fields below are only required once the operator opts in.
+func validateTransportConfig(t TransportConfig) error {
+	if !t.Enabled {
+		return nil
+	}
+	if t.IdentityPath == "" {
+		return fmt.Errorf("transport.identity must be set when transport.enabled is true")
+	}
+	if t.KnownNodesPath == "" {
+		return fmt.Errorf("transport.known_nodes must be set when transport.enabled is true")
+	}
+	if t.Listen == "" {
+		return fmt.Errorf("transport.listen must be set when transport.enabled is true")
+	}
+	for i, p := range t.Peers {
+		if p.Host == "" {
+			return fmt.Errorf("transport.peers[%d].host must not be empty", i)
+		}
+	}
+	return nil
+}
+
+// validateTransportWiring checks that every queue.type: transport entry,
+// wherever it appears (top-level / stream-level / pipeline-level outputs
+// and inputs, plus executor sources), is only used when transport.enabled
+// is true, and that its peer (when required — every mode except "recv")
+// matches a host in transport.peers[] (Flow 093 E4). Catching a mismatch
+// here means a misconfigured deployment fails at startup with a clear
+// message instead of at the first Push/Pop call, deep inside
+// pkg/ncs.RegisterSinkFromConfig or TransportQueue.
+func validateTransportWiring(cfg *Config) error {
+	knownPeers := make(map[string]bool, len(cfg.Transport.Peers))
+	for _, p := range cfg.Transport.Peers {
+		knownPeers[p.Host] = true
+	}
+
+	checkQueue := func(location string, q *queue.QueueConfig) error {
+		if q == nil || q.Type != queue.QueueTypeTransport {
+			return nil
+		}
+		if !cfg.Transport.Enabled {
+			return fmt.Errorf("%s: queue.type=transport requires transport.enabled: true", location)
+		}
+		if q.EffectiveMode() != "recv" {
+			if q.Peer == "" {
+				return fmt.Errorf("%s: queue.peer is required for queue.type=transport (mode=%q)", location, q.EffectiveMode())
+			}
+			if !knownPeers[q.Peer] {
+				return fmt.Errorf("%s: queue.peer %q does not match any transport.peers[].host", location, q.Peer)
+			}
+		}
+		return nil
+	}
+
+	checkOutputs := func(prefix string, outs []SinkConfig) error {
+		for i, o := range outs {
+			if err := checkQueue(fmt.Sprintf("%s[%d]", prefix, i), o.Queue); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	checkInputs := func(prefix string, ins []InputConfig) error {
+		for i, in := range ins {
+			if err := checkQueue(fmt.Sprintf("%s[%d]", prefix, i), in.Queue); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if err := checkOutputs("outputs", cfg.Outputs); err != nil {
+		return err
+	}
+	if err := checkInputs("inputs", cfg.Inputs); err != nil {
+		return err
+	}
+	for i, s := range cfg.Streams {
+		if err := checkOutputs(fmt.Sprintf("streams[%d].outputs", i), s.Outputs); err != nil {
+			return err
+		}
+		if err := checkInputs(fmt.Sprintf("streams[%d].inputs", i), s.Inputs); err != nil {
+			return err
+		}
+		for j, p := range s.Pipelines {
+			if err := checkOutputs(fmt.Sprintf("streams[%d].pipelines[%d].outputs", i, j), p.Outputs); err != nil {
+				return err
+			}
+			if err := checkInputs(fmt.Sprintf("streams[%d].pipelines[%d].inputs", i, j), p.Inputs); err != nil {
+				return err
+			}
+		}
+	}
+	for i, ex := range cfg.Executors {
+		for j, src := range ex.Sources {
+			if err := checkQueue(fmt.Sprintf("executors[%d].sources[%d]", i, j), src.Queue); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -1217,8 +1397,14 @@ func validateSinks(sinks []SinkConfig) error {
 		if s.Type == "file" && s.Path == "" {
 			return fmt.Errorf("outputs[%d]: type=file requires path", i)
 		}
-		if s.Format != "" && s.Format != "fail2ban" && s.Format != "json" && s.Format != "sentinel-threat" {
-			return fmt.Errorf("outputs[%d]: unknown format %q (want fail2ban, json, or sentinel-threat)", i, s.Format)
+		if s.Format != "" && s.Format != "fail2ban" && s.Format != "json" && s.Format != "sentinel-threat" && s.Format != "raw-line" {
+			return fmt.Errorf("outputs[%d]: unknown format %q (want fail2ban, json, sentinel-threat, or raw-line)", i, s.Format)
+		}
+		// raw-line (Flow 093) is meaningful only on a sentinel-threat sink —
+		// it is a pre-detection wire format for Distributed NCS's raw-forward
+		// scenario, not a general-purpose file/stdout format.
+		if s.Format == "raw-line" && s.Type != "sentinel-threat" {
+			return fmt.Errorf("outputs[%d]: format=raw-line is only valid for type=sentinel-threat", i)
 		}
 	}
 	return nil

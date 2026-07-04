@@ -30,6 +30,7 @@ Sources → Processors → Sinks → Executors
 - [Cloudflare Executor (automated IP banning)](#cloudflare)
 - [MikroTik Executor (RouterOS address-list)](#mikrotik)
 - [Nginx Executor (blocklist file + reload)](#nginx-executor)
+- [Distributed NCS (multi-node raw-forward)](#distributed-ncs)
 - [Infrastructure: Server Configs](#server-configs)
 - [Infrastructure: Reverse Proxy / Real-IP](#reverse-proxy)
 - [Infrastructure: Kubernetes](#kubernetes)
@@ -180,6 +181,36 @@ No external dependencies — pure nginx geo + map.
 |------|---------|
 | [nginx-executor/docker/config.yaml](nginx-executor/docker/config.yaml) | ArxSentinel config for Docker + nginx executor |
 | [nginx-executor/docker/docker-compose.yml](nginx-executor/docker/docker-compose.yml) | Compose stack: arxsentinel with nginx blocklist reload |
+
+---
+
+## Distributed NCS
+
+Forward log lines between two ArxSentinel instances over a real network connection
+(QUIC + TLS 1.3 + Ed25519 + TOFU peer pinning) — no shared filesystem, no Redis. One
+node parses a log but does not score it locally (`raw_forward: true`); it forwards
+the unscored entry to a second node's ordinary pipeline, whose real detector chain
+scores it as if it had arrived locally.
+
+Use this to centralise detection (one lightweight collector per log source, one
+detector node with the full scoring/whitelist/WAF configuration) without sharing
+scorer state across nodes.
+
+| Recipe | Description | File |
+|--------|-------------|------|
+| Collector | Tails a log, `raw_forward: true`, forwards to the detector | [distributed-ncs/collector.yaml](distributed-ncs/collector.yaml) |
+| Detector | Receives forwarded lines, runs the real detector chain | [distributed-ncs/detector.yaml](distributed-ncs/detector.yaml) |
+
+Full setup walkthrough, topology diagram, and verification steps:
+[distributed-ncs/README.md](distributed-ncs/README.md).
+
+Two larger worked examples build on this same pattern, each with its own
+ASCII diagram and each validated by a real multi-container test:
+
+| Recipe | Topology | File |
+|--------|----------|------|
+| Aggregation | 3 collectors → 1 detector → 1 executor | [distributed-ncs/aggregation/README.md](distributed-ncs/aggregation/README.md) |
+| Mixed routing | 2 collectors → 1 detector (2 pipelines) → 2 executors (nginx + MikroTik) | [distributed-ncs/mixed-routing/README.md](distributed-ncs/mixed-routing/README.md) |
 
 ---
 

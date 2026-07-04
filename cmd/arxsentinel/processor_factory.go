@@ -169,6 +169,7 @@ func (f *securityFactory) Build(
 		Waf:              wafProc,
 		FakeBotScore:     cfg.Whitelist.FakeBotScore,
 		DNSVerifyTimeout: time.Duration(cfg.Whitelist.DNSVerifyTimeout),
+		RawForward:       pipeCfg.RawForward,
 	}, nil
 }
 
@@ -243,6 +244,7 @@ func (f *securityFactory) Reload(
 		Waf:              wafProc,
 		FakeBotScore:     newCfg.Whitelist.FakeBotScore,
 		DNSVerifyTimeout: time.Duration(newCfg.Whitelist.DNSVerifyTimeout),
+		RawForward:       newPipeCfg.RawForward,
 	}, nil
 }
 

@@ -128,7 +128,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Free disk space (host)
         # Added 2026-07-02 after three live failures (runs 28617320029,
@@ -531,7 +531,7 @@ jobs:
         #   threat log entries with the access-log line that triggered
         #   them during triage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fbsd-integration-litespeed
           path: |
@@ -576,7 +576,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Run nginx integration smoke inside FreeBSD VM
         uses: vmactions/freebsd-vm@v1.5.0
@@ -921,7 +921,7 @@ jobs:
         #   threat log entries with the access-log line that triggered
         #   them during triage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fbsd-integration-nginx
           path: |
@@ -970,7 +970,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # ---------------------------------------------------------------
       # P2.4 host build -- build caddy-arxsentinel on ubuntu-latest.
@@ -1376,7 +1376,7 @@ jobs:
         #   threat log entries with the access-log line that triggered
         #   them during triage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fbsd-integration-caddy
           path: |
@@ -1416,7 +1416,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -1760,7 +1760,7 @@ jobs:
         #   threat log entries with the access-log line that triggered
         #   them during triage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fbsd-integration-traefik
           path: |
@@ -1789,7 +1789,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -2147,7 +2147,7 @@ jobs:
         #   threat log entries with the access-log line that triggered
         #   them during triage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fbsd-integration-haproxy
           path: |
@@ -2202,7 +2202,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -2538,7 +2538,7 @@ jobs:
         #   threat log entries with the access-log line that triggered
         #   them during triage)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: fbsd-integration-apache
           path: |
