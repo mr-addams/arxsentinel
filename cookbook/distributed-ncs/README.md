@@ -57,6 +57,16 @@ tracker state replicated or shared across nodes.
 Both are self-contained: copy the one matching each node's role, fill in
 the peer `host:port` placeholders, and run.
 
+Two further worked examples build on this same 2-node pattern at larger
+scale — each is a self-contained set of configs plus its own ASCII diagram
+and README, and each is validated end to end by a matching container test
+in [`tests/integration/distributed-ncs/`](../../tests/integration/distributed-ncs/README.md):
+
+| Recipe | Topology | Demonstrates |
+|--------|----------|--------------|
+| [`aggregation/`](aggregation/README.md) | 3 collectors → 1 detector → 1 executor | Many-to-one fan-in onto a shared detector |
+| [`mixed-routing/`](mixed-routing/README.md) | 2 collectors → 1 detector (2 pipelines) → 2 executors | Per-pipeline routing to different executor types |
+
 ## Setup
 
 1. **Pick two hosts** (or two ports on one host for testing) and decide
@@ -104,13 +114,21 @@ the very last step.
 
 ## Scaling beyond two nodes
 
-- **Many collectors, one detector**: give each collector its own
-  `transport.identity`/`listen`, and have each list the SAME detector host
-  in `transport.peers`. Give each collector a DIFFERENT sink `name:`
-  (`edge-raw-1`, `edge-raw-2`, ...) and add one matching `sentinel` input
-  per name on the detector — one `queue_name` maps to exactly one registered
-  reader (no fan-in on a single name).
-- **One collector, many detectors**: not this pattern — a transport queue in
-  `mode: send` targets exactly one `peer`. Use the scored-`ThreatEvent`
-  variant (`mode: threat`, or omit `mode`) with per-severity routing at the
-  collector's own detector chain instead, if you need fan-out.
+- **Many collectors, one detector (aggregation)**: give each collector its
+  own `transport.identity`/`listen`, and have each list the SAME detector
+  host in `transport.peers`. Every collector can use the SAME sink `name:`
+  (`edge-raw`) — a `queue_name` maps to exactly one registered reader on the
+  RECEIVING side, but that one reader happily accepts frames from many
+  different remote senders. Full worked example, including the
+  cross-collector shared-tracker rationale: [`aggregation/`](aggregation/README.md).
+- **One detector, many executors (mixed routing)**: give the detector
+  multiple pipelines, each with its own `sentinel` input queue_name and its
+  own `sentinel-threat` output queue_name/peer — the routing decision is
+  "which pipeline scored this", made at config time, not per-event at
+  runtime. Full worked example (nginx + MikroTik executors on separate
+  nodes): [`mixed-routing/`](mixed-routing/README.md).
+- **One collector, many detectors**: not covered by either recipe above — a
+  transport queue in `mode: send` targets exactly one `peer`. Use the
+  scored-`ThreatEvent` variant (`mode: threat`, or omit `mode`) with
+  per-severity routing at the collector's own detector chain instead, if you
+  need fan-out from a single source.

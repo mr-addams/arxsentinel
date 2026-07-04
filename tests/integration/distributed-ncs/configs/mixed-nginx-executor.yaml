@@ -1,0 +1,35 @@
+general:
+  pid_file: /tmp/pid
+output:
+  operational_log: ""
+transport:
+  enabled: true
+  identity: /tmp/node.key
+  known_nodes: /tmp/known-nodes
+  listen: 0.0.0.0:4097
+streams:
+  - name: idle
+    pipelines:
+      - name: idle
+        inputs:
+          - type: file
+            path: /data/idle.log
+        outputs:
+          - type: file
+            path: /data/idle-out.log
+            format: fail2ban
+executors:
+  - name: block-web
+    type: nginx
+    sources:
+      - name: scored-web
+        queue:
+          type: transport
+          mode: recv
+    config:
+      list_file: /data/blocklist.conf
+      file_format: deny
+      min_level: WARN
+      batch_size: 1
+      flush_interval: 200ms
+      reload_cmd: ""

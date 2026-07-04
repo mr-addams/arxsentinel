@@ -1,0 +1,45 @@
+general:
+  pid_file: /tmp/pid
+output:
+  operational_log: ""
+transport:
+  enabled: true
+  identity: /tmp/node.key
+  known_nodes: /tmp/known-nodes
+  listen: 0.0.0.0:4097
+  peers:
+    - host: nginx-executor:4097
+    - host: mikrotik-executor:4097
+streams:
+  - name: detector
+    pipelines:
+      - name: web
+        inputs:
+          - type: sentinel
+            addr: ncs://edge-web
+            mode: raw
+            queue:
+              type: transport
+              mode: recv
+        outputs:
+          - type: sentinel-threat
+            name: scored-web
+            queue:
+              type: transport
+              mode: send
+              peer: nginx-executor:4097
+      - name: auth
+        inputs:
+          - type: sentinel
+            addr: ncs://edge-auth
+            mode: raw
+            queue:
+              type: transport
+              mode: recv
+        outputs:
+          - type: sentinel-threat
+            name: scored-auth
+            queue:
+              type: transport
+              mode: send
+              peer: mikrotik-executor:4097

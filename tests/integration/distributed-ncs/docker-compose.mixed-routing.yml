@@ -1,0 +1,69 @@
+# ========================== Distributed NCS — mixed-routing scenario =====================
+#   5 containerized arxsentinel nodes + the existing ros-api-mock container (reused verbatim
+#   from ../docker-compose.yml — same Dockerfile, same mock). Two collectors feed TWO
+#   INDEPENDENT detector pipelines, each routing its scored verdicts to a DIFFERENT executor
+#   TYPE on a different node: nginx (local blocklist file) and mikrotik (real RouterOS REST
+#   API calls against the mock). Proves the detector's forwarding decision is per-pipeline,
+#   not a single fan-out — see cross-checks in verify-mixed-routing.sh.
+
+services:
+  collector-web:
+    build:
+      context: ../../..
+      dockerfile: deploy/container/docker/Dockerfile
+    volumes:
+      - ./configs/mixed-collector-web.yaml:/etc/arxsentinel/config.yaml:ro
+      - ./data/mixed/collector-web:/data
+    networks: [mixed]
+    depends_on: [detector]
+
+  collector-auth:
+    build:
+      context: ../../..
+      dockerfile: deploy/container/docker/Dockerfile
+    volumes:
+      - ./configs/mixed-collector-auth.yaml:/etc/arxsentinel/config.yaml:ro
+      - ./data/mixed/collector-auth:/data
+    networks: [mixed]
+    depends_on: [detector]
+
+  detector:
+    build:
+      context: ../../..
+      dockerfile: deploy/container/docker/Dockerfile
+    volumes:
+      - ./configs/mixed-detector.yaml:/etc/arxsentinel/config.yaml:ro
+    networks: [mixed]
+    depends_on: [nginx-executor, mikrotik-executor]
+
+  nginx-executor:
+    build:
+      context: ../../..
+      dockerfile: deploy/container/docker/Dockerfile
+    volumes:
+      - ./configs/mixed-nginx-executor.yaml:/etc/arxsentinel/config.yaml:ro
+      - ./data/mixed/nginx-executor:/data
+    networks: [mixed]
+
+  mikrotik-executor:
+    build:
+      context: ../../..
+      dockerfile: deploy/container/docker/Dockerfile
+    volumes:
+      - ./configs/mixed-mikrotik-executor.yaml:/etc/arxsentinel/config.yaml:ro
+      - ./data/mixed/mikrotik-executor:/data
+    networks: [mixed]
+    depends_on: [ros-api-mock]
+
+  # Reused verbatim from ../docker-compose.yml (same build context/Dockerfile) — the
+  # existing MikroTik RouterOS REST API mock, already proven by the ros-executor test.
+  ros-api-mock:
+    build:
+      context: ../ros-api-mock
+      dockerfile: Dockerfile
+    ports:
+      - "8095:8080" # distinct host port from the main compose's 8093 — avoids clashing if both run concurrently
+    networks: [mixed]
+
+networks:
+  mixed:

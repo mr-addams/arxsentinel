@@ -1,0 +1,28 @@
+general:
+  pid_file: /tmp/pid
+  tail_retry_interval: 200ms
+output:
+  operational_log: ""
+transport:
+  enabled: true
+  identity: /tmp/node.key
+  known_nodes: /tmp/known-nodes
+  listen: 0.0.0.0:4097
+  peers:
+    - host: detector:4097
+streams:
+  - name: collector-auth-service
+    pipelines:
+      - name: raw
+        raw_forward: true
+        inputs:
+          - type: file
+            path: /data/access.log
+        outputs:
+          - type: sentinel-threat
+            name: edge-raw
+            format: raw-line
+            queue:
+              type: transport
+              mode: send
+              peer: detector:4097

@@ -1,0 +1,32 @@
+# ========================== Distributed NCS — aggregation: collector (API gateway) =====
+# See collector-nginx-edge.yaml for the full explanation — same pattern, different log
+# source. Forwards onto the SAME "edge-raw" queue name on the detector as every other
+# collector in this scenario (that shared name is what makes this "aggregation": the
+# detector's one inbound registration accepts frames from all three senders).
+
+transport:
+  enabled: true
+  identity: /etc/arxsentinel/node.key
+  known_nodes: /etc/arxsentinel/known-nodes
+  listen: "0.0.0.0:4097"
+  peers:
+    - host: "detector.example.net:4097"
+      fingerprint: ""
+
+streams:
+  - name: collector-api-gateway
+    pipelines:
+      - name: raw
+        raw_forward: true
+        inputs:
+          - type: file
+            path: /var/log/api-gateway/access.log
+            parser: combined
+        outputs:
+          - type: sentinel-threat
+            name: edge-raw
+            format: raw-line
+            queue:
+              type: transport
+              mode: send
+              peer: "detector.example.net:4097"

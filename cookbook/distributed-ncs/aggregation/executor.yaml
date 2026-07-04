@@ -1,0 +1,45 @@
+# ========================== Distributed NCS — aggregation: executor ====================
+# Consumes scored ThreatEvents forwarded by the detector under "scored-events" via a REAL
+# executor (nginx blocklist) — the correct consumer for a sentinel-threat sink's opaque
+# ThreatEvent JSON. A stream `sentinel` input feeding an ordinary pipeline would panic on
+# UnwrapLogEntry: that decode path always expects *parser.LogEntry, never a ThreatEvent.
+#
+# The minimal `idle` stream below is required only because arxsentinel always wants at
+# least one stream/pipeline configured — it never receives any traffic; this node's real
+# work happens entirely through the `executors:` block.
+
+transport:
+  enabled: true
+  identity: /etc/arxsentinel/node.key
+  known_nodes: /etc/arxsentinel/known-nodes
+  listen: "0.0.0.0:4097"
+
+streams:
+  - name: idle
+    pipelines:
+      - name: idle
+        inputs:
+          - type: file
+            path: /var/log/arxsentinel/idle.log
+        outputs:
+          - type: file
+            path: /var/log/arxsentinel/idle-out.log
+            format: fail2ban
+
+executors:
+  - name: block-scored
+    type: nginx
+    sources:
+      - name: scored-events
+        queue:
+          type: transport
+          mode: recv
+    config:
+      list_file: /etc/nginx/conf.d/arxsentinel_autoblock.list
+      state_file: /var/lib/arxsentinel/nginx-state.json
+      file_format: geo            # "geo" → "<ip> 1;" (nginx geo{} map), "deny" → "deny <ip>;"
+      min_level: "WARN"
+      ttl: "24h"
+      batch_size: 10
+      flush_interval: "30s"
+      reload_cmd: "nginx -s reload"

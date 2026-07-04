@@ -15,7 +15,7 @@ jobs:
     uses: ./.github/workflows/container.yml
 
   integration:
-    name: Integration tests (135 checks — 6×7 direct + 6 badbot + 6 blocklist + 4×6 proxy-chain + 6 CF-direct + 4×6 CF-chain + 2 chain-guard + 16 HTTP-source + 6 syslog-source)
+    name: Integration tests (142 checks — 6×7 direct + 6 badbot + 6 blocklist + 4×6 proxy-chain + 6 CF-direct + 4×6 CF-chain + 2 chain-guard + 16 HTTP-source + 6 syslog-source + 7 Distributed NCS)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -30,6 +30,9 @@ jobs:
 
       - name: Run integration tests
         run: bash tests/integration/run.sh
+
+      - name: Run Distributed NCS container integration tests
+        run: bash tests/integration/distributed-ncs/run.sh
 
       - name: Record tested product versions
         if: always()

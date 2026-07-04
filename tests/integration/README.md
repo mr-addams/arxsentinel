@@ -9,6 +9,13 @@ multiple backends, proxy chains, and Cloudflare scenarios. It runs end-to-end us
 Docker containers, attacking each server with crafted HTTP requests and verifying that
 sentinel's threat log records the correct attacker IP (not proxy IP).
 
+A separate suite, [`distributed-ncs/`](distributed-ncs/README.md), validates
+multi-node arxsentinel deployments (Distributed NCS / `arx-core/pkg/transport`)
+instead of single-node detection — every node in that suite is itself a
+container, unlike the rest of this directory where arxsentinel runs as a host
+process against containerized backends. Run via `bash tests/integration/distributed-ncs/run.sh`,
+invoked as an extra step in the same `integration` CI job.
+
 ### Infrastructure
 
 ```

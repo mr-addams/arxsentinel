@@ -1,0 +1,29 @@
+general:
+  pid_file: /tmp/pid
+output:
+  operational_log: ""
+transport:
+  enabled: true
+  identity: /tmp/node.key
+  known_nodes: /tmp/known-nodes
+  listen: 0.0.0.0:4097
+  peers:
+    - host: executor:4097
+streams:
+  - name: detector
+    pipelines:
+      - name: main
+        inputs:
+          - type: sentinel
+            addr: ncs://edge-raw
+            mode: raw
+            queue:
+              type: transport
+              mode: recv
+        outputs:
+          - type: sentinel-threat
+            name: scored-events
+            queue:
+              type: transport
+              mode: send
+              peer: executor:4097

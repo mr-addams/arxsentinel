@@ -204,6 +204,14 @@ scorer state across nodes.
 Full setup walkthrough, topology diagram, and verification steps:
 [distributed-ncs/README.md](distributed-ncs/README.md).
 
+Two larger worked examples build on this same pattern, each with its own
+ASCII diagram and each validated by a real multi-container test:
+
+| Recipe | Topology | File |
+|--------|----------|------|
+| Aggregation | 3 collectors → 1 detector → 1 executor | [distributed-ncs/aggregation/README.md](distributed-ncs/aggregation/README.md) |
+| Mixed routing | 2 collectors → 1 detector (2 pipelines) → 2 executors (nginx + MikroTik) | [distributed-ncs/mixed-routing/README.md](distributed-ncs/mixed-routing/README.md) |
+
 ---
 
 ## Server Configs
