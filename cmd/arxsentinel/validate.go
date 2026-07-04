@@ -73,6 +73,28 @@ func validateConfig(cfg config.Config) []pipeline.SemanticError {
 		}
 	}
 
+	// Flow 093 exemption: an executor source whose queue: is a transport
+	// backend in mode=recv has its writer on a REMOTE node — a separate
+	// process/config this validator cannot see — so ValidateExecutorWiring's
+	// "reader without writer" check (step 2, arx-core/pkg/pipeline) would
+	// otherwise reject it as "wired to unknown channel". Synthesizing a
+	// plugin.TypeAny entry satisfies that check AND the type-compatibility
+	// check right after it (TypeAny is the documented "always compatible"
+	// escape hatch) without claiming to know what the remote node actually
+	// produces. Mirrors the sentinelChannelNames exemption on the sink side
+	// of the same cross-node pattern (preRegisterExecutorQueues has the
+	// runtime-registration-time counterpart of this same exemption).
+	for _, ex := range cfg.Executors {
+		for _, src := range ex.Sources {
+			if src.Queue == nil || src.Queue.Type != queue.QueueTypeTransport || src.Queue.EffectiveMode() != "recv" {
+				continue
+			}
+			if _, exists := channelTypes[src.Name]; !exists {
+				channelTypes[src.Name] = plugin.TypeAny
+			}
+		}
+	}
+
 	// Build executor bindings. An unknown executor type is a real misconfiguration —
 	// surface it instead of skipping silently (the registry Build would also fail).
 	var allErrs []pipeline.SemanticError

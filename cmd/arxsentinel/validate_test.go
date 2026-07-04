@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mr-addams/arx-core/pkg/executor/queue"
@@ -82,5 +83,40 @@ func TestSentinelChannelNames_NonTransportQueueUnaffected(t *testing.T) {
 	names := sentinelChannelNames(pl)
 	if len(names) != 2 {
 		t.Fatalf("sentinelChannelNames = %v, want 2 entries (local-only, bbolt-backed)", names)
+	}
+}
+
+// TestValidateConfig_ExecutorTransportRecvExempt is the Flow 093 5-node
+// regression test: an executor whose only source is a transport queue in
+// mode=recv (writer on a remote node) must not be flagged as "wired to
+// unknown channel" by pipeline.ValidateExecutorWiring's reader-without-writer
+// check (arx-core/pkg/pipeline) — validateConfig synthesizes a
+// plugin.TypeAny channelTypes entry for exactly this case. Uses the "nginx"
+// executor type since it is registered by this package's blank imports
+// (plugins_full.go) and requires no external API to construct.
+func TestValidateConfig_ExecutorTransportRecvExempt(t *testing.T) {
+	cfg := config.Config{
+		Executors: []config.ExecutorTopConfig{{
+			Name: "remote-response",
+			Type: "nginx",
+			Sources: []queue.ExecutorSourceRef{{
+				Name:  "scored-events",
+				Queue: &queue.QueueConfig{Type: queue.QueueTypeTransport, Mode: "recv"},
+			}},
+			Config: map[string]any{"list_file": "/dev/null"},
+		}},
+		Streams: []config.StreamConfig{{
+			Name: "idle",
+			Pipelines: []config.PipelineConfig{{
+				Inputs:  []config.InputConfig{{Type: "file", Path: "/dev/null"}},
+				Outputs: []config.SinkConfig{{Type: "file", Path: "/dev/null"}},
+			}},
+		}},
+	}
+	errs := validateConfig(cfg)
+	for _, e := range errs {
+		if strings.Contains(e.Note, "wired to unknown channel") {
+			t.Errorf("validateConfig incorrectly flagged the remote-writer executor source: %v", e)
+		}
 	}
 }

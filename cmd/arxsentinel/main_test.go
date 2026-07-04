@@ -19,6 +19,8 @@ import (
 	ncs "github.com/mr-addams/arx-core/pkg/ncs"
 	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/transport"
+	"github.com/mr-addams/arx-core/pkg/transportbridge"
 )
 
 // TestStartupShutdownInvariants enforces the mandatory startup/shutdown specification
@@ -735,6 +737,49 @@ func TestPreRegisterExecutorQueues_WiringMismatch(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "orphan-stream") {
 		t.Errorf("error should name the orphan source; got: %v", err)
+	}
+
+	// Case 5 (Flow 093 5-node test regression): an executor source whose queue
+	// is a transport backend in mode=recv has its writer on a REMOTE node — a
+	// separate process/config entirely — and must not require a local
+	// sentinel-threat output, mirroring the sentinelChannelNames exemption in
+	// validate.go for the mode=send sink side of the same cross-node pattern.
+	//
+	// Phase 2 of preRegisterExecutorQueues actually registers the queue (calls
+	// ncs.RegisterSinkFromConfig, which for queue.type=transport resolves a
+	// live *transport.Transport via transportbridge.GetDefault) — so this case
+	// needs a real, running Transport, not just a Phase-1-only check.
+	transportbridge.SetDefault(nil)
+	t.Cleanup(func() { transportbridge.SetDefault(nil) })
+	dir := t.TempDir()
+	tr, trErr := transport.New(transport.Config{
+		Enabled:        true,
+		IdentityPath:   dir + "/node.key",
+		KnownNodesPath: dir + "/known-nodes",
+		Listen:         "127.0.0.1:0",
+	})
+	if trErr != nil {
+		t.Fatalf("transport.New: %v", trErr)
+	}
+	transportbridge.SetDefault(tr)
+	trCtx, trCancel := context.WithCancel(context.Background())
+	t.Cleanup(trCancel)
+	go func() { _ = tr.Run(trCtx) }()
+
+	cfgTransportRecv := &config.Config{
+		Executors: []config.ExecutorTopConfig{{
+			Name: "remote-response",
+			Sources: []queue.ExecutorSourceRef{{
+				Name:  "scored-events",
+				Queue: &queue.QueueConfig{Type: queue.QueueTypeTransport, Mode: "recv"},
+			}},
+		}},
+		// No streams at all — this executor's queue is fed entirely by a
+		// remote node, nothing local ever writes "scored-events".
+	}
+	t.Cleanup(func() { ncs.DetachWriter("scored-events") })
+	if err := preRegisterExecutorQueues(cfgTransportRecv); err != nil {
+		t.Fatalf("expected nil error for queue.mode=recv executor source (remote writer), got: %v", err)
 	}
 }
 
