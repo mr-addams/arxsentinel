@@ -1,0 +1,40 @@
+# ========================== Distributed NCS — aggregation: collector (nginx edge) ======
+# One of three collector nodes feeding a single detector's "edge-raw" queue (see
+# collector-api-gateway.yaml, collector-auth-service.yaml in this same directory, and
+# detector.yaml / executor.yaml for the rest of the topology). Parses this node's local
+# access log but does NOT score it (raw_forward: true) — the detector node scores every
+# collector's traffic uniformly, sharing one tracker/whitelist/detector configuration.
+#
+# Before starting:
+#   1. Replace `detector.example.net:4097` with the detector's real host:port.
+#   2. transport.identity / known_nodes need a writable parent directory — both files
+#      are created automatically on first start (Ed25519 keypair, empty TOFU store).
+#   3. Every collector in this scenario uses the SAME sink name ("edge-raw") — that name
+#      is what the detector's inbound queue registration matches against.
+
+transport:
+  enabled: true
+  identity: /etc/arxsentinel/node.key
+  known_nodes: /etc/arxsentinel/known-nodes
+  listen: "0.0.0.0:4097"
+  peers:
+    - host: "detector.example.net:4097"
+      fingerprint: ""  # "" = TOFU on first contact; set explicitly to pre-pin once known
+
+streams:
+  - name: collector-nginx-edge
+    pipelines:
+      - name: raw
+        raw_forward: true
+        inputs:
+          - type: file
+            path: /var/log/nginx/access.log
+            parser: combined
+        outputs:
+          - type: sentinel-threat
+            name: edge-raw
+            format: raw-line
+            queue:
+              type: transport
+              mode: send
+              peer: "detector.example.net:4097"

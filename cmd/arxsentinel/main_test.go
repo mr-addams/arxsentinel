@@ -19,6 +19,8 @@ import (
 	ncs "github.com/mr-addams/arx-core/pkg/ncs"
 	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+	"github.com/mr-addams/arx-core/pkg/transport"
+	"github.com/mr-addams/arx-core/pkg/transportbridge"
 )
 
 // TestStartupShutdownInvariants enforces the mandatory startup/shutdown specification
@@ -202,6 +204,104 @@ streams:
 	// Non-Skip result: the line was scored (even if level="" — Action{} means Skip=false).
 	if action.Skip {
 		t.Error("securityProcessor.Process returned Skip=true for a normal non-whitelisted request")
+	}
+}
+
+// TestSecurityProcessor_RawForward verifies the Distributed NCS (Flow 093)
+// raw-forward passthrough branch: a pipeline with raw_forward: true must
+// bypass detection/scoring entirely and forward every line unscored — this
+// is what lets a collector node hand raw lines to a transport-queue sink
+// without ever computing a verdict locally.
+func TestSecurityProcessor_RawForward(t *testing.T) {
+	if err := utils.Init(false, false, "", ""); err != nil {
+		t.Fatalf("utils.Init: %v", err)
+	}
+	defer utils.Close()
+
+	tmp, err := os.CreateTemp(t.TempDir(), "cfg-*.yaml")
+	if err != nil {
+		t.Fatalf("create temp config: %v", err)
+	}
+	_, _ = tmp.WriteString(`
+streams:
+  - name: test
+    pipelines:
+      - name: ""
+        raw_forward: true
+        inputs:
+          - type: file
+            path: /dev/null
+        outputs:
+          - type: sentinel-threat
+            path: /dev/null
+            format: raw-line
+`)
+	_ = tmp.Close()
+
+	cfg, loadErr := config.LoadConfig(tmp.Name())
+	if loadErr != nil {
+		t.Fatalf("config.LoadConfig: %v", loadErr)
+	}
+
+	factory := &securityFactory{
+		ctx:        context.Background(),
+		path:       tmp.Name(),
+		ipCache:    nil,
+		resolver:   &net.Resolver{PreferGo: true},
+		cfg:        cfg,
+		streamName: "test",
+		trackers:   make(map[string]*state.Tracker),
+		shared:     coreruntime.SharedResources{},
+	}
+
+	ps, err := factory.Build("test", "", 0, factory.shared)
+	if err != nil {
+		t.Fatalf("securityFactory.Build: %v", err)
+	}
+
+	processor := &securityProcessor{shared: factory.shared}
+
+	// A clearly-scoreable line (wp-login.php probe) — proves the bypass is
+	// unconditional, not just "nothing to score here".
+	rawLine := `203.0.113.1 - - [20/May/2026:10:00:00 +0000] "GET /wp-login.php HTTP/1.1" 200 512 "-" "curl/7.88" "203.0.113.1"`
+	entry, ok := (&parser.CombinedParser{}).Parse(rawLine)
+	if !ok {
+		t.Fatal("test setup: CombinedParser failed to parse the test line")
+	}
+	event := &plugin.Event{
+		Envelope: plugin.Envelope{
+			Source:     entry.RemoteAddr,
+			SourceType: "file",
+			Stream:     "test",
+			Timestamp:  entry.Time,
+		},
+		Payload: entry,
+	}
+	evctx := coreruntime.EventContext{
+		StreamName:   "test",
+		PipelineName: "",
+		SourceName:   "file:/var/log/nginx/access.log",
+		SourceType:   "file",
+	}
+
+	action := processor.Process(context.Background(), event, ps, evctx)
+
+	if action.Skip {
+		t.Fatal("raw_forward pipeline returned Skip=true — expected unconditional forward")
+	}
+	if action.Payload == nil {
+		t.Fatal("raw_forward pipeline returned nil Payload — expected forwarded event")
+	}
+	fwd := action.Payload
+	if fwd.Envelope.Level != "" {
+		t.Errorf("fwd.Envelope.Level = %q, want empty (raw_forward must not score)", fwd.Envelope.Level)
+	}
+	got, ok := fwd.Payload.(*parser.LogEntry)
+	if !ok {
+		t.Fatalf("fwd.Payload type = %T, want *parser.LogEntry", fwd.Payload)
+	}
+	if got.RealIP != entry.RealIP || got.Path != entry.Path {
+		t.Errorf("forwarded LogEntry = %+v, want the unmodified parsed entry %+v", got, entry)
 	}
 }
 
@@ -637,6 +737,49 @@ func TestPreRegisterExecutorQueues_WiringMismatch(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "orphan-stream") {
 		t.Errorf("error should name the orphan source; got: %v", err)
+	}
+
+	// Case 5 (Flow 093 5-node test regression): an executor source whose queue
+	// is a transport backend in mode=recv has its writer on a REMOTE node — a
+	// separate process/config entirely — and must not require a local
+	// sentinel-threat output, mirroring the sentinelChannelNames exemption in
+	// validate.go for the mode=send sink side of the same cross-node pattern.
+	//
+	// Phase 2 of preRegisterExecutorQueues actually registers the queue (calls
+	// ncs.RegisterSinkFromConfig, which for queue.type=transport resolves a
+	// live *transport.Transport via transportbridge.GetDefault) — so this case
+	// needs a real, running Transport, not just a Phase-1-only check.
+	transportbridge.SetDefault(nil)
+	t.Cleanup(func() { transportbridge.SetDefault(nil) })
+	dir := t.TempDir()
+	tr, trErr := transport.New(transport.Config{
+		Enabled:        true,
+		IdentityPath:   dir + "/node.key",
+		KnownNodesPath: dir + "/known-nodes",
+		Listen:         "127.0.0.1:0",
+	})
+	if trErr != nil {
+		t.Fatalf("transport.New: %v", trErr)
+	}
+	transportbridge.SetDefault(tr)
+	trCtx, trCancel := context.WithCancel(context.Background())
+	t.Cleanup(trCancel)
+	go func() { _ = tr.Run(trCtx) }()
+
+	cfgTransportRecv := &config.Config{
+		Executors: []config.ExecutorTopConfig{{
+			Name: "remote-response",
+			Sources: []queue.ExecutorSourceRef{{
+				Name:  "scored-events",
+				Queue: &queue.QueueConfig{Type: queue.QueueTypeTransport, Mode: "recv"},
+			}},
+		}},
+		// No streams at all — this executor's queue is fed entirely by a
+		// remote node, nothing local ever writes "scored-events".
+	}
+	t.Cleanup(func() { ncs.DetachWriter("scored-events") })
+	if err := preRegisterExecutorQueues(cfgTransportRecv); err != nil {
+		t.Fatalf("expected nil error for queue.mode=recv executor source (remote writer), got: %v", err)
 	}
 }
 

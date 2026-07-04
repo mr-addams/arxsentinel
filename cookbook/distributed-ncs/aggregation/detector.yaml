@@ -1,0 +1,41 @@
+# ========================== Distributed NCS — aggregation: detector ====================
+# Receives raw (unscored) lines forwarded by all three collector nodes under the SAME
+# "edge-raw" queue name (aggregation), runs the REAL detector chain — one shared
+# scoring/whitelist/tracker configuration for every source — and forwards each scored
+# verdict to the executor node under a DIFFERENT queue name ("scored-events"), so a
+# single detector process can serve many collectors without their traffic ever touching
+# each other's log files or trackers separately.
+#
+# Before starting:
+#   1. Replace `executor.example.net:4097` with the executor node's real host:port.
+#   2. This node accepts connections from all three collectors WITHOUT listing them in
+#      transport.peers — peers is the OUTBOUND dial roster only; incoming connections are
+#      accepted and TOFU-pinned regardless of whether the caller appears in peers.
+
+transport:
+  enabled: true
+  identity: /etc/arxsentinel/node.key
+  known_nodes: /etc/arxsentinel/known-nodes
+  listen: "0.0.0.0:4097"
+  peers:
+    - host: "executor.example.net:4097"
+      fingerprint: ""
+
+streams:
+  - name: detector
+    pipelines:
+      - name: main
+        inputs:
+          - type: sentinel
+            addr: ncs://edge-raw
+            mode: raw
+            queue:
+              type: transport
+              mode: recv
+        outputs:
+          - type: sentinel-threat
+            name: scored-events
+            queue:
+              type: transport
+              mode: send
+              peer: "executor.example.net:4097"

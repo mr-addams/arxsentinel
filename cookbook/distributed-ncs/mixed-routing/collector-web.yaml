@@ -1,0 +1,33 @@
+# ========================== Distributed NCS — mixed-routing: collector (web) ===========
+# One of two collector nodes, each feeding a SEPARATE detector pipeline (see
+# collector-auth.yaml, detector.yaml). Unlike the aggregation recipe, this scenario keeps
+# each source's traffic on its OWN queue name end to end ("edge-web", never mixed with
+# "edge-auth") — the routing decision downstream is which PIPELINE processes it, not a
+# shared queue.
+
+transport:
+  enabled: true
+  identity: /etc/arxsentinel/node.key
+  known_nodes: /etc/arxsentinel/known-nodes
+  listen: "0.0.0.0:4097"
+  peers:
+    - host: "detector.example.net:4097"
+      fingerprint: ""
+
+streams:
+  - name: collector-web
+    pipelines:
+      - name: raw
+        raw_forward: true
+        inputs:
+          - type: file
+            path: /var/log/nginx/access.log
+            parser: combined
+        outputs:
+          - type: sentinel-threat
+            name: edge-web
+            format: raw-line
+            queue:
+              type: transport
+              mode: send
+              peer: "detector.example.net:4097"

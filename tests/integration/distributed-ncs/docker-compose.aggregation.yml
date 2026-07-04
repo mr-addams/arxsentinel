@@ -1,0 +1,66 @@
+# ========================== Distributed NCS — aggregation scenario =======================
+#   5 fully containerized arxsentinel nodes on their own Docker network, each running the
+#   SAME image built from deploy/container/docker/Dockerfile (the real product image, not
+#   a test-only shim). 3 collectors raw_forward onto one detector's "edge-raw" queue
+#   (aggregation); the detector scores for real and routes to a 5th (executor) node under
+#   a different queue_name ("scored-events").
+#
+#   Service names double as the transport hostnames each node's `peers:`/`queue.peer:`
+#   config references — Docker Compose's embedded DNS resolves them on the "agg" network,
+#   exactly like distinct hosts in a real deployment would resolve via real DNS/hosts.
+#
+#   ./data/<service>/ is bind-mounted per node that needs host-visible I/O (collectors'
+#   tailed access.log, the executor's blocklist.conf) — the detector and collectors'
+#   sentinel-threat sinks need no host-visible files at all, only the network.
+
+services:
+  collector-nginx-edge:
+    build:
+      context: ../../..
+      dockerfile: deploy/container/docker/Dockerfile
+    volumes:
+      - ./configs/agg-collector-nginx-edge.yaml:/etc/arxsentinel/config.yaml:ro
+      - ./data/agg/collector-nginx-edge:/data
+    networks: [agg]
+    depends_on: [detector]
+
+  collector-api-gateway:
+    build:
+      context: ../../..
+      dockerfile: deploy/container/docker/Dockerfile
+    volumes:
+      - ./configs/agg-collector-api-gateway.yaml:/etc/arxsentinel/config.yaml:ro
+      - ./data/agg/collector-api-gateway:/data
+    networks: [agg]
+    depends_on: [detector]
+
+  collector-auth-service:
+    build:
+      context: ../../..
+      dockerfile: deploy/container/docker/Dockerfile
+    volumes:
+      - ./configs/agg-collector-auth-service.yaml:/etc/arxsentinel/config.yaml:ro
+      - ./data/agg/collector-auth-service:/data
+    networks: [agg]
+    depends_on: [detector]
+
+  detector:
+    build:
+      context: ../../..
+      dockerfile: deploy/container/docker/Dockerfile
+    volumes:
+      - ./configs/agg-detector.yaml:/etc/arxsentinel/config.yaml:ro
+    networks: [agg]
+    depends_on: [executor]
+
+  executor:
+    build:
+      context: ../../..
+      dockerfile: deploy/container/docker/Dockerfile
+    volumes:
+      - ./configs/agg-executor.yaml:/etc/arxsentinel/config.yaml:ro
+      - ./data/agg/executor:/data
+    networks: [agg]
+
+networks:
+  agg:

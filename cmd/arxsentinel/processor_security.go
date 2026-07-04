@@ -66,6 +66,10 @@ type securityState struct {
 	Waf              *waf.WafProcessor
 	FakeBotScore     int
 	DNSVerifyTimeout time.Duration
+	// RawForward (Flow 093) — mirrors PipelineConfig.RawForward. When true,
+	// Process bypasses detection/scoring entirely and forwards every line
+	// as-is (see the RawForward branch near the top of Process).
+	RawForward bool
 	// shared (runtime.SharedResources any) — читается через processor.shared, не в state.
 }
 
@@ -124,6 +128,26 @@ func (p *securityProcessor) Process(
 	scorerRef := st.Scorer
 	sourceName := evctx.SourceName
 	sourceType := evctx.SourceType
+
+	// RawForward (Flow 093): Distributed NCS's raw-forward collector mode.
+	// Bypasses detection/scoring/whitelisting entirely — every line is
+	// forwarded to Outputs unscored (Level left empty; there is no verdict
+	// yet, the remote node's own detector chain produces one). Checked
+	// before chain-integrity / whitelist / tracker / scoring so none of
+	// that state is touched for a pipeline whose only job is forwarding.
+	if st.RawForward {
+		return coreruntime.Action{
+			Payload: &plugin.Event{
+				Envelope: plugin.Envelope{
+					Source:     sourceName,
+					SourceType: sourceType,
+					Stream:     streamName,
+					Timestamp:  entry.Time,
+				},
+				Payload: entry,
+			},
+		}
+	}
 
 	// Метрики callbacks — снимок структуры (atomic-чтение pointer-поля через copy).
 	mc := p.shared.MetricsCallbacks

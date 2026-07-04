@@ -576,11 +576,11 @@
         </div>
         <h1>
             <span class="shimmer-text">Від одного VPS</span><br>
-            до Kubernetes —<br>
+            до розподіленого флоту —<br>
             один бінарник, нульові накладні витрати
         </h1>
-        <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Потоковий двігун обробки подій безпеки для будь-якого HTTP-сервера — і не тільки</p>
-        <p>Вісім поведінкових детекторів аналізують HTTP access-логи в реальному часі та спрямовують підтверджених зловмисників на будь-який вивід — Fail2Ban, кастомні скрипти або власний exec+JSON-sink на будь-якій мові. Працює на одному VPS, у Docker Compose або як Kubernetes DaemonSet.</p>
+        <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Розподілений двигун обробки подій безпеки для будь-якого HTTP-сервера — і не тільки</p>
+        <p>Вісім поведінкових детекторів аналізують HTTP access-логи в реальному часі та спрямовують підтверджених зловмисників на будь-який вивід — Fail2Ban, Cloudflare WAF, MikroTik RouterOS або власний exec+JSON-sink на будь-якій мові. Збирайте події на одній машині, скоруйте на іншій, баньте на третій — через вбудовану шифровану мережу вузлів. Bare-metal, Docker Compose або Kubernetes DaemonSet.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Встановити</a>
             <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">GitHub</a>
@@ -965,12 +965,58 @@ service arxsentinel start</span></pre>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Pluggable queue backends</h3>
-                <p>Буферизація подій executor через in-memory, file-based (bbolt) або Redis queue — виберіть per executor для bare-metal, single-host або multi-replica Kubernetes.</p>
+                <p>Буферизація подій executor через in-memory, file-based (bbolt), Redis — або <strong>transport</strong>-чергу, розтягнуту між машинами через шифровану мережу вузлів. Виберіть per executor для bare-metal, single-host, Kubernetes або мультивузлових схем.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Named Channel Switch</h3>
-                <p>Маршрутизація подій загроз між незалежними pipelines за назвою — один pipeline може детектувати, інший примусити, повністю decoupled.</p>
+                <p>Маршрутизація подій загроз між незалежними pipelines за назвою — один pipeline може детектувати, інший примусити, повністю decoupled. А тепер та сама іменована черга може закінчуватися на <strong>іншій машині</strong>: Distributed NCS.</p>
             </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag" style="color: var(--accent-green); border-color: rgba(0,255,136,0.35); background: rgba(0,255,136,0.08);">NEW · Distributed NCS</span>
+            <h2 class="section-title">Збирай будь-де. Детектуй централізовано. Бань на межі.</h2>
+            <p style="color: var(--text-muted); max-width: 720px; margin: 0 auto;">
+                Той самий бінарник стає <strong>колектором</strong>, <strong>детектором</strong> чи <strong>респондером</strong> —
+                лише через конфіг, з'єднуючись вбудованою шифрованою event-мережею.
+                Єдиний інструмент у своєму класі з вбудованим у двигун транспортом подій безпеки між вузлами:
+                без брокера повідомлень, без log shipper'а, без ієрархії агент-сервер, без VPN.
+            </p>
+        </div>
+        <div class="pipeline-box" style="margin-bottom: 2rem;">
+            <div class="box-scanline"></div>
+            <div class="pipeline-flow">
+                <div class="flow-line"></div>
+                <div class="pipeline-node">Колектори — Pi · VPS · NAS · філія (по 12 МБ, лише парсинг)</div>
+                <div class="pipeline-node">QUIC / TLS 1.3 · Ed25519-ідентичність вузла · TOFU-пінінг (як у SSH)</div>
+                <div class="pipeline-node">Вузол-детектор — 8 детекторів · WAF · whitelist · один спільний IP-score по всіх джерелах</div>
+                <div class="pipeline-node">Скоровані вердикти маршрутизуються далі — per pipeline, на різні вузли</div>
+                <div class="pipeline-node final">Респондери → роутер MikroTik · nginx blocklist · Cloudflare WAF · потік у SIEM (сирий + скорований JSON)</div>
+            </div>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /><path d="M12 11m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M12 12l0 2.5" /></svg></span> Шифрована мережа з коробки</h3>
+                <p>QUIC на одному UDP-порту, завжди TLS 1.3, Ed25519-ключі вузла генеруються при першому старті, TOFU-пінінг fingerprints як у SSH. Взаємна автентифікація до першої події — чужинець на вашому порту не отримає нічого.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M18 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M7.5 7.5l3 7" /><path d="M16.5 7.5l-3 7" /><path d="M8 6h8" /></svg></span> Кореляція між сервісами</h3>
+                <p>Кожен колектор прокидає в один спільний per-IP score. Атакувальник, що промацує веб-шар, API та auth-сервіс, накопичує сумарний score на детекторі — і перетинає поріг бану раніше, ніж його впіймав би будь-який сервіс поодинці.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" /><path d="M4 10h16" /><path d="M10 4v16" /></svg></span> Сирі чи скоровані — обидва потоки</h3>
+                <p>Прокидайте сирі розпарсені записи всередину для центральної детекції, скоровані вердикти назовні для enforcement — або обидва потоки у ваш SIEM. Префільтруйте на edge — і нехай рахунок за інжест визначають загрози, а не обсяг трафіку.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 12l2 2l4 -4" /><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> Доведено CI, а не обіцяно</h3>
+                <p>Кожна документована топологія — агрегація edge-флоту, змішана маршрутизація на nginx + MikroTik респондери — проганяється як справжній мультиконтейнерний тест при кожному merge. Діаграми в доках виконувані.</p>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="https://github.com/mr-addams/arxsentinel/blob/main/docs/DISTRIBUTED.uk.md" target="_blank" rel="noopener noreferrer" class="btn btn-primary">Посібник з розподіленої обробки</a>
+            <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="margin-left: 0.75rem;">Готові топології</a>
         </div>
     </section>
 

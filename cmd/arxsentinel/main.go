@@ -23,14 +23,19 @@
 //     стрим, передавая securityFactory и reloadCh. См. ADR-004.
 //
 //   STARTUP SEQUENCE (порядок обязателен — нарушения ведут к panic или потере данных):
-//     1. config.LoadConfig()              — должен быть первым; все компоненты зависят от cfg
+//     0. signal.NotifyContext()           — САМАЯ ПЕРВАЯ строка main(), до flag.Parse()/
+//        LoadConfig()/utils.Init(). SIGTERM, пришедший ДО регистрации обработчика, убивает
+//        процесс через default OS-поведение (нет graceful-пути, нет 0 exit code) — Flow 093
+//        Group H поймал это (TestDistributedNCS_CleanShutdown). Регистрация первой строкой
+//        сокращает уязвимое окно до минимума, а не устраняет его целиком (signal.Notify
+//        физически не может сработать раньше первой исполняемой инструкции процесса).
+//     1. config.LoadConfig()              — все компоненты зависят от cfg
 //     2. utils.Init()                     — логгер должен быть готов до любого Log()
 //     3. writePID()                       — после логгера, чтобы ошибки попали в лог
-//     4. signal.NotifyContext()           — context до горутин, проверяющих ctx.Done()
-//     5. metrics.Init() + srv.ListenAndServe() — до стримов; scraper получает непрерывные серии
-//     6. blocklist.NewManager()           — до buildDetectors(); детекторы зависят от него
-//     7. chaincheck.NewChecker()          — до стримов; проверяет каждую запись лога с начала
-//     8. coreruntime.Run() × N            — последним; все shared-ресурсы должны существовать
+//     4. metrics.Init() + srv.ListenAndServe() — до стримов; scraper получает непрерывные серии
+//     5. blocklist.NewManager()           — до buildDetectors(); детекторы зависят от него
+//     6. chaincheck.NewChecker()          — до стримов; проверяет каждую запись лога с начала
+//     7. coreruntime.Run() × N            — последним; все shared-ресурсы должны существовать
 //
 //   SHUTDOWN SEQUENCE (SIGTERM/SIGINT → ctx.Done()):
 //     1. tail.Run() exits                — закрывает lines-канал
@@ -86,6 +91,20 @@ var version = "dev"
 const configPath = "/etc/arxsentinel/config.yaml"
 
 func main() {
+	// ── Signal handling — FIRST, before any other work ────────────────────────────────
+	// Registered before flag parsing / config loading / logger init so a SIGTERM that
+	// arrives during startup is caught by signal.NotifyContext instead of falling through
+	// to the OS default disposition (immediate kill, no graceful path, no drained
+	// goroutines — Flow 093 Group H's TestDistributedNCS_CleanShutdown caught this: a
+	// SIGTERM sent before this call used to terminate the process with no clean exit).
+	// Config-loading errors below still exit via os.Exit (fast, nothing running yet to
+	// drain) — this ctx only needs to exist EARLY enough that a signal arriving during
+	// the (now very short) window before it's registered is vanishingly unlikely, and
+	// every goroutine started later in main() observes ctx.Done() correctly regardless
+	// of how early in the synchronous setup the underlying signal was received.
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
+
 	// ── Subcommand dispatch ───────────────────────────────────────────────────────────
 	if len(os.Args) > 1 && os.Args[1] == "cleanup" {
 		handleCleanup(os.Args[2:])
@@ -246,11 +265,6 @@ func main() {
 	ipCache := whitelist.NewIPCache(cfg.Whitelist.DNSCache)
 	resolver := &net.Resolver{PreferGo: true}
 
-	// ── Context + shutdown ────────────────────────────────────────────────────────────
-
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer cancel()
-
 	// ── Metrics HTTP-сервер ──────────────────────────────────────────────────────────
 	// Запускается один раз — намеренно НЕ перезапускается на SIGHUP, чтобы Prometheus
 	// scraper сохранял непрерывные counter-серии (без сброса на config reload).
@@ -387,6 +401,18 @@ func main() {
 		}
 	}()
 
+	// ── Distributed NCS transport (Flow 093) ──────────────────────────────────────────
+	// Must start BEFORE any queue pre-registration below: RegisterSinkFromConfig's
+	// queue.type=transport case resolves the live *transport.Transport via
+	// transportbridge.GetDefault, which startTransport populates via SetDefault.
+	// No-op (returns nil immediately, no goroutine) when cfg.Transport.Enabled is
+	// false — see transport_bootstrap.go.
+	var wg sync.WaitGroup
+	if err := startTransport(ctx, &cfg, &wg); err != nil {
+		utils.Log("STARTUP", "transport startup: "+err.Error(), "error")
+		os.Exit(1)
+	}
+
 	// ── Pre-register Named Channel Switch queues с не-default backend'ами ─────────────
 	// Pre-registration позволяет YAML'ному `queue: { type: bbolt, ... }` победить
 	// позднейший вызов AttachWriter из sink'а (fan-in refcount++ на существующих именах).
@@ -395,6 +421,19 @@ func main() {
 	// оператора после config-ошибки.
 	if err := preRegisterExecutorQueues(&cfg); err != nil {
 		utils.Log("STARTUP", "executor queue pre-registration: "+err.Error(), "error")
+		os.Exit(1)
+	}
+
+	// F2/F3 (Flow 093): same pre-registration principle as executor queues above,
+	// applied to stream-level sentinel-threat outputs and sentinel inputs whose
+	// queue: section requests a transport-backed (or bbolt/redis) NCS name instead
+	// of the default in-process MemoryQueue.
+	if err := preRegisterSinkQueues(&cfg); err != nil {
+		utils.Log("STARTUP", "sink queue pre-registration: "+err.Error(), "error")
+		os.Exit(1)
+	}
+	if err := preRegisterInboundTransportQueues(&cfg); err != nil {
+		utils.Log("STARTUP", "inbound queue pre-registration: "+err.Error(), "error")
 		os.Exit(1)
 	}
 
@@ -444,7 +483,6 @@ func main() {
 	// StreamSpec.Pipelines (те же индексы — main.go строит reloadChs в порядке cfg.Streams).
 	reloadChs = streamReloadChs
 
-	var wg sync.WaitGroup
 	for i, spec := range streamSpecs {
 		factory := &securityFactory{
 			ctx:        ctx,

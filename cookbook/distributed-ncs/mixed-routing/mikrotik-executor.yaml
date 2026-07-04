@@ -1,0 +1,47 @@
+# ========================== Distributed NCS — mixed-routing: mikrotik executor =========
+# Consumes "scored-auth" only — the detector's "auth" pipeline verdicts. Never sees
+# "scored-web" traffic; that goes to nginx-executor.yaml on a separate node.
+#
+# Replace host/username/password with your RouterOS device's real REST API credentials.
+# use_tls: true (the default) requires the device to present a certificate the executor
+# trusts — see tls_verify / ca_file in config.reference.yaml if it uses an internal CA.
+
+transport:
+  enabled: true
+  identity: /etc/arxsentinel/node.key
+  known_nodes: /etc/arxsentinel/known-nodes
+  listen: "0.0.0.0:4097"
+
+streams:
+  - name: idle
+    pipelines:
+      - name: idle
+        inputs:
+          - type: file
+            path: /var/log/arxsentinel/idle.log
+        outputs:
+          - type: file
+            path: /var/log/arxsentinel/idle-out.log
+            format: fail2ban
+
+executors:
+  - name: block-auth
+    type: mikrotik
+    sources:
+      - name: scored-auth
+        queue:
+          type: transport
+          mode: recv
+    config:
+      host: "router.example.net"
+      port: 443
+      username: "arxsentinel"
+      password: "changeme"
+      list_name: "arxsentinel_blocklist"
+      ttl: "24h"
+      sentinel_id: "detector-auth"
+      tls_verify: true
+      use_tls: true
+      min_level: "WARN"
+      batch_size: 10
+      flush_interval: "30s"

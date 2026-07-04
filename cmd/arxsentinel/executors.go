@@ -62,6 +62,15 @@ func preRegisterExecutorQueues(cfg *config.Config) error {
 			if src.Queue == nil {
 				continue
 			}
+			// Flow 093 exemption (mirrors sentinelChannelNames in validate.go):
+			// a transport queue in mode=recv has its writer on a REMOTE node —
+			// a separate process/config entirely — so there is no local
+			// sentinel-threat output to find, and checking for one here would
+			// reject a legitimate Distributed NCS executor (e.g. a dedicated
+			// response node whose only job is consuming forwarded ThreatEvents).
+			if src.Queue.Type == queue.QueueTypeTransport && src.Queue.EffectiveMode() == "recv" {
+				continue
+			}
 			if _, ok := available[src.Name]; !ok {
 				return fmt.Errorf(
 					"executor %q source %q (queue=%s) is not referenced by any sentinel-threat output; "+
