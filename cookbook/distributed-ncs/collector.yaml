@@ -1,0 +1,46 @@
+# ========================== Distributed NCS — collector node ==========================
+# Parses the local nginx access log but does NOT score it locally (raw_forward: true).
+# Every parsed line is forwarded, unscored, over the QUIC transport mesh to the
+# detector node's "edge-raw" queue — see detector.yaml in this same directory.
+#
+# Deploy this on a node close to the log source (the web server itself, or a log
+# aggregator) when you want detection to happen centrally on a different node —
+# e.g. one node per edge location, one shared detector node with the ban executors.
+#
+# Before starting:
+#   1. Replace `node-b.example.net:4097` with the detector node's real host:port.
+#   2. Make sure /etc/arxsentinel/ exists and is writable — transport.identity and
+#      transport.known_nodes are created there on first start (Ed25519 key + TOFU
+#      pinning file). No pre-generation needed.
+#   3. Start the detector node FIRST (or accept a ~1s reconnect delay while this
+#      node's first dial attempt fails and retries).
+
+transport:
+  enabled: true
+  identity: /etc/arxsentinel/node.key
+  known_nodes: /etc/arxsentinel/known-nodes
+  listen: "0.0.0.0:4097"
+  peers:
+    - host: "node-b.example.net:4097"
+      fingerprint: ""  # "" = TOFU on first contact; set explicitly to pre-pin once known
+
+streams:
+  - name: collector
+    pipelines:
+      - name: raw
+        # raw_forward: true bypasses detection/scoring/whitelisting entirely for this
+        # pipeline — every line is forwarded as-is. There is no local threat log for
+        # this pipeline; the verdict comes from the detector node.
+        raw_forward: true
+        inputs:
+          - type: file
+            path: /var/log/nginx/access.log
+            parser: combined
+        outputs:
+          - type: sentinel-threat
+            name: edge-raw          # must match the detector's "ncs://edge-raw" addr
+            format: raw-line        # bare JSON of *parser.LogEntry, no envelope
+            queue:
+              type: transport
+              mode: send            # this node only pushes, never pulls, on this queue
+              peer: "node-b.example.net:4097"

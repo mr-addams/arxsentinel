@@ -266,6 +266,20 @@ metrics:
   username: ""
   password_hash: ""
 
+# ── transport: Distributed NCS — QUIC mesh between arxsentinel instances ──────────────────
+# Disabled by default — enable only when this container needs to forward events to (or
+# receive them from) another arxsentinel instance over the network. See
+# cookbook/distributed-ncs/ for a full two-node walkthrough. identity/known_nodes need a
+# writable path INSIDE the container — mount a volume there if you want the node identity
+# (Ed25519 key) to survive a container recreate; otherwise a new identity is generated
+# every restart and previously-pinned peers must TOFU-repin.
+transport:
+  enabled: false
+  identity: /etc/arxsentinel/node.key
+  known_nodes: /etc/arxsentinel/known-nodes
+  listen: "0.0.0.0:4097"
+  peers: []
+
 # ── pipeline ──────────────────────────────────────────────────────────────────────────────
 # Bounded channel between log-source readers and the processing pipeline.
 # Increase buffer_size for burst traffic (e.g. 16384 for high-load nginx).

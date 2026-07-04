@@ -445,6 +445,50 @@ metrics:
   enabled: false           # enable/disable Prometheus metrics endpoint; bool, default: false
   listen_addr: ":9117"     # metrics listen address; string, default: ":9117"
 
+# ── transport: Distributed NCS — QUIC mesh between arxsentinel instances ─────────────────
+# Enables node-to-node communication (arx-core/pkg/transport): TLS 1.3 + Ed25519 identity +
+# TOFU (Trust On First Use) peer pinning. Lets one instance's pipeline forward events —
+# raw (unscored) log lines or scored threat events — to another instance's queue over the
+# network, instead of only within one process's in-process Named Channel Switch (NCS).
+#
+# Включает связь узел-узел (arx-core/pkg/transport): TLS 1.3 + Ed25519-идентичность +
+# TOFU (Trust On First Use) — доверие при первом контакте. Позволяет одному инстансу
+# пробрасывать события (сырые нескорированные строки или скорированные threat-события)
+# в очередь другого инстанса по сети, а не только внутри одного процесса через
+# Named Channel Switch (NCS).
+#
+# Full cookbook with a two-node raw-forward example: cookbook/distributed-ncs/.
+# Полный cookbook с примером raw-forward на двух узлах: cookbook/distributed-ncs/.
+transport:
+  enabled: false  # master gate; false = no goroutine, no listener, no dial at all
+
+  # Path to this node's Ed25519 private key file. Generated automatically on first
+  # start if it does not exist. Required when enabled: true.
+  # Путь к файлу приватного ключа Ed25519 этого узла. Генерируется автоматически при
+  # первом запуске, если файла нет. Обязателен при enabled: true.
+  identity: /etc/arxsentinel/node.key
+
+  # Path to the TOFU known-nodes file — pins each peer's fingerprint on first contact.
+  # Required when enabled: true.
+  # Путь к файлу TOFU known-nodes — фиксирует fingerprint каждого пира при первом контакте.
+  # Обязателен при enabled: true.
+  known_nodes: /etc/arxsentinel/known-nodes
+
+  # QUIC bind address for this node. Required when enabled: true.
+  # Адрес прослушивания QUIC для этого узла. Обязателен при enabled: true.
+  listen: "0.0.0.0:4097"
+
+  # Outbound dial targets — nodes this instance connects to. fingerprint may be left
+  # empty for TOFU-on-first-contact; set it explicitly to pre-pin a known peer and
+  # reject an unexpected key at handshake time.
+  # Исходящие цели набора — узлы, к которым подключается этот инстанс. fingerprint можно
+  # оставить пустым для TOFU при первом контакте; задать явно — чтобы заранее закрепить
+  # известного пира и отклонить неожиданный ключ при хендшейке.
+  peers: []
+  # peers:
+  #   - host: "node-b.example.net:4097"
+  #     fingerprint: ""  # "" = TOFU on first contact; or "sha256:<hex>" to pre-pin
+
 # ── pipeline: runtime pipeline configuration / конфигурация пайплайна выполнения ──────────
 pipeline:
   buffer_size: 8192        # channel buffer depth for burst traffic; int, ≥1, default: 8192
@@ -716,6 +760,22 @@ processors:
   #
   # - type: sentinel
   #   addr: ncs://inter-pipeline
+  #
+  # Cross-node variant (Distributed NCS, see transport: above): add `mode: raw` to
+  # decode a raw-forwarded (unscored) *parser.LogEntry instead of a ThreatEvent, and
+  # `queue: {type: transport, mode: recv}` to receive it from a remote node's transport
+  # mesh instead of a local in-process sink. Full example: cookbook/distributed-ncs/.
+  # Кросс-нодовый вариант (Distributed NCS, см. transport: выше): добавить `mode: raw`
+  # для декодирования raw-forward (нескорированного) *parser.LogEntry вместо ThreatEvent,
+  # и `queue: {type: transport, mode: recv}` для приёма от удалённого узла через
+  # transport-сетку вместо локального in-process sink'а. Полный пример:
+  # cookbook/distributed-ncs/.
+  # - type: sentinel
+  #   addr: ncs://edge-raw
+  #   mode: raw
+  #   queue:
+  #     type: transport
+  #     mode: recv
 
 # ── outputs: universal threat sink syntax / универсальный синтаксис приёмников ──────────
 #
@@ -741,6 +801,26 @@ processors:
 #   # их через свой `sentinel` source и пропускает через свою цепочку.
 #   - type: exec              # exec plugin: events written as JSON to plugin stdin
 #     exec: /usr/local/lib/arxsentinel/plugins/my-sink.sh
+#
+# Cross-node raw-forward variant (Distributed NCS): pair `format: raw-line` on a
+# `sentinel-threat` sink with `raw_forward: true` on the pipeline (below, under
+# streams[].pipelines[]) and `queue: {type: transport, mode: send, peer: <host>}` —
+# the pipeline parses each line but does NOT score it locally; the bare
+# *parser.LogEntry is forwarded over the transport mesh to a remote node's own
+# detector chain. Full example: cookbook/distributed-ncs/.
+# Кросс-нодовый raw-forward вариант (Distributed NCS): сочетание `format: raw-line`
+# на sink'е `sentinel-threat` с `raw_forward: true` на pipeline (ниже, в
+# streams[].pipelines[]) и `queue: {type: transport, mode: send, peer: <host>}` —
+# pipeline парсит строку, но НЕ скорит её локально; голый *parser.LogEntry
+# пробрасывается через transport-сетку в детекторную цепочку удалённого узла.
+# Полный пример: cookbook/distributed-ncs/.
+#   - type: sentinel-threat
+#     name: edge-raw
+#     format: raw-line
+#     queue:
+#       type: transport
+#       mode: send
+#       peer: "node-b.example.net:4097"
 
 # ── streams: multi-stream mode / мультистрим-режим ───────────────────────────────────────
 #
