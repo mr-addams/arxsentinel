@@ -316,9 +316,22 @@ func buildSinks(ctx context.Context, streamName string, outputs []config.SinkCon
 //
 // streamName is required for "sentinel-threat" sinks (the wire format
 // embeds it); it is otherwise unused.
+//
+// format: raw-line (Flow 093) is the ONE exception to "sink type always
+// wins for sentinel-threat": a RawForward pipeline's payload is
+// *parser.LogEntry, not *threat.ThreatEvent, so SentinelFormatter's
+// type-assert would fail-fast on every event. The operator opts in
+// explicitly via format: raw-line on the sink, paired with
+// pipelines[].raw_forward: true — see config.go's validateSinks (format
+// must be raw-line only for a sentinel-threat sink) and PipelineConfig's
+// RawForward doc for the other half of this contract.
 func formatterForFormat(sinkType, format, streamName string) (sinkformat.Formatter, error) {
-	// Sentinel-threat owns its own wire format — the sink type decides.
+	// Sentinel-threat owns its own wire format — the sink type decides,
+	// except for the explicit raw-line opt-out (see doc above).
 	if sinkType == "sentinel-threat" {
+		if format == "raw-line" {
+			return &threatformat.RawLineFormatter{}, nil
+		}
 		return &threatformat.SentinelFormatter{StreamName: streamName}, nil
 	}
 	switch format {

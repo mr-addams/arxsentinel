@@ -1314,3 +1314,154 @@ streams:
 		t.Errorf("propagated processor plugin: want %q, got %q", "waf", procs[0].Plugin)
 	}
 }
+
+// ========================== Flow 093 — TransportConfig + wiring validation ====
+
+func TestValidateConfig_Transport_DisabledOK(t *testing.T) {
+	// Absent/disabled transport: block must not error — transport is fully
+	// optional (D21).
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+`)
+	if _, err := LoadConfig(path); err != nil {
+		t.Errorf("LoadConfig with no transport: block: %v, want nil", err)
+	}
+}
+
+func TestValidateConfig_Transport_EnabledMissingFields(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+transport:
+  enabled: true
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "transport.identity") {
+		t.Errorf("want error about transport.identity, got: %v", err)
+	}
+}
+
+func TestValidateConfig_Transport_EnabledValid(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+transport:
+  enabled: true
+  identity: /etc/arx-core/node.key
+  known_nodes: /etc/arx-core/known-nodes
+  listen: "0.0.0.0:4097"
+  peers:
+    - host: node-b.internal:4097
+`)
+	if _, err := LoadConfig(path); err != nil {
+		t.Errorf("LoadConfig with valid transport: block: %v, want nil", err)
+	}
+}
+
+func TestValidateConfig_Transport_PeerMissingHost(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+transport:
+  enabled: true
+  identity: /etc/arx-core/node.key
+  known_nodes: /etc/arx-core/known-nodes
+  listen: "0.0.0.0:4097"
+  peers:
+    - host: ""
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "transport.peers[0].host") {
+		t.Errorf("want error about transport.peers[0].host, got: %v", err)
+	}
+}
+
+func TestValidateConfig_TransportWiring_QueueWithoutTransportEnabled(t *testing.T) {
+	// outputs[].queue.type=transport requires transport.enabled: true.
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+outputs:
+  - type: sentinel-threat
+    name: edge-raw
+    queue:
+      type: transport
+      mode: send
+      peer: node-b.internal:4097
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "transport.enabled") {
+		t.Errorf("want error about transport.enabled, got: %v", err)
+	}
+}
+
+func TestValidateConfig_TransportWiring_UnknownPeer(t *testing.T) {
+	// outputs[].queue.peer must match one of transport.peers[].host.
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+transport:
+  enabled: true
+  identity: /etc/arx-core/node.key
+  known_nodes: /etc/arx-core/known-nodes
+  listen: "0.0.0.0:4097"
+  peers:
+    - host: node-b.internal:4097
+outputs:
+  - type: sentinel-threat
+    name: edge-raw
+    queue:
+      type: transport
+      mode: send
+      peer: node-c.internal:4097
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "does not match any transport.peers") {
+		t.Errorf("want error about unknown peer, got: %v", err)
+	}
+}
+
+func TestValidateConfig_TransportWiring_RecvModeNoPeerOK(t *testing.T) {
+	// mode=recv does not require a peer (no outbound target).
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+transport:
+  enabled: true
+  identity: /etc/arx-core/node.key
+  known_nodes: /etc/arx-core/known-nodes
+  listen: "0.0.0.0:4097"
+inputs:
+  - type: sentinel
+    addr: ncs://edge-raw
+    queue:
+      type: transport
+      mode: recv
+`)
+	if _, err := LoadConfig(path); err != nil {
+		t.Errorf("LoadConfig with mode=recv, no peer: %v, want nil", err)
+	}
+}
+
+func TestValidateConfig_TransportWiring_ExecutorSourceQueue(t *testing.T) {
+	// executors[].sources[].queue is also covered by the wiring check.
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+executors:
+  - name: cf-block
+    type: cloudflare
+    sources:
+      - name: edge-raw
+        queue:
+          type: transport
+          mode: send
+          peer: node-b.internal:4097
+    config: {}
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "transport.enabled") {
+		t.Errorf("want error about transport.enabled (executor source queue), got: %v", err)
+	}
+}
