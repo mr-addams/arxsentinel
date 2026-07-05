@@ -75,7 +75,13 @@ run, but still flow to the SAME set of sinks for that pipeline.
    `ca_file` if your device uses an internal CA.
 3. `transport.identity`/`known_nodes` need a writable parent directory on
    every node — generated automatically on first start.
-4. Add a third (fourth, ...) pipeline/collector/executor triple the same
+4. `transport.pairing_secret` must be the SAME value on every node — both
+   collectors, the detector, AND both executors (recv-only nodes need it
+   too, not just ones with `peers:`). Replace the
+   `CHANGE-ME-shared-mesh-secret` placeholder everywhere; see the top-level
+   `cookbook/distributed-ncs/README.md` Setup step 4 for how to generate
+   and exchange it.
+5. Add a third (fourth, ...) pipeline/collector/executor triple the same
    way if you have more than two traffic classes needing different
    responses — nothing here caps it at two.
 

@@ -78,13 +78,23 @@ in [`tests/integration/distributed-ncs/`](../../tests/integration/distributed-nc
    directory (e.g. `/etc/arxsentinel/`) — both files are created
    automatically on first start (Ed25519 keypair, empty TOFU pinning store).
    No manual key generation needed.
-4. **Firewall**: open the configured `transport.listen` UDP port
+4. **`transport.pairing_secret`** must be set to the SAME value on **every**
+   node in this mesh — including a recv-only node with no `peers:` entries
+   of its own (arx-core checks its own configured secret against any
+   incoming connection, not just the ones it dials out). Generate one with
+   `openssl rand -hex 32`, exchange it out-of-band (same channel discipline
+   as an SSH key or a WireGuard PSK), and replace the
+   `CHANGE-ME-shared-mesh-secret` placeholder in every config. This gates
+   FIRST CONTACT only — it does not replace per-peer fingerprint pinning,
+   it closes the "any node that reaches this port gets auto-trusted" gap.
+   See `arx-core/pkg/transport/OPERATIONS.md` §1 for the full mechanism.
+5. **Firewall**: open the configured `transport.listen` UDP port
    (`4097` in these examples) between the two nodes — this is QUIC, over UDP.
-5. **Start order doesn't matter for correctness** (the transport redials
+6. **Start order doesn't matter for correctness** (the transport redials
    automatically with backoff), but starting the detector first avoids the
    collector's first dial attempt failing and burning ~1s on the initial
    retry backoff.
-6. **`edge-raw` must match exactly** on both sides — the collector's sink
+7. **`edge-raw` must match exactly** on both sides — the collector's sink
    `name:` and the detector's source `addr: ncs://<name>` (via the
    `ncs://` prefix). A mismatch is not caught at config-validation time (the
    name is only meaningful once both nodes are running) — it shows up as a

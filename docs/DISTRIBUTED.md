@@ -102,13 +102,22 @@ The mesh is built on `arx-core/pkg/transport`:
 - **TLS 1.3 always** — there is no plaintext mode to misconfigure.
 - **Ed25519 node identity** — each node generates a keypair on first start
   (`transport.identity`). No CA, no certificate expiry calendar.
-- **TOFU pinning** (`transport.known_nodes`) — like SSH: the first connection
-  pins the peer's fingerprint; any later key change is a hard reject. For
-  stricter setups, pre-pin fingerprints in config
-  (`peers[].fingerprint: "sha256:..."`) and TOFU never gets a say.
+- **Mesh-wide admission secret** (`transport.pairing_secret`) — the actual
+  gate against strangers: an unrecognised node must prove knowledge of this
+  shared, out-of-band-exchanged secret before it is ever trusted. Without
+  it, TOFU alone only answers "same key as last time" — it says nothing
+  about who authorized that key to join in the first place. Every node in
+  the mesh sets the SAME value.
+- **TOFU pinning + self-healing rotation** (`transport.known_nodes`) — once
+  admitted, the peer's Ed25519 fingerprint is pinned; a second, independent
+  secret then auto-rotates after every session (no operator action), so a
+  historically-leaked config copy stops matching over time. For an even
+  stricter per-peer guarantee on top of the mesh-wide secret, pre-pin an
+  expected fingerprint in config (`peers[].fingerprint: "sha256:..."`) —
+  checked before either the pairing secret or TOFU gets a say.
 - **Mutual authentication** — both sides prove key ownership via a signed
-  challenge before any event flows. A stranger who finds your UDP port gets
-  nothing.
+  challenge before any event flows. A stranger who finds your UDP port
+  without the mesh's `pairing_secret` gets nothing.
 
 What it is **not**: a message broker with delivery guarantees. If a peer is
 down, frames queued for it are dropped and counted (visible in logs and drop
@@ -122,12 +131,15 @@ Everything lives in the YAML you already know. Full reference:
 [`cookbook/config.reference.yaml`](../cookbook/config.reference.yaml).
 
 ```yaml
-# 1. Enable the mesh on every participating node
+# 1. Enable the mesh on every participating node — pairing_secret is the
+#    SAME value everywhere, including nodes with no peers: of their own
+#    (a recv-only node still checks its own secret against inbound callers).
 transport:
   enabled: true
   identity: /etc/arxsentinel/node.key        # auto-generated on first start
-  known_nodes: /etc/arxsentinel/known-nodes  # TOFU pin store
+  known_nodes: /etc/arxsentinel/known-nodes  # TOFU pin store + rotating secret
   listen: "0.0.0.0:4097"                     # QUIC/UDP
+  pairing_secret: "..."                      # mesh-wide, exchanged out-of-band
   peers:                                     # outbound dial targets only;
     - host: "detector.example.net:4097"      # inbound connections are accepted
       fingerprint: ""                        # and TOFU-pinned regardless
@@ -348,8 +360,16 @@ HEC / Loki / Datadog sinks are on the [roadmap](https://mr-addams.github.io/arxs
   collector→detector / detector→responder direction of each dial.
 - **Key rotation / compromised node**: remove the node's line from every
   peer's `known_nodes` file, delete the node's `identity` file, restart — a
-  fresh keypair is generated and re-pinned on next contact. Pre-pinned
+  fresh keypair is generated and re-pinned on next contact (it will need to
+  pass the `pairing_secret` gate again, same as any new node). Pre-pinned
   fingerprints in config must be updated too.
+- **The pairing-secret ratchet is automatic** — no operator action needed
+  in normal operation; it rotates itself after every successful session. If
+  you suspect the `pairing_secret` VALUE itself was exposed (not a single
+  node's identity, the shared mesh secret), rotate it explicitly: generate
+  a new one, update it on every node, restart all of them together (a node
+  still on the old value cannot pass admission with nodes already on the
+  new one).
 - **Failure semantics**: a downed peer drops (and counts) frames sent to it;
   reconnection is automatic. Detection state lives on the detector, so a
   collector restart loses nothing but the lines written during the outage —

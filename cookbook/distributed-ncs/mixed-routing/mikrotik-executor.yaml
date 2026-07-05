@@ -11,6 +11,7 @@ transport:
   identity: /etc/arxsentinel/node.key
   known_nodes: /etc/arxsentinel/known-nodes
   listen: "0.0.0.0:4097"
+  pairing_secret: "CHANGE-ME-shared-mesh-secret"  # SAME value on every node in this mesh, exchanged out-of-band
 
 streams:
   - name: idle

@@ -100,11 +100,12 @@ type Config struct {
 // fields are plain Go, not yaml-tagged, and because the product owns its own
 // config vocabulary independent of arx-core's internal struct shape.
 type TransportConfig struct {
-	Enabled        bool            `yaml:"enabled"`     // YAML: enabled — master gate (D21); false = no goroutine, no listener, no dial
-	IdentityPath   string          `yaml:"identity"`    // YAML: identity — path to the node's Ed25519 private key file; generated on first start if absent. Required when enabled
-	KnownNodesPath string          `yaml:"known_nodes"` // YAML: known_nodes — path to the TOFU known-nodes file. Required when enabled
-	Listen         string          `yaml:"listen"`      // YAML: listen — QUIC bind address, e.g. "0.0.0.0:4097". Required when enabled
-	Peers          []TransportPeer `yaml:"peers"`       // YAML: peers — outbound dial targets (this node's roster)
+	Enabled        bool            `yaml:"enabled"`        // YAML: enabled — master gate (D21); false = no goroutine, no listener, no dial
+	IdentityPath   string          `yaml:"identity"`       // YAML: identity — path to the node's Ed25519 private key file; generated on first start if absent. Required when enabled
+	KnownNodesPath string          `yaml:"known_nodes"`    // YAML: known_nodes — path to the TOFU known-nodes file. Required when enabled. Fingerprint-keyed since arx-core v0.6.1 (Flow 006) — breaking format change, no migration
+	Listen         string          `yaml:"listen"`         // YAML: listen — QUIC bind address, e.g. "0.0.0.0:4097". Required when enabled
+	Peers          []TransportPeer `yaml:"peers"`          // YAML: peers — outbound dial targets (this node's roster)
+	PairingSecret  string          `yaml:"pairing_secret"` // YAML: pairing_secret — mesh-wide admission secret (arx-core v0.6.1 Flow 006 Decision 2), identical on every node, exchanged out-of-band. Required when peers is non-empty. Gates FIRST CONTACT only — see arx-core's pkg/transport/OPERATIONS.md §1 "Pairing-Secret Provisioning"
 }
 
 // TransportPeer is one entry in TransportConfig.Peers — a node this
@@ -1227,6 +1228,9 @@ func validateTransportConfig(t TransportConfig) error {
 		if p.Host == "" {
 			return fmt.Errorf("transport.peers[%d].host must not be empty", i)
 		}
+	}
+	if len(t.Peers) > 0 && t.PairingSecret == "" {
+		return fmt.Errorf("transport.pairing_secret must be set when transport.peers is non-empty")
 	}
 	return nil
 }

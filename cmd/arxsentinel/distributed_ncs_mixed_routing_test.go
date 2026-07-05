@@ -136,6 +136,7 @@ transport:
   identity: %[1]s/node.key
   known_nodes: %[1]s/known-nodes
   listen: 127.0.0.1:%[2]d
+  pairing_secret: "test-mesh-pairing-secret"
 streams:
   - name: idle
     pipelines:
@@ -177,6 +178,7 @@ transport:
   identity: %[1]s/node.key
   known_nodes: %[1]s/known-nodes
   listen: 127.0.0.1:%[2]d
+  pairing_secret: "test-mesh-pairing-secret"
 streams:
   - name: idle
     pipelines:
@@ -228,6 +230,7 @@ transport:
   peers:
     - host: 127.0.0.1:%[3]d
     - host: 127.0.0.1:%[4]d
+  pairing_secret: "test-mesh-pairing-secret"
 streams:
   - name: detector
     pipelines:
@@ -284,6 +287,7 @@ transport:
   listen: 127.0.0.1:%[2]d
   peers:
     - host: 127.0.0.1:%[3]d
+  pairing_secret: "test-mesh-pairing-secret"
 streams:
   - name: collector-web
     pipelines:
@@ -315,6 +319,7 @@ transport:
   listen: 127.0.0.1:%[2]d
   peers:
     - host: 127.0.0.1:%[3]d
+  pairing_secret: "test-mesh-pairing-secret"
 streams:
   - name: collector-auth
     pipelines:
