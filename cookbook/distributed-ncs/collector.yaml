@@ -20,6 +20,7 @@ transport:
   identity: /etc/arxsentinel/node.key
   known_nodes: /etc/arxsentinel/known-nodes
   listen: "0.0.0.0:4097"
+  pairing_secret: "CHANGE-ME-shared-mesh-secret"  # SAME value on every node in this mesh, exchanged out-of-band
   peers:
     - host: "node-b.example.net:4097"
       fingerprint: ""  # "" = TOFU on first contact; set explicitly to pre-pin once known
