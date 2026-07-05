@@ -253,6 +253,7 @@ transport:
   listen: 127.0.0.1:%[2]d
   peers:
     - host: 127.0.0.1:%[3]d
+  pairing_secret: "test-mesh-pairing-secret"
 streams:
   - name: collector
     pipelines:
@@ -283,6 +284,7 @@ transport:
   listen: 127.0.0.1:%[2]d
   peers:
     - host: 127.0.0.1:%[3]d
+  pairing_secret: "test-mesh-pairing-secret"
 streams:
   - name: detector
     pipelines:
