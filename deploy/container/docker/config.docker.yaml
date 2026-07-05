@@ -279,6 +279,8 @@ transport:
   known_nodes: /etc/arxsentinel/known-nodes
   listen: "0.0.0.0:4097"
   peers: []
+  # Required once peers is non-empty (arx-core v0.6.1+) — same value on every node.
+  pairing_secret: "CHANGE-ME-shared-mesh-secret"
 
 # ── pipeline ──────────────────────────────────────────────────────────────────────────────
 # Bounded channel between log-source readers and the processing pipeline.

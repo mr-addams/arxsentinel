@@ -70,7 +70,13 @@ without replicating tracker/whitelist/detector configuration per source.
 2. Replace every `*.example.net` placeholder with real host:port values.
 3. `transport.identity`/`known_nodes` need a writable parent directory on
    each node — both files are generated automatically on first start.
-4. Point `executor.yaml`'s `list_file`/`reload_cmd` at your real nginx
+4. `transport.pairing_secret` must be the SAME value on every node — all
+   three collectors, the detector, AND the executor (recv-only nodes need
+   it too, not just ones with `peers:`). Replace the
+   `CHANGE-ME-shared-mesh-secret` placeholder everywhere; see the top-level
+   `cookbook/distributed-ncs/README.md` Setup step 4 for how to generate
+   and exchange it.
+5. Point `executor.yaml`'s `list_file`/`reload_cmd` at your real nginx
    blocklist path and reload command (or swap the executor `type:` for
    `mikrotik` / `cloudflare` — see the mixed-routing recipe for using a
    different executor type).

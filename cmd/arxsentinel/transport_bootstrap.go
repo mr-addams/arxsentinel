@@ -59,6 +59,7 @@ func startTransport(ctx context.Context, cfg *config.Config, wg *sync.WaitGroup)
 		Listen:         cfg.Transport.Listen,
 		KnownNodesPath: cfg.Transport.KnownNodesPath,
 		Peers:          peers,
+		PairingSecret:  cfg.Transport.PairingSecret,
 	})
 	if err != nil {
 		return fmt.Errorf("transport: %w", err)

@@ -1353,9 +1353,81 @@ transport:
   listen: "0.0.0.0:4097"
   peers:
     - host: node-b.internal:4097
+  pairing_secret: "shared-mesh-secret"
 `)
 	if _, err := LoadConfig(path); err != nil {
 		t.Errorf("LoadConfig with valid transport: block: %v, want nil", err)
+	}
+}
+
+// TestValidateConfig_Transport_PeersRequirePairingSecret is the arx-core
+// v0.6.1 (Flow 006 Decision 2) mesh-wide admission-secret requirement,
+// mirrored at arxsentinel's own config-validation layer (same pattern as
+// identity/known_nodes/listen/peers[].host above): a non-empty peers list
+// without pairing_secret must fail at config-load time, not silently reach
+// transport.New only to fail there with a less-specific error.
+func TestValidateConfig_Transport_PeersRequirePairingSecret(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+transport:
+  enabled: true
+  identity: /etc/arx-core/node.key
+  known_nodes: /etc/arx-core/known-nodes
+  listen: "0.0.0.0:4097"
+  peers:
+    - host: node-b.internal:4097
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "transport.pairing_secret") {
+		t.Errorf("want error about transport.pairing_secret, got: %v", err)
+	}
+}
+
+// TestValidateConfig_Transport_EmptyPeersNoPairingSecretRequired confirms
+// pairing_secret is only required once peers is non-empty — a transport
+// with no configured peers (e.g. a pure recv-only or currently-unpeered
+// node) must not be forced to set a mesh secret it has no use for yet.
+func TestValidateConfig_Transport_EmptyPeersNoPairingSecretRequired(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+transport:
+  enabled: true
+  identity: /etc/arx-core/node.key
+  known_nodes: /etc/arx-core/known-nodes
+  listen: "0.0.0.0:4097"
+`)
+	if _, err := LoadConfig(path); err != nil {
+		t.Errorf("LoadConfig with empty peers and no pairing_secret: %v, want nil", err)
+	}
+}
+
+// TestTransportConfig_PairingSecretRoundTrips is the plumbing test:
+// pairing_secret parses from YAML into TransportConfig.PairingSecret
+// unchanged, and flows through to what transport_bootstrap.go would pass
+// into transport.Config (verified at the config-struct level; the actual
+// transport.New call is arx-core's own integration surface, not retested
+// here).
+func TestTransportConfig_PairingSecretRoundTrips(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+transport:
+  enabled: true
+  identity: /etc/arx-core/node.key
+  known_nodes: /etc/arx-core/known-nodes
+  listen: "0.0.0.0:4097"
+  peers:
+    - host: node-b.internal:4097
+  pairing_secret: "exact-value-12345"
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Transport.PairingSecret != "exact-value-12345" {
+		t.Errorf("Transport.PairingSecret = %q, want %q", cfg.Transport.PairingSecret, "exact-value-12345")
 	}
 }
 
@@ -1408,6 +1480,7 @@ transport:
   listen: "0.0.0.0:4097"
   peers:
     - host: node-b.internal:4097
+  pairing_secret: "shared-mesh-secret"
 outputs:
   - type: sentinel-threat
     name: edge-raw

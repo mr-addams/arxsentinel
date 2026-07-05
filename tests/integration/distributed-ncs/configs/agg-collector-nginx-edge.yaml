@@ -8,6 +8,7 @@ transport:
   identity: /tmp/node.key
   known_nodes: /tmp/known-nodes
   listen: 0.0.0.0:4097
+  pairing_secret: "container-test-mesh-pairing-secret"
   peers:
     - host: detector:4097
 streams:

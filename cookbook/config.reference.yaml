@@ -489,6 +489,18 @@ transport:
   #   - host: "node-b.example.net:4097"
   #     fingerprint: ""  # "" = TOFU on first contact; or "sha256:<hex>" to pre-pin
 
+  # Mesh-wide admission secret (arx-core v0.6.1+) — the SAME value on every node in
+  # this mesh, exchanged out-of-band before any node dials another. Required when
+  # peers is non-empty. Gates first contact only: an unrecognised fingerprint must
+  # prove knowledge of this secret before it is ever pinned. See arx-core's
+  # pkg/transport/OPERATIONS.md §1 for the provisioning workflow.
+  # Общесетевой секрет допуска (arx-core v0.6.1+) — ОДНО И ТО ЖЕ значение на каждом узле
+  # этого меша, передаётся вне протокола до первого набора. Обязателен при непустом
+  # peers. Гейтит только первый контакт: неизвестный fingerprint должен доказать
+  # знание этого секрета прежде чем будет закреплён. Порядок настройки — см.
+  # pkg/transport/OPERATIONS.md §1 в arx-core.
+  pairing_secret: "CHANGE-ME-shared-mesh-secret"
+
 # ── pipeline: runtime pipeline configuration / конфигурация пайплайна выполнения ──────────
 pipeline:
   buffer_size: 8192        # channel buffer depth for burst traffic; int, ≥1, default: 8192
