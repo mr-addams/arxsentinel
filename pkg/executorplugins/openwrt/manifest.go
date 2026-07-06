@@ -61,20 +61,17 @@ type OpenwrtExecutor struct {
 // timeouts because fw4 reload re-creates the nftables ruleset from UCI on
 // every apply, which would reset all per-entry timers
 // (DECISIONS.md Decision 4).
+//
+// The `id` field from the mikrotik equivalent is intentionally absent:
+// RouterOS address-list items carry an item-id used to address a specific
+// entry, whereas an OpenWrt UCI ipset `list entry '<ip>'` is a bare string
+// with no per-entry identifier — deletions are issued by value
+// (`uci.del_list` with the full list), not by item-id. Tracking a fake
+// local id would add code without changing any wire-format.
 type banRecord struct {
-	id       string
 	ip       string
 	addedAt  time.Time
 	expireAt time.Time
-}
-
-// expiredEntry carries a sweep candidate (IP and the UCI section/entry
-// identifier used for del_list) from the lock-protected collection phase
-// to the UCI-transaction phase. Concrete shape to be refined in Task 3.1
-// when the client interface is finalised.
-type expiredEntry struct {
-	sectionID string
-	ip        string
 }
 
 // Name returns the executor's display name. Mirrors the mikrotik convention:

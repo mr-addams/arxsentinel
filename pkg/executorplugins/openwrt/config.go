@@ -68,9 +68,6 @@ type Config struct {
 	// before this elapses. Configurable for environments with custom
 	// rpcd session timeouts. Default: 5m.
 	SessionTimeout time.Duration `json:"-" yaml:"session_timeout"`
-	// SentinelID is the unique identifier of this ArxSentinel instance
-	// embedded in batched UCI edits. Required.
-	SentinelID string `json:"sentinel_id" yaml:"sentinel_id"`
 	// BatchSize caps the number of pending add/del operations per flush.
 	// 0 or negative → use default. Default: 10.
 	BatchSize int `json:"batch_size" yaml:"batch_size"`
@@ -173,9 +170,6 @@ func parseConfig(raw map[string]any) (Config, error) {
 	}
 	if cfg.IPSetName == "" {
 		return Config{}, fmt.Errorf("openwrt: parseConfig: ipset_name must not be empty")
-	}
-	if cfg.SentinelID == "" {
-		return Config{}, fmt.Errorf("openwrt: parseConfig: sentinel_id must not be empty")
 	}
 	// TTL is mandatory and must be > 0 — see DECISIONS.md Decision 4
 	// (the plugin owns expiry tracking; no native nftables timeout fallback).

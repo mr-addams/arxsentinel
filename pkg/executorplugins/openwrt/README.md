@@ -142,7 +142,6 @@ accept either a Go-style string (`"24h"`, `"30s"`) parsed by
 | `ipset_name`      | `string`        | —                          | **yes**  | UCI *section identifier* of the ipset (`firewall.<ipset_name>=ipset`) — a named section, not an anonymous `@ipset[N]`. See [Prerequisites](#prerequisites). |
 | `ttl`             | `time.Duration` | —                          | **yes**  | Ban lifetime. Must be `> 0` — the plugin owns expiry tracking.               |
 | `session_timeout` | `time.Duration` | `5m`                       | no       | Lifetime of an `ubus_rpc_session` token. Re-login is triggered before this.  |
-| `sentinel_id`     | `string`        | —                          | **yes**  | Stable identifier of the producing agent. Embedded in every ban record.      |
 | `batch_size`      | `int`           | `10`                       | no       | Maximum events bundled into a single flush window.                           |
 | `flush_interval`  | `time.Duration` | `30s`                      | no       | Maximum time to wait before flushing a partial batch.                        |
 | `min_level`       | `string`        | `"THREAT"`                 | no       | Minimum event level to act on. One of `INFO`, `WARN`, `THREAT`.              |
@@ -150,8 +149,8 @@ accept either a Go-style string (`"24h"`, `"30s"`) parsed by
 
 ### Validation Rules
 
-- `host`, `username`, `password`, `ipset_name`, and `sentinel_id` are
-  mandatory — missing values cause a startup error.
+- `host`, `username`, `password`, and `ipset_name` are mandatory —
+  missing values cause a startup error.
 - `ttl` is **mandatory and must be `> 0`**. The plugin does not
   support permanent bans: a `ttl` of `0` is rejected at startup.
   The reasoning is the **batched sweep model** (see [Flush
@@ -317,13 +316,20 @@ Each sweep deletion:
 4. Removes the entries from the `banned` map and increments
    the `swept` counter on success.
 
-Unlike the MikroTik executor, the OpenWrt executor does **not**
-filter by `sentinel_id` during sweep. The ipset section is
-expected to be a **dedicated** section owned entirely by this
-executor instance (see [Prerequisites](#prerequisites)); the
-plugin will happily evict a manually-added entry if its TTL
-runs out, on the same logic that owns the rest of the
-section.
+Unlike the MikroTik executor — where multiple agents can share a
+single RouterOS address-list and tag their entries with a
+`sentinel_id` comment prefix so sweep can tell them apart — the
+OpenWrt executor assumes **exclusive ownership of the entire ipset
+section** (the user is expected to configure a dedicated ipset for
+ArxSentinel; see [Prerequisites](#prerequisites)). This is the
+single-tenant design, not a missing feature: a UCI `list entry
+'<ip>'` is a bare string with no per-entry metadata slot, and the
+`uci.add_list` / `uci.del_list` calls have no way to attach a
+producer tag. With a dedicated section, no per-entry ownership
+tracking is needed — every entry in the section is "ours" by
+construction, and the plugin will happily evict a manually-added
+entry once its TTL runs out on the same logic that owns the rest
+of the section.
 
 ### syncExisting Semantics
 
@@ -508,7 +514,6 @@ executors:
       password: "ROUTER_PASSWORD"
       ipset_name: "arxsentinel_blocklist"
       ttl: "24h"
-      sentinel_id: "edge-01"
 ```
 
 `port`, `scheme`, `session_timeout`, `batch_size`,
@@ -534,7 +539,6 @@ executors:
       password: "ROUTER_PASSWORD"
       ipset_name: "arxsentinel_blocklist"
       ttl: "1h"
-      sentinel_id: "edge-01"
       session_timeout: "1m"
       batch_size: 50
       flush_interval: "15s"
@@ -568,7 +572,6 @@ executors:
       password: "ROUTER_PASSWORD"
       ipset_name: "arxsentinel_blocklist"
       ttl: "24h"
-      sentinel_id: "edge-01"
 ```
 
 The default Go HTTP transport validates certificates against
