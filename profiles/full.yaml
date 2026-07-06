@@ -16,6 +16,8 @@ plugins:
       module: arxsentinel
     - name: nginx
       module: arxsentinel
+    - name: openwrt
+      module: arxsentinel
   detectors:
     - name: probe
     - name: rate
