@@ -49,10 +49,25 @@ type jsonRPCResponse struct {
 
 // Client is the surface area of the ubus client that OpenwrtExecutor depends on.
 // The concrete implementation is HTTPClient below.
+//
+// Two flavours of mutating calls are exposed:
+//
+//   - AddEntry / DeleteEntry — single-IP helpers that commit the UCI config
+//     inline. Convenient for one-off operations, NOT for the executor's
+//     batched flush cycle (each call would issue its own uci.commit + reload,
+//     defeating the batched-apply rationale from DECISIONS.md Decision 4).
+//
+//   - AddEntries / DeleteEntries / Commit — the batched API the executor
+//     uses: queue several add_list / del_list operations, then a single
+//     Commit() and a single Reload() per cycle. Empty input slices are
+//     skipped to avoid empty ubus calls; callers can pass nil safely.
 type Client interface {
 	Login(ctx context.Context) error
 	AddEntry(ctx context.Context, ip string) error
 	DeleteEntry(ctx context.Context, ip string) error
+	AddEntries(ctx context.Context, ips []string) error
+	DeleteEntries(ctx context.Context, ips []string) error
+	Commit(ctx context.Context) error
 	ListEntries(ctx context.Context) ([]string, error)
 	Reload(ctx context.Context) error
 }
@@ -222,6 +237,68 @@ func (c *HTTPClient) DeleteEntry(ctx context.Context, ip string) error {
 	}
 	if _, err := c.doRequest(ctx, "uci", "commit", map[string]any{"config": "firewall"}); err != nil {
 		return fmt.Errorf("openwrt: commit: %w", err)
+	}
+	return nil
+}
+
+// AddEntries appends all ips to the UCI ipset section via a single
+// uci.add_list call (the "values" array carries the full batch).
+//
+// Intentionally does NOT call uci.commit — the batched executor flush owns
+// the commit boundary (DECISIONS.md Decision 4: ONE UCI transaction +
+// ONE commit + ONE reload per cycle). Calling commit here would re-trigger
+// the user's rpcd apply path and nullify batching.
+//
+// Empty input is a no-op: an empty add_list is rejected by uci, and the
+// caller (executor flush) treats "nothing to add" as a quiet skip without
+// having to special-case empty slices at every call site.
+func (c *HTTPClient) AddEntries(ctx context.Context, ips []string) error {
+	if len(ips) == 0 {
+		return nil
+	}
+	if _, err := c.doRequest(ctx, "uci", "add_list", map[string]any{
+		"config":  "firewall",
+		"section": c.cfg.IPSetName,
+		"option":  "entry",
+		"values":  ips,
+	}); err != nil {
+		return fmt.Errorf("openwrt: add_list %d entries: %w", len(ips), err)
+	}
+	return nil
+}
+
+// DeleteEntries removes all ips from the UCI ipset section via a single
+// uci.del_list call. Symmetric to AddEntries: no commit, no reload —
+// the caller batches them with add_list and finishes the cycle with
+// Commit() + Reload(). See DECISIONS.md Decision 4.
+//
+// Empty input is a no-op for the same reason as AddEntries.
+func (c *HTTPClient) DeleteEntries(ctx context.Context, ips []string) error {
+	if len(ips) == 0 {
+		return nil
+	}
+	if _, err := c.doRequest(ctx, "uci", "del_list", map[string]any{
+		"config":  "firewall",
+		"section": c.cfg.IPSetName,
+		"option":  "entry",
+		"values":  ips,
+	}); err != nil {
+		return fmt.Errorf("openwrt: del_list %d entries: %w", len(ips), err)
+	}
+	return nil
+}
+
+// Commit writes the staged UCI changes (config "firewall") to the
+// filesystem. This is the boundary that makes the preceding add_list /
+// del_list calls atomic on the router side: a single commit turns a
+// possibly-large batch of staged mutations into one on-disk write.
+//
+// The method is intentionally decoupled from AddEntries / DeleteEntries
+// so the executor's flush cycle can issue ONE commit per cycle, regardless
+// of how many add/delete operations preceded it.
+func (c *HTTPClient) Commit(ctx context.Context) error {
+	if _, err := c.doRequest(ctx, "uci", "commit", map[string]any{"config": "firewall"}); err != nil {
+		return fmt.Errorf("openwrt: commit firewall: %w", err)
 	}
 	return nil
 }
