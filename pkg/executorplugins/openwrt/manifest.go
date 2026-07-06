@@ -22,15 +22,6 @@ import (
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
 
-// Client is the surface area of the ubus client that OpenwrtExecutor
-// depends on. The concrete implementation lives in client.go (Task 2.2);
-// declaring it here keeps the executor's storage shape self-contained.
-type Client interface {
-	// Methods will be added in Task 2.2 — e.g. UCITransact, RCInitReload,
-	// UCISetEntry, UCIDelEntry, GetIPSetEntries. Kept empty for now so
-	// the package compiles before the client exists.
-}
-
 // OpenwrtExecutor manages an nftables ipset on a remote OpenWrt router via
 // ubus (uhttpd-mod-ubus). Receives ScoredEvents, batches them, and flushes
 // through UCI edits plus a single rc.init(reload) per cycle (DECISIONS.md
