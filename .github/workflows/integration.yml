@@ -3,6 +3,16 @@ name: Integration Tests
 on:
   pull_request:
     branches: [dev]
+    # Mirrors the pre-push hook's skip list (scripts/hooks/pre-push), minus
+    # .github/** — unlike the local hook (a backstop CI re-validates anyway),
+    # this IS the CI run, so workflow-file changes must still execute it.
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - ".opencode/**"
+      - ".gitignore"
+      - "LICENSE"
+      - "scripts/hooks/**"
   workflow_dispatch:
   workflow_call:
 
