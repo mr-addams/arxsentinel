@@ -675,6 +675,27 @@ processors:
   #     flush_interval: "30s"          # max delay before flushing a partial batch
   #     dedup_window: "5m"             # skip re-banning same IP within this window; 0 = disabled
 
+  # ── OPNsense REST API executor ────────────────────────────────────────────────────────
+  # - name: opnsense-blocklist
+  #   type: opnsense
+  #   sources:
+  #     - name: sentinel-cf            # matches sentinel-threat sink name in streams outputs
+  #   config:
+  #     host: "192.0.2.30"             # firewall address
+  #     port: 443                      # default 443
+  #     scheme: "https"                # "http" | "https" — default "https"
+  #     api_key: "API_KEY"             # Basic Auth username; System -> Access -> Users -> API
+  #     api_secret: "API_SECRET"       # Basic Auth password; use env/secret in production
+  #     tls_verify: true               # false only for self-signed certs in lab setups
+  #     alias_name: "arxsentinel_blocklist" # pre-existing alias of type Host/Network/External —
+  #                                    # the plugin does not create it, see plugin README
+  #     ttl: "24h"                     # ban lifetime; must be > 0 — plugin owns expiry tracking
+  #                                    # (alias_util has no native timeout, see plugin README)
+  #     min_level: "THREAT"            # INFO | WARN | THREAT — minimum event level to act on
+  #     dedup_window: "5m"             # skip re-banning same IP within this window; 0 = disabled
+  #                                    # no batch_size / flush_interval — alias_util/add applies
+  #                                    # immediately per call, no batching (see plugin README)
+
   # ── nginx blocklist executor ──────────────────────────────────────────────────────────
   # - name: nginx-blocklist
   #   type: nginx

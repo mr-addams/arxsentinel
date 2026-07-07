@@ -1,0 +1,69 @@
+# ====== tests/integration/arxsentinel/opnsense-executor.yaml ======
+#   Sentinel config for the OPNsense executor integration test.
+#
+#   Pipeline:
+#     nginx access.log → parser → scoring → output (fail2ban + sentinel-threat)
+#     → opnsense executor → opnsense-api-mock (POST /api/firewall/alias_util/add/{alias},
+#     port 8095)
+#
+#   Mirrors tests/integration/arxsentinel/openwrt-executor.yaml in shape, but
+#   targets the opnsense executor (alias_util/add, /delete, /list on a NAMED
+#   alias of type Host/Network/External — see pkg/executorplugins/opnsense/README.md
+#   Prerequisites and DECISIONS.md Decision 3 in Flow 096).
+#
+#   IMPORTANT — DECISIONS.md Decision 8 (Flow 096): the opnsense executor does
+#   NOT batch. alias_util/add and alias_util/delete apply immediately in the
+#   real product (pfctl table updates per-call), so per-event point add/delete
+#   is the natural model — Config has no batch_size or flush_interval field,
+#   and the integration test only asserts that the IP appears in the recorded
+#   entries, not the exact call count.
+
+general:
+  pid_file: /tmp/arxsentinel-opnsense-executor.pid
+  tail_retry_interval: 2s
+
+parser:
+  log_format: combined
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 51
+  observation_window: 60s
+
+output:
+  operational_log: logs/threats/sentinel-opnsense-executor.log
+
+logging:
+  console_color: false
+
+streams:
+  - name: opnsense-test
+    inputs:
+      - type: file
+        path: logs/nginx/access.log
+    outputs:
+      - type: file
+        path: logs/threats/opnsense-executor.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: opnsense-ban-queue
+
+executors:
+  - name: opnsense-ban
+    type: opnsense
+    sources:
+      - name: opnsense-ban-queue
+    config:
+      host: localhost
+      port: 8095
+      scheme: http
+      api_key: testkey
+      api_secret: testsecret
+      tls_verify: false
+      alias_name: arxsentinel_blocklist
+      ttl: 1h
+      min_level: THREAT
+
+blocklist:
+  storage: ""
+  lists: []

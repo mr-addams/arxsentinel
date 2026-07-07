@@ -32,6 +32,7 @@ Sources → Processors → Sinks → Executors
 - [Cloudflare Executor (автоматическая блокировка IP)](#cloudflare)
 - [MikroTik Executor (address-list на RouterOS)](#mikrotik)
 - [OpenWrt Executor (ubus/UCI firewall)](#openwrt)
+- [OPNsense Executor (REST API alias)](#opnsense)
 - [Nginx Executor (файл блокировки + перезагрузка)](#nginx-executor)
 - [Инфраструктура: Конфигурации серверов](#server-configs)
 - [Инфраструктура: Обратный прокси / Real-IP](#reverse-proxy)
@@ -175,6 +176,17 @@ ArxSentinel отправляет события THREAT в ubus/UCI firewall ро
 | Рецепт | Описание | Файл |
 |--------|----------|------|
 | nginx basic | Один сайт nginx + OpenWrt ipset | [openwrt/nginx-basic.yaml](openwrt/nginx-basic.yaml) |
+
+---
+
+## OPNsense
+
+ArxSentinel отправляет события THREAT в REST API файрвола OPNsense для добавления IP в заранее объявленный алиас.
+Требуются алиас типа `Host`, `Network` или `External` (Firewall → Aliases) и пара API-ключей, сгенерированная в System → Access → Users → API keys.
+
+| Рецепт | Описание | Файл |
+|--------|----------|------|
+| nginx basic | Один сайт nginx + OPNsense alias | [opnsense/nginx-basic.yaml](opnsense/nginx-basic.yaml) |
 
 ---
 

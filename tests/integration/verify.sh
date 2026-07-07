@@ -565,6 +565,31 @@ else
     fi
 fi
 
+# ── executor-opnsense-ban: check that opnsense-api-mock received the attacker IP ──────
+# Per DECISIONS.md Decision 8 (Flow 096) the opnsense executor does not batch — each
+# THREAT event becomes a single alias_util/add call — so we just check that the
+# attack IP appears in the recorded entries, not the exact call count.
+echo ""
+echo "--- Executor OPNsense ban check ---"
+echo ""
+
+OPNSENSE_EXECUTOR_TOTAL=0
+OPNSENSE_EXECUTOR_BAN_JSON="$LOGS_DIR/executor-opnsense-ban.json"
+EXPECTED_OPNSENSE_EXECUTOR_IP="25.26.27.28"
+
+if [ ! -f "$OPNSENSE_EXECUTOR_BAN_JSON" ] || [ ! -s "$OPNSENSE_EXECUTOR_BAN_JSON" ]; then
+    echo "SKIP [executor/opnsense-ban]  (no recorded-items file — opnsense-api-mock may not be running)"
+else
+    OPNSENSE_EXECUTOR_TOTAL=1
+    if grep -q "$EXPECTED_OPNSENSE_EXECUTOR_IP" "$OPNSENSE_EXECUTOR_BAN_JSON"; then
+        echo "PASS [executor/opnsense-ban]  IP $EXPECTED_OPNSENSE_EXECUTOR_IP found in opnsense-api-mock"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL [executor/opnsense-ban]  IP $EXPECTED_OPNSENSE_EXECUTOR_IP not found in opnsense-api-mock"
+        FAIL=$((FAIL + 1))
+    fi
+fi
+
 # ── executor-nginx-ban: check that nginx executor wrote the attacker IP to blocklist ──
 echo ""
 echo "--- Executor nginx ban check ---"
@@ -619,7 +644,7 @@ SOURCE_FAIL="${SOURCE_FAIL:-0}"
 SOURCE_TOTAL=$((SOURCE_PASS + SOURCE_FAIL))
 SOURCE_FAIL_INT=$((SOURCE_FAIL + 0))
 
-EXECUTOR_TOTAL=$((CF_EXECUTOR_TOTAL + ROS_EXECUTOR_TOTAL + OPENWRT_EXECUTOR_TOTAL + NGINX_EXECUTOR_TOTAL + NGINX_DENY_EXECUTOR_TOTAL))
+EXECUTOR_TOTAL=$((CF_EXECUTOR_TOTAL + ROS_EXECUTOR_TOTAL + OPENWRT_EXECUTOR_TOTAL + OPNSENSE_EXECUTOR_TOTAL + NGINX_EXECUTOR_TOTAL + NGINX_DENY_EXECUTOR_TOTAL))
 TOTAL=$((DIRECT_TOTAL + BADBOT_TOTAL + BLOCKLIST_TOTAL + CHAIN_TOTAL + CF_DIRECT_TOTAL + CF_CHAIN_TOTAL + CHAIN_GUARD_TOTAL + EXECUTOR_TOTAL + SOURCE_TOTAL))
 
 PASS=$((PASS + SOURCE_PASS))
@@ -637,6 +662,7 @@ echo "(${CHAIN_GUARD_TOTAL} chain-guard warning checks)"
 echo "(${CF_EXECUTOR_TOTAL} cf-executor checks)"
 echo "(${ROS_EXECUTOR_TOTAL} ros-executor checks)"
 echo "(${OPENWRT_EXECUTOR_TOTAL} openwrt-executor checks)"
+echo "(${OPNSENSE_EXECUTOR_TOTAL} opnsense-executor checks)"
 echo "(${NGINX_EXECUTOR_TOTAL} nginx-executor checks)"
 echo "(${NGINX_DENY_EXECUTOR_TOTAL} nginx-executor-deny checks)"
 echo "(executor total: ${EXECUTOR_TOTAL} checks)"
