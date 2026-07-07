@@ -56,6 +56,7 @@
   ╔═══════════════════════════╧══════════════════════════════════════╗
   ║  SINKS  (пассивное логирование)                                  ║
   ║  file (формат fail2ban) · stdout JSON · exec+JSON plugin         ║
+  ║  Grafana Loki · Splunk HEC · Datadog Logs API  (форвардинг в SIEM)║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ sentinel-threat sink → AttachWriter()
   ╔═══════════════════════════╧══════════════════════════════════════╗
@@ -157,7 +158,30 @@ sinks:
     exec: /opt/plugins/send-to-siem.sh
 ```
 
-### 8. Распределённый пайплайн — собирай где угодно, детектируй централизованно, бань на границе
+### 8. Observability — форвардинг в Loki / Splunk / Datadog
+
+Отправляйте скорированные события угроз напрямую в вашу log-платформу как
+sink первого класса — удобно, когда у вас уже есть SIEM и ArxSentinel нужен
+как фид рядом (или вместо) Fail2Ban/executor-респондеров. JSON-конверт
+рекомендуется для читаемости в log-платформе:
+
+```yaml
+sinks:
+  - type: loki
+    format: json
+    loki_url: https://loki.example.com:3100
+    loki_labels:
+      job: arxsentinel
+```
+
+Та же форма работает для `type: splunk` (HEC JSON-эндпоинт — нужны
+`splunk_url` + `splunk_token`) и `type: datadog` (Logs API v2 — нужен
+`datadog_url` с регионом, например `https://http-intake.logs.datadoghq.com`,
+плюс `datadog_api_key`). TLS, mTLS, батчинг, gzip и поля мульти-тенантности
+доступны per sink — см. [docs/providers/observability/](docs/providers/observability/).
+Quick-start рецепты: [cookbook/observability/](cookbook/observability/).
+
+### 9. Распределённый пайплайн — собирай где угодно, детектируй централизованно, бань на границе
 
 Один и тот же бинарник становится **коллектором**, **детектором** или
 **респондером** только через конфиг, соединяясь по встроенной взаимно
@@ -448,6 +472,7 @@ deploy/examples/
 - **Chain Guard:** обнаруживает IP-адреса Cloudflare/CDN и bogon/RFC 1918/CGNAT в позиции client IP — сигнализирует о неправильно настроенной цепочке прокси до того, как детекторы ArxSentinel потеряют способность определять реальных атакующих
 - **DNS-верификация ботов:** Googlebot, Bingbot, Yandex, DuckDuckGo и другие верифицируются по rDNS/fDNS — легитимные краулеры в бан не попадают
 - **Multi-stream + Multi-pipeline:** несколько лог-файлов в одном процессе; внутри каждого потока — независимые pipeline с собственными детекторами, источниками, sink'ами и трекером IP-состояния (или общий трекер через `tracker_group`)
+- **Observability-sink'и:** пробрасывайте события угроз в Grafana Loki, Splunk HEC или Datadog Logs API — форвардинг в SIEM как альтернатива (или дополнение) к респондерам Fail2Ban/executor
 - **Распределённый пайплайн (Distributed NCS):** растяните pipeline на несколько машин через встроенную шифрованную сетку узлов (QUIC · TLS 1.3 · Ed25519-идентичность · TOFU-пиннинг) — пробрасывайте сырые распарсенные записи на центральный детектор или скорированные вердикты на удалённые респондеры; без брокера, без log shipper'а, без VPN. См. [docs/DISTRIBUTED.ru.md](docs/DISTRIBUTED.ru.md)
 - **Whitelist:** IP, CIDR, UA-подстроки — конфигурируемые списки исключений
 - **Линейный decay score:** очки затухают за `observation_window`, нет ложных банов от старого трафика
