@@ -855,6 +855,18 @@ processors:
 #   # их через свой `sentinel` source и пропускает через свою цепочку.
 #   - type: exec              # exec plugin: events written as JSON to plugin stdin
 #     exec: /usr/local/lib/arxsentinel/plugins/my-sink.sh
+#   - type: loki              # forward threat events to Grafana Loki (Push API)
+#     loki_url: "https://loki.example.com:3100"      # required — base URL of Loki push endpoint
+#     loki_labels: {job: arxsentinel}                 # required — Loki rejects streams with zero labels; at least one label pair
+#     format: json                                    # JSON envelope reads better in Loki than fail2ban lines; recommended for SIEM-forwarding
+#   - type: splunk            # forward threat events to Splunk HEC (JSON-mode endpoint)
+#     splunk_url: "https://splunk-host:8088"          # required — base URL of the Splunk HEC endpoint
+#     splunk_token: "<HEC token>"                     # required — HEC token, sent as "Authorization: Splunk <token>"
+#     format: json                                    # JSON envelope reads better in Splunk than fail2ban lines; recommended for SIEM-forwarding
+#   - type: datadog           # forward threat events to Datadog Logs (Logs API v2)
+#     datadog_url: "https://http-intake.logs.datadoghq.com"   # required — regional base URL of the Datadog Logs intake endpoint
+#     datadog_api_key: "<Datadog API key>"            # required — Datadog API key, sent as "DD-API-KEY: <key>" header
+#     format: json                                    # JSON envelope reads better in Datadog than fail2ban lines; recommended for SIEM-forwarding
 #
 # Cross-node raw-forward variant (Distributed NCS): pair `format: raw-line` on a
 # `sentinel-threat` sink with `raw_forward: true` on the pipeline (below, under
