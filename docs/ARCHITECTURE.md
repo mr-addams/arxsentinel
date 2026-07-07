@@ -21,7 +21,7 @@ telemetry pipeline. Граница core/product зафиксирована в а
   (`pkg/plugin` — `Source`, `Sink`, `Detector`, `Processor`, `Executor`),
   generic `*plugin.Event` (Envelope + opaque Payload), парсером HTTP-форматов
   (`pkg/parser` с `LogEntry`), стандартными Source/Sink-имплементациями
-  (`pkg/source/{file,stdin,syslog,http,exec,sentinel}`, `pkg/sink/{file,stdout,exec,sentinel}`),
+  (`pkg/source/{file,stdin,syslog,http,exec,sentinel}`, `pkg/sink/{file,stdout,exec,sentinel,loki,splunk,datadog}`),
   NCS-bridge и queue-backends (`pkg/ncs`, `pkg/executor/queue`),
   exec+JSON protocol (`pkg/execplugin`).
 - **ArxSentinel (product)** владеет: `*ThreatEvent` (в `internal/threat/`),
@@ -200,6 +200,16 @@ product-side `Formatter` (`internal/threat/format`) для JSON-сериализ
                                     IP Lists API      firewall add      blocklist file    UCI add_list      alias_util add
                                     (TTL sweep)       (TTL sweep)       (atomic write)    (local sweep)     (local sweep)
 ```
+
+The diagram above shows the always-present sinks (`file`/`stdout`/`sentinel-threat`/`exec`). Three
+additional `full`-profile-only sinks fan out from the same point but do not feed an executor —
+they forward events to an external observability platform instead (Flow 097):
+
+| Sink | Package | Wire format |
+|---|---|---|
+| `loki` | `arx-core/pkg/sink/loki` | Loki Push API (`streams[].values[][]`) |
+| `splunk` | `arx-core/pkg/sink/splunk` | Splunk HEC (`/services/collector/event`, concatenated JSON objects) |
+| `datadog` | `arx-core/pkg/sink/datadog` | Datadog Logs API v2 (`/api/v2/logs`, top-level JSON array) |
 
 ### Whitelist Matching (early exit)
 
@@ -405,7 +415,7 @@ Payload type-assert происходит в product-имплементациях
 Plugins регистрируются через `init()` + `Register(name, factory)`.
 Всегда подключённые транспорты:
 - **Sources**: `file`, `stdin`, `syslog`, `http`, `exec`, `sentinel` (`ncs://`)
-- **Sinks**: `file`, `stdout`, `exec`, `sentinel-threat`
+- **Sinks**: `file`, `stdout`, `exec`, `sentinel-threat`, `loki`, `splunk`, `datadog` (last 3 — observability/SIEM-forwarding, `full` build profile only, Flow 097)
 - **Executors**: `cloudflare`, `mikrotik`, `openwrt`, `opnsense`, `nginx`
 - **Detectors** (always-linked, per build profile design): 8 built-in
 - **Processors**: `whitelist`, `chaincheck` (direct call, not registry)
