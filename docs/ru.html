@@ -739,7 +739,32 @@
         </div>
     </section>
 
-    <section id="detectors" class="detectors-section">
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">WAF</span>
+            <h2 class="section-title">Блокируй известные атаки до детекторов</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">✓</span> pass — явный белый список</h3>
+                <p>Правила вычисляются первыми. Совпавшее pass-правило обрывает весь пайплайн — healthcheck'и, внутренние IP и доверенные боты пропускаются мгновенно, без лишних проверок.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⊘</span> drop — жёсткая блокировка</h3>
+                <p>SQLi, path traversal, сигнатуры сканеров — совпавшие запросы отсекаются на входе и не доходят до скорера. Состояние не выделяется, детекторы заведомо плохой трафик не обрабатывают.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">◈</span> tag — маркировка и продолжение</h3>
+                <p>Подозрительный, но неоднозначный трафик получает метку и прибавку к счёту, затем идёт дальше в pipeline. Комбинируй WAF-сигналы с поведенческими детекторами для коррелированных решений о бане.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⚙</span> Пользовательские поля</h3>
+                <p>Расширяй пространство правил собственными полями <code>http.*</code> — два изменения в Go, без перекомпиляции ядра. Добавь версию TLS, длину тела запроса или любое поле из своего источника логов.</p>
+            </div>
+        </div>
+    </section>
+
+        <section id="detectors" class="detectors-section">
         <div class="section-header">
             <span class="section-tag">Обнаружение угроз</span>
             <h2 class="section-title">8 детекторов — один score</h2>
@@ -805,156 +830,28 @@
         </div>
     </section>
 
-    <section class="performance-section">
+    <section class="whitelist-section">
         <div class="section-header">
-            <span class="section-tag">Потребление ресурсов</span>
-            <h2 class="section-title">~16 МБ. Работает везде.</h2>
-        </div>
-        <div class="perf-grid">
-            <div class="perf-metrics-block">
-                <div class="perf-metrics-row">
-                    <div class="perf-metric">
-                        <div class="p-num">~16 МБ</div>
-                        <div class="p-label">Размер бинаря · arm64</div>
-                    </div>
-                    <div class="perf-metric">
-                        <div class="p-num">~25 МБ</div>
-                        <div class="p-label">RAM · конфиг для Pi 3B</div>
-                    </div>
-                    <div class="perf-metric">
-                        <div class="p-num">&gt;20k</div>
-                        <div class="p-label">Записей лога/сек · Pi 3B</div>
-                    </div>
-                    <div class="perf-metric">
-                        <div class="p-num">0</div>
-                        <div class="p-label">Зависимостей рантайма</div>
-                    </div>
-                </div>
-            </div>
-            <div class="perf-callout-block">
-                <div>
-                    <div class="perf-callout-title">Угрозы уровня Enterprise.<br>Даже на железе Raspberry Pi.</div>
-                    <div class="perf-callout-body">
-                        Чистый Go-бинарь — без JVM, без Python, без утечек памяти.
-                        Запускается нативно на Raspberry Pi 3B (ARM Cortex-A53): ~25 МБ RAM,
-                        22k+ записей лога в секунду — в 20 раз быстрее любой реальной нагрузки на Pi.<br><br>
-                        Без чёрных ящиков. Детерминированная оценка — каждый бан
-                        обоснован и виден в структурированных JSON-логах.
-                    </div>
-                </div>
-                <div class="perf-tags">
-                    <span class="perf-tag">YAML конфиг</span>
-                    <span class="perf-tag">перезагрузка по SIGHUP</span>
-                    <span class="perf-tag">JSON логи</span>
-                    <span class="perf-tag">Prometheus метрики</span>
-                    <span class="perf-tag">нативный arm64</span>
-                    <span class="perf-tag">Raspberry Pi 3B</span>
-                    <span class="perf-tag">systemd unit</span>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section id="install" class="install-section">
-        <div class="section-header">
-            <span class="section-tag">Развертывание</span>
-            <h2 class="section-title">Установка за 3 шага</h2>
-            <p style="color: var(--text-muted); margin-top: 0.5rem;">Пакет делает всё сам: бинарник, systemd unit, Fail2Ban config и системный пользователь.</p>
-        </div>
-
-        <ul class="tabs-nav">
-            <li><button class="tab-btn active" onclick="switchTab(event, 'script-install')">Установка скриптом</button></li>
-            <li><button class="tab-btn" onclick="switchTab(event, 'source-install')">Из исходников</button></li>
-            <li><button class="tab-btn" onclick="switchTab(event, 'container-install')">Контейнер</button></li>
-            <li><button class="tab-btn" onclick="switchTab(event, 'freebsd-install')">FreeBSD</button></li>
-        </ul>
-
-        <div class="terminal-container">
-            <button class="copy-btn" onclick="copyToClipboard(this)" title="Копировать команду">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>
-                <span class="copy-text">Копировать</span>
-            </button>
-
-            <div id="script-install" class="tab-content active">
-                <pre><span class="comment"># Работает на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux
-# Скрипт сам определяет дистрибутив и архитектуру (amd64 / arm64)</span>
-<span class="command">curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash</span></pre>
-                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">Скрипт скачивает нужный пакет с GitHub Releases, устанавливает через системный менеджер пакетов, проверяет наличие <code style="font-family: var(--font-mono); color: var(--accent-blue);">fail2ban</code>, автоматически определяет путь к access.log и запускает сервис.</p>
-            </div>
-
-            <div id="source-install" class="tab-content">
-                <pre><span class="comment"># Требуется Go 1.26+</span>
-<span class="command">git clone https://github.com/mr-addams/arxsentinel
-cd arxsentinel
-sudo ./scripts/install.sh
-sudo systemctl enable --now arxsentinel</span></pre>
-            </div>
-
-            <div id="container-install" class="tab-content">
-                <pre><span class="comment"># Docker — дистроблесс-образ (~12 МБ), uid 65532, amd64 + arm64</span>
-<span class="command">docker run -d \
-  -v /var/log/nginx/access.log:/var/log/nginx/access.log:ro \
-  -v /var/log/arxsentinel:/var/log/arxsentinel \
-  -p 127.0.0.1:9117:9117 \
-  ghcr.io/mr-addams/arxsentinel:latest</span></pre>
-                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">
-                    Метрики Prometheus доступны на <code>:9117/metrics</code> сразу после старта.
-                    Docker Compose и Kubernetes (Helm DaemonSet) — подробные руководства:
-                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/README.docker.md" style="color: var(--accent-blue);">README.docker.md</a> ·
-                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/deploy/container/k8s/arxsentinel/README.md" style="color: var(--accent-blue);">Kubernetes (Helm) README</a>
-                </p>
-            </div>
-
-            <div id="freebsd-install" class="tab-content">
-                <pre><span class="comment"># Нативный бинарник — 386 / amd64 / arm / arm64. Отдельный установщик + rc.d-сервис.</span>
-<span class="command">fetch https://github.com/mr-addams/arxsentinel/releases/latest/download/arxsentinel_&lt;version&gt;_freebsd_&lt;arch&gt;.tar.gz
-tar xzf arxsentinel_&lt;version&gt;_freebsd_&lt;arch&gt;.tar.gz
-cd arxsentinel_&lt;version&gt;_freebsd_&lt;arch&gt;
-sudo sh install.sh
-sysrc arxsentinel_enable=YES
-service arxsentinel start</span></pre>
-                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">
-                    Создаёт системного пользователя <code>arxsentinel</code>, устанавливает rc.d-сервис и сидирует конфиг из примера (при повторном запуске существующий конфиг не перезаписывается).
-                    Запускаете веб-сервер в <code>podman</code> на FreeBSD? Полное руководство — драйвер хранилища, настройка firewall, особенности контейнерной сети:
-                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/cookbook/freebsd/CookBook.ru.md" style="color: var(--accent-blue);">FreeBSD Deployment Cookbook</a>
-                </p>
-            </div>
-        </div>
-
-        <div class="install-note">
-            <strong>После установки:</strong> откройте <code>/etc/arxsentinel/config.yaml</code> и укажите путь к access.log. nginx работает без профиля. Для Apache, Traefik, Caddy, HAProxy или LiteSpeed укажите <code>parser.profile</code> с именем сервера. Конфиг перезагружается по <code>SIGHUP</code> — рестарт не нужен.
-        </div>
-    </section>
-
-        <section class="whitelist-section">
-        <div class="section-header">
-            <span class="section-tag">WAF</span>
-            <h2 class="section-title">Блокируй известные атаки до детекторов</h2>
+            <span class="section-tag">Защита от ложных срабатываний</span>
+            <h2 class="section-title">Легитимный трафик никогда не блокируется</h2>
         </div>
         <div class="whitelist-grid">
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">✓</span> pass — явный белый список</h3>
-                <p>Правила вычисляются первыми. Совпавшее pass-правило обрывает весь пайплайн — healthcheck'и, внутренние IP и доверенные боты пропускаются мгновенно, без лишних проверок.</p>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 21l6 0" /><path d="M9 21l0 -9" /><path d="M8 5l2 0" /><path d="M7 7l4 0" /><path d="M14 5a2 2 0 0 1 2 2v3l-3.6 5.4a1 1 0 0 0 .6 1.6h3a1 1 0 0 0 .894 -1.447l-3.528 -7.053" /><path d="M9 5a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v5h-4z" /></svg></span> Автоматическая верификация</h3>
+                <p>Googlebot, Bingbot, Яндекс, DuckDuckBot, GPTBot и ещё 6 семейств верифицируются через обратный + прямой DNS. Легитимные краулеры никогда не получают очков. Фейковые боты получают штраф. Доверенные краулеры можно матчить по User-Agent только (`ua_only`, без DNS) и дать per-bot detector exemptions (`exempt_detectors`) чтобы легитимная автоматизация никогда не была наказана.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">⊘</span> drop — жёсткая блокировка</h3>
-                <p>SQLi, path traversal, сигнатуры сканеров — совпавшие запросы отсекаются на входе и не доходят до скорера. Состояние не выделяется, детекторы заведомо плохой трафик не обрабатывают.</p>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" /><path d="M15 19l2 2l4 -4" /></svg></span> Кастомные исключения</h3>
+                <p>Добавьте IP офиса, VPN-подсети (CIDR), сервисы мониторинга, SEO-инструменты по подстроке User-Agent или URL-пути. Изменения применяются по SIGHUP.</p>
             </div>
             <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">◈</span> tag — маркировка и продолжение</h3>
-                <p>Подозрительный, но неоднозначный трафик получает метку и прибавку к счёту, затем идёт дальше в pipeline. Комбинируй WAF-сигналы с поведенческими детекторами для коррелированных решений о бане.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">⚙</span> Пользовательские поля</h3>
-                <p>Расширяй пространство правил собственными полями <code>http.*</code> — два изменения в Go, без перекомпиляции ядра. Добавь версию TLS, длину тела запроса или любое поле из своего источника логов.</p>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg></span> Горячая перезагрузка</h3>
+                <p>Все изменения конфигурации — белые списки, веса детекторов, пороги — применяются мгновенно по SIGHUP. Без перезапуска. IP-состояние и DNS-кэш сохраняются.</p>
             </div>
         </div>
     </section>
 
-        <section class="whitelist-section">
+    <section class="whitelist-section">
         <div class="section-header">
             <span class="section-tag">Защита</span>
             <h2 class="section-title">Блокировка на нужном уровне</h2>
@@ -1133,31 +1030,6 @@ service arxsentinel start</span></pre>
         </div>
     </section>
 
-    <section class="whitelist-section">
-        <div class="section-header">
-            <span class="section-tag">Механизмы защиты</span>
-            <h2 class="section-title">Легитимный трафик никогда не блокируется</h2>
-        </div>
-        <div class="whitelist-grid">
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 21l6 0" /><path d="M9 21l0 -9" /><path d="M8 5l2 0" /><path d="M7 7l4 0" /><path d="M14 5a2 2 0 0 1 2 2v3l-3.6 5.4a1 1 0 0 0 .6 1.6h3a1 1 0 0 0 .894 -1.447l-3.528 -7.053" /><path d="M9 5a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v5h-4z" /></svg></span> Автоматическая верификация</h3>
-                <p>Googlebot, Bingbot, Яндекс, DuckDuckBot, GPTBot и ещё 6 семейств верифицируются через обратный + прямой DNS. Легитимные краулеры никогда не получают очков. Фейковые боты получают штраф. Доверенные краулеры можно матчить по User-Agent только (`ua_only`, без DNS) и дать per-bot detector exemptions (`exempt_detectors`) чтобы легитимная автоматизация никогда не была наказана.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" /><path d="M15 19l2 2l4 -4" /></svg></span> Кастомные исключения</h3>
-                <p>Добавьте IP офиса, VPN-подсети (CIDR), сервисы мониторинга, SEO-инструменты по подстроке User-Agent или URL-пути. Изменения применяются по SIGHUP.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg></span> Горячая перезагрузка</h3>
-                <p>Все изменения конфигурации — белые списки, веса детекторов, пороги — применяются мгновенно по SIGHUP. Без перезапуска. IP-состояние и DNS-кэш сохраняются.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg></span> Поддержка Cloudflare</h3>
-                <p>Детекторы всегда оценивают реального злоумышленника — никогда Cloudflare или балансировщик нагрузки. Поддерживает CF-Connecting-IP, цепочки X-Forwarded-For и CIDR доверенных прокси из коробки.</p>
-            </div>
-        </div>
-    </section>
-
     <section class="integrations-section">
         <div class="section-header">
             <span class="section-tag">Универсальный I/O</span>
@@ -1216,7 +1088,131 @@ service arxsentinel start</span></pre>
         </div>
     </section>
 
-    <section class="roadmap-section">
+    <section class="performance-section">
+        <div class="section-header">
+            <span class="section-tag">Потребление ресурсов</span>
+            <h2 class="section-title">~16 МБ. Работает везде.</h2>
+        </div>
+        <div class="perf-grid">
+            <div class="perf-metrics-block">
+                <div class="perf-metrics-row">
+                    <div class="perf-metric">
+                        <div class="p-num">~16 МБ</div>
+                        <div class="p-label">Размер бинаря · arm64</div>
+                    </div>
+                    <div class="perf-metric">
+                        <div class="p-num">~25 МБ</div>
+                        <div class="p-label">RAM · конфиг для Pi 3B</div>
+                    </div>
+                    <div class="perf-metric">
+                        <div class="p-num">&gt;20k</div>
+                        <div class="p-label">Записей лога/сек · Pi 3B</div>
+                    </div>
+                    <div class="perf-metric">
+                        <div class="p-num">0</div>
+                        <div class="p-label">Зависимостей рантайма</div>
+                    </div>
+                </div>
+            </div>
+            <div class="perf-callout-block">
+                <div>
+                    <div class="perf-callout-title">Угрозы уровня Enterprise.<br>Даже на железе Raspberry Pi.</div>
+                    <div class="perf-callout-body">
+                        Чистый Go-бинарь — без JVM, без Python, без утечек памяти.
+                        Запускается нативно на Raspberry Pi 3B (ARM Cortex-A53): ~25 МБ RAM,
+                        22k+ записей лога в секунду — в 20 раз быстрее любой реальной нагрузки на Pi.<br><br>
+                        Без чёрных ящиков. Детерминированная оценка — каждый бан
+                        обоснован и виден в структурированных JSON-логах.
+                    </div>
+                </div>
+                <div class="perf-tags">
+                    <span class="perf-tag">YAML конфиг</span>
+                    <span class="perf-tag">перезагрузка по SIGHUP</span>
+                    <span class="perf-tag">JSON логи</span>
+                    <span class="perf-tag">Prometheus метрики</span>
+                    <span class="perf-tag">нативный arm64</span>
+                    <span class="perf-tag">Raspberry Pi 3B</span>
+                    <span class="perf-tag">systemd unit</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="install" class="install-section">
+        <div class="section-header">
+            <span class="section-tag">Развертывание</span>
+            <h2 class="section-title">Установка за 3 шага</h2>
+            <p style="color: var(--text-muted); margin-top: 0.5rem;">Пакет делает всё сам: бинарник, systemd unit, Fail2Ban config и системный пользователь.</p>
+        </div>
+
+        <ul class="tabs-nav">
+            <li><button class="tab-btn active" onclick="switchTab(event, 'script-install')">Установка скриптом</button></li>
+            <li><button class="tab-btn" onclick="switchTab(event, 'source-install')">Из исходников</button></li>
+            <li><button class="tab-btn" onclick="switchTab(event, 'container-install')">Контейнер</button></li>
+            <li><button class="tab-btn" onclick="switchTab(event, 'freebsd-install')">FreeBSD</button></li>
+        </ul>
+
+        <div class="terminal-container">
+            <button class="copy-btn" onclick="copyToClipboard(this)" title="Копировать команду">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span class="copy-text">Копировать</span>
+            </button>
+
+            <div id="script-install" class="tab-content active">
+                <pre><span class="comment"># Работает на Debian, Ubuntu, Fedora, RHEL, AlmaLinux, Rocky Linux, Arch Linux
+# Скрипт сам определяет дистрибутив и архитектуру (amd64 / arm64)</span>
+<span class="command">curl -fsSL https://raw.githubusercontent.com/mr-addams/arxsentinel/main/scripts/get.sh | sudo bash</span></pre>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">Скрипт скачивает нужный пакет с GitHub Releases, устанавливает через системный менеджер пакетов, проверяет наличие <code style="font-family: var(--font-mono); color: var(--accent-blue);">fail2ban</code>, автоматически определяет путь к access.log и запускает сервис.</p>
+            </div>
+
+            <div id="source-install" class="tab-content">
+                <pre><span class="comment"># Требуется Go 1.26+</span>
+<span class="command">git clone https://github.com/mr-addams/arxsentinel
+cd arxsentinel
+sudo ./scripts/install.sh
+sudo systemctl enable --now arxsentinel</span></pre>
+            </div>
+
+            <div id="container-install" class="tab-content">
+                <pre><span class="comment"># Docker — дистроблесс-образ (~12 МБ), uid 65532, amd64 + arm64</span>
+<span class="command">docker run -d \
+  -v /var/log/nginx/access.log:/var/log/nginx/access.log:ro \
+  -v /var/log/arxsentinel:/var/log/arxsentinel \
+  -p 127.0.0.1:9117:9117 \
+  ghcr.io/mr-addams/arxsentinel:latest</span></pre>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">
+                    Метрики Prometheus доступны на <code>:9117/metrics</code> сразу после старта.
+                    Docker Compose и Kubernetes (Helm DaemonSet) — подробные руководства:
+                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/README.docker.md" style="color: var(--accent-blue);">README.docker.md</a> ·
+                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/deploy/container/k8s/arxsentinel/README.md" style="color: var(--accent-blue);">Kubernetes (Helm) README</a>
+                </p>
+            </div>
+
+            <div id="freebsd-install" class="tab-content">
+                <pre><span class="comment"># Нативный бинарник — 386 / amd64 / arm / arm64. Отдельный установщик + rc.d-сервис.</span>
+<span class="command">fetch https://github.com/mr-addams/arxsentinel/releases/latest/download/arxsentinel_&lt;version&gt;_freebsd_&lt;arch&gt;.tar.gz
+tar xzf arxsentinel_&lt;version&gt;_freebsd_&lt;arch&gt;.tar.gz
+cd arxsentinel_&lt;version&gt;_freebsd_&lt;arch&gt;
+sudo sh install.sh
+sysrc arxsentinel_enable=YES
+service arxsentinel start</span></pre>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem;">
+                    Создаёт системного пользователя <code>arxsentinel</code>, устанавливает rc.d-сервис и сидирует конфиг из примера (при повторном запуске существующий конфиг не перезаписывается).
+                    Запускаете веб-сервер в <code>podman</code> на FreeBSD? Полное руководство — драйвер хранилища, настройка firewall, особенности контейнерной сети:
+                    <a href="https://github.com/mr-addams/arxsentinel/blob/dev/cookbook/freebsd/CookBook.ru.md" style="color: var(--accent-blue);">FreeBSD Deployment Cookbook</a>
+                </p>
+            </div>
+        </div>
+
+        <div class="install-note">
+            <strong>После установки:</strong> откройте <code>/etc/arxsentinel/config.yaml</code> и укажите путь к access.log. nginx работает без профиля. Для Apache, Traefik, Caddy, HAProxy или LiteSpeed укажите <code>parser.profile</code> с именем сервера. Конфиг перезагружается по <code>SIGHUP</code> — рестарт не нужен.
+        </div>
+    </section>
+
+        <section class="roadmap-section">
         <div class="section-header">
             <span class="section-tag" style="color: var(--accent-purple); border-color: rgba(189,0,255,0.3); background: rgba(189,0,255,0.08);">Дорожная карта</span>
             <h2 class="section-title">Что появится в v2.x</h2>
