@@ -68,7 +68,7 @@ the pipeline you enable:
 |------|--------------|-----------|
 | **Collector** | Tails/receives logs, parses them, forwards **unscored** entries. Cheap: no tracker state, no detector work. Runs happily on a Raspberry Pi or a 128 MB VPS. | `raw_forward: true` + transport sink (`mode: send`) |
 | **Detector** | Receives entries from any number of collectors, runs the full detector chain (8 behavioural detectors, WAF rules, whitelist, scoring), forwards **scored verdicts** onward. One place to tune thresholds for the whole fleet. | transport source (`mode: raw`, queue `mode: recv`) + transport sink for verdicts |
-| **Responder** | Receives scored verdicts and enforces: nginx blocklist, MikroTik address-list, Cloudflare WAF, or your own exec+JSON executor. Lives next to the enforcement point — credentials never leave that node. | `executors:` with a transport-backed source (queue `mode: recv`) |
+| **Responder** | Receives scored verdicts and enforces: nginx blocklist, MikroTik address-list, OpenWrt ipset, OPNsense alias, Cloudflare WAF, or your own exec+JSON executor. Lives next to the enforcement point — credentials never leave that node. Same [Executor](../README.md#executors) plugins as a single-node deployment — "Responder" is just this role's name within a distributed topology. | `executors:` with a transport-backed source (queue `mode: recv`) |
 
 Roles combine freely: a node can detect **and** respond, collect **and**
 detect locally while forwarding only high-severity verdicts, and so on. A
@@ -341,10 +341,13 @@ Key properties for a corporate evaluation:
   every topology in this guide is exercised by CI with real containers on
   every merge.
 
-**Today's SIEM paths**: `exec+JSON` sink (any script/binary — HEC uploader,
-Kafka producer, S3 writer), `file` sink in JSON format (picked up by any
-existing forwarder), `stdout` JSON (container log pipelines). Native Splunk
-HEC / Loki / Datadog sinks are on the [roadmap](https://mr-addams.github.io/arxsentinel/#roadmap).
+**SIEM paths today**: native **Splunk HEC**, **Loki**, and **Datadog** sinks
+(quick-start recipes in [`cookbook/observability/`](../cookbook/observability/))
+cover the three most common corporate targets out of the box. For anything
+else — Kafka, S3, a custom HEC uploader, an in-house bus — the generic
+`exec+JSON` sink wraps any script or binary, the `file` sink drops JSON for
+an existing forwarder to pick up, and `stdout` JSON feeds container log
+pipelines.
 
 ## Operations
 

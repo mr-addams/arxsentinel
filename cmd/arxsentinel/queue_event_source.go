@@ -1,18 +1,18 @@
 // ========================== Queue→EventSource adapter (Gate B) ============================
-//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D):
 //
-//   pkg/executor/queue.Queue still operates on opaque []byte payloads (see
-//   pkg/executor/queue/queue.go — deliberate, so persistent backends serialize
-//   via JSON cleanly across process restarts). The Sink side (Formatter) owns
-//   the wire schema: today it produces Fail2Ban-line or JSON-serialized
-//   *threat.ThreatEvent bytes.
+//	Gate B (Flow 083 / Task 3.3 / RESOLVED-D):
 //
-//   plugin.EventSource wants *plugin.Event from Pop. This file provides a
-//   bytes→Event adapter used only by the executor goroutine dispatcher in
-//   cmd/arxsentinel/executors.go. The wire format expected here is a
-//   JSON-encoded *threat.ThreatEvent (matching what the sentinel-threat
-//   sink pushes onto the queue today).
-
+//	pkg/executor/queue.Queue still operates on opaque []byte payloads (see
+//	pkg/executor/queue/queue.go — deliberate, so persistent backends serialize
+//	via JSON cleanly across process restarts). The Sink side (Formatter) owns
+//	the wire schema: today it produces Fail2Ban-line or JSON-serialized
+//	*threat.ThreatEvent bytes.
+//
+//	plugin.EventSource wants *plugin.Event from Pop. This file provides a
+//	bytes→Event adapter used only by the executor goroutine dispatcher in
+//	cmd/arxsentinel/executors.go. The wire format expected here is a
+//	JSON-encoded *threat.ThreatEvent (matching what the sentinel-threat
+//	sink pushes onto the queue today).
 package main
 
 import (

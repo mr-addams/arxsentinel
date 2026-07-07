@@ -16,6 +16,10 @@ plugins:
       module: arxsentinel
     - name: nginx
       module: arxsentinel
+    - name: openwrt
+      module: arxsentinel
+    - name: opnsense
+      module: arxsentinel
   detectors:
     - name: probe
     - name: rate
@@ -31,10 +35,16 @@ plugins:
     - name: whitelist
       module: arxsentinel
   sinks:
+    - name: datadog
+      module: arx-core
     - name: exec
+      module: arx-core
+    - name: loki
       module: arx-core
     - name: sentinel-threat
       module: arxsentinel
+    - name: splunk
+      module: arx-core
     - name: stdout
       module: arx-core
   sources:

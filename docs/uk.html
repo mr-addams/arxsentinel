@@ -36,7 +36,7 @@
       "downloadUrl": "https://github.com/mr-addams/arxsentinel/releases/latest",
       "codeRepository": "https://github.com/mr-addams/arxsentinel",
       "license": "https://github.com/mr-addams/arxsentinel/blob/main/LICENSE",
-      "softwareVersion": "2.2.3",
+      "softwareVersion": "2.2.4",
       "author": { "@type": "Person", "name": "mr-addams" }
     }
     </script>
@@ -135,6 +135,23 @@
         }
         @keyframes shine { to { background-position: 200% center; } }
         .hero p { font-size: 1.25rem; color: var(--text-muted); max-width: 700px; margin: 0 auto 3rem; }
+
+        /* ── Hero pillars (розкривне пояснення "розумний/універсальний/масштабований/розподілений") ── */
+        .hero-pillars { max-width: 760px; margin: -1.5rem auto 3rem; text-align: left; }
+        .hero-pillars summary {
+            cursor: pointer; text-align: center; color: var(--accent-blue); font-size: 0.85rem;
+            font-family: var(--font-cyber); letter-spacing: 0.06em; list-style: none;
+        }
+        .hero-pillars summary::-webkit-details-marker { display: none; }
+        .hero-pillars summary::after { content: ' ▾'; }
+        .hero-pillars[open] summary::after { content: ' ▴'; }
+        .hero-pillars-grid {
+            display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem;
+            margin-top: 1.5rem; padding: 1.5rem; border-radius: 8px;
+            background: rgba(13, 13, 31, 0.4); border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .hero-pillars-grid h4 { color: var(--accent-blue); font-size: 0.95rem; margin-bottom: 0.4rem; }
+        .hero-pillars-grid p { font-size: 0.85rem; color: var(--text-muted); margin: 0; max-width: none; }
         .cta-buttons { display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap; }
         .btn {
             font-family: var(--font-cyber); font-weight: 700; padding: 1rem 2rem; border-radius: 4px;
@@ -372,6 +389,7 @@
 
         .whitelist-section { max-width: 1200px; margin: 6rem auto; }
         .whitelist-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; padding: 0 2rem; }
+        .enforcement-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.5rem; padding: 0 2rem; }
         .integrations-section { max-width: 900px; margin: 6rem auto; padding: 0 2rem; }
         .integrations-grid { display: flex; gap: 3rem; justify-content: center; flex-wrap: wrap; margin-top: 2.5rem; }
         .integrations-col { flex: 1 1 280px; }
@@ -449,6 +467,7 @@
             .hero { padding: 4rem 1.5rem 3rem; }
             .hero h1 { font-size: 2rem; }
             .hero p { font-size: 1rem; }
+            .hero-pillars-grid { grid-template-columns: 1fr; padding: 1.25rem; }
             .badge-container { flex-wrap: wrap; gap: 0.5rem; }
             .cta-buttons { flex-direction: column; width: 100%; max-width: 300px; margin: 0 auto; }
             .btn { width: 100%; text-align: center; }
@@ -487,6 +506,7 @@
             /* ── Whitelist ── */
             .whitelist-section { margin: 3rem auto; }
             .whitelist-grid { padding: 0 1rem; gap: 1rem; }
+            .enforcement-grid { grid-template-columns: 1fr; padding: 0 1rem; gap: 1rem; }
             .whitelist-card { flex: 1 1 100%; }
 
             /* ── Footer ── */
@@ -568,11 +588,11 @@
 
     <section class="hero">
         <div class="badge-container">
-            <span class="badge badge-version">v2.2.3</span>
+            <span class="badge badge-version">v2.2.4</span>
             <span class="badge">Source Available</span>
             <span class="badge">Go</span>
-            <span class="badge">Linux</span>
-            <span class="badge">FreeBSD</span>
+            <span class="badge">Linux/FreeBSD</span>
+            <span class="badge">Daemon/Docker/K8s</span>
         </div>
         <h1>
             <span class="shimmer-text">Від одного VPS</span><br>
@@ -580,7 +600,28 @@
             один бінарник, нульові накладні витрати
         </h1>
         <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Розподілений двигун обробки подій безпеки для будь-якого HTTP-сервера — і не тільки</p>
-        <p>Вісім поведінкових детекторів аналізують HTTP access-логи в реальному часі та спрямовують підтверджених зловмисників на будь-який вивід — Fail2Ban, Cloudflare WAF, MikroTik RouterOS або власний exec+JSON-sink на будь-якій мові. Збирайте події на одній машині, скоруйте на іншій, баньте на третій — через вбудовану шифровану мережу вузлів. Bare-metal, Docker Compose або Kubernetes DaemonSet.</p>
+        <p>Розумний, універсальний, розподілений рушій безпеки: поведінкова детекція замість статичних правил, будь-яке джерело логів на вході, будь-який пункт призначення на виході, будь-яка мова для власних плагінів. Масштабуйтесь від одного VPS до розподіленого флоту — збирайте події на одній машині, скоруйте на іншій, баньте на третій — через вбудовану шифровану мережу вузлів. Bare-metal, Docker Compose або Kubernetes DaemonSet.</p>
+        <details class="hero-pillars">
+            <summary>Що означає «розумний, універсальний, масштабований, розподілений»</summary>
+            <div class="hero-pillars-grid">
+                <div>
+                    <h4>Розумний</h4>
+                    <p>Вісім поведінкових детекторів скорують патерни — зондування, аномалії частоти запитів, співвідношення bruteforce, послідовний краулінг — замість звірки зі статичними сигнатурами. Легітимні краулери верифікуються через rDNS/fDNS і ніколи не скоруються.</p>
+                </div>
+                <div>
+                    <h4>Універсальний</h4>
+                    <p>Будь-яке джерело логів на вході (файл, stdin, syslog, HTTP push/pull у 9 форматах вендорів), будь-який пункт призначення на виході (Fail2Ban, Cloudflare WAF, файерволи MikroTik/OpenWrt/OPNsense, Loki/Splunk/Datadog), будь-яка мова для власного плагіна через exec+JSON.</p>
+                </div>
+                <div>
+                    <h4>Масштабований</h4>
+                    <p>Один процес обслуговує N незалежних потоків логів, кожен зі своїм pipeline джерел, детекторів і sink'ів — від одного nginx vhost до флоту edge-вузлів, без запуску окремого процесу на кожен сайт.</p>
+                </div>
+                <div>
+                    <h4>Розподілений</h4>
+                    <p>Збирайте на одній машині, скоруйте на іншій, баньте на третій — через вбудовану шифровану QUIC/TLS 1.3 мережу вузлів з Ed25519-ідентичністю та TOFU-піннінгом. Без брокера повідомлень, без log shipper'а, без VPN.</p>
+                </div>
+            </div>
+        </details>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Встановити</a>
             <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">GitHub</a>
@@ -697,7 +738,32 @@
         </div>
     </section>
 
-    <section id="detectors" class="detectors-section">
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">WAF</span>
+            <h2 class="section-title">Блокуй відомі атаки до детекторів</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">✓</span> pass — явний білий список</h3>
+                <p>Правила обчислюються першими. Правило pass, що збіглося, обриває весь пайплайн — healthcheck'и, внутрішні IP та довірені боти пропускаються миттєво, без зайвих перевірок.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⊘</span> drop — жорстке блокування</h3>
+                <p>SQLi, path traversal, сигнатури сканерів — запити, що збіглися, відсікаються на вході і не доходять до скорера. Стан не виділяється, детектори не обробляють заздалегідь поганий трафік.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">◈</span> tag — маркування та продовження</h3>
+                <p>Підозрілий, але неоднозначний трафік отримує мітку та додавання до рахунку, потім іде далі у pipeline. Комбінуй WAF-сигнали з поведінковими детекторами для корельованих рішень про бан.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⚙</span> Власні поля</h3>
+                <p>Розширяй простір правил власними полями <code>http.*</code> — дві зміни в Go, без перекомпіляції ядра. Додай версію TLS, довжину тіла запиту або будь-яке поле з твого джерела логів.</p>
+            </div>
+        </div>
+    </section>
+
+        <section id="detectors" class="detectors-section">
         <div class="section-header">
             <span class="section-tag">Виявлення загроз</span>
             <h2 class="section-title">8 детекторів — один score</h2>
@@ -759,6 +825,285 @@
                     <p class="detector-desc">Порівнює User-Agent (та опційно Referer) із community-maintained списком ~685 відомих поганих ботів: скрепери, SEO-краулери, спам-боти, сканери вразливостей. Список оновлюється щодня. Засновано на <a href="https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue)">nginx-ultimate-bad-bot-blocker</a> — проекті <strong>Mitchell Krog</strong> та його команди.</p>
                 </div>
                 <span class="detector-score">+60</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Захист від хибних спрацювань</span>
+            <h2 class="section-title">Легітимний трафік ніколи не блокується</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 21l6 0" /><path d="M9 21l0 -9" /><path d="M8 5l2 0" /><path d="M7 7l4 0" /><path d="M14 5a2 2 0 0 1 2 2v3l-3.6 5.4a1 1 0 0 0 .6 1.6h3a1 1 0 0 0 .894 -1.447l-3.528 -7.053" /><path d="M9 5a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v5h-4z" /></svg></span> Автоматична верифікація</h3>
+                <p>Googlebot, Bingbot, Яндекс, DuckDuckBot, GPTBot та ще 6 родин верифікуються через зворотний + прямий DNS. Легітимні краулери ніколи не отримують очків. Фейкові боти отримують штраф. Надійні краулери можна матчити за User-Agent лише (`ua_only`, без DNS) та надати per-bot detector exemptions (`exempt_detectors`) щоб легітимна автоматизація ніколи не була покарана.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" /><path d="M15 19l2 2l4 -4" /></svg></span> Кастомні виключення</h3>
+                <p>Додайте IP офісу, VPN-підмережі (CIDR), сервіси моніторингу, SEO-інструменти за підрядком User-Agent або URL-шляху. Зміни застосовуються по SIGHUP.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg></span> Гаряче перезавантаження</h3>
+                <p>Усі зміни конфігурації — білі списки, ваги детекторів, пороги — застосовуються миттєво по SIGHUP. Без перезапуску. IP-стан і DNS-кеш зберігаються.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Примусові дії</span>
+            <h2 class="section-title">Блокування на потрібному рівні</h2>
+        </div>
+        <div class="enforcement-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z" /><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0" /><path d="M8 11v-4a4 4 0 1 1 8 0v4" /></svg></span> Fail2Ban</h3>
+                <p>Запис подій загроз у лог-файл класичного формату Fail2Ban. Жодної нової інфраструктури — вивід за замовчуванням, і досі найшвидший шлях до робочого бану на будь-якому Linux-хості.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6.657 18c-2.572 0 -4.657 -2.007 -4.657 -4.483c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99c1.913 0 3.464 1.56 3.464 3.486c0 1.927 -1.551 3.487 -3.465 3.487h-11.878" /></svg></span> Cloudflare WAF</h3>
+                <p>Додання IP загроз до Cloudflare IP List та блокування на краю мережі — без iptables, без host firewall. Пакетні операції, асинхронний polling, автоматичне TTL-закінчення та cross-instance dedup.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> nginx</h3>
+                <p>Запис заблокованих IP у простий blocklist-файл з автоматичним TTL-закінченням та атомарним записом. arxsentinel лише пише файл; ви підключаєте його до nginx як вам зручно. Опціональна reload-команда.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12l-8 -8l8 -2l2 8z" /><path d="M12 12l4 8l4 -8z" /><path d="M12 12l8 -4l-2 -8z" /><path d="M12 12l-4 -8l-4 8z" /></svg></span> MikroTik RouterOS v7</h3>
+                <p>Керування firewall address-list RouterOS через REST API. TTL-базований auto-unban, безпечне видалення лише власних записів arxsentinel, працює на CHR та ARM-маршрутизаторах.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> Файервол OpenWrt через ubus</h3>
+                <p>Блокування IP на роутері OpenWrt через ubus (uhttpd-mod-ubus) — без SSH, без exec. Пакетна правка UCI + один reload файервола за цикл; TTL рахує сам плагін, а не nftables-таймаути.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6.657 18c-2.572 0 -4.657 -2.007 -4.657 -4.483c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99c1.913 0 3.464 1.56 3.464 3.486c0 1.927 -1.551 3.487 -3.465 3.487h-11.878" /></svg></span> REST API OPNsense</h3>
+                <p>Блокування IP на файерволі OPNsense через нативний REST API (alias_util) — без пакетування, зміни застосовуються негайно до pfctl-таблиці. Незалежний point add/delete на подію, активний TTL-sweep.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Спостережуваність</span>
+            <h2 class="section-title">Надсилайте напряму у SIEM, який у вас вже є</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" /><path d="M4 7c-1.1 0 -2 .9 -2 2v9c0 1.1 .9 2 2 2h14" /></svg></span> Grafana Loki</h3>
+                <p>Пряме надсилання сирих і скорованих подій у Grafana Loki через Push API. Будь-яке поле — stream-label (job, severity, stream), батчинг з gzip, опціональний mTLS. Для читабельності у платформі рекомендовано JSON-envelope.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Splunk HEC</h3>
+                <p>Пересилання в HTTP Event Collector Splunk з токен-автентифікацією. JSON-режим, мультиіндекс, gzip-батчинг, опціональний mTLS. Події індексуються одразу при перетині вердиктом порога — окремий log shipper не потрібен.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Datadog Logs API</h3>
+                <p>Надсилання в Datadog Logs API v2 по HTTPS — вибір регіонального intake-URL (US, EU, AP1, AP2, UK1, US3, US5, US2 Gov) і довільні ddtags. Gzip-батчинг, опціональний mTLS, працює паралельно з вашими Datadog log-пайплайнами.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Відкрита плагінна архітектура</span>
+            <h2 class="section-title">П'ять інтерфейсів. Пишіть свої будь-якою мовою.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg></span> П'ять типізованних ролей</h3>
+                <p><strong>Source / Sink / Detector / Processor / Executor</strong> — компактний Go-інтерфейс у <code>pkg/plugin/</code>. Плагіни реєструють себе в <code>init()</code>: жодного центрального списку фабрик, фреймворк знаходить їх за іменем. Збирайте пайплайн із ролей, а не з внутрішніх хуків.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg></span> Будь-яка мова, Go не потрібен</h3>
+                <p>Протокол <strong>exec+JSON</strong>: сабпроцес читає JSON-об'єкт події з stdin і пише JSON-відповідь у stdout. Розширюйте детектори, додавайте sink чи executor мовою Python, Bash або чим завгодно, що вміє читати байтовий потік — ArxSentinel бере на себе життєвий цикл сабпроцесу (запуск, проводку stdin/stdout, завершення).</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l5 5l10 -10" /></svg></span> Доведено, а не теорія</h3>
+                <p>П'ять постачальних executor-плагінів — <strong>Cloudflare, MikroTik, OpenWrt, OPNsense, nginx</strong> — і три щойно додані observability-sink (<strong>Loki, Splunk, Datadog</strong>) використовують ті самі публічні інтерфейси, що й зовнішній автор плагіна. Жодного внутрішнього fast-path, жодного привілейованого доступу: працює для вбудованих — працює і для ваших.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Multi-Pipeline</span>
+            <h2 class="section-title">Один процес. Багато потоків. Власна детекція у кожного.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Ізоляція мультипотоків</h3>
+                <p>Один процес стежить за <strong>N незалежними джерелами логів</strong> через <code>streams:</code> — кожен має власний трекер, scorer, стан whitelist та threat-лог. Падіння чи повільне сканування в одному потоці не зачіпає інші. <strong>Зворотна сумісність</strong>: класичний конфіг з одним файлом (<code>general.log_file</code>) автоматично обгортається в один безіменний потік (<code>stream=""</code> у метриках), міграція не потрібна.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Незалежні pipeline всередині потоку</h3>
+                <p>Один потік може визначати <strong>кілька pipeline</strong>, кожен із власними inputs, процесорами rule-engine / WAF, детекторами та sink'ами — наприклад, один pipeline стежить за <code>/api/*</code> із суворим WAF-шлюзом, інший — за <code>/admin/*</code> з іншими порогами детекторів, обидва всередині одного конфіга потоку. Prometheus отримує лейбл <code>pipeline</code> на всіх векторах.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M15 7m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /><path d="M10.495 10.495l-7.779 7.779a1 1 0 0 0 0 1.414l1.596 1.596a1 1 0 0 0 1.414 0l7.779 -7.779" /><path d="M18.5 5.5l1.5 -1.5" /><path d="M20 6l-1 -1" /></svg></span> Кореляція pipeline через <code>tracker_group</code></h3>
+                <p>Pipeline'и з однаковим значенням <code>tracker_group</code> <strong>ділять один IP-state трекер</strong>: зловмисник, що промацує ваш API та адмін-панель, накопичує один спільний score замість двох окремих, перетинаючи поріг бану швидше, ніж будь-який pipeline спіймав би сам. Опустіть <code>tracker_group</code> (або залиште порожнім) — і буде повна ізоляція.</p>
+            </div>
+        </div>
+    </section>
+
+<section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Можливості v2.2.4</span>
+            <h2 class="section-title">Впишеться в те, як ви вже розгортаєте.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M17 3l4 4l-14 14l-4 -4z" /><path d="M16 7l-1.5 -1.5" /><path d="M13 10l-1.5 -1.5" /><path d="M10 13l-1.5 -1.5" /><path d="M7 16l-1.5 -1.5" /></svg></span> Довільний формат логів</h3>
+                <p>Немає підходящого профілю? Опишіть власний regex з іменованими групами або переключіться на JSON-парсинг — без перекомпіляції. Будь-який формат, що захоплює IP, timestamp, метод, шлях, статус і байти, підключається до повного пайплайну виявлення.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> Профілі серверів</h3>
+                <p>Готові профілі для популярних серверів. Перевизначайте позиції полів, формати дат та правила роздільників для кожного джерела логу без зміни ядра.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M22 12.54c-1.804 -.345 -2.701 -1.08 -3.523 -2.94c-.487 .696 -1.54 1.4 -2.477 1.4h-5c-2.21 0 -4 1.79 -4 4v1.06c0 1.062 .107 1.84 .806 2.5c1.828 1.735 4.494 1.44 6.194 1.44h8c1.1 0 2 -.9 2 -2v-2c0 -1.1 -.9 -2 -2 -2h-.5" /><path d="M6 12h1" /><path d="M10 12h1" /><path d="M6 8h1" /><path d="M10 8h1" /><path d="M14 8h1" /><path d="M10 4h1" /><path d="M14 4h1" /><path d="M18.5 15.5m-0.5 0a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0" /></svg></span> Docker Compose sidecar</h3>
+                <p>Розгортається поруч із будь-яким контейнеризованим HTTP-сервером через спільний том логів — без змін у контейнері застосунку. Готові <code>docker-compose.yml</code> та конфіг у <code>deploy/examples/docker/</code>. Метрики Prometheus доступні на <code>:9117</code>.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg></span> Kubernetes DaemonSet</h3>
+                <p>Один pod на вузол читає host-логи через <code>hostPath</code>. Включено Helm-чарт з довідкою по values та інтеграцією Prometheus Operator. Підтримується також sidecar-топологія для managed-кластерів без доступу до host-логів.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l5 5l10 -10" /></svg></span> Offline config validation</h3>
+                <p>Запустіть `arxsentinel validate` щоб перевірити весь конфіг перед деплоєм. Topology-aware валідатор моделює реальний потік даних та ловить зламаний дріт, використовуючи статичні plugin manifests — без live трафіку.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Pluggable queue backends</h3>
+                <p>Буферизація подій executor через in-memory, file-based (bbolt), Redis — або <strong>transport</strong>-чергу, розтягнуту між машинами через шифровану мережу вузлів. Виберіть per executor для bare-metal, single-host, Kubernetes або мультивузлових схем.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Named Channel Switch</h3>
+                <p>Маршрутизація подій загроз між незалежними pipelines за назвою — один pipeline може детектувати, інший примусити, повністю decoupled. А тепер та сама іменована черга може закінчуватися на <strong>іншій машині</strong>: Distributed NCS.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag" style="color: var(--accent-green); border-color: rgba(0,255,136,0.35); background: rgba(0,255,136,0.08);">NEW · Distributed NCS</span>
+            <h2 class="section-title">Збирай будь-де. Детектуй централізовано. Бань на межі.</h2>
+            <p style="color: var(--text-muted); max-width: 720px; margin: 0 auto;">
+                Той самий бінарник стає <strong>колектором</strong>, <strong>детектором</strong> чи <strong>респондером</strong> —
+                лише через конфіг, з'єднуючись вбудованою шифрованою event-мережею.
+                Єдиний інструмент у своєму класі з вбудованим у двигун транспортом подій безпеки між вузлами:
+                без брокера повідомлень, без log shipper'а, без ієрархії агент-сервер, без VPN.
+            </p>
+        </div>
+        <div class="pipeline-box" style="margin-bottom: 2rem;">
+            <div class="box-scanline"></div>
+            <div class="pipeline-flow">
+                <div class="flow-line"></div>
+                <div class="pipeline-node">Колектори — Pi · VPS · NAS · філія (по 12 МБ, лише парсинг)</div>
+                <div class="pipeline-node">QUIC / TLS 1.3 · Ed25519-ідентичність вузла · TOFU-пінінг (як у SSH)</div>
+                <div class="pipeline-node">Вузол-детектор — 8 детекторів · WAF · whitelist · один спільний IP-score по всіх джерелах</div>
+                <div class="pipeline-node">Скоровані вердикти маршрутизуються далі — per pipeline, на різні вузли</div>
+                <div class="pipeline-node final">Респондери → роутер MikroTik · файервол OpenWrt · файервол OPNsense · nginx blocklist · Cloudflare WAF · Grafana Loki · Splunk HEC · Datadog Logs API (сирий + скорований JSON)</div>
+            </div>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /><path d="M12 11m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M12 12l0 2.5" /></svg></span> Шифрована мережа з коробки</h3>
+                <p>QUIC на одному UDP-порту, завжди TLS 1.3, Ed25519-ключі вузла генеруються при першому старті, TOFU-пінінг fingerprints як у SSH. Взаємна автентифікація до першої події — чужинець на вашому порту не отримає нічого.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M18 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M7.5 7.5l3 7" /><path d="M16.5 7.5l-3 7" /><path d="M8 6h8" /></svg></span> Кореляція між сервісами</h3>
+                <p>Кожен колектор прокидає в один спільний per-IP score. Атакувальник, що промацує веб-шар, API та auth-сервіс, накопичує сумарний score на детекторі — і перетинає поріг бану раніше, ніж його впіймав би будь-який сервіс поодинці.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" /><path d="M4 10h16" /><path d="M10 4v16" /></svg></span> Сирі чи скоровані — обидва потоки</h3>
+                <p>Прокидайте сирі розпарсені записи всередину для центральної детекції, скоровані вердикти назовні для enforcement — або обидва потоки у ваш SIEM. Префільтруйте на edge — і нехай рахунок за інжест визначають загрози, а не обсяг трафіку.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 12l2 2l4 -4" /><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> Доведено CI, а не обіцяно</h3>
+                <p>Кожна документована топологія — агрегація edge-флоту, змішана маршрутизація на nginx + MikroTik/OpenWrt/OPNsense респондери — проганяється як справжній мультиконтейнерний тест при кожному merge. Діаграми в доках виконувані.</p>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="https://github.com/mr-addams/arxsentinel/blob/main/docs/DISTRIBUTED.uk.md" target="_blank" rel="noopener noreferrer" class="btn btn-primary">Посібник з розподіленої обробки</a>
+            <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="margin-left: 0.75rem;">Готові топології</a>
+        </div>
+    </section>
+
+    <section class="integrations-section">
+        <div class="section-header">
+            <span class="section-tag">Універсальний I/O</span>
+            <h2 class="section-title">Працює з вашим стеком</h2>
+            <p style="color: var(--text-muted); max-width: 600px; margin: 0 auto;">
+                Читає з будь-якого джерела логів. Записує загрози в будь-який приймач.
+                Fail2Ban залишається варіантом за замовчуванням — тепер одним із багатьох.
+            </p>
+        </div>
+        <div class="integrations-grid">
+            <div class="integrations-col">
+                <h3 style="color: var(--accent-blue); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Джерела</h3>
+                <div class="integrations-list">
+                    <span class="integration-tag">nginx</span>
+                    <span class="integration-tag">Apache</span>
+                    <span class="integration-tag">Traefik</span>
+                    <span class="integration-tag">Caddy</span>
+                    <span class="integration-tag">HAProxy</span>
+                    <span class="integration-tag">LiteSpeed</span>
+                    <span class="integration-tag">будь-який лог-файл</span>
+                    <span class="integration-tag">stdin pipe</span>
+                    <span class="integration-tag">syslog-приймач</span>
+                    <span class="integration-tag">HTTP (push/pull)</span>
+                </div>
+            </div>
+            <div class="integrations-col">
+                <h3 style="color: var(--accent-green); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Приймачі</h3>
+                <div class="integrations-list">
+                    <span class="integration-tag">Fail2Ban</span>
+                    <span class="integration-tag">Cloudflare WAF</span>
+                    <span class="integration-tag">MikroTik RouterOS</span>
+                    <span class="integration-tag">OpenWrt ubus</span>
+                    <span class="integration-tag">OPNsense REST</span>
+                    <span class="integration-tag">nginx blocklist</span>
+                    <span class="integration-tag">exec+JSON</span>
+                    <span class="integration-tag">stdout&nbsp;JSON</span>
+                    <span class="integration-tag">Grafana Loki</span>
+                    <span class="integration-tag">Splunk HEC</span>
+                    <span class="integration-tag">Datadog</span>
+                    <span class="integration-tag muted">Telegram (незабаром)</span>
+                </div>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 2rem;">
+            <p style="color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem;">Приклади input-конфігів</p>
+            <div style="display:flex;flex-direction:column;gap:0.5rem;align-items:center;">
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: file &nbsp;·&nbsp; path: /var/log/nginx/access.log</code>
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: syslog &nbsp;·&nbsp; addr: udp://0.0.0.0:5514 &nbsp;·&nbsp; без спільного тому</code>
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: http &nbsp;·&nbsp; protocol: plain|cloudflare|firehose|pubsub|loki|otlp|azure|splunk|ndjson</code>
+            </div>
+            <p style="color: var(--text-muted); font-size: 0.75rem; max-width: 560px; margin: 0.75rem auto 0;">
+                <code>protocol: loki</code> і <code>protocol: splunk</code> тут означають <em>прийом</em> логів, вже
+                оформлених у форматі Loki push API чи Splunk HEC — це не пов'язано з Grafana Loki / Splunk HEC
+                у списку Outputs вище, які, навпаки, <em>надсилають</em> події на ці платформи.
+            </p>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Cookbook</span>
+            <h2 class="section-title">40+ рецептів. Скопіюй. Заповни. Запусти.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" /><path d="M4 7c-1.1 0 -2 .9 -2 2v9c0 1.1 .9 2 2 2h14" /></svg></span> Скопіюй, заповни, запусти</h3>
+                <p><strong>40+ готових рецептів</strong> у <strong>14 категоріях</strong>: усі підтримувані сервери (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed), усі виконавці (Cloudflare, MikroTik, OpenWrt, OPNsense), усі observability-приймачі (Loki, Splunk, Datadog), CMS-специфічні probe-шляхи (WordPress, Laravel, Drupal) та інше. Індекс у <a href="https://github.com/mr-addams/arxsentinel/blob/main/cookbook/CookBook.uk.md" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);"><code>cookbook/CookBook.uk.md</code></a> — кожен рядок веде просто до робочого <code>*.yaml</code>.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 3h9a2 2 0 0 1 2 2v9m-1.165 3.849a2 2 0 0 1 -.835 .151h-12a2 2 0 0 1 -2 -2v-12c0 -.337 .082 -.656 .226 -.935" /><path d="M4.219 7.729a2 2 0 0 0 -.219 .895" /><path d="M5 17l3.5 -4.5" /></svg></span> Docker і Kubernetes у комплекті</h3>
+                <p><strong>5 категорій рецептів</strong> постачаються з повним Docker Compose-стеком — <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/cloudflare" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">Cloudflare</a>, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/nginx-executor" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">nginx executor</a>, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/syslog" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">syslog</a>, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/mikrotik" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">MikroTik</a>, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/fail2ban" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">Fail2Ban</a> — плюс окрема директорія <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/kubernetes" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">Kubernetes</a>. Не лише конфіг ArxSentinel, а весь референсний деплой.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11" /></svg></span> Розподілені топології, а не лише один вузол</h3>
+                <p><strong>3 повноцінних робочих приклади multi-node Distributed NCS</strong> у <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);"><code>cookbook/distributed-ncs/</code></a> — базовий, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs/aggregation" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">edge aggregation</a> та <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs/mixed-routing" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">mixed routing</a>. Ті самі топології, що описані в гайді вище, <strong>перевірені реальними multi-container CI-прогонами під час кожного merge</strong>.</p>
             </div>
         </div>
     </section>
@@ -887,215 +1232,7 @@ service arxsentinel start</span></pre>
         </div>
     </section>
 
-        <section class="whitelist-section">
-        <div class="section-header">
-            <span class="section-tag">WAF</span>
-            <h2 class="section-title">Блокуй відомі атаки до детекторів</h2>
-        </div>
-        <div class="whitelist-grid">
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">✓</span> pass — явний білий список</h3>
-                <p>Правила обчислюються першими. Правило pass, що збіглося, обриває весь пайплайн — healthcheck'и, внутрішні IP та довірені боти пропускаються миттєво, без зайвих перевірок.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">⊘</span> drop — жорстке блокування</h3>
-                <p>SQLi, path traversal, сигнатури сканерів — запити, що збіглися, відсікаються на вході і не доходять до скорера. Стан не виділяється, детектори не обробляють заздалегідь поганий трафік.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">◈</span> tag — маркування та продовження</h3>
-                <p>Підозрілий, але неоднозначний трафік отримує мітку та додавання до рахунку, потім іде далі у pipeline. Комбінуй WAF-сигнали з поведінковими детекторами для корельованих рішень про бан.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">⚙</span> Власні поля</h3>
-                <p>Розширяй простір правил власними полями <code>http.*</code> — дві зміни в Go, без перекомпіляції ядра. Додай версію TLS, довжину тіла запиту або будь-яке поле з твого джерела логів.</p>
-            </div>
-        </div>
-    </section>
-
-        <section class="whitelist-section">
-        <div class="section-header">
-            <span class="section-tag">Примусові дії</span>
-            <h2 class="section-title">Блокування на потрібному рівні</h2>
-        </div>
-        <div class="whitelist-grid">
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6.657 18c-2.572 0 -4.657 -2.007 -4.657 -4.483c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99c1.913 0 3.464 1.56 3.464 3.486c0 1.927 -1.551 3.487 -3.465 3.487h-11.878" /></svg></span> Cloudflare WAF</h3>
-                <p>Додання IP загроз до Cloudflare IP List та блокування на краю мережі — без iptables, без host firewall. Пакетні операції, асинхронний polling, автоматичне TTL-закінчення та cross-instance dedup.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> nginx</h3>
-                <p>Запис заблокованих IP у простий blocklist-файл з автоматичним TTL-закінченням та атомарним записом. arxsentinel лише пише файл; ви підключаєте його до nginx як вам зручно. Опціональна reload-команда.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12l-8 -8l8 -2l2 8z" /><path d="M12 12l4 8l4 -8z" /><path d="M12 12l8 -4l-2 -8z" /><path d="M12 12l-4 -8l-4 8z" /></svg></span> MikroTik RouterOS v7</h3>
-                <p>Керування firewall address-list RouterOS через REST API. TTL-базований auto-unban, безпечне видалення лише власних записів arxsentinel, працює на CHR та ARM-маршрутизаторах.</p>
-            </div>
-        </div>
-    </section>
-
-<section class="whitelist-section">
-        <div class="section-header">
-            <span class="section-tag">Можливості v2.2.3</span>
-            <h2 class="section-title">Один процес. Будь-яка топологія.</h2>
-        </div>
-        <div class="whitelist-grid">
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M17 3l4 4l-14 14l-4 -4z" /><path d="M16 7l-1.5 -1.5" /><path d="M13 10l-1.5 -1.5" /><path d="M10 13l-1.5 -1.5" /><path d="M7 16l-1.5 -1.5" /></svg></span> Довільний формат логів</h3>
-                <p>Немає підходящого профілю? Опишіть власний regex з іменованими групами або переключіться на JSON-парсинг — без перекомпіляції. Будь-який формат, що захоплює IP, timestamp, метод, шлях, статус і байти, підключається до повного пайплайну виявлення.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" /><path d="M4 7c-1.1 0 -2 .9 -2 2v9c0 1.1 .9 2 2 2h14" /></svg></span> Мультипотік та pipeline-маршрутизація</h3>
-                <p>Стеження за кількома файлами логу в одному процесі. Всередині кожного потоку — незалежні pipeline з власними детекторами, джерелами та sink'ами. Спільний IP-стан через <code>tracker_group</code> для корельованого аналізу кількох логів.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> Профілі серверів</h3>
-                <p>Готові профілі для популярних серверів. Перевизначайте позиції полів, формати дат та правила роздільників для кожного джерела логу без зміни ядра.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M22 12.54c-1.804 -.345 -2.701 -1.08 -3.523 -2.94c-.487 .696 -1.54 1.4 -2.477 1.4h-5c-2.21 0 -4 1.79 -4 4v1.06c0 1.062 .107 1.84 .806 2.5c1.828 1.735 4.494 1.44 6.194 1.44h8c1.1 0 2 -.9 2 -2v-2c0 -1.1 -.9 -2 -2 -2h-.5" /><path d="M6 12h1" /><path d="M10 12h1" /><path d="M6 8h1" /><path d="M10 8h1" /><path d="M14 8h1" /><path d="M10 4h1" /><path d="M14 4h1" /><path d="M18.5 15.5m-0.5 0a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0" /></svg></span> Docker Compose sidecar</h3>
-                <p>Розгортається поруч із будь-яким контейнеризованим HTTP-сервером через спільний том логів — без змін у контейнері застосунку. Готові <code>docker-compose.yml</code> та конфіг у <code>deploy/examples/docker/</code>. Метрики Prometheus доступні на <code>:9117</code>.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg></span> Kubernetes DaemonSet</h3>
-                <p>Один pod на вузол читає host-логи через <code>hostPath</code>. Включено Helm-чарт з довідкою по values та інтеграцією Prometheus Operator. Підтримується також sidecar-топологія для managed-кластерів без доступу до host-логів.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l5 5l10 -10" /></svg></span> Offline config validation</h3>
-                <p>Запустіть `arxsentinel validate` щоб перевірити весь конфіг перед деплоєм. Topology-aware валідатор моделює реальний потік даних та ловить зламаний дріт, використовуючи статичні plugin manifests — без live трафіку.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Pluggable queue backends</h3>
-                <p>Буферизація подій executor через in-memory, file-based (bbolt), Redis — або <strong>transport</strong>-чергу, розтягнуту між машинами через шифровану мережу вузлів. Виберіть per executor для bare-metal, single-host, Kubernetes або мультивузлових схем.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Named Channel Switch</h3>
-                <p>Маршрутизація подій загроз між незалежними pipelines за назвою — один pipeline може детектувати, інший примусити, повністю decoupled. А тепер та сама іменована черга може закінчуватися на <strong>іншій машині</strong>: Distributed NCS.</p>
-            </div>
-        </div>
-    </section>
-
-    <section class="whitelist-section">
-        <div class="section-header">
-            <span class="section-tag" style="color: var(--accent-green); border-color: rgba(0,255,136,0.35); background: rgba(0,255,136,0.08);">NEW · Distributed NCS</span>
-            <h2 class="section-title">Збирай будь-де. Детектуй централізовано. Бань на межі.</h2>
-            <p style="color: var(--text-muted); max-width: 720px; margin: 0 auto;">
-                Той самий бінарник стає <strong>колектором</strong>, <strong>детектором</strong> чи <strong>респондером</strong> —
-                лише через конфіг, з'єднуючись вбудованою шифрованою event-мережею.
-                Єдиний інструмент у своєму класі з вбудованим у двигун транспортом подій безпеки між вузлами:
-                без брокера повідомлень, без log shipper'а, без ієрархії агент-сервер, без VPN.
-            </p>
-        </div>
-        <div class="pipeline-box" style="margin-bottom: 2rem;">
-            <div class="box-scanline"></div>
-            <div class="pipeline-flow">
-                <div class="flow-line"></div>
-                <div class="pipeline-node">Колектори — Pi · VPS · NAS · філія (по 12 МБ, лише парсинг)</div>
-                <div class="pipeline-node">QUIC / TLS 1.3 · Ed25519-ідентичність вузла · TOFU-пінінг (як у SSH)</div>
-                <div class="pipeline-node">Вузол-детектор — 8 детекторів · WAF · whitelist · один спільний IP-score по всіх джерелах</div>
-                <div class="pipeline-node">Скоровані вердикти маршрутизуються далі — per pipeline, на різні вузли</div>
-                <div class="pipeline-node final">Респондери → роутер MikroTik · nginx blocklist · Cloudflare WAF · потік у SIEM (сирий + скорований JSON)</div>
-            </div>
-        </div>
-        <div class="whitelist-grid">
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /><path d="M12 11m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M12 12l0 2.5" /></svg></span> Шифрована мережа з коробки</h3>
-                <p>QUIC на одному UDP-порту, завжди TLS 1.3, Ed25519-ключі вузла генеруються при першому старті, TOFU-пінінг fingerprints як у SSH. Взаємна автентифікація до першої події — чужинець на вашому порту не отримає нічого.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M18 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M7.5 7.5l3 7" /><path d="M16.5 7.5l-3 7" /><path d="M8 6h8" /></svg></span> Кореляція між сервісами</h3>
-                <p>Кожен колектор прокидає в один спільний per-IP score. Атакувальник, що промацує веб-шар, API та auth-сервіс, накопичує сумарний score на детекторі — і перетинає поріг бану раніше, ніж його впіймав би будь-який сервіс поодинці.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" /><path d="M4 10h16" /><path d="M10 4v16" /></svg></span> Сирі чи скоровані — обидва потоки</h3>
-                <p>Прокидайте сирі розпарсені записи всередину для центральної детекції, скоровані вердикти назовні для enforcement — або обидва потоки у ваш SIEM. Префільтруйте на edge — і нехай рахунок за інжест визначають загрози, а не обсяг трафіку.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 12l2 2l4 -4" /><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> Доведено CI, а не обіцяно</h3>
-                <p>Кожна документована топологія — агрегація edge-флоту, змішана маршрутизація на nginx + MikroTik респондери — проганяється як справжній мультиконтейнерний тест при кожному merge. Діаграми в доках виконувані.</p>
-            </div>
-        </div>
-        <div style="text-align: center; margin-top: 2rem;">
-            <a href="https://github.com/mr-addams/arxsentinel/blob/main/docs/DISTRIBUTED.uk.md" target="_blank" rel="noopener noreferrer" class="btn btn-primary">Посібник з розподіленої обробки</a>
-            <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="margin-left: 0.75rem;">Готові топології</a>
-        </div>
-    </section>
-
-    <section class="whitelist-section">
-        <div class="section-header">
-            <span class="section-tag">Механізми захисту</span>
-            <h2 class="section-title">Легітимний трафік ніколи не блокується</h2>
-        </div>
-        <div class="whitelist-grid">
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 21l6 0" /><path d="M9 21l0 -9" /><path d="M8 5l2 0" /><path d="M7 7l4 0" /><path d="M14 5a2 2 0 0 1 2 2v3l-3.6 5.4a1 1 0 0 0 .6 1.6h3a1 1 0 0 0 .894 -1.447l-3.528 -7.053" /><path d="M9 5a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v5h-4z" /></svg></span> Автоматична верифікація</h3>
-                <p>Googlebot, Bingbot, Яндекс, DuckDuckBot, GPTBot та ще 6 родин верифікуються через зворотний + прямий DNS. Легітимні краулери ніколи не отримують очків. Фейкові боти отримують штраф. Надійні краулери можна матчити за User-Agent лише (`ua_only`, без DNS) та надати per-bot detector exemptions (`exempt_detectors`) щоб легітимна автоматизація ніколи не була покарана.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" /><path d="M15 19l2 2l4 -4" /></svg></span> Кастомні виключення</h3>
-                <p>Додайте IP офісу, VPN-підмережі (CIDR), сервіси моніторингу, SEO-інструменти за підрядком User-Agent або URL-шляху. Зміни застосовуються по SIGHUP.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg></span> Гаряче перезавантаження</h3>
-                <p>Усі зміни конфігурації — білі списки, ваги детекторів, пороги — застосовуються миттєво по SIGHUP. Без перезапуску. IP-стан і DNS-кеш зберігаються.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg></span> Підтримка Cloudflare</h3>
-                <p>Детектори завжди оцінюють реального зловмисника — ніколи Cloudflare або балансувальник навантаження. Підтримує CF-Connecting-IP, ланцюжки X-Forwarded-For і CIDR довірених проксі з коробки.</p>
-            </div>
-        </div>
-    </section>
-
-    <section class="integrations-section">
-        <div class="section-header">
-            <span class="section-tag">Універсальний I/O</span>
-            <h2 class="section-title">Працює з вашим стеком</h2>
-            <p style="color: var(--text-muted); max-width: 600px; margin: 0 auto;">
-                Читає з будь-якого джерела логів. Записує загрози в будь-який приймач.
-                Fail2Ban залишається варіантом за замовчуванням — тепер одним із багатьох.
-            </p>
-        </div>
-        <div class="integrations-grid">
-            <div class="integrations-col">
-                <h3 style="color: var(--accent-blue); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Джерела</h3>
-                <div class="integrations-list">
-                    <span class="integration-tag">nginx</span>
-                    <span class="integration-tag">Apache</span>
-                    <span class="integration-tag">Traefik</span>
-                    <span class="integration-tag">Caddy</span>
-                    <span class="integration-tag">HAProxy</span>
-                    <span class="integration-tag">LiteSpeed</span>
-                    <span class="integration-tag">будь-який лог-файл</span>
-                    <span class="integration-tag">stdin pipe</span>
-                    <span class="integration-tag">syslog-приймач</span>
-                    <span class="integration-tag">HTTP (push/pull)</span>
-                </div>
-            </div>
-            <div class="integrations-col">
-                <h3 style="color: var(--accent-green); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Приймачі</h3>
-                <div class="integrations-list">
-                    <span class="integration-tag">Fail2Ban</span>
-                    <span class="integration-tag">Cloudflare WAF</span>
-                    <span class="integration-tag">MikroTik RouterOS</span>
-                    <span class="integration-tag">nginx blocklist</span>
-                    <span class="integration-tag">exec+JSON</span>
-                    <span class="integration-tag">stdout&nbsp;JSON</span>
-                    <span class="integration-tag muted">Grafana Loki (незабаром)</span>
-                    <span class="integration-tag muted">Splunk HEC (незабаром)</span>
-                    <span class="integration-tag muted">Datadog (незабаром)</span>
-                    <span class="integration-tag muted">Telegram (незабаром)</span>
-                </div>
-            </div>
-        </div>
-        <div style="text-align: center; margin-top: 2rem;">
-            <div style="display:flex;flex-direction:column;gap:0.5rem;align-items:center;">
-                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: file &nbsp;·&nbsp; path: /var/log/nginx/access.log</code>
-                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: syslog &nbsp;·&nbsp; addr: udp://0.0.0.0:5514 &nbsp;·&nbsp; без спільного тому</code>
-                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: http &nbsp;·&nbsp; protocol: plain|cloudflare|firehose|pubsub|loki|otlp|azure|splunk|ndjson</code>
-            </div>
-        </div>
-    </section>
-
-    <section class="roadmap-section">
+        <section class="roadmap-section">
         <div class="section-header">
             <span class="section-tag" style="color: var(--accent-purple); border-color: rgba(189,0,255,0.3); background: rgba(189,0,255,0.08);">Дорожна карта</span>
             <h2 class="section-title">Що з'явиться у v2.x</h2>
@@ -1103,13 +1240,18 @@ service arxsentinel start</span></pre>
         <div class="roadmap-grid">
         <div class="roadmap-card">
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-green);border:1px solid rgba(0,255,136,0.35);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">NEXT</span>
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 18h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v7.5" /><path d="M3 6l9 6l9 -6" /><path d="M15 18h6" /><path d="M18 15l3 3l-3 3" /></svg></span> Alert sinks</h3>
-                <p>Відправлення загроз у Telegram, Slack та PagerDuty — з вбудованою дедубліцією та rate-limiting, щоб спалах ніколи не затопив канал.</p>
+                <h3><span style="color: var(--accent-purple)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> AWS WAF executor</h3>
+                <p>Записування IP загроз прямо в набори IP-правил AWS WAF. Інтегрується з існуючими групами WAF — не потребує Lambda або кастомної інфраструктури.</p>
             </div>
             <div class="roadmap-card">
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
-                <h3><span style="color: var(--accent-purple)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> AWS WAF executor</h3>
-                <p>Записування IP загроз прямо в набори IP-правил AWS WAF. Інтегрується з існуючими групами WAF — не потребує Lambda або кастомної інфраструктури.</p>
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 4l-2.5 2.5" /><path d="M13.5 10.5m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 12l-8.5 8.5" /><path d="M16 16l-4 4" /><path d="M20 4l-3.5 -1l-1 3.5l-1.5 1.5l3 3l1.5 -1.5l3.5 -1z" /></svg></span> SSH-джерело + детектори</h3>
+                <p>Парсинг auth-логів <code>sshd</code> (syslog/journald) і скоринг brute-force / credential-stuffing патернів виділеними детекторами — той самий pipeline скорингу та executor'ів, що вже використовується для HTTP.</p>
+            </div>
+            <div class="roadmap-card">
+                <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 18h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v7.5" /><path d="M3 6l9 6l9 -6" /><path d="M15 18h6" /><path d="M18 15l3 3l-3 3" /></svg></span> Alert sinks</h3>
+                <p>Відправлення загроз у Telegram, Slack та PagerDuty — з вбудованою дедубліцією та rate-limiting, щоб спалах ніколи не затопив канал.</p>
             </div>
         </div>
     </section>
@@ -1124,6 +1266,9 @@ service arxsentinel start</span></pre>
         </ul>
         <div class="footer-credits">
             Автор: <a href="https://github.com/mr-addams" target="_blank" rel="noopener noreferrer">mr.Addams</a>
+        </div>
+        <div class="footer-credits" style="margin-top:0.4rem;">
+            Побудовано на <a href="https://github.com/mr-addams/arx-core" target="_blank" rel="noopener noreferrer">Arx-Core</a> — фундаменті транспорту, черг і rule-engine
         </div>
         <div class="footer-credits" style="margin-top:0.4rem;">
             Дані blocklist: <a href="https://github.com/mitchellkrogza" target="_blank" rel="noopener noreferrer">Mitchell Krog (@mitchellkrogza)</a>

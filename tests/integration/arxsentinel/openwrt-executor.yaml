@@ -1,0 +1,64 @@
+# ====== tests/integration/arxsentinel/openwrt-executor.yaml ======
+#   Sentinel config for the OpenWrt executor integration test.
+#
+#   Pipeline:
+#     nginx access.log → parser → scoring → output (fail2ban + sentinel-threat)
+#     → openwrt executor → ubus-api-mock (POST /ubus, port 8094)
+#
+#   Mirrors tests/integration/arxsentinel/ros-executor.yaml in shape, but
+#   targets the openwrt executor (UCI edits on a NAMED firewall ipset
+#   section, firewall.<ipset_name>=ipset, via rpcd + rc.init reload — see
+#   pkg/executorplugins/openwrt/README.md Prerequisites). No sentinel_id
+#   field — it was removed from the openwrt Config in the Guard fix for
+#   Flow 095 (see pkg/executorplugins/openwrt/config.go).
+
+general:
+  pid_file: /tmp/arxsentinel-openwrt-executor.pid
+  tail_retry_interval: 2s
+
+parser:
+  log_format: combined
+
+scoring:
+  alert_threshold: 50
+  ban_threshold: 51
+  observation_window: 60s
+
+output:
+  operational_log: logs/threats/sentinel-openwrt-executor.log
+
+logging:
+  console_color: false
+
+streams:
+  - name: openwrt-test
+    inputs:
+      - type: file
+        path: logs/nginx/access.log
+    outputs:
+      - type: file
+        path: logs/threats/openwrt-executor.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: openwrt-ban-queue
+
+executors:
+  - name: openwrt-ban
+    type: openwrt
+    sources:
+      - name: openwrt-ban-queue
+    config:
+      host: localhost
+      port: 8094
+      scheme: http
+      username: root
+      password: test
+      ipset_name: arxsentinel_blocklist
+      ttl: 1h
+      min_level: THREAT
+      batch_size: 1
+      flush_interval: 500ms
+
+blocklist:
+  storage: ""
+  lists: []

@@ -1,17 +1,17 @@
 // ========================== Transport bootstrap — Distributed NCS (Flow 093) =============
-//   ЧТО ЗДЕСЬ:
-//     - startTransport()                    — transport.New + transportbridge.SetDefault + Run goroutine
-//     - preRegisterSinkQueues()              — F2: pre-registers queue: on sentinel-threat outputs
-//     - preRegisterInboundTransportQueues()  — F3: pre-registers queue: on sentinel inputs
-//     - sentinelQueueName()                  — parses "ncs://<name>" out of InputConfig.Addr
 //
-//   Both pre-register functions must run AFTER startTransport (so
-//   transportbridge.GetDefault has a live Transport for queue.type=transport
-//   entries) and BEFORE adaptConfigToStreams starts stream goroutines (so the
-//   pre-registered backend wins the fan-in race against the pipeline's own
-//   AttachWriter/AttachReader call) — same ordering rule as
-//   preRegisterExecutorQueues (executors.go).
-
+//	CONTENTS:
+//	  - startTransport()                    — transport.New + transportbridge.SetDefault + Run goroutine
+//	  - preRegisterSinkQueues()              — F2: pre-registers queue: on sentinel-threat outputs
+//	  - preRegisterInboundTransportQueues()  — F3: pre-registers queue: on sentinel inputs
+//	  - sentinelQueueName()                  — parses "ncs://<name>" out of InputConfig.Addr
+//
+//	Both pre-register functions must run AFTER startTransport (so
+//	transportbridge.GetDefault has a live Transport for queue.type=transport
+//	entries) and BEFORE adaptConfigToStreams starts stream goroutines (so the
+//	pre-registered backend wins the fan-in race against the pipeline's own
+//	AttachWriter/AttachReader call) — same ordering rule as
+//	preRegisterExecutorQueues (executors.go).
 package main
 
 import (

@@ -1,21 +1,21 @@
 // ========================== detector module =============================================
-//   Type aliases and ScoreAccess for the detector layer.
-//   Public contracts (IPView, DetectResult, Detector) are defined in pkg/plugin/detector.go
-//   and re-exported here as type aliases so all internal packages compile unchanged.
 //
-//   WHAT IS HERE:
-//     - IPView, DetectResult, Detector — type aliases for pkg/plugin equivalents
-//     - ScoreAccess — extends plugin.IPView with score mutation (internal only)
+//	Type aliases and ScoreAccess for the detector layer.
+//	Public contracts (IPView, DetectResult, Detector) are defined in pkg/plugin/detector.go
+//	and re-exported here as type aliases so all internal packages compile unchanged.
 //
-//   WHAT IS NOT HERE:
-//     - Detector implementations (probe.go, rate.go, useragent.go, ...)
-//     - Score aggregation (scorer/)
+//	WHAT IS HERE:
+//	  - IPView, DetectResult, Detector — type aliases for pkg/plugin equivalents
+//	  - ScoreAccess — extends plugin.IPView with score mutation (internal only)
 //
-//   LAYER ISOLATION:
-//     ScoreAccess stays in internal — it exposes scorer internals not relevant
-//     to external detector authors.
-//     *state.IPState implements ScoreAccess implicitly (Go duck typing).
-
+//	WHAT IS NOT HERE:
+//	  - Detector implementations (probe.go, rate.go, useragent.go, ...)
+//	  - Score aggregation (scorer/)
+//
+//	LAYER ISOLATION:
+//	  ScoreAccess stays in internal — it exposes scorer internals not relevant
+//	  to external detector authors.
+//	  *state.IPState implements ScoreAccess implicitly (Go duck typing).
 package detector
 
 import (

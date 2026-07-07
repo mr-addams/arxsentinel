@@ -1,32 +1,32 @@
 // ========================== Module state/tracker ========================================
-//   In-memory storage of state per IP address.
-//   Foundation for all detectors — they read state through the detector.IPView interface.
 //
-//   WHAT IS HERE:
-//     - IPState — state of a single IP: counters, ring buffer of paths,
-//       sliding-window rate, accumulated score
-//     - Tracker — thread-safe storage with LRU eviction at max_tracked_ips
-//     - GC — background goroutine cleaning up inactive IPs on a timer (Task 2.2)
+//	In-memory storage of state per IP address.
+//	Foundation for all detectors — they read state through the detector.IPView interface.
 //
-//   WHAT IS NOT HERE:
-//     - Path classification (page/asset) — done by detectors themselves (Flow #4)
-//     - Detection logic and scoring — core/detector, core/scorer
+//	WHAT IS HERE:
+//	  - IPState — state of a single IP: counters, ring buffer of paths,
+//	    sliding-window rate, accumulated score
+//	  - Tracker — thread-safe storage with LRU eviction at max_tracked_ips
+//	  - GC — background goroutine cleaning up inactive IPs on a timer (Task 2.2)
 //
-//   IMPLEMENTS INTERFACES:
-//     *IPState → detector.IPView (state read by detectors)
-//     *IPState → detector.ScoreAccess (score read/write by scorer)
-//     Explicit import of detector/ is not needed — Go duck typing.
+//	WHAT IS NOT HERE:
+//	  - Path classification (page/asset) — done by detectors themselves (Flow #4)
+//	  - Detection logic and scoring — core/detector, core/scorer
 //
-//   THREAD SAFETY:
-//     Update() and gc() are protected by write lock.
-//     RunGC() runs in a separate goroutine, operates via ticker.
-//     Caller after Update() holds *IPState — GC will not delete an active IP
-//     (LastSeen is updated, retention threshold not crossed).
+//	IMPLEMENTS INTERFACES:
+//	  *IPState → detector.IPView (state read by detectors)
+//	  *IPState → detector.ScoreAccess (score read/write by scorer)
+//	  Explicit import of detector/ is not needed — Go duck typing.
 //
-//   MEMORY (estimate for max_tracked_ips=100k):
-//     IPState ≈ 1.2 KB (struct) + paths ≈ 64×20B = 1.3 KB → ~260 MB for 100k IPs.
-//     Acceptable for a security daemon. If memory is tight — reduce pathBufSize.
-
+//	THREAD SAFETY:
+//	  Update() and gc() are protected by write lock.
+//	  RunGC() runs in a separate goroutine, operates via ticker.
+//	  Caller after Update() holds *IPState — GC will not delete an active IP
+//	  (LastSeen is updated, retention threshold not crossed).
+//
+//	MEMORY (estimate for max_tracked_ips=100k):
+//	  IPState ≈ 1.2 KB (struct) + paths ≈ 64×20B = 1.3 KB → ~260 MB for 100k IPs.
+//	  Acceptable for a security daemon. If memory is tight — reduce pathBufSize.
 package state
 
 import (
@@ -36,8 +36,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arx-core/pkg/parser"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 // pathBufSize — depth of the path ring buffer per IP.

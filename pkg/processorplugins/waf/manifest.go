@@ -1,17 +1,17 @@
 // ========================== pkg/processor/waf — Manifest ===================================
-//   Plugin identity and data contract for the WAF processor (Flow 001, Group H).
 //
-//   Manifest declares the `http.*` field namespace produced by this plugin's resolver
-//   (DECISION D7, D8). Every FieldDecl carries a Type (per D8.1) so the rule engine's
-//   scheme knows how to type-check expressions written against these fields.
+//	Plugin identity and data contract for the WAF processor (Flow 001, Group H).
 //
-//   Name convention: FieldDecl.Name is the unqualified name within the "http"
-//   namespace. D7 reserves the dot for the namespace separator only — sub-paths
-//   like uri.path would be flattened to "uri_path" here (or aliased to a single
-//   name like "path"). The Catalog's validName gate rejects dots inside the name,
-//   so flattening is enforced at the Manifest level. See the comment on
-//   resolver.go for the mapping back to LogEntry fields.
-
+//	Manifest declares the `http.*` field namespace produced by this plugin's resolver
+//	(DECISION D7, D8). Every FieldDecl carries a Type (per D8.1) so the rule engine's
+//	scheme knows how to type-check expressions written against these fields.
+//
+//	Name convention: FieldDecl.Name is the unqualified name within the "http"
+//	namespace. D7 reserves the dot for the namespace separator only — sub-paths
+//	like uri.path would be flattened to "uri_path" here (or aliased to a single
+//	name like "path"). The Catalog's validName gate rejects dots inside the name,
+//	so flattening is enforced at the Manifest level. See the comment on
+//	resolver.go for the mapping back to LogEntry fields.
 package waf
 
 import "github.com/mr-addams/arx-core/pkg/plugin"

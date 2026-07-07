@@ -31,7 +31,10 @@ Sources → Processors → Sinks → Executors
 - [HTTP-джерело (push/pull приймач логів)](#http)
 - [Cloudflare Executor (автоматичне блокування IP)](#cloudflare)
 - [MikroTik Executor (address-list на RouterOS)](#mikrotik)
+- [OpenWrt Executor (ubus/UCI firewall)](#openwrt)
+- [OPNsense Executor (REST API alias)](#opnsense)
 - [Nginx Executor (файл блокування + перезавантаження)](#nginx-executor)
+- [Обсервабільність (SIEM/log forwarders)](#обсервабільність)
 - [Інфраструктура: Конфігурації серверів](#server-configs)
 - [Інфраструктура: Зворотній проксі / Real-IP](#reverse-proxy)
 - [Інфраструктура: Kubernetes](#kubernetes)
@@ -167,6 +170,28 @@ ArxSentinel надсилає події THREAT до MikroTik RouterOS REST API �
 
 ---
 
+## OpenWrt
+
+ArxSentinel надсилає події THREAT до ubus/UCI firewall роутера OpenWrt для додавання IP до іменованого ipset.
+Потрібні `uhttpd-mod-ubus`, core-плагіни `rpcd` (`uci`, `rc`) та заздалегідь оголошена секція ipset в UCI.
+
+| Рецепт | Опис | Файл |
+|--------|------|------|
+| nginx basic | Один сайт nginx + OpenWrt ipset | [openwrt/nginx-basic.yaml](openwrt/nginx-basic.yaml) |
+
+---
+
+## OPNsense
+
+ArxSentinel надсилає події THREAT до REST API фаєрвола OPNsense для додавання IP до заздалегідь оголошеного аліасу.
+Потрібні аліас типу `Host`, `Network` або `External` (Firewall → Aliases) та пара API-ключів, згенерована у System → Access → Users → API keys.
+
+| Рецепт | Опис | Файл |
+|--------|------|------|
+| nginx basic | Один сайт nginx + OPNsense alias | [opnsense/nginx-basic.yaml](opnsense/nginx-basic.yaml) |
+
+---
+
 ## Nginx Executor
 
 ArxSentinel записує IP загроз у файл блокування сумісний з nginx та ініціює перезавантаження.
@@ -182,6 +207,22 @@ ArxSentinel записує IP загроз у файл блокування су
 |------|-------------|
 | [nginx-executor/docker/config.yaml](nginx-executor/docker/config.yaml) | Конфігурація ArxSentinel для Docker + nginx executor |
 | [nginx-executor/docker/docker-compose.yml](nginx-executor/docker/docker-compose.yml) | Compose stack: arxsentinel з nginx blocklist reload |
+
+---
+
+## Обсервабільність
+
+ArxSentinel пересилає події загроз до зовнішньої платформи логування/SIEM
+(Grafana Loki, Splunk HEC або Datadog Logs API) замість виконання будь-яких
+блокувальних дій. Використовуйте ці sink'и, коли потрібна централізована
+агрегація логів, довгострокове зберігання, алертинг або кореляція з іншими
+джерелами в наявному стеці обсервабільності.
+
+| Рецепт | Опис | Файл |
+|--------|------|------|
+| Loki basic | Один сайт nginx + Grafana Loki Push API | [observability/loki-basic.yaml](observability/loki-basic.yaml) |
+| Splunk basic | Один сайт nginx + Splunk HEC | [observability/splunk-basic.yaml](observability/splunk-basic.yaml) |
+| Datadog basic | Один сайт nginx + Datadog Logs API v2 | [observability/datadog-basic.yaml](observability/datadog-basic.yaml) |
 
 ---
 

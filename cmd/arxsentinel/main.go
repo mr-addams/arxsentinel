@@ -1,55 +1,56 @@
 // ========================== Entry point — arxsentinel ====================================
-//   Инициализация компонентов, сборка pipeline, запуск демона.
 //
-//   ЧТО ЗДЕСЬ:
-//     - main()                          — загрузка конфига, init логгера, metrics-сервер, запуск стримов
+//	Component initialization, pipeline assembly, daemon startup.
 //
-//   ДРУГИЕ ФАЙЛЫ ПАКЕТА:
-//     - pipeline.go                     — SharedResources (singleton-контейнер)
-//     - processor_security.go           — securityProcessor.Process (verbatim port of processLine)
-//     - processor_factory.go            — securityFactory implements runtime.LineProcessorFactory + runtime.LineProcessor
-//     - runtime_adapter.go              — adaptConfigToStreams: config.Config → []runtime.StreamSpec
-//     - builders.go                     — buildSources, buildSinks, buildParserForInput, buildPipelineDetectors
-//     - executors.go                    — startExecutors, preRegisterExecutorQueues
-//     - helpers.go                      — вспомогательные функции: parseFlag*, PID, sdNotify, metricsHandler
-//     - validate.go                     — validateConfig (валидация pipeline wiring)
-//     - cleanup.go                      — подкоманда cleanup
-//     - license.go                      — подкоманда license
+//	WHAT IS HERE:
+//	  - main()                          — config load, logger init, metrics server, stream startup
 //
-//   RUNTIME (Flow 081 Phase 3):
-//     Вся stream-оркестрация (fan-in / dispatch / drain / SIGHUP-reload) вынесена
-//     в arx-core/pkg/runtime. main.go теперь только собирает StreamSpec'и через
-//     runtime_adapter.adaptConfigToStreams и запускает coreruntime.Run на каждый
-//     стрим, передавая securityFactory и reloadCh. См. ADR-004.
+//	OTHER FILES IN THE PACKAGE:
+//	  - pipeline.go                     — SharedResources (singleton container)
+//	  - processor_security.go           — securityProcessor.Process (verbatim port of processLine)
+//	  - processor_factory.go            — securityFactory implements runtime.LineProcessorFactory + runtime.LineProcessor
+//	  - runtime_adapter.go              — adaptConfigToStreams: config.Config → []runtime.StreamSpec
+//	  - builders.go                     — buildSources, buildSinks, buildParserForInput, buildPipelineDetectors
+//	  - executors.go                    — startExecutors, preRegisterExecutorQueues
+//	  - helpers.go                      — helper functions: parseFlag*, PID, sdNotify, metricsHandler
+//	  - validate.go                     — validateConfig (pipeline wiring validation)
+//	  - cleanup.go                      — cleanup subcommand
+//	  - license.go                      — license subcommand
 //
-//   STARTUP SEQUENCE (порядок обязателен — нарушения ведут к panic или потере данных):
-//     0. signal.NotifyContext()           — САМАЯ ПЕРВАЯ строка main(), до flag.Parse()/
-//        LoadConfig()/utils.Init(). SIGTERM, пришедший ДО регистрации обработчика, убивает
-//        процесс через default OS-поведение (нет graceful-пути, нет 0 exit code) — Flow 093
-//        Group H поймал это (TestDistributedNCS_CleanShutdown). Регистрация первой строкой
-//        сокращает уязвимое окно до минимума, а не устраняет его целиком (signal.Notify
-//        физически не может сработать раньше первой исполняемой инструкции процесса).
-//     1. config.LoadConfig()              — все компоненты зависят от cfg
-//     2. utils.Init()                     — логгер должен быть готов до любого Log()
-//     3. writePID()                       — после логгера, чтобы ошибки попали в лог
-//     4. metrics.Init() + srv.ListenAndServe() — до стримов; scraper получает непрерывные серии
-//     5. blocklist.NewManager()           — до buildDetectors(); детекторы зависят от него
-//     6. chaincheck.NewChecker()          — до стримов; проверяет каждую запись лога с начала
-//     7. coreruntime.Run() × N            — последним; все shared-ресурсы должны существовать
+//	RUNTIME (Flow 081 Phase 3):
+//	  All stream orchestration (fan-in / dispatch / drain / SIGHUP-reload) has been
+//	  moved to arx-core/pkg/runtime. main.go now only assembles StreamSpecs via
+//	  runtime_adapter.adaptConfigToStreams and runs coreruntime.Run on each stream,
+//	  passing securityFactory and reloadCh. See ADR-004.
 //
-//   SHUTDOWN SEQUENCE (SIGTERM/SIGINT → ctx.Done()):
-//     1. tail.Run() exits                — закрывает lines-канал
-//     2. drainLoop completes             — все буферизованные строки обработаны
-//     3. coreruntime.Run returns → wg.Done() — стрим полностью завершён
-//     4. metricsWg.Wait()                — HTTP-сервер Shutdown() завершён (таймаут 5s)
-//     5. wg.Wait() in main()             — все стримы подтверждённо завершены
-//     6. defers LIFO: cancel() → removePID() → utils.Close()
+//	STARTUP SEQUENCE (the order is mandatory — violations lead to panics or data loss):
+//	  0. signal.NotifyContext()           — THE VERY FIRST line of main(), before flag.Parse()/
+//	     LoadConfig()/utils.Init(). A SIGTERM arriving BEFORE the handler is registered
+//	     kills the process through the default OS behavior (no graceful path, no 0 exit
+//	     code) — Flow 093 Group H caught this (TestDistributedNCS_CleanShutdown).
+//	     Registering as the first line shrinks the vulnerable window to a minimum rather
+//	     than eliminating it entirely (signal.Notify physically cannot fire before the
+//	     first executable instruction of the process).
+//	  1. config.LoadConfig()              — every component depends on cfg
+//	  2. utils.Init()                     — the logger must be ready before any Log()
+//	  3. writePID()                       — after the logger, so errors land in the log
+//	  4. metrics.Init() + srv.ListenAndServe() — before streams; scraper gets continuous series
+//	  5. blocklist.NewManager()           — before buildDetectors(); detectors depend on it
+//	  6. chaincheck.NewChecker()          — before streams; it inspects every log record from the start
+//	  7. coreruntime.Run() × N            — last; every shared resource must already exist
 //
-//   ИНВАРИАНТЫ:
-//     - Ни одна горутина не стартует с context.Background() — все используют appCtx или derived
-//     - Каждая горутина, удерживающая ресурсы, трекается в WaitGroup
-//     - SIGHUP никогда не гонится с обработкой строк — оба в одной select-горутине на стрим
-
+//	SHUTDOWN SEQUENCE (SIGTERM/SIGINT → ctx.Done()):
+//	  1. tail.Run() exits                — closes the lines channel
+//	  2. drainLoop completes             — every buffered line has been processed
+//	  3. coreruntime.Run returns → wg.Done() — stream fully finished
+//	  4. metricsWg.Wait()                — HTTP server Shutdown() finished (5s timeout)
+//	  5. wg.Wait() in main()             — every stream confirmed finished
+//	  6. defers LIFO: cancel() → removePID() → utils.Close()
+//
+//	INVARIANTS:
+//	  - No goroutine ever starts with context.Background() — all use appCtx or a derived one
+//	  - Every goroutine that holds resources is tracked in a WaitGroup
+//	  - SIGHUP is never raced against line processing — both live in the same select goroutine per stream
 package main
 
 //go:generate go run github.com/mr-addams/arxsentinel/tools/gen-plugins -profiles ../../profiles -out .
@@ -80,14 +81,14 @@ import (
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 )
 
-// version инжектируется goreleaser через ldflags (-X main.version={{.Version}}).
-// Остаётся "dev" при ручной сборке без ldflags.
+// version is injected by goreleaser via ldflags (-X main.version={{.Version}}).
+// Stays "dev" on a manual build without ldflags.
 var version = "dev"
 
-// configPath — путь к файлу конфигурации по умолчанию.
-// Абсолютный путь: при запуске через systemd с WorkingDirectory=/ относительный
-// "./config.yaml" не будет найден. Совпадает с путём в install.sh.
-// Может быть переопределён переменной окружения ARXSENTINEL_CONFIG.
+// configPath is the path to the default configuration file.
+// Absolute path: when run via systemd with WorkingDirectory=/ the relative
+// "./config.yaml" will not be found. Matches the path used in install.sh.
+// Can be overridden via the ARXSENTINEL_CONFIG environment variable.
 const configPath = "/etc/arxsentinel/config.yaml"
 
 func main() {
@@ -115,9 +116,9 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "validate" {
-		// Резолвим --config вручную до flag.Parse(), чтобы переиспользовать ту же логику.
-		// Принимаются обе формы: "--config=path" и "--config path" (через пробел);
-		// последняя ранее проваливалась на дефолтный путь без сообщения.
+		// Resolve --config manually before flag.Parse() to reuse the same logic.
+		// Both forms are accepted: "--config=path" and "--config path" (space-separated);
+		// the latter previously fell back to the default path without a message.
 		path := configPath
 		args := os.Args[2:]
 		for i := 0; i < len(args); i++ {
@@ -132,15 +133,15 @@ func main() {
 		return
 	}
 
-	// ── CLI флаги ─────────────────────────────────────────────────────────────────────
+	// ── CLI flags ─────────────────────────────────────────────────────────────────────
 
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.BoolVar(showVersion, "v", false, "print version and exit (shorthand)")
-	// --input=stdin переопределяет config inputs; полезно для pipe/container-режима.
+	// --input=stdin overrides config inputs; useful for pipe/container mode.
 	inputFlag := flag.String("input", "", "override input source: stdin")
-	// --output=stdout[,format] переопределяет config outputs; format дефолтит в fail2ban.
+	// --output=stdout[,format] overrides config outputs; format defaults to fail2ban.
 	outputFlag := flag.String("output", "", "override output sink: stdout[,json]")
-	// --config переопределяет путь к конфигу (альтернатива переменной ARXSENTINEL_CONFIG).
+	// --config overrides the path to the config (alternative to ARXSENTINEL_CONFIG env var).
 	configFlag := flag.String("config", "", "path to config file (default: "+configPath+")")
 	flag.Parse()
 
@@ -164,11 +165,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Fail-fast: валидируем совместимость plugin + executor wiring до запуска
-	// каких-либо горутин. validateConfig() обходит весь NCS-граф (Decision D2 флоу 061):
-	// type-check'ит spine, проверяет type-совместимость sink'ов, резолвит каналы
-	// executor'ов и ищет orphan-каналы (writer без reader). При любом сбое
-	// демон отказывается стартовать — лучше явный fail, чем тихий hang в проде.
+	// Fail-fast: validate plugin + executor wiring compatibility before launching
+	// any goroutines. validateConfig() walks the entire NCS graph (Decision D2 of flow 061):
+	// type-checks the spine, verifies sink type compatibility, resolves executor
+	// channels, and searches for orphan channels (writer without reader). On any
+	// failure the daemon refuses to start — better an explicit fail than a silent
+	// hang in production.
 	if errs := validateConfig(cfg); len(errs) > 0 {
 		for _, e := range errs {
 			fmt.Fprintf(os.Stderr, "arxsentinel: pipeline validation: %s\n", e)
@@ -177,12 +179,12 @@ func main() {
 	}
 	fmt.Fprintf(os.Stderr, "arxsentinel: pipeline validation: OK\n")
 
-	// --input / --output флаги полностью переопределяют секции I/O в конфиге.
-	// При наличии любого из флагов cfg.Streams заменяется одним CLI-driven стримом.
-	// Migrate() уже был вызван внутри LoadConfig; здесь собираем pipeline напрямую,
-	// чтобы coreruntime.Run всегда видел Pipelines != nil.
+	// --input / --output flags fully override the I/O sections in the config.
+	// When any of the flags is present, cfg.Streams is replaced with a single CLI-driven stream.
+	// Migrate() was already called inside LoadConfig; here we build the pipeline directly
+	// so that coreruntime.Run always sees Pipelines != nil.
 	if *inputFlag != "" || *outputFlag != "" {
-		// Незаданные флаги откатываются на уже мигрированные top-level дефолты.
+		// Unset flags fall back to the already-migrated top-level defaults.
 		inputs := cfg.Inputs
 		outputs := cfg.Outputs
 		if *inputFlag != "" {
@@ -207,9 +209,9 @@ func main() {
 		}}
 	}
 
-	// ── Инициализация логгера ─────────────────────────────────────────────────────────
-	// Threat-лог управляется per-stream (engine пишет в каждый sink из StreamSpec).
-	// Передаём пустой threatLogPath, чтобы глобальный utils.LogThreat не использовался.
+	// ── Logger initialization ─────────────────────────────────────────────────────────
+	// The threat log is managed per-stream (the engine writes to every sink from StreamSpec).
+	// Pass an empty threatLogPath so that the global utils.LogThreat is never used.
 	if err := utils.Init(cfg.Logging.Debug, cfg.Logging.ConsoleColor,
 		cfg.Output.OperationalLog, ""); err != nil {
 		fmt.Fprintf(os.Stderr, "arxsentinel: logger initialization error: %v\n", err)
@@ -217,8 +219,8 @@ func main() {
 	}
 	defer utils.Close()
 
-	// PID-файл нужен для: kill -HUP $(cat pid) и logrotate postrotate (Task 7.1).
-	// Ошибка записи — warn, не fatal: демон работает и без PID-файла.
+	// PID file is needed for: kill -HUP $(cat pid) and logrotate postrotate (Task 7.1).
+	// A write error is a warn, not fatal: the daemon works without a PID file.
 	if err := writePID(cfg.General.PIDFile); err != nil {
 		utils.Log("STARTUP", fmt.Sprintf("failed to write PID file %s: %v", cfg.General.PIDFile, err), "warn")
 	} else {
@@ -245,9 +247,9 @@ func main() {
 		}
 	}
 
-	// Логируем активные ARXSENTINEL_* env-переменные для диагностики.
-	// Пользователь может проверить, что его env-переменные были прочитаны;
-	// опечатанные имена просто не появятся в этой строке.
+	// Log active ARXSENTINEL_* env vars for diagnostics.
+	// The user can verify that their env vars were read; misspelled names simply
+	// won't appear in this line.
 	if envVars := activeEnvOverrides(); len(envVars) > 0 {
 		utils.Log("CONFIG", fmt.Sprintf("env overrides: %s", strings.Join(envVars, ", ")), "info")
 	}
@@ -259,19 +261,20 @@ func main() {
 		utils.Log("CONFIG", fmt.Sprintf("metrics: http://%s/metrics  health: http://%s/health", displayAddr, displayAddr), "info")
 	}
 
-	// ── Shared whitelist-компоненты ──────────────────────────────────────────────────
-	// IPCache переживает SIGHUP-reload — сброс его на reload вызвал бы DNS-запросы
-	// по всем bot-IP сразу после первого запроса, создавая всплеск трафика.
+	// ── Shared whitelist components ──────────────────────────────────────────────────
+	// IPCache outlives SIGHUP-reload — resetting it on reload would trigger DNS
+	// queries for every bot IP right after the first request, creating a traffic spike.
 	ipCache := whitelist.NewIPCache(cfg.Whitelist.DNSCache)
 	resolver := &net.Resolver{PreferGo: true}
 
-	// ── Metrics HTTP-сервер ──────────────────────────────────────────────────────────
-	// Запускается один раз — намеренно НЕ перезапускается на SIGHUP, чтобы Prometheus
-	// scraper сохранял непрерывные counter-серии (без сброса на config reload).
+	// ── Metrics HTTP server ──────────────────────────────────────────────────────────
+	// Started once — intentionally NOT restarted on SIGHUP, so the Prometheus
+	// scraper preserves continuous counter series (no reset on config reload).
 	//
-	// metricsWg трекает shutdown-горутину, чтобы main() дождался srv.Shutdown()
-	// перед выходом. Без неё процесс мог бы выйти, пока Shutdown ещё дренирует
-	// in-flight HTTP-запросы, вызывая connection reset на стороне Prometheus scraper'а.
+	// metricsWg tracks the shutdown goroutine so that main() waits for srv.Shutdown()
+	// before exiting. Without it, the process could exit while Shutdown is still
+	// draining in-flight HTTP requests, causing a connection reset on the Prometheus
+	// scraper side.
 	var metricsWg sync.WaitGroup
 	if cfg.Metrics.Enabled {
 		metrics.Init()
@@ -286,12 +289,12 @@ func main() {
 			Handler:           mux,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
-		// Обе горутины трекаются, чтобы metricsWg.Wait() в main() гарантировал,
-		// что ListenAndServe вернулся и все HTTP-соединения закрыты до выхода.
-		// Shutdown() сначала закрывает listeners (что заставляет ListenAndServe
-		// вернуть ErrServerClosed), затем дренирует активные соединения — поэтому
-		// ListenAndServe всегда возвращается до Shutdown(), но мы трекаем оба
-		// явно для ясности и аудитируемости гарантии.
+		// Both goroutines are tracked so that metricsWg.Wait() in main() guarantees
+		// ListenAndServe has returned and every HTTP connection is closed before exit.
+		// Shutdown() first closes listeners (which forces ListenAndServe to return
+		// ErrServerClosed), then drains active connections — therefore ListenAndServe
+		// always returns before Shutdown(), but we track both explicitly for clarity
+		// and auditability of the guarantee.
 		metricsWg.Add(1)
 		go func() {
 			defer metricsWg.Done()
@@ -303,8 +306,8 @@ func main() {
 		go func() {
 			defer metricsWg.Done()
 			<-ctx.Done()
-			// Свежий context: appCtx уже отменён здесь — нужен независимый
-			// дедлайн для HTTP graceful shutdown, а не уже завершённый context.
+			// Fresh context: appCtx is already cancelled here — we need an independent
+			// deadline for HTTP graceful shutdown, not an already-finished context.
 			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer shutCancel()
 			_ = srv.Shutdown(shutCtx)
@@ -312,23 +315,23 @@ func main() {
 	}
 
 	// ── SIGHUP fan-out ────────────────────────────────────────────────────────────────
-	// Один SIGHUP-сигнал → reload операционного лога (shared) + нотификация всех
-	// stream-горутин.
+	// One SIGHUP signal → reload of the operational log (shared) + notification of
+	// every stream goroutine.
 	sigHUP := make(chan os.Signal, 1)
 	signal.Notify(sigHUP, syscall.SIGHUP)
 	defer signal.Stop(sigHUP)
 
 	// ── Blocklist Manager (Step 6) ────────────────────────────────────────────────────────
-	// Создаётся до стримов, чтобы все детекторы разделяли один automata-граф.
-	// Использует appCtx — refresh-горутины останавливаются на SIGTERM вместе со стримами.
-	// Manager.Update() вызывается из SIGHUP fan-out ниже, а не per-stream.
+	// Created before streams so that all detectors share a single automata graph.
+	// Uses appCtx — refresh goroutines stop on SIGTERM together with the streams.
+	// Manager.Update() is invoked from the SIGHUP fan-out below, not per-stream.
 	blMgr := blocklist.NewManager(ctx, cfg.Blocklist)
 	defer blMgr.Close()
 
 	// ── Chain Integrity Checker (Step 7) ──────────────────────────────────────────────
-	// Детектирует Cloudflare или bogon IP в роли client IP в access-логах.
-	// Должен стартовать до стримов — все записи лога проверяются с начала.
-	// Оба поля — nil при chain_guard.enabled == false; вызывающие делают nil-check.
+	// Detects Cloudflare or bogon IPs in the role of client IP in access logs.
+	// Must start before streams — every log record is inspected from the start.
+	// Both fields are nil when chain_guard.enabled == false; callers do a nil-check.
 	var chainChecker *chaincheck.Checker
 	var warningsWriter *output.WarningsWriter
 	if cfg.ChainGuard.Enabled {
@@ -338,8 +341,8 @@ func main() {
 			utils.Log("STARTUP", "failed to open warnings log: "+wErr.Error(), "error")
 			return
 		}
-		// warningsWriter deferred до chainChecker, чтобы LIFO закрыл writer последним —
-		// любой in-flight WriteChainWarning завершится до закрытия файла.
+		// warningsWriter is deferred before chainChecker so that LIFO closes the writer
+		// last — any in-flight WriteChainWarning finishes before the file is closed.
 		defer func() { _ = warningsWriter.Close() }()
 		chainChecker = chaincheck.NewChecker(ctx, cfg.ChainGuard.ToChainCheckConfig())
 		defer chainChecker.Close()
@@ -362,35 +365,35 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-sigHUP:
-				// Перечитываем операционный лог через свежий конфиг.
+				// Re-read the operational log from a fresh config.
 				newCfg, err := config.LoadConfig(path)
 				if err == nil {
 					if reloadErr := utils.Reload(newCfg.Logging.Debug, newCfg.Logging.ConsoleColor,
 						newCfg.Output.OperationalLog, ""); reloadErr != nil {
 						utils.Log("CONFIG", "SIGHUP: logger reload error: "+reloadErr.Error(), "warn")
 					}
-					// Обновляем blocklist Manager один раз для всех стримов — стримы
-					// сами не вызывают Update, они перестраивают pipeline на базе
-					// обновлённого shared automata.
-					// Guard: если SIGTERM и SIGHUP приходят в одном select-тике,
-					// ctx уже может быть отменён. Запускать новые горутины с отменённым
-					// context безвредно, но бессмысленно — пропускаем update полностью.
+					// Update the blocklist Manager once for all streams — streams do
+					// not call Update themselves; they rebuild the pipeline on top of
+					// the updated shared automata.
+					// Guard: if SIGTERM and SIGHUP arrive in the same select tick,
+					// ctx may already be cancelled. Launching new goroutines with a
+					// cancelled context is harmless but pointless — skip the update entirely.
 					if ctx.Err() == nil {
 						shared.BlocklistManager.Update(ctx, newCfg.Blocklist)
-						// Обновляем chain checker новым конфигом (sources, intervals).
-						// Тот же ctx.Err() guard: Update запускает горутину для CF refresh.
+						// Update the chain checker with the new config (sources, intervals).
+						// Same ctx.Err() guard: Update launches a goroutine for CF refresh.
 						if shared.ChainChecker != nil {
 							shared.ChainChecker.Update(ctx, newCfg.ChainGuard.ToChainCheckConfig())
 						}
 					}
-					// WarningsWriter.Reopen() безопасен после отмены ctx:
-					// только закрывает/переоткрывает файл, никогда не запускает горутин.
+					// WarningsWriter.Reopen() is safe after ctx is cancelled: it only
+					// closes/reopens the file, never launches goroutines.
 					if shared.WarningsWriter != nil {
 						_ = shared.WarningsWriter.Reopen()
 					}
 				}
-				// Нотифицируем каждый стрим (неблокирующе: пропускаем, если канал
-				// полон, что означает, что предыдущий reload ещё не обработан стримом).
+				// Notify every stream (non-blocking: skip if the channel is full,
+				// which means the previous reload has not been processed by the stream yet).
 				for _, ch := range reloadChs {
 					select {
 					case ch <- struct{}{}:
@@ -413,12 +416,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── Pre-register Named Channel Switch queues с не-default backend'ами ─────────────
-	// Pre-registration позволяет YAML'ному `queue: { type: bbolt, ... }` победить
-	// позднейший вызов AttachWriter из sink'а (fan-in refcount++ на существующих именах).
-	// Источники без `queue:` идут legacy-путём: sink создаёт собственную MemoryQueue
-	// при первом AttachWriter. Ошибка — fatal: тихий откат на memory удивил бы
-	// оператора после config-ошибки.
+	// ── Pre-register Named Channel Switch queues with non-default backends ─────────────
+	// Pre-registration lets a YAML `queue: { type: bbolt, ... }` win over a later
+	// AttachWriter call from a sink (fan-in refcount++ on existing names).
+	// Sources without `queue:` follow the legacy path: the sink creates its own
+	// MemoryQueue on the first AttachWriter. On error — fatal: a silent fallback
+	// to memory would surprise the operator after a config error.
 	if err := preRegisterExecutorQueues(&cfg); err != nil {
 		utils.Log("STARTUP", "executor queue pre-registration: "+err.Error(), "error")
 		os.Exit(1)
@@ -437,18 +440,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── Запуск executor-горутин (top-level автономные, Flow #042) ───────────────────────
-	// Executors собираются из cfg.Executors и подключаются к Named Channel Switch sources,
-	// регистрируемым sentinel-threat sink'ами внутри stream-pipeline (T5).
-	// ── Запуск стримов (Flow 081 Phase 3: runtime.Run + securityFactory) ───────────────
+	// ── Launch executor goroutines (top-level autonomous, Flow #042) ───────────────────────
+	// Executors are assembled from cfg.Executors and connected to the Named Channel Switch
+	// sources registered by sentinel-threat sinks inside the stream pipeline (T5).
+	// ── Launch streams (Flow 081 Phase 3: runtime.Run + securityFactory) ───────────────
 
-	// MetricsCallbacks — адаптер из runtime-callback'ов в product metrics.* функции.
-	// Engine зовёт:
-	//   - RecordLine(s, p, src, st) на КАЖДОЙ строке ДО Process (даже при Skip) →
-	//     здесь = RecordLine + RecordInputLine (как в старом securityProcessor.Process).
-	//   - RecordOutputEvent(s, p, sinkName) — sinkType вычисляется из имени
-	//     через sinkTypeFromName (как в старом securityProcessor.Process).
-	//   - UpdateGauges — прямой проброс.
+	// MetricsCallbacks adapts runtime callbacks to product metrics.* functions.
+	// The engine calls:
+	//   - RecordLine(s, p, src, st) on EVERY line BEFORE Process (even on Skip) →
+	//     here = RecordLine + RecordInputLine (like the old securityProcessor.Process).
+	//   - RecordOutputEvent(s, p, sinkName) — sinkType is computed from the name
+	//     via sinkTypeFromName (like the old securityProcessor.Process).
+	//   - UpdateGauges — direct pass-through.
 	metricsCb := &coreruntime.MetricsCallbacks{
 		RecordLine: func(s, p, src, st string) {
 			metrics.RecordLine(s, p)
@@ -464,9 +467,9 @@ func main() {
 		},
 	}
 
-	// runtime.SharedResources — opaque контейнер, который engine пробрасывает
-	// в factory.Build. Здесь мы кладём те же singleton'ы, что и в локальный
-	// shared (нужен buildPipelineDetectors → bridgeShared).
+	// runtime.SharedResources is an opaque container that the engine passes through
+	// to factory.Build. Here we put the same singletons as in the local shared
+	// (buildPipelineDetectors → bridgeShared needs them).
 	runtimeShared := coreruntime.SharedResources{
 		BlocklistManager: shared.BlocklistManager,
 		ChainChecker:     shared.ChainChecker,
@@ -479,8 +482,8 @@ func main() {
 		utils.Log("STARTUP", "stream adaptation error: "+err.Error(), "error")
 		os.Exit(1)
 	}
-	// SIGHUP-fanout: подменяем раннее-созданные reloadChs на те, что соответствуют
-	// StreamSpec.Pipelines (те же индексы — main.go строит reloadChs в порядке cfg.Streams).
+	// SIGHUP-fanout: replace the earlier-created reloadChs with the ones that correspond
+	// to StreamSpec.Pipelines (same indices — main.go builds reloadChs in the order of cfg.Streams).
 	reloadChs = streamReloadChs
 
 	for i, spec := range streamSpecs {
@@ -503,9 +506,10 @@ func main() {
 		}(spec, factory, reloadChs[i])
 	}
 
-	// Запускаем executors ПОСЛЕ stream-горутин, чтобы sentinel-threat sink'и успели
-	// зарегистрировать свои Named Channel Switch каналы. Короткая задержка даёт
-	// pipeline-горутинам дойти до engine.runPipeline → buildSinks → AttachWriter до AttachReader.
+	// Start executors AFTER the stream goroutines so that sentinel-threat sinks
+	// have time to register their Named Channel Switch channels. The short delay
+	// gives the pipeline goroutines time to reach engine.runPipeline → buildSinks
+	// → AttachWriter before AttachReader.
 	var execWg sync.WaitGroup
 	if len(cfg.Executors) > 0 {
 		go func() {
@@ -516,8 +520,8 @@ func main() {
 		}()
 	}
 
-	// Уведомляем systemd, что все стримы запущены и сервис готов.
-	// Status= отображается в выводе `systemctl status`.
+	// Notify systemd that all streams are up and the service is ready.
+	// Status= is shown in the `systemctl status` output.
 	sdNotify("READY=1\nSTATUS=" + version + " running")
 
 	metricsWg.Wait()
@@ -525,7 +529,7 @@ func main() {
 	utils.Log("SHUTDOWN", "all streams done", "info")
 
 	// ── Graceful executor shutdown ──────────────────────────────────────────────────
-	// DetachWriter все NCS-источники, чтобы executor Run()-циклы вышли по закрытому каналу.
+	// DetachWriter on all NCS sources so that executor Run()-loops exit on the closed channel.
 	for _, ec := range cfg.Executors {
 		for _, src := range ec.Sources {
 			ncs.DetachWriter(src.Name)

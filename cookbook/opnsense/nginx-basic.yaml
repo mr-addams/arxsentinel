@@ -1,0 +1,136 @@
+# ====================== cookbook/opnsense/nginx-basic.yaml ==============================
+#
+#   nginx combined log + OPNsense automated alias banning via the firewall's REST API.
+#   Dual output: threats.log (Fail2Ban fallback) + sentinel-threat (OPNsense executor).
+#
+#   OPNsense prerequisites (run once on the firewall):
+#     # 1. Declare an alias of type Host, Network, or External in
+#     #    Firewall -> Aliases. The alias NAME is the value of
+#     #    `alias_name` in the executor config below — they must match.
+#     #    Other types (URL Table, Port, GeoIP, URL, MAC) are not supported
+#     #    by the alias_util endpoints and will return HTTP 422 on every
+#     #    call. Leave the Content empty (or seed a placeholder); the
+#     #    plugin manages the entries from this point on. Save + Apply.
+#     #
+#     #    Note: aliases of type "External" are non-persistent — they
+#     #    reset to the XML-config value on every reboot. Prefer
+#     #    "Host" or "Network" if bans must survive a reload.
+#
+#     # 2. Generate an API credential pair in
+#     #    System -> Access -> Users -> <user> -> API keys -> + Add.
+#     #    Download the .ini file OPNsense offers immediately after
+#     #    creation — the key/secret values are shown only once.
+#     #    The user must have access to the Firewall -> Alias API
+#     #    endpoints (granted by default on stock installs).
+#
+#     # 3. TLS: OPNsense ships with a self-signed certificate. For
+#     #    lab / development set tls_verify: false below. For
+#     #    production either install the OPNsense CA into the agent's
+#     #    trust store, or replace the cert with a public-CA one
+#     #    (e.g. ACME DNS-01). The plugin has no ca_file knob —
+#     #    use the standard SSL_CERT_FILE / SSL_CERT_DIR env vars.
+#
+# ========================================================================================
+
+# ── SOURCES ──────────────────────────────────────────────────────────────────────────────
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined
+    outputs:
+      - type: file
+        path: /var/log/arxsentinel/threats.log
+        format: fail2ban
+      - type: sentinel-threat
+        name: sentinel-opnsense
+
+# ── PROCESSORS: Scoring ─────────────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50   # score ≥ N → WARN event; int, 1..(ban_threshold-1), default: 50
+  ban_threshold: 75     # score ≥ N → THREAT + executor action; int, >(alert_threshold), default: 80
+  observation_window: "300s"  # score accumulation window; duration: "60s"|"5m"|"1h", default: "300s"
+  decay: "0"            # score decay toward end of window; "linear" | "0" (no decay), default: "linear"
+
+# ── PROCESSORS: Detectors ───────────────────────────────────────────────────────────────
+detectors:
+
+  probe:
+    enabled: true     # enable/disable; bool, default: true
+    score: 25         # points added per probe request; int, 1..100+, default: 25
+
+  bruteforce:
+    enabled: true       # enable/disable; bool, default: true
+    min_requests: 10    # minimum total requests before activating; int, ≥1, default: 10
+    ratio_threshold: 0.6  # fraction of 404 responses to trigger; float, 0.0..1.0, default: 0.6
+    score: 30           # points added on trigger; int, 1..100+, default: 30
+
+  crawler:
+    enabled: true       # enable/disable; bool, default: true
+    min_sequential: 5   # min sequential numeric URLs to trigger; int, ≥2, default: 5
+    score: 20           # points added on trigger; int, 1..100+, default: 20
+
+  noasset:
+    enabled: true               # enable/disable; bool, default: true
+    min_page_requests: 3        # min HTML page requests before activating; int, ≥1, default: 3
+    asset_ratio_threshold: 0.1  # max fraction of asset requests to still trigger; float, 0.0..1.0, default: 0.1
+    score: 20                   # points added on trigger; int, 1..100+, default: 20
+
+  rate:
+    enabled: true    # enable/disable; bool, default: true
+    window: "60s"    # time window for counting requests; duration: "30s"|"60s"|"5m", default: "60s"
+    threshold: 100   # max requests per window before trigger; int, ≥1, default: 100
+    score: 25        # points added on trigger; int, 1..100+, default: 25
+
+  useragent:
+    enabled: true                  # enable/disable; bool, default: true
+    scanner_score: 40              # points for scanner UA (Nuclei, sqlmap, Nikto...); int, 1..100+, default: 40
+    grabber_score: 20              # points for grabber UA (HTTrack, wget, Scrapy...); int, 1..100+, default: 20
+    automation_score: 15           # points for automation UA (python-requests, aiohttp...); int, 1..100+, default: 15
+    empty_ua_score: 30             # points for missing User-Agent header; int, 1..100+, default: 30
+    extra_scanner_patterns: []     # additional scanner UA substrings (case-insensitive); list of strings
+    extra_grabber_patterns: []     # additional grabber UA substrings; list of strings
+    extra_automation_patterns: []  # additional automation UA substrings; list of strings
+
+  overflow:
+    enabled: true        # enable/disable; bool, default: true
+    max_url_length: 2048 # URL length limit; int, ≥64, default: 2048
+    score: 30            # points added on trigger; int, 1..100+, default: 30
+
+  badbot:
+    enabled: true        # enable/disable community bad-bot blocklist matching; bool, default: true
+    score: 60            # points added on match; int, 1..100+, default: 60
+    check_ua: true       # match against bad-bot UA list; bool, default: true
+    check_referrer: false  # match against bad referrer list; bool, default: false
+
+# ── PROCESSORS: Whitelist ───────────────────────────────────────────────────────────────
+whitelist:
+  custom:
+    ips: []                  # trusted individual IPs; list of strings: ["1.2.3.4", "5.6.7.8"]
+    cidrs: []                # trusted IP ranges; list of strings: ["10.0.0.0/8", "192.168.0.0/16"]
+    ua_substrings: []        # trusted UA substrings (case-insensitive); list of strings: ["MyMonitor/", "healthcheck"]
+    paths: []             # skip scoring for these URL prefixes; example: ["/ws", "/health", "/api/internal"]
+
+# ── chain_guard: proxy chain integrity check (disabled by default) ──────────────────────
+# chain_guard:
+#   enabled: true
+#   warnings_log: /var/log/arxsentinel/warnings.log
+
+# ── EXECUTORS ───────────────────────────────────────────────────────────────────────────
+executors:
+  - name: opnsense-ban
+    type: opnsense
+    sources:
+      - name: sentinel-opnsense
+    config:
+      host: "YOUR_OPNSENSE_HOST"    # adjust to your firewall address (hostname or IP)
+      port: 443                     # OPNsense web UI port; int, default: 443
+      scheme: "https"               # "http" or "https"; string, default: "https"
+      api_key: "YOUR_API_KEY"       # OPNsense API username from System->Access->Users->API keys
+      api_secret: "YOUR_API_SECRET" # OPNsense API secret from the same row
+      tls_verify: true              # set false for self-signed lab setups; bool, default: true
+      alias_name: "arxsentinel_blocklist"  # pre-declared alias in Firewall->Aliases (type Host/Network/External); string, REQUIRED
+      ttl: "24h"                    # ban lifetime; duration, REQUIRED (> 0, plugin owns expiry tracking)
+      min_level: "THREAT"           # minimum threat level to act on; "INFO"|"WARN"|"THREAT", default: "THREAT"
+      dedup_window: "0"             # skip re-banning an IP within this window after a successful add; duration, "0" disables; default: "0"

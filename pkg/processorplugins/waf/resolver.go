@@ -1,42 +1,42 @@
 // ========================== pkg/processor/waf — HTTP FieldResolver =========================
-//   HttpResolver is the `http.*` namespace FieldResolver for the WAF processor (Flow 001,
-//   Task H2). It implements rule.FieldResolver (DECISION D3), type-asserts the opaque
-//   plugin.Event.Payload to the parser-owned *parser.LogEntry canonical form, and maps
-//   each declared http.* field to its underlying accessor.
 //
-//   WHAT IS HERE:
-//     - HttpResolver — stateless rule.FieldResolver implementation for http.*
-//     - resolveHTTP  — internal dispatch table over LogEntry fields
-//     - toIPValue    — net.ParseIP → rule.NewIP helper (centralised so the ip failure
-//       behaviour is documented in one place)
+//	HttpResolver is the `http.*` namespace FieldResolver for the WAF processor (Flow 001,
+//	Task H2). It implements rule.FieldResolver (DECISION D3), type-asserts the opaque
+//	plugin.Event.Payload to the parser-owned *parser.LogEntry canonical form, and maps
+//	each declared http.* field to its underlying accessor.
 //
-//   WHAT IS NOT HERE:
-//     - EnvelopeResolver (`core.*` namespace) — owned by pkg/rule/resolver.go
-//     - The rule engine and Scheme — pkg/rule/{ruleset,builder}
-//     - Action policy (drop / tag / pass) — WafProcessor.Process owns that decision
+//	WHAT IS HERE:
+//	  - HttpResolver — stateless rule.FieldResolver implementation for http.*
+//	  - resolveHTTP  — internal dispatch table over LogEntry fields
+//	  - toIPValue    — net.ParseIP → rule.NewIP helper (centralised so the ip failure
+//	    behaviour is documented in one place)
 //
-//   DEPENDENCY RULE:
-//     pkg/processorplugins/waf → arx-core ({pkg/plugin, pkg/parser, pkg/rule}) +
-//     stdlib, plus internal/threat. The internal/threat import is required for the
-//     *threat.ThreatEvent payload re-entry path (resolver.go Resolve handles a
-//     re-entered scored event by returning its IP for `http.real_ip`; see
-//     DECISION D2 / Flow 087). All other dependencies are arx-core + stdlib.
+//	WHAT IS NOT HERE:
+//	  - EnvelopeResolver (`core.*` namespace) — owned by pkg/rule/resolver.go
+//	  - The rule engine and Scheme — pkg/rule/{ruleset,builder}
+//	  - Action policy (drop / tag / pass) — WafProcessor.Process owns that decision
 //
-//   CONCURRENCY:
-//     HttpResolver carries no state (no fields). A single zero value may be shared
-//     across goroutines without coordination, matching EnvelopeResolver's contract
-//     (pkg/rule/resolver.go). The struct exists only to give the implementation a
-//     discoverable name and to keep room for future per-instance configuration
-//     (e.g. logger injection) without breaking the FieldResolver interface.
+//	DEPENDENCY RULE:
+//	  pkg/processorplugins/waf → arx-core ({pkg/plugin, pkg/parser, pkg/rule}) +
+//	  stdlib, plus internal/threat. The internal/threat import is required for the
+//	  *threat.ThreatEvent payload re-entry path (resolver.go Resolve handles a
+//	  re-entered scored event by returning its IP for `http.real_ip`; see
+//	  DECISION D2 / Flow 087). All other dependencies are arx-core + stdlib.
 //
-//   NAME CONVENTION NOTE:
-//     DECISION D7 reserves the dot character for the namespace separator (e.g.
-//     `http.method`). It does NOT permit dots inside a name; sub-structure like
-//     LogEntry.Path / LogEntry.RawURI is flattened in the Manifest to "path" /
-//     "raw_uri" so the Catalog accepts the registration (Catalog's validName gate
-//     forbids '.' in the unqualified name). Both Manifest.Produces and the
-//     resolveHTTP switch share this flat naming, so the two stay in lockstep.
-
+//	CONCURRENCY:
+//	  HttpResolver carries no state (no fields). A single zero value may be shared
+//	  across goroutines without coordination, matching EnvelopeResolver's contract
+//	  (pkg/rule/resolver.go). The struct exists only to give the implementation a
+//	  discoverable name and to keep room for future per-instance configuration
+//	  (e.g. logger injection) without breaking the FieldResolver interface.
+//
+//	NAME CONVENTION NOTE:
+//	  DECISION D7 reserves the dot character for the namespace separator (e.g.
+//	  `http.method`). It does NOT permit dots inside a name; sub-structure like
+//	  LogEntry.Path / LogEntry.RawURI is flattened in the Manifest to "path" /
+//	  "raw_uri" so the Catalog accepts the registration (Catalog's validName gate
+//	  forbids '.' in the unqualified name). Both Manifest.Produces and the
+//	  resolveHTTP switch share this flat naming, so the two stay in lockstep.
 package waf
 
 import (

@@ -1,8 +1,8 @@
 // ========================== CLI cleanup subcommand ======================================
-//   arxsentinel cleanup --cf — removes Cloudflare IP List items belonging
-//   to this sentinel instance. Useful after uninstall: stale bans remain in CF
-//   forever (no server-side TTL). This command removes them in 100-item batches.
-
+//
+//	arxsentinel cleanup --cf — removes Cloudflare IP List items belonging
+//	to this sentinel instance. Useful after uninstall: stale bans remain in CF
+//	forever (no server-side TTL). This command removes them in 100-item batches.
 package main
 
 import (

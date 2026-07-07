@@ -37,7 +37,7 @@ cleanup() {
     done
     rm -f /tmp/arxsentinel-{nginx,apache,traefik,caddy,haproxy,litespeed}.pid
     rm -f /tmp/arxsentinel-{nginx-proxy,apache-proxy,traefik-proxy,caddy-proxy,haproxy-proxy,litespeed-proxy}.pid
-    rm -f /tmp/arxsentinel-{cf-broken,bogon-victim,cf-executor,ros-executor,nginx-executor,nginx-executor-deny}.pid
+    rm -f /tmp/arxsentinel-{cf-broken,bogon-victim,cf-executor,ros-executor,openwrt-executor,opnsense-executor,nginx-executor,nginx-executor-deny}.pid
 
     # Stop HAProxy log capture (proxy and backend).
     kill "$HAPROXY_LOG_PID" 2>/dev/null || true
@@ -281,6 +281,23 @@ fi
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'ros-api-mock'; then
     (cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/ros-executor.yaml" \
         "$BIN" >> "$LOGS_DIR/threats/sentinel-ros-executor.log" 2>&1) &
+    SENTINEL_PIDS+=($!)
+fi
+
+# Start OpenWrt executor sentinel (reads nginx access log, forwards threats to ubus-api-mock).
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'ubus-api-mock'; then
+    (cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/openwrt-executor.yaml" \
+        "$BIN" >> "$LOGS_DIR/threats/sentinel-openwrt-executor.log" 2>&1) &
+    SENTINEL_PIDS+=($!)
+fi
+
+# Start OPNsense executor sentinel (reads nginx access log, forwards threats to opnsense-api-mock).
+# Per DECISIONS.md Decision 8 (Flow 096): the opnsense executor does not batch — every THREAT
+# event becomes an immediate alias_util/add call; the integration test just verifies the IP
+# appears in the recorded entries, not the exact call count.
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'opnsense-api-mock'; then
+    (cd "$INT_DIR" && exec env ARXSENTINEL_CONFIG="$INT_DIR/arxsentinel/opnsense-executor.yaml" \
+        "$BIN" >> "$LOGS_DIR/threats/sentinel-opnsense-executor.log" 2>&1) &
     SENTINEL_PIDS+=($!)
 fi
 

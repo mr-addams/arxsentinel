@@ -7,10 +7,16 @@
 #   0. check-config-sync.sh          — verifies all env vars and YAML sections are
 #      documented across the entire config chain (config.go → config.yaml →
 #      config.docker.yaml → .env.example → README tables). Must pass before tests.
-#   1. TestStartupShutdownInvariants — verifies that main.go satisfies all
+#   1. gofmt -l                       — staged .go files must already be
+#      gofmt-formatted (fails loud, does not auto-fix/re-stage).
+#   2. check-pkgdoc.sh                — every touched package must have a
+#      package-doc comment `go doc` will actually surface (no blank line
+#      before `package X` — see scripts/check-pkgdoc.sh header for the bug
+#      this catches).
+#   3. TestStartupShutdownInvariants — verifies that main.go satisfies all
 #      startup/shutdown sequence and WaitGroup tracking invariants (see CLAUDE.md).
-#   2. go test ./...                  — full test suite across all packages.
-#   3. go vet ./...                   — catches context misuse, WaitGroup errors,
+#   4. go test ./...                  — full test suite across all packages.
+#   5. go vet ./...                   — catches context misuse, WaitGroup errors,
 #      unreachable code, and other static issues.
 #
 # Integration (tests/integration/run.sh, ~3 min, docker + live servers) moved
@@ -54,6 +60,21 @@ if git diff --cached --name-only | grep -qE "$CONFIG_CHAIN_PATTERN"; then
   bash scripts/check-config-sync.sh
 else
   echo "[pre-commit] config chain not touched — skipping consistency check"
+fi
+
+STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACMR -- '*.go')
+if [[ -n "$STAGED_GO_FILES" ]]; then
+  echo "[pre-commit] checking gofmt on staged files..."
+  UNFORMATTED="$(gofmt -l $STAGED_GO_FILES || true)"
+  if [[ -n "$UNFORMATTED" ]]; then
+    echo "[pre-commit] ERROR: the following staged files are not gofmt-formatted:"
+    echo "$UNFORMATTED"
+    echo "Run: gofmt -w $UNFORMATTED"
+    exit 1
+  fi
+
+  echo "[pre-commit] checking package-doc-comment hygiene..."
+  bash scripts/check-pkgdoc.sh
 fi
 
 echo "[pre-commit] checking startup/shutdown invariants..."

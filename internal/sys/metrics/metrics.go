@@ -1,31 +1,31 @@
 // ========================== Module sys/metrics =========================================
-//   Prometheus metrics for ArxSentinel.
 //
-//   WHAT IS HERE:
-//     - Metrics struct — holds all registered prometheus collectors
-//     - New(reg) — creates and registers metrics with the given registerer
-//     - Package-level functions (RecordLine, RecordThreat, ...) — delegate to default instance
-//     - Init() — initializes the default instance with prometheus.DefaultRegisterer
+//	Prometheus metrics for ArxSentinel.
 //
-//   DESIGN:
-//     Metrics struct + New(registerer) pattern allows tests to use an isolated
-//     prometheus.NewRegistry() without touching the global default registry.
-//     Production code calls Init() once at startup, then uses package-level functions.
+//	WHAT IS HERE:
+//	  - Metrics struct — holds all registered prometheus collectors
+//	  - New(reg) — creates and registers metrics with the given registerer
+//	  - Package-level functions (RecordLine, RecordThreat, ...) — delegate to default instance
+//	  - Init() — initializes the default instance with prometheus.DefaultRegisterer
 //
-//     All metrics carry "stream" and "pipeline" labels for multi-pipeline isolation.
-//     Legacy single-pipeline configs use pipeline="" (empty string label value),
-//     which keeps backward compat with existing Grafana dashboards.
+//	DESIGN:
+//	  Metrics struct + New(registerer) pattern allows tests to use an isolated
+//	  prometheus.NewRegistry() without touching the global default registry.
+//	  Production code calls Init() once at startup, then uses package-level functions.
 //
-//     C3 — label cardinality: metrics with dynamic labels (source, sink, reason)
-//     support explicit cleanup via DeleteLabelValues. Callers must call the
-//     cleanup methods when config changes at SIGHUP to prevent unbounded
-//     cardinality growth. The "reason" label in outputDropped is restricted
-//     to a fixed set of known constants (Reason*).
+//	  All metrics carry "stream" and "pipeline" labels for multi-pipeline isolation.
+//	  Legacy single-pipeline configs use pipeline="" (empty string label value),
+//	  which keeps backward compat with existing Grafana dashboards.
 //
-//   WHAT IS NOT HERE:
-//     - HTTP server for /metrics endpoint (main.go)
-//     - Metric incrementation logic (main.go)
-
+//	  C3 — label cardinality: metrics with dynamic labels (source, sink, reason)
+//	  support explicit cleanup via DeleteLabelValues. Callers must call the
+//	  cleanup methods when config changes at SIGHUP to prevent unbounded
+//	  cardinality growth. The "reason" label in outputDropped is restricted
+//	  to a fixed set of known constants (Reason*).
+//
+//	WHAT IS NOT HERE:
+//	  - HTTP server for /metrics endpoint (main.go)
+//	  - Metric incrementation logic (main.go)
 package metrics
 
 import (

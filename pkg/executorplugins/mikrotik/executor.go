@@ -1,19 +1,19 @@
 // ====== Module: mikrotik — executor ==============================================
-//   MikroTikExecutor manages a RouterOS firewall address-list via the REST API.
-//   Receives ThreatEvents, accumulates them in a buffer, and flushes to RouterOS
-//   (with TTL-based sweep, dedup, min-level filtering).
 //
-//   WHAT IS HERE:
-//     MikroTikExecutor struct, Run loop, flush, sweep, syncExisting
+//	MikroTikExecutor manages a RouterOS firewall address-list via the REST API.
+//	Receives ThreatEvents, accumulates them in a buffer, and flushes to RouterOS
+//	(with TTL-based sweep, dedup, min-level filtering).
 //
-//   WHAT IS NOT HERE:
-//     HTTP client (client.go), config parsing (config.go), registration (register.go)
+//	WHAT IS HERE:
+//	  MikroTikExecutor struct, Run loop, flush, sweep, syncExisting
 //
-//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
-//   product namespace cmd/arxsentinel/internal/threat; the executor
-//   type-asserts Event.Payload to *threat.ThreatEvent to extract the IP
-//   and level fields. Core has no knowledge of the payload shape.
-
+//	WHAT IS NOT HERE:
+//	  HTTP client (client.go), config parsing (config.go), registration (register.go)
+//
+//	Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
+//	product namespace cmd/arxsentinel/internal/threat; the executor
+//	type-asserts Event.Payload to *threat.ThreatEvent to extract the IP
+//	and level fields. Core has no knowledge of the payload shape.
 package mikrotik
 
 import (
@@ -206,8 +206,8 @@ func (e *MikroTikExecutor) flush(ctx context.Context, events []threat.ThreatEven
 	comment := sentinelPrefix + e.cfg.SentinelID
 	timeout := durationToRouterOS(e.cfg.TTL)
 
-	// addedIPs — IP, успешно добавленные в этом flush. MarkBatch'им их
-	// одним вызовом после цикла (см. ниже), чтобы не брать mutex N раз.
+	// addedIPs — IPs successfully added in this flush. We MarkBatch them in a
+	// single call after the loop (see below) to avoid taking the mutex N times.
 	addedIPs := make([]string, 0, len(events))
 
 	e.mu.Lock()
@@ -235,24 +235,24 @@ func (e *MikroTikExecutor) flush(ctx context.Context, events []threat.ThreatEven
 		if err != nil {
 			e.logger.Log("EXECUTOR", fmt.Sprintf("mikrotik: flush: add %s: %v", ev.IP, err), logger.LevelError)
 			e.stats.errors.Add(1)
-			// Не помечаем IP в dedup-окне при ошибке — иначе flaky RouterOS
-			// приведёт к тому, что IP будет заблокирован в окне на TTL,
-			// хотя фактически бан не применился. Следующий event дойдёт
-			// снова и попробует заново.
+			// Do not mark the IP in the dedup window on error — otherwise a flaky RouterOS
+			// would cause the IP to be blocked in the window for the whole TTL,
+			// even though the ban was not actually applied. The next event will
+			// arrive and try again.
 			continue
 		}
 		e.mu.Lock()
 		e.banned[ev.IP] = banRecord{id: id, addedAt: time.Now()}
 		e.mu.Unlock()
-		// Собираем успешно забаненные IP — MarkBatch в конце flush
-		// пометит их ОДНИМ взятием mutex (вместо N отдельных Mark).
-		// Семантика идентична N вызовам Mark: каждый IP получает TTL,
-		// dedup-окно остаётся flaky-safe (failed Add не попадает в батч).
+		// Collect successfully banned IPs — MarkBatch at the end of flush will
+		// mark them with a SINGLE mutex acquisition (instead of N separate Marks).
+		// Semantics identical to N individual Mark calls: each IP gets the TTL,
+		// the dedup window stays flaky-safe (failed Adds are not in the batch).
 		addedIPs = append(addedIPs, ev.IP)
 		e.stats.executed.Add(1)
 	}
 
-	// Один batch-mark после цикла — дешевле N взятий mutex при большом flush.
+	// One batch-mark after the loop — cheaper than N mutex acquisitions on a large flush.
 	if len(addedIPs) > 0 {
 		e.dedupWin.MarkBatch(addedIPs)
 	}
@@ -320,14 +320,14 @@ func (e *MikroTikExecutor) meetsMinLevel(level string) bool {
 	return levelOrder[level] >= levelOrder[e.cfg.MinLevel]
 }
 
-// isDuplicate проверяет, банился ли IP в течение dedup-окна или есть ли он
-// в локальной banned-map. Использует чистый Contains (без side-effect):
-// Mark вызывается отдельно из flush() после успешного Add — это делает
-// dedup-окно flaky-safe (RouterOS сбои не отравляют окно).
+// isDuplicate checks whether the IP was banned within the dedup window, or whether it
+// is present in the local banned map. Uses a pure Contains (no side effect):
+// Mark is called separately from flush() after a successful Add — this makes the
+// dedup window flaky-safe (RouterOS failures do not poison the window).
 //
-// Проверка dedup-окна идёт первой, потому что она покрывает post-sweep
-// сценарий (IP удалён из banned-map по TTL, но ещё в окне) — проверка
-// в обратном порядке привела бы к лишнему API-вызову.
+// The dedup-window check runs first because it covers the post-sweep scenario
+// (the IP has been removed from the banned map by TTL but is still in the window) —
+// checking the maps in the opposite order would cause an extra API call.
 func (e *MikroTikExecutor) isDuplicate(ip string) bool {
 	if e.dedupWin.Contains(ip) {
 		return true

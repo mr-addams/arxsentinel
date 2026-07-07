@@ -1,6 +1,6 @@
 // ========================== Detector manifests ==========================================
-//   Each detector exposes a Manifest describing its identity, role, and data contract.
-
+//
+//	Each detector exposes a Manifest describing its identity, role, and data contract.
 package overflow
 
 import "github.com/mr-addams/arx-core/pkg/plugin"

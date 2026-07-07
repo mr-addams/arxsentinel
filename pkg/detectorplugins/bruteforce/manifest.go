@@ -1,6 +1,6 @@
 // ========================== Bruteforce manifest =======================================
-//   Identity and data contract for the bruteforce detector plugin.
-
+//
+//	Identity and data contract for the bruteforce detector plugin.
 package bruteforce
 
 import "github.com/mr-addams/arx-core/pkg/plugin"

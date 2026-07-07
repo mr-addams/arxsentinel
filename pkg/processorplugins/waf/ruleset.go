@@ -1,32 +1,32 @@
 // ========================== pkg/processor/waf — Scheme / RuleSet wiring ===================
-//   BuildScheme and NewRuleSetFromConfig are the rule-engine integration surface for the
-//   WAF processor (Flow 001, Task H3). They sit between Manifest.Produces and a runtime
-//   ruleset.RuleSet so WafProcessor can call Match(event, resolver) at line rate.
 //
-//   WHAT IS HERE:
-//     - Config / RuleConfig — runtime configuration structs parsed by the factory.
-//     - BuildScheme         — iterates Manifest.Produces and registers each typed field
-//                              with the rule engine's Catalog (via builder.Builder).
-//     - NewRuleSetFromConfig — fail-fast compile of every rule at Init time; returns
-//                              TWO compiled RuleSets (passRS — action="pass" whitelist
-//                              rules, gateRS — action="drop"/"tag:..." threat rules) +
-//                              an action map for gateRS only. Returns a wrapped error
-//                              naming the rule that failed to compile.
+//	BuildScheme and NewRuleSetFromConfig are the rule-engine integration surface for the
+//	WAF processor (Flow 001, Task H3). They sit between Manifest.Produces and a runtime
+//	ruleset.RuleSet so WafProcessor can call Match(event, resolver) at line rate.
 //
-//   WHAT IS NOT HERE:
-//     - Manifest / Resolver / Process — owned by sibling files in this package
-//     - The Engine itself — pkg/rule/{compiler,parser,ruleset}
+//	WHAT IS HERE:
+//	  - Config / RuleConfig — runtime configuration structs parsed by the factory.
+//	  - BuildScheme         — iterates Manifest.Produces and registers each typed field
+//	                           with the rule engine's Catalog (via builder.Builder).
+//	  - NewRuleSetFromConfig — fail-fast compile of every rule at Init time; returns
+//	                           TWO compiled RuleSets (passRS — action="pass" whitelist
+//	                           rules, gateRS — action="drop"/"tag:..." threat rules) +
+//	                           an action map for gateRS only. Returns a wrapped error
+//	                           naming the rule that failed to compile.
 //
-//   DEPENDENCY RULE:
-//     pkg/processorplugins/waf → arx-core (pkg/plugin + pkg/rule/{builder,ruleset}) +
-//     stdlib.
+//	WHAT IS NOT HERE:
+//	  - Manifest / Resolver / Process — owned by sibling files in this package
+//	  - The Engine itself — pkg/rule/{compiler,parser,ruleset}
 //
-//   CONCURRENCY:
-//     All exported helpers run at Init time (factory called once by the registry), so
-//     no per-field locks are needed. The returned *ruleset.RuleSet is the thread-safe
-//     type owned by arx-core (pkg/rule/ruleset); WafProcessor consults it from
-//     per-event goroutines under RuleSet's read lock.
-
+//	DEPENDENCY RULE:
+//	  pkg/processorplugins/waf → arx-core (pkg/plugin + pkg/rule/{builder,ruleset}) +
+//	  stdlib.
+//
+//	CONCURRENCY:
+//	  All exported helpers run at Init time (factory called once by the registry), so
+//	  no per-field locks are needed. The returned *ruleset.RuleSet is the thread-safe
+//	  type owned by arx-core (pkg/rule/ruleset); WafProcessor consults it from
+//	  per-event goroutines under RuleSet's read lock.
 package waf
 
 import (

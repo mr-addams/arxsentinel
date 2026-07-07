@@ -1,12 +1,12 @@
 // ========================== Executors — top-level autonomous goroutines ==================
-//   Named Channel Switch (NCS) based dispatch (Flow #042).
 //
-//   ЧТО ЗДЕСЬ:
-//     - preRegisterExecutorQueues()     — пре-регистрация NCS-очередей executor'ов
-//     - collectSentinelSinkNames()      — собирает имена sentinel-threat выходов из конфига
-//     - sortedKeys()                    — стабильный порядок ключей для error-сообщений
-//     - startExecutors()                — top-level автономные горутины
-
+//	Named Channel Switch (NCS) based dispatch (Flow #042).
+//
+//	CONTENTS:
+//	  - preRegisterExecutorQueues()     — pre-registers NCS queues for executors
+//	  - collectSentinelSinkNames()      — collects sentinel-threat output names from the config
+//	  - sortedKeys()                    — stable key order for error messages
+//	  - startExecutors()                — top-level autonomous goroutines
 package main
 
 import (
@@ -16,12 +16,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mr-addams/arx-core/pkg/executor/queue"
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
-	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 	pkgexecutor "github.com/mr-addams/arx-core/pkg/executor"
+	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	ncs "github.com/mr-addams/arx-core/pkg/ncs"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
+	"github.com/mr-addams/arxsentinel/internal/sys/utils"
 )
 
 // productQueueNamespace — product-owned default for bbolt bucket and redis key prefix.

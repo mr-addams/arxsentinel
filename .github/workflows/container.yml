@@ -3,6 +3,14 @@ name: Container
 on:
   pull_request:
     branches: [dev]
+    # See integration.yml for why .github/** is deliberately NOT ignored here.
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - ".opencode/**"
+      - ".gitignore"
+      - "LICENSE"
+      - "scripts/hooks/**"
   workflow_call:
   workflow_dispatch:
 

@@ -654,6 +654,48 @@ processors:
   #                                    # after a SUCCESSFUL Add; 0 = disabled. On Add error,
   #                                    # the IP is NOT marked, so the next event retries.
 
+  # ── OpenWrt ubus/UCI firewall executor ────────────────────────────────────────────────
+  # - name: openwrt-blocklist
+  #   type: openwrt
+  #   sources:
+  #     - name: sentinel-cf            # matches sentinel-threat sink name in streams outputs
+  #   config:
+  #     host: "192.0.2.20"             # router address; uhttpd-mod-ubus must be installed
+  #     port: 80                       # default 80
+  #     scheme: "http"                 # "http" | "https"
+  #     username: "root"               # rpcd user with write access to the firewall UCI config
+  #     password: "ROUTER_PASSWORD"    # use env/secret in production
+  #     ipset_name: "arxsentinel_blocklist" # NAMED UCI section (firewall.<name>=ipset) —
+  #                                    # the plugin does not create it, see plugin README
+  #     ttl: "24h"                     # ban lifetime; must be > 0 — plugin owns expiry tracking
+  #                                    # (no native nftables timeout, see plugin README)
+  #     session_timeout: "5m"          # ubus_rpc_session lifetime; re-login before this elapses
+  #     min_level: "THREAT"            # INFO | WARN | THREAT — minimum event level to act on
+  #     batch_size: 10                 # IPs bundled into a single add_list + commit + reload
+  #     flush_interval: "30s"          # max delay before flushing a partial batch
+  #     dedup_window: "5m"             # skip re-banning same IP within this window; 0 = disabled
+
+  # ── OPNsense REST API executor ────────────────────────────────────────────────────────
+  # - name: opnsense-blocklist
+  #   type: opnsense
+  #   sources:
+  #     - name: sentinel-cf            # matches sentinel-threat sink name in streams outputs
+  #   config:
+  #     host: "192.0.2.30"             # firewall address
+  #     port: 443                      # default 443
+  #     scheme: "https"                # "http" | "https" — default "https"
+  #     api_key: "API_KEY"             # Basic Auth username; System -> Access -> Users -> API
+  #     api_secret: "API_SECRET"       # Basic Auth password; use env/secret in production
+  #     tls_verify: true               # false only for self-signed certs in lab setups
+  #     alias_name: "arxsentinel_blocklist" # pre-existing alias of type Host/Network/External —
+  #                                    # the plugin does not create it, see plugin README
+  #     ttl: "24h"                     # ban lifetime; must be > 0 — plugin owns expiry tracking
+  #                                    # (alias_util has no native timeout, see plugin README)
+  #     min_level: "THREAT"            # INFO | WARN | THREAT — minimum event level to act on
+  #     dedup_window: "5m"             # skip re-banning same IP within this window; 0 = disabled
+  #                                    # no batch_size / flush_interval — alias_util/add applies
+  #                                    # immediately per call, no batching (see plugin README)
+
   # ── nginx blocklist executor ──────────────────────────────────────────────────────────
   # - name: nginx-blocklist
   #   type: nginx
@@ -813,6 +855,18 @@ processors:
 #   # их через свой `sentinel` source и пропускает через свою цепочку.
 #   - type: exec              # exec plugin: events written as JSON to plugin stdin
 #     exec: /usr/local/lib/arxsentinel/plugins/my-sink.sh
+#   - type: loki              # forward threat events to Grafana Loki (Push API)
+#     loki_url: "https://loki.example.com:3100"      # required — base URL of Loki push endpoint
+#     loki_labels: {job: arxsentinel}                 # required — Loki rejects streams with zero labels; at least one label pair
+#     format: json                                    # JSON envelope reads better in Loki than fail2ban lines; recommended for SIEM-forwarding
+#   - type: splunk            # forward threat events to Splunk HEC (JSON-mode endpoint)
+#     splunk_url: "https://splunk-host:8088"          # required — base URL of the Splunk HEC endpoint
+#     splunk_token: "<HEC token>"                     # required — HEC token, sent as "Authorization: Splunk <token>"
+#     format: json                                    # JSON envelope reads better in Splunk than fail2ban lines; recommended for SIEM-forwarding
+#   - type: datadog           # forward threat events to Datadog Logs (Logs API v2)
+#     datadog_url: "https://http-intake.logs.datadoghq.com"   # required — regional base URL of the Datadog Logs intake endpoint
+#     datadog_api_key: "<Datadog API key>"            # required — Datadog API key, sent as "DD-API-KEY: <key>" header
+#     format: json                                    # JSON envelope reads better in Datadog than fail2ban lines; recommended for SIEM-forwarding
 #
 # Cross-node raw-forward variant (Distributed NCS): pair `format: raw-line` on a
 # `sentinel-threat` sink with `raw_forward: true` on the pipeline (below, under

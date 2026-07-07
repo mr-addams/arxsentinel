@@ -1,22 +1,22 @@
 // ========================== Module output/logger ========================================
-//   Writing WARN/THREAT events to the threat log in Fail2Ban format.
 //
-//   WHAT IS HERE:
-//     - ThreatLogger — accepts scorer verdict and writes a line to the log
-//     - Log() — the only public function; does not write when level = "" (normal)
+//	Writing WARN/THREAT events to the threat log in Fail2Ban format.
 //
-//   LINE FORMAT (read by Fail2Ban filter, Task 5.1):
-//     2026-04-05T14:33:12Z THREAT 1.2.3.4 score=85 modules=probe,rate reason="..."
+//	WHAT IS HERE:
+//	  - ThreatLogger — accepts scorer verdict and writes a line to the log
+//	  - Log() — the only public function; does not write when level = "" (normal)
 //
-//   ISOLATION:
-//     ThreatLogger does not import sys/utils directly — writeFn is injected
-//     from main.go. In tests writeFn captures output into strings.Builder.
+//	LINE FORMAT (read by Fail2Ban filter, Task 5.1):
+//	  2026-04-05T14:33:12Z THREAT 1.2.3.4 score=85 modules=probe,rate reason="..."
 //
-//   WHAT IS NOT HERE:
-//     - Console logging (sys/utils.Log) — called via logFn in writeFn
-//     - Score aggregation (scorer/)
-//     - File opening (sys/utils.Init)
-
+//	ISOLATION:
+//	  ThreatLogger does not import sys/utils directly — writeFn is injected
+//	  from main.go. In tests writeFn captures output into strings.Builder.
+//
+//	WHAT IS NOT HERE:
+//	  - Console logging (sys/utils.Log) — called via logFn in writeFn
+//	  - Score aggregation (scorer/)
+//	  - File opening (sys/utils.Init)
 package output
 
 import (

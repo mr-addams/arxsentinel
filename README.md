@@ -21,7 +21,7 @@ Collect events on one machine, score them on another, ban on a third — over a 
 > Engine lifecycle, runtime contract, and core plugin interfaces live in
 > [`arx-core/docs/`](https://github.com/mr-addams/arx-core/tree/v0.1.0/docs) (`architecture.md`, `contract.md`,
 > `plugin-development.md`). This README documents the ArxSentinel product layer:
-> security detectors, threat scoring, NCS wiring, and Cloudflare/MikroTik/nginx
+> security detectors, threat scoring, NCS wiring, and Cloudflare/MikroTik/OpenWrt/OPNsense/nginx
 > executors. See [Architecture](docs/ARCHITECTURE.md) for the split.
 
 ```
@@ -55,6 +55,7 @@ Collect events on one machine, score them on another, ban on a third — over a 
   ╔═══════════════════════════╧══════════════════════════════════════╗
   ║  SINKS  (Passive Logging)                                        ║
   ║  file (fail2ban format) · stdout JSON · exec+JSON plugin         ║
+  ║  Grafana Loki · Splunk HEC · Datadog Logs API  (SIEM forwarding)  ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ sentinel-threat sink → AttachWriter()
   ╔═══════════════════════════╧══════════════════════════════════════╗
@@ -62,10 +63,10 @@ Collect events on one machine, score them on another, ban on a third — over a 
   ║  memory │ bbolt (file) │ redis │ transport (QUIC node mesh)      ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ ncs://<channel-name> → AttachReader()
-  ╔═══════════════════════════╧══════════════════════════════════════╗
-  ║  EXECUTORS  (Stateful Active Response — optional)                ║
-  ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
-  ╚══════════════════════════════════════════════════════════════════╝
+  ╔═══════════════════════════╧═══════════════════════════════════════════════════════════════════════╗
+  ║  EXECUTORS  (Stateful Active Response — optional)                                                 ║
+  ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist · OpenWrt ipset · OPNsense alias   ║
+  ╚═══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ```
 
 ## Use Cases
@@ -162,7 +163,30 @@ sinks:
     exec: /opt/plugins/send-to-siem.sh
 ```
 
-### 8. Distributed pipeline — collect anywhere, detect centrally, ban at the edge
+### 8. Observability — forward to Loki / Splunk / Datadog
+
+Send scored threat events straight into your log platform as a first-class
+sink — useful when you already operate a SIEM and want ArxSentinel as a feed
+alongside (or instead of) Fail2Ban/executor responders. JSON envelope is
+recommended for log-platform readability:
+
+```yaml
+sinks:
+  - type: loki
+    format: json
+    loki_url: https://loki.example.com:3100
+    loki_labels:
+      job: arxsentinel
+```
+
+The same shape works for `type: splunk` (HEC JSON endpoint — needs
+`splunk_url` + `splunk_token`) and `type: datadog` (Logs API v2 — needs
+`datadog_url` with region, e.g. `https://http-intake.logs.datadoghq.com`,
+plus `datadog_api_key`). TLS, mTLS, batching, gzip and multi-tenant fields
+are available per sink — see [docs/providers/observability/](docs/providers/observability/).
+Quick-start recipes: [cookbook/observability/](cookbook/observability/).
+
+### 9. Distributed pipeline — collect anywhere, detect centrally, ban at the edge
 
 The same binary becomes a **collector**, **detector**, or **responder** by
 config alone, connected over a built-in mutually-authenticated QUIC mesh —
@@ -171,10 +195,10 @@ no message broker, no log shipper, no VPN:
 ```
   Pi / VPS / NAS collectors          detection box               enforcement
  ┌────────────┐
- │ nginx logs  │──┐   "edge-raw"   ┌───────────────┐  "scored"  ┌─────────────────┐
- └────────────┘  ├──────────────▶│ 8 detectors ·  │──────────▶│ MikroTik · nginx │
- ┌────────────┐  │  QUIC/TLS 1.3  │ WAF · scoring  │            │ CF WAF · SIEM    │
- │ API logs    │──┘   Ed25519+TOFU └───────────────┘            └─────────────────┘
+ │ nginx logs  │──┐   "edge-raw"   ┌───────────────┐  "scored"  ┌───────────────────────────────────────┐
+ └────────────┘  ├──────────────▶│ 8 detectors ·  │──────────▶│ MikroTik · OpenWrt · OPNsense · nginx │
+ ┌────────────┐  │  QUIC/TLS 1.3  │ WAF · scoring  │            │ CF WAF · SIEM                         │
+ │ API logs    │──┘   Ed25519+TOFU └───────────────┘            └───────────────────────────────────────┘
  └────────────┘
 ```
 
@@ -461,6 +485,7 @@ deploy/examples/
 - **Chain Guard:** detects Cloudflare/CDN edge IPs and bogon/RFC 1918/CGNAT addresses appearing as client IPs — signals a misconfigured proxy chain before ArxSentinel's detectors go blind
 - **Bot DNS verification:** Googlebot, Bingbot, Yandex, DuckDuckGo and others are verified via rDNS/fDNS — legitimate crawlers are never banned
 - **Multi-stream + Multi-pipeline:** watch multiple log files in one process; within each stream, define independent pipelines with their own detectors, sources, sinks and IP-state tracker (or share state via `tracker_group`)
+- **Observability sinks:** forward threat events to Grafana Loki, Splunk HEC, or Datadog Logs API — SIEM forwarding as an alternative (or addition) to Fail2Ban/executor responders
 - **Distributed pipeline (Distributed NCS):** span the pipeline across machines over a built-in encrypted node mesh (QUIC · TLS 1.3 · Ed25519 identity · TOFU pinning) — forward raw parsed entries to a central detector, or scored verdicts to remote responders; no broker, no log shipper, no VPN. See [docs/DISTRIBUTED.md](docs/DISTRIBUTED.md)
 - **Whitelist:** IPs, CIDRs, UA substrings — configurable exclusion lists
 - **Linear score decay:** points decay over `observation_window`, no false bans from old traffic
@@ -626,11 +651,15 @@ Helm chart with values reference: [Kubernetes README](deploy/container/k8s/arxse
 
 Executors are stateful action plugins that run after threat scoring. Unlike Sinks (passive log writers), Executors actively manage external resources: they maintain a local dedup map, apply TTL-based expiry, and track execution statistics.
 
+> **Terminology note:** "Executor" is the plugin/config term (`executors:` in YAML, `pkg/executorplugins/*` in code) — used throughout this README and the codebase. In a [Distributed NCS](docs/DISTRIBUTED.md) topology, the node that runs executors is called a **Responder** (paired with **Collector** and **Detector** as the three node roles) — same plugins, different vocabulary for describing *where* they run in a multi-machine deployment.
+
 | Executor | Package | Description |
 |---|---|---|
 | **cloudflare** | `pkg/executor/cloudflare` | Adds threat IPs to a Cloudflare IP List; auto-removes expired entries via TTL sweep |
 | **nginx** | `pkg/executor/nginx` | Writes banned IPs to a plain blocklist file (TTL auto-expiry, atomic writes, optional reload command); you include the file into nginx however suits your setup |
 | **mikrotik** | `pkg/executor/mikrotik` | Manages a RouterOS v7 firewall address-list over the REST API; TTL-based auto-unban, removes only arxsentinel-owned entries, CHR/ARM compatible |
+| **openwrt** | `pkg/executor/openwrt` | Manages an nftables ipset via a router's ubus (uhttpd-mod-ubus) endpoint using the standard `uci`/`rc` rpcd objects; batched UCI edit + single reload per cycle, TTL owned by the plugin (not nftables-native) |
+| **opnsense** | `pkg/executor/opnsense` | Manages a firewall alias over the OPNsense REST API (`alias_util` add/delete/list); independent point add/delete per event (no batching — the API applies immediately), TTL owned by the plugin via active sweep |
 
 > **⚠️ NCS routing: Point-to-Point, not Broadcast.**
 > Executors receive events through the Named Channel Switch (NCS) — a Work Queue,
@@ -644,6 +673,10 @@ Executors are stateful action plugins that run after threat scoring. Unlike Sink
 >     name: cf-threats      # Cloudflare executor reads this
 >   - type: sentinel-threat
 >     name: mtk-threats     # MikroTik executor reads this
+>   - type: sentinel-threat
+>     name: owrt-threats    # OpenWrt executor reads this
+>   - type: sentinel-threat
+>     name: opns-threats    # OPNsense executor reads this
 > ```
 
 See [docs/executors.md](docs/executors.md) for the framework overview and how to add custom executors.
@@ -710,6 +743,8 @@ See [README.whitelist.md](deploy/examples/README.whitelist.md) for configuration
                             ║  EXECUTORS  (Stateful)          ║
                             ║  ├─ Cloudflare IP Lists API     ║
                             ║  ├─ MikroTik REST address-list  ║
+                            ║  ├─ OpenWrt UCI ipset (ubus)    ║
+                            ║  ├─ OPNsense REST alias         ║
                             ║  └─ nginx blocklist file        ║
                             ╚═════════════════════════════════╝
                             (dedup map · TTL expiry · auto-unban)
@@ -941,8 +976,9 @@ Full guide: [`deploy/grafana/README.md`](deploy/grafana/README.md)
 
 In active development for v2.x:
 
-- **Alert sinks** — push threats to Telegram, Slack and PagerDuty with deduplication and rate-limiting
 - **AWS WAF executor** — IP set updates for AWS WAF rule groups
+- **SSH source + detectors** — parse `sshd` auth logs (syslog/journald) and score brute-force/credential-stuffing patterns with dedicated detectors, reusing the same scoring/executor pipeline as HTTP
+- **Alert sinks** — push threats to Telegram, Slack and PagerDuty with deduplication and rate-limiting
 
 ---
 

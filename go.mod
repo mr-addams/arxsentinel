@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/fatih/color v1.19.0
 	github.com/moby/moby/client v0.5.0
-	github.com/mr-addams/arx-core v0.6.1
+	github.com/mr-addams/arx-core v0.9.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/rrethy/ahocorasick v1.0.0
 	github.com/testcontainers/testcontainers-go v0.43.0

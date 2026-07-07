@@ -1,30 +1,32 @@
 // ========================== Security factory — implements LineProcessorFactory =============
-//   Этот файл — реализация runtime.LineProcessorFactory на стороне Product.
 //
-//   ЧТО ЗДЕСЬ:
-//     - securityFactory      — фабрика per-pipeline state; реализует оба интерфейса
-//                              (LineProcessorFactory + LineProcessor — это намеренно,
-//                              engine.Run делает type-assert).
-//     - Build()              — построение matcher / verifier / scorer / tracker;
-//                              старт GC-горутины один раз на группу tracker'а.
-//     - Reload()             — SIGHUP-reload: перечитывает config, перестраивает
-//                              matcher + scorer + detectors; tracker reuse.
+//	This file is the Product-side implementation of runtime.LineProcessorFactory.
 //
-//   КРИТИЧЕСКИ ВАЖНО: Build/Reload содержат побочные эффекты (старт GC, чтение
-//   файлов). Не модифицировать без пересмотра DECISIONS.md Flow 081.
+//	WHAT IS HERE:
+//	  - securityFactory      — per-pipeline state factory; implements both
+//	                           interfaces (LineProcessorFactory + LineProcessor —
+//	                           this is intentional: engine.Run performs a type
+//	                           assertion).
+//	  - Build()              — constructs matcher / verifier / scorer / tracker;
+//	                           starts the GC goroutine once per tracker group.
+//	  - Reload()             — SIGHUP-reload: re-reads config, rebuilds matcher
+//	                           + scorer + detectors; tracker is reused.
 //
-//   ОДИН factory на стрим: main.go создаёт один экземпляр securityFactory на
-//   каждый cfg.Streams[i], передаёт в runtime.Run (engine делает type-assert
-//   на LineProcessor — фабрика должна реализовывать оба интерфейса).
+//	CRITICAL: Build/Reload have side effects (GC start, file reads). Do not
+//	modify without revisiting DECISIONS.md Flow 081.
 //
-//   СВЯЗЬ С DECISIONS.md:
-//     - TrackerGroup: Pipeline.TrackerGroup → resolveTrackerGroup; shared внутри
-//       фабрики через trackers map[string]*state.Tracker (mutex guarded).
-//     - GC: один раз на tracker (а не на pipeline) — оригинальная семантика,
-//       см. securityFactory.getOrCreateTracker.
-//     - Sources/Sinks НЕ строятся здесь — это делает runtime_adapter.go и
-//       передаёт в engine через StreamSpec.Pipelines[i].Sinks/Sources.
-
+//	ONE factory per stream: main.go creates one securityFactory instance per
+//	cfg.Streams[i] and passes it to runtime.Run (the engine performs a type
+//	assertion to LineProcessor — the factory must implement both interfaces).
+//
+//	CONNECTION TO DECISIONS.md:
+//	  - TrackerGroup: Pipeline.TrackerGroup → resolveTrackerGroup; shared
+//	    inside the factory via the trackers map[string]*state.Tracker
+//	    (mutex guarded).
+//	  - GC: once per tracker (not per pipeline) — original semantics, see
+//	    securityFactory.getOrCreateTracker.
+//	  - Sources/Sinks are NOT built here — runtime_adapter.go does that and
+//	    passes them to the engine through StreamSpec.Pipelines[i].Sinks/Sources.
 package main
 
 import (
@@ -34,66 +36,69 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mr-addams/arx-core/pkg/plugin"
+	coreruntime "github.com/mr-addams/arx-core/pkg/runtime"
 	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
 	"github.com/mr-addams/arxsentinel/internal/core/scorer"
 	"github.com/mr-addams/arxsentinel/internal/core/state"
 	"github.com/mr-addams/arxsentinel/internal/core/whitelist"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
-	coreruntime "github.com/mr-addams/arx-core/pkg/runtime"
-	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/mr-addams/arxsentinel/pkg/processorplugins/waf"
 	"gopkg.in/yaml.v3"
 )
 
 // ++++++++++++++++++++++++++ securityFactory — Product-side factory ++++++++++++++++++++++++
 
-// securityFactory реализует runtime.LineProcessorFactory + runtime.LineProcessor.
+// securityFactory implements runtime.LineProcessorFactory + runtime.LineProcessor.
 //
-// Один factory-экземпляр на стрим. main.go создаёт его ДО runtime.Run,
-// передаёт engine как `factory`. Engine делает type-assert:
-//   - LineProcessorFactory — для Build/Reload;
-//   - LineProcessor        — для Process (вызов factory.Process делегирует
-//     securityProcessor-инстансу с shared).
+// One factory instance per stream. main.go creates it BEFORE runtime.Run and
+// passes it to the engine as `factory`. The engine performs a type assertion:
+//   - LineProcessorFactory — for Build/Reload;
+//   - LineProcessor        — for Process (factory.Process delegates to a
+//     securityProcessor instance carrying shared).
 //
-// shared — runtime.SharedResources (opaque). Security-домен поля (ChainChecker
-// / WarningsWriter / BlocklistManager) доступны через type-assert.
+// shared is runtime.SharedResources (opaque). Security-domain fields
+// (ChainChecker / WarningsWriter / BlocklistManager) are reachable through a
+// type assertion.
 type securityFactory struct {
-	ctx      context.Context // app context — для tracker.RunGC
-	path     string          // путь к config.yaml — для Reload
+	ctx      context.Context // app context — for tracker.RunGC
+	path     string          // path to config.yaml — for Reload
 	ipCache  *whitelist.IPCache
 	resolver *net.Resolver
 
-	cfg   config.Config // snapshot на момент создания фабрики; Reload обновляет
-	cfgMu sync.Mutex    // guard для cfg между Reload (несколько pipeline'ов перечитывают)
+	cfg   config.Config // snapshot at factory creation time; Reload updates it
+	cfgMu sync.Mutex    // guard for cfg across Reload (multiple pipelines re-reading)
 
 	streamName    string
 	streamNameIdx int
 
-	// Per-stream cache tracker'ов по группе. Один и тот же *state.Tracker
-	// разделяется между pipeline'ами одной группы — оригинальная семантика
-	// (pipeline.go:139-146 buildTrackerGroups).
+	// Per-stream tracker cache by group. The same *state.Tracker is shared
+	// between pipelines of one group — original semantics (pipeline.go:139-146
+	// buildTrackerGroups).
 	trackers  map[string]*state.Tracker
 	trackerMu sync.Mutex
 
-	// shared — immutable после создания (мы только читаем). Копируется
-	// в securityProcessor.Process через &securityProcessor{shared: f.shared}.
+	// shared is immutable after creation (we only read from it). It is copied
+	// into securityProcessor.Process via &securityProcessor{shared: f.shared}.
 	shared coreruntime.SharedResources
 }
 
-// Compile-time гарантии: factory удовлетворяет ОБА интерфейса runtime.
+// Compile-time guarantees: the factory satisfies BOTH runtime interfaces.
 var (
 	_ coreruntime.LineProcessorFactory = (*securityFactory)(nil)
 	_ coreruntime.LineProcessor        = (*securityFactory)(nil)
 )
 
-// ── Process — делегирует securityProcessor.Process ++++++++++++++++++++++++++++++++++++++++
+// ── Process — delegates to securityProcessor.Process ++++++++++++++++++++++++++++++++++++++++
 
-// Process — entry point для engine.dispatchEntry. Создаёт securityProcessor
-// (с shared) на лету и делегирует ему обработку.
+// Process is the entry point for engine.dispatchEntry. It creates a
+// securityProcessor (carrying shared) on the fly and delegates processing to
+// it.
 //
-// На каждом вызове создаётся НОВЫЙ securityProcessor — дешёвая аллокация
-// (1 поле shared pointer); GC-давления не создаёт (escape analysis inlines).
+// A NEW securityProcessor is allocated on every call — this is a cheap
+// allocation (1 shared pointer field); it does not create GC pressure
+// (escape analysis inlines the value).
 func (f *securityFactory) Process(
 	ctx context.Context,
 	event *plugin.Event,
@@ -103,15 +108,15 @@ func (f *securityFactory) Process(
 	return (&securityProcessor{shared: f.shared}).Process(ctx, event, ps, evctx)
 }
 
-// ── Build — построить per-pipeline ProcessorState ++++++++++++++++++++++++++++++++++++++++
+// ── Build — construct per-pipeline ProcessorState ++++++++++++++++++++++++++++++++++++++++
 
-// Build — построить per-pipeline ProcessorState.
-// Вызывается arx-core/pkg/runtime engine.runPipeline ОДИН раз на старте pipeline.
-// Внутри:
-//  1. Резолвим pipeCfg по stream/pipe/idx (snapshot cfg под cfgMu).
-//  2. Matcher, Verifier, Scorer + detectors (через buildPipelineDetectors).
-//  3. Tracker: shared per-group; создаём под trackerMu если ещё нет.
-//  4. Стартуем GC-горутину ОДИН раз на уникальный tracker (ctx = f.ctx).
+// Build constructs the per-pipeline ProcessorState.
+// It is called by arx-core/pkg/runtime engine.runPipeline ONCE at pipeline start.
+// Inside:
+//  1. Resolve pipeCfg by stream/pipe/idx (snapshot cfg under cfgMu).
+//  2. Matcher, Verifier, Scorer + detectors (via buildPipelineDetectors).
+//  3. Tracker: shared per group; created under trackerMu if not yet present.
+//  4. Start the GC goroutine ONCE per unique tracker (ctx = f.ctx).
 func (f *securityFactory) Build(
 	streamName, pipeName string,
 	pipeIdx int,
@@ -121,31 +126,32 @@ func (f *securityFactory) Build(
 	cfg := f.cfg
 	f.cfgMu.Unlock()
 
-	// Резолвим stream/pipe конфиги. Для Build нет старого state — fallback на
-	// pipeName/idx из входных параметров; в норме cfg.Streams содержит нужный стрим.
+	// Resolve stream/pipe configs. For Build there is no old state — fall back
+	// to pipeName/idx from the input parameters; normally cfg.Streams contains
+	// the requested stream.
 	streamCfg, ok := findStreamCfg(cfg, streamName)
 	if !ok {
 		return nil, fmt.Errorf("stream %q not found in config", streamName)
 	}
 	pipeCfg := findPipelineCfg(streamCfg, pipeName, pipeIdx, streamCfg.Pipelines[pipeIdx])
 
-	// Matcher — может упасть на ошибке конфига.
+	// Matcher may fail on a config error.
 	matcher, err := whitelist.NewMatcher(cfg.Whitelist)
 	if err != nil {
 		return nil, fmt.Errorf("whitelist init error: %w", err)
 	}
 
-	// Verifier использует общий IPCache (DNS-результаты не специфичны для pipeline).
+	// Verifier uses the shared IPCache (DNS results are not pipeline-specific).
 	verifier := whitelist.NewVerifier(f.ipCache, f.resolver, utils.Log)
 
-	// bridgeShared требует старый cmd/arxsentinel SharedResources (используется
-	// в buildPipelineDetectors). Конвертируем runtime.SharedResources → old.
+	// bridgeShared expects the old cmd/arxsentinel SharedResources (used inside
+	// buildPipelineDetectors). Convert runtime.SharedResources → old.
 	oldShared := bridgeRuntimeShared(shared)
 	detectors := buildPipelineDetectors(f.ctx, cfg, pipeCfg, oldShared)
 	scorerRef := scorer.NewScorer(cfg.Scoring, detectors, utils.Log)
 
-	// Tracker — shared per-group. Один и тот же *state.Tracker между pipeline'ами
-	// одной группы (DECISIONS.md Flow 081, оригинальная семантика buildTrackerGroups).
+	// Tracker is shared per group. The same *state.Tracker between pipelines
+	// of one group (DECISIONS.md Flow 081, original buildTrackerGroups semantics).
 	group := resolveTrackerGroup(pipeCfg)
 	tracker := f.getOrCreateTracker(group, cfg)
 
@@ -175,12 +181,12 @@ func (f *securityFactory) Build(
 
 // ── Reload — SIGHUP-equivalent reload +++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-// Reload — SIGHUP-equivalent reload. Возвращает НОВЫЙ *securityState; engine
-// атомарно подменяет. Tracker и Verifier переживают reload (общий по группе;
-// их state (ban list, DNS cache) должен пережить reload).
+// Reload is a SIGHUP-equivalent reload. It returns a NEW *securityState; the
+// engine swaps it in atomically. Tracker and Verifier survive reload (shared
+// per group; their state (ban list, DNS cache) must survive reload).
 //
-// Шаги аналогичны исходному reload-блоку в runPipeline, перенесённому в
-// arx-core/pkg/runtime (engine.runPipeline, case <-reloadCh).
+// The steps mirror the original reload block in runPipeline, which was moved
+// into arx-core/pkg/runtime (engine.runPipeline, case <-reloadCh).
 func (f *securityFactory) Reload(
 	old coreruntime.ProcessorState,
 	ctx context.Context,
@@ -200,7 +206,7 @@ func (f *securityFactory) Reload(
 		return nil, fmt.Errorf("SIGHUP whitelist error: %w", err)
 	}
 
-	// Ищем обновлённый stream-конфиг по имени; откатываемся на старый, если удалён.
+	// Look up the updated stream config by name; fall back to the old one if removed.
 	newStreamCfg, ok := findStreamCfg(newCfg, oldState.StreamName)
 	if !ok {
 		newStreamCfg = streamConfigFromOld(oldState)
@@ -208,7 +214,7 @@ func (f *securityFactory) Reload(
 	newPipeCfg := findPipelineCfg(newStreamCfg, oldState.PipelineName, oldState.PipelineIdx,
 		oldPipeConfigFromOld(oldState))
 
-	// Обновляем snapshot cfg под мьютексом — следующие Build получат свежий cfg.
+	// Update the cfg snapshot under the mutex — subsequent Build calls see the fresh cfg.
 	f.cfgMu.Lock()
 	f.cfg = newCfg
 	f.cfgMu.Unlock()
@@ -218,8 +224,8 @@ func (f *securityFactory) Reload(
 	detectors := buildPipelineDetectors(ctx, newCfg, newPipeCfg, oldShared)
 	scorerRef := scorer.NewScorer(newCfg.Scoring, detectors, utils.Log)
 
-	// Tracker.Reconfigure — внутри-состояние (windows, intervals) подстраивается
-	// под новый конфиг, IPState-данные сохраняются.
+	// Tracker.Reconfigure adapts the inner state (windows, intervals) to the
+	// new config while preserving IPState data.
 	oldState.Tracker.Reconfigure(newCfg)
 
 	// WAF — rebuild from new cfg (rules may have changed; RuleSet is read-only
@@ -250,12 +256,12 @@ func (f *securityFactory) Reload(
 
 // ── Helpers (private) ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-// getOrCreateTracker возвращает существующий tracker для группы или создаёт
-// новый и стартует его GC-горутину ОДИН раз.
+// getOrCreateTracker returns the existing tracker for the group or creates a
+// new one and starts its GC goroutine ONCE.
 //
-// trackerMu защищает map от concurrent first-time-creation в нескольких
-// pipeline'ах одной группы (Run-старт гонка, если engine.Run запускает
-// pipeline-горутины параллельно).
+// trackerMu protects the map from concurrent first-time creation across
+// pipelines of the same group (a startup race if engine.Run launches pipeline
+// goroutines in parallel).
 func (f *securityFactory) getOrCreateTracker(group string, cfg config.Config) *state.Tracker {
 	f.trackerMu.Lock()
 	defer f.trackerMu.Unlock()
@@ -265,19 +271,20 @@ func (f *securityFactory) getOrCreateTracker(group string, cfg config.Config) *s
 	}
 	t := state.NewTracker(cfg, utils.Log)
 	f.trackers[group] = t
-	// GC — ОДИН раз на tracker (DECISIONS.md Flow 081). f.ctx — appCtx,
-	// отмена при SIGTERM/SIGINT останавливает GC.
+	// GC runs ONCE per tracker (DECISIONS.md Flow 081). f.ctx is appCtx, so
+	// SIGTERM/SIGINT cancellation stops the GC.
 	go t.RunGC(f.ctx, time.Duration(cfg.State.GCInterval))
 	return t
 }
 
-// bridgeRuntimeShared конвертирует runtime.SharedResources в старый cmd/arxsentinel
-// SharedResources для buildPipelineDetectors. Последний принимает старый тип через
-// bridgeShared (builders.go) — Phase 4 унифицирует сигнатуру.
+// bridgeRuntimeShared converts runtime.SharedResources into the legacy
+// cmd/arxsentinel SharedResources for buildPipelineDetectors. The latter
+// accepts the old type via bridgeShared (builders.go) — Phase 4 will unify
+// the signature.
 //
-// Type-assert конкретного *blocklist.Manager здесь достаточен: bridgeShared
-// (builders.go) использует ТОЛЬКО BlocklistManager, ChainChecker и WarningsWriter
-// buildPipelineDetectors'у не нужны.
+// A type assertion on the concrete *blocklist.Manager is sufficient here:
+// bridgeShared (builders.go) uses ONLY BlocklistManager, ChainChecker and
+// WarningsWriter — buildPipelineDetectors does not need them.
 func bridgeRuntimeShared(shared coreruntime.SharedResources) SharedResources {
 	out := SharedResources{}
 	if mgr, ok := shared.BlocklistManager.(*blocklist.Manager); ok {
@@ -286,7 +293,7 @@ func bridgeRuntimeShared(shared coreruntime.SharedResources) SharedResources {
 	return out
 }
 
-// findStreamCfg находит StreamConfig по имени. Используется для Reload (нет fallback).
+// findStreamCfg locates a StreamConfig by name. Used for Reload (no fallback).
 func findStreamCfg(cfg config.Config, name string) (config.StreamConfig, bool) {
 	for _, s := range cfg.Streams {
 		if s.Name == name {
@@ -296,17 +303,18 @@ func findStreamCfg(cfg config.Config, name string) (config.StreamConfig, bool) {
 	return config.StreamConfig{}, false
 }
 
-// streamConfigFromOld восстанавливает минимальный StreamConfig из старого state —
-// нужен когда новый cfg удалил стрим. findPipelineCfg при Reload использует
-// fallback на старую pipeCfg (старый PipeConfig) — реальный pipeCfg в этом
-// случае взять негде, поэтому fallback.
+// streamConfigFromOld reconstructs a minimal StreamConfig from the old state —
+// needed when the new cfg has removed the stream. findPipelineCfg in Reload
+// uses the old pipeCfg (old PipeConfig) as a fallback — the real pipeCfg
+// cannot be recovered in that case, hence the fallback.
 func streamConfigFromOld(old *securityState) config.StreamConfig {
 	return config.StreamConfig{Name: old.StreamName}
 }
 
-// oldPipeConfigFromOld — заглушка для findPipelineCfg fallback. Используется только
-// когда новый стрим не содержит нужный pipeline (sighup-remove). Минимальный
-// stub — реальный pipeCfg в этом случае взять негде.
+// oldPipeConfigFromOld is a stub for the findPipelineCfg fallback. It is used
+// only when the new stream does not contain the requested pipeline
+// (sighup-remove). It is a minimal stub — the real pipeCfg cannot be recovered
+// in that case.
 func oldPipeConfigFromOld(old *securityState) config.PipelineConfig {
 	return config.PipelineConfig{Name: old.PipelineName}
 }

@@ -3,6 +3,16 @@ name: Integration Tests
 on:
   pull_request:
     branches: [dev]
+    # Mirrors the pre-push hook's skip list (scripts/hooks/pre-push), minus
+    # .github/** — unlike the local hook (a backstop CI re-validates anyway),
+    # this IS the CI run, so workflow-file changes must still execute it.
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - ".opencode/**"
+      - ".gitignore"
+      - "LICENSE"
+      - "scripts/hooks/**"
   workflow_dispatch:
   workflow_call:
 
@@ -15,7 +25,11 @@ jobs:
     uses: ./.github/workflows/container.yml
 
   integration:
-    name: Integration tests (142 checks — 6×7 direct + 6 badbot + 6 blocklist + 4×6 proxy-chain + 6 CF-direct + 4×6 CF-chain + 2 chain-guard + 16 HTTP-source + 6 syslog-source + 7 Distributed NCS)
+    # No fixed check-count in the name: run.sh/verify.sh already print the real,
+    # dynamically-computed total every run — a hardcoded count here would need
+    # a manual update on every new check and reliably went stale (see the
+    # "Publish integration test summary" step below for the live number).
+    name: Integration tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -30,6 +44,20 @@ jobs:
 
       - name: Run integration tests
         run: bash tests/integration/run.sh
+
+      - name: Publish integration test summary
+        # Always runs (even on failure) so the live, auto-computed check
+        # count and pass/fail breakdown from verify.sh land in the PR's
+        # Checks tab — no hardcoded number to keep in sync by hand.
+        if: always()
+        run: |
+          {
+            echo "## Integration test summary"
+            echo ""
+            echo '```'
+            grep -A 30 '^Results:' tests/integration/logs/verify-output.txt || echo "(summary not found — see full job log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run Distributed NCS container integration tests
         run: bash tests/integration/distributed-ncs/run.sh

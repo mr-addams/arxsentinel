@@ -49,6 +49,11 @@ jobs:
             sed -i -E "s|(section-tag\">[^v<]*v)[0-9]+\.[0-9]+\.[0-9]+|\1${stable}|g" docs/*.html
           fi
 
+      - name: Sync sitemap lastmod to today
+        run: |
+          today=$(date -u +%Y-%m-%d)
+          sed -i -E "s|<lastmod>[0-9]{4}-[0-9]{2}-[0-9]{2}</lastmod>|<lastmod>${today}</lastmod>|g" docs/sitemap.xml
+
       - name: Copy README to docs
         run: cp README.md docs/README.md
 

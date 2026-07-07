@@ -1,35 +1,35 @@
 // ========================== internal/threat/format =====================
-//   Product-side ThreatEvent formatters (Flow 083, Gate B).
 //
-//   WHAT IS HERE:
-//     - formatThreatPayload — extract *threat.ThreatEvent from *plugin.Event.Payload
-//       in one place, with fail-fast semantics on a wrong payload type.
-//     - FormatFailban / FormatJSON / FormatSentinelThreat — concrete serialization
-//       helpers, byte-compatible with the previous pkg/sink/format versions (so
-//       existing Fail2Ban filters and integration fixtures keep matching).
-//     - FailbanFormatter / JSONFormatter / SentinelFormatter — Formatter
-//       implementations that core sinks (file / stdout / sentinel) consume
-//       through injection at pipeline assembly time.
+//	Product-side ThreatEvent formatters (Flow 083, Gate B).
 //
-//   WHAT IS NOT HERE:
-//     - The Formatter interface itself — that lives in pkg/sink/format (core).
-//     - ThreatEvent type — owned by internal/threat (module-root internal/,
-//       reachable from pkg/executorplugins/*) since Gate B (Flow 083,
-//       Task 3.3, RESOLVED-Q2 product-ownership). The concrete payload
-//       lives in this product package, not in arx-core.
+//	WHAT IS HERE:
+//	  - formatThreatPayload — extract *threat.ThreatEvent from *plugin.Event.Payload
+//	    in one place, with fail-fast semantics on a wrong payload type.
+//	  - FormatFailban / FormatJSON / FormatSentinelThreat — concrete serialization
+//	    helpers, byte-compatible with the previous pkg/sink/format versions (so
+//	    existing Fail2Ban filters and integration fixtures keep matching).
+//	  - FailbanFormatter / JSONFormatter / SentinelFormatter — Formatter
+//	    implementations that core sinks (file / stdout / sentinel) consume
+//	    through injection at pipeline assembly time.
 //
-//   Gate B (Flow 083 / RESOLVED-Z12 / RESOLVED-Q5b):
-//     These impls were activated in Gate B after ThreatEvent migrated from
-//     arx-core/pkg/plugin to internal/threat. The package-level Format*
-//     functions and the Formatter impls below own every byte of
-//     product-shaped output (Score / Modules / Reason / RawLine); the
-//     Formatter interface in pkg/sink/format stays neutral in core.
+//	WHAT IS NOT HERE:
+//	  - The Formatter interface itself — that lives in pkg/sink/format (core).
+//	  - ThreatEvent type — owned by internal/threat (module-root internal/,
+//	    reachable from pkg/executorplugins/*) since Gate B (Flow 083,
+//	    Task 3.3, RESOLVED-Q2 product-ownership). The concrete payload
+//	    lives in this product package, not in arx-core.
 //
-//   DEPENDENCY RULE:
-//     imports only arx-core/pkg/plugin (Event/Envelope) and the local
-//     internal/threat package (ThreatEvent). No boundary violations —
-//     verified by rg.
-
+//	Gate B (Flow 083 / RESOLVED-Z12 / RESOLVED-Q5b):
+//	  These impls were activated in Gate B after ThreatEvent migrated from
+//	  arx-core/pkg/plugin to internal/threat. The package-level Format*
+//	  functions and the Formatter impls below own every byte of
+//	  product-shaped output (Score / Modules / Reason / RawLine); the
+//	  Formatter interface in pkg/sink/format stays neutral in core.
+//
+//	DEPENDENCY RULE:
+//	  imports only arx-core/pkg/plugin (Event/Envelope) and the local
+//	  internal/threat package (ThreatEvent). No boundary violations —
+//	  verified by rg.
 package format
 
 import (

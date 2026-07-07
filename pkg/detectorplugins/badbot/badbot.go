@@ -1,34 +1,34 @@
 // ========================== BadBot detector ============================================
-//   Detects known bad bots by matching User-Agent (and optionally Referer) against
-//   community-curated blocklists via the Matcher interface.
 //
-//   WHAT IS HERE:
-//     badBotDetector — Detector implementation; delegates matching to Matcher
-//     newBadBotFactory — reads params, obtains Matcher from SharedResources
-//     Detect — calls Matcher.Match("badbot-ua") and optionally "badbot-ref"
+//	Detects known bad bots by matching User-Agent (and optionally Referer) against
+//	community-curated blocklists via the Matcher interface.
 //
-//   WHAT IS NOT HERE:
-//     Fetch logic, storage, goroutines — owned by *blocklist.Manager (internal/)
-//     Pattern lists, refresh schedule — configured via blocklist: in config.yaml
+//	WHAT IS HERE:
+//	  badBotDetector — Detector implementation; delegates matching to Matcher
+//	  newBadBotFactory — reads params, obtains Matcher from SharedResources
+//	  Detect — calls Matcher.Match("badbot-ua") and optionally "badbot-ref"
 //
-//   LIST NAMES (convention, see D4 — Flow #025):
-//     "badbot-ua"  — User-Agent blocklist
-//     "badbot-ref" — Referrer blocklist
-//     If a list is not loaded yet, Match returns false (graceful degradation).
-//     These list names MUST match blocklist.lists[].name values in config.yaml.
-//     If the names diverge, the detector silently finds no patterns — no error is returned.
+//	WHAT IS NOT HERE:
+//	  Fetch logic, storage, goroutines — owned by *blocklist.Manager (internal/)
+//	  Pattern lists, refresh schedule — configured via blocklist: in config.yaml
 //
-//   SharedResources:
-//     Blocklist() returns the Matcher satisfied by *blocklist.Manager.
-//     If nil → noopMatcher is used (detector becomes a no-op, not an error).
+//	LIST NAMES (convention, see D4 — Flow #025):
+//	  "badbot-ua"  — User-Agent blocklist
+//	  "badbot-ref" — Referrer blocklist
+//	  If a list is not loaded yet, Match returns false (graceful degradation).
+//	  These list names MUST match blocklist.lists[].name values in config.yaml.
+//	  If the names diverge, the detector silently finds no patterns — no error is returned.
 //
-//   Params (DetectorConfig.Params):
-//     check_ua       bool — check User-Agent against blocklist (default: true)
-//     check_referrer bool — check Referer against blocklist (default: false)
-//     score          int  — threat score on match (default: 60)
+//	SharedResources:
+//	  Blocklist() returns the Matcher satisfied by *blocklist.Manager.
+//	  If nil → noopMatcher is used (detector becomes a no-op, not an error).
 //
-//   Registered as "badbot" via init().
-
+//	Params (DetectorConfig.Params):
+//	  check_ua       bool — check User-Agent against blocklist (default: true)
+//	  check_referrer bool — check Referer against blocklist (default: false)
+//	  score          int  — threat score on match (default: 60)
+//
+//	Registered as "badbot" via init().
 package badbot
 
 import (

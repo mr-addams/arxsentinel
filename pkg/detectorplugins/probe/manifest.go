@@ -1,7 +1,7 @@
 // ========================== Probe detector manifest =====================================
-//   Manifest for the probe detector. Moved to sub-package to keep package detector
-//   free of plugin-specific metadata once all detectors are migrated (Flow 076).
-
+//
+//	Manifest for the probe detector. Moved to sub-package to keep package detector
+//	free of plugin-specific metadata once all detectors are migrated (Flow 076).
 package probe
 
 import "github.com/mr-addams/arx-core/pkg/plugin"

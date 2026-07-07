@@ -29,7 +29,10 @@ Sources → Processors → Sinks → Executors
 - [HTTP source (push/pull log receiver)](#http)
 - [Cloudflare Executor (automated IP banning)](#cloudflare)
 - [MikroTik Executor (RouterOS address-list)](#mikrotik)
+- [OpenWrt Executor (ubus/UCI firewall)](#openwrt)
+- [OPNsense Executor (REST API alias)](#opnsense)
 - [Nginx Executor (blocklist file + reload)](#nginx-executor)
+- [Observability (SIEM/log forwarders)](#observability)
 - [Distributed NCS (multi-node raw-forward)](#distributed-ncs)
 - [Infrastructure: Server Configs](#server-configs)
 - [Infrastructure: Reverse Proxy / Real-IP](#reverse-proxy)
@@ -166,6 +169,28 @@ Requires RouterOS 7.x with REST API enabled.
 
 ---
 
+## OpenWrt
+
+ArxSentinel sends THREAT events to an OpenWrt router's ubus/UCI firewall to add IPs to a named ipset.
+Requires `uhttpd-mod-ubus`, the `rpcd` core plugins (`uci`, `rc`), and a user-declared ipset UCI section.
+
+| Recipe | Description | File |
+|--------|-------------|------|
+| nginx basic | Single nginx site + OpenWrt ipset | [openwrt/nginx-basic.yaml](openwrt/nginx-basic.yaml) |
+
+---
+
+## OPNsense
+
+ArxSentinel sends THREAT events to an OPNsense firewall's REST API to add IPs to a pre-existing alias.
+Requires a user-declared alias of type `Host`, `Network`, or `External` (Firewall → Aliases) and an API credential pair generated in System → Access → Users → API keys.
+
+| Recipe | Description | File |
+|--------|-------------|------|
+| nginx basic | Single nginx site + OPNsense alias | [opnsense/nginx-basic.yaml](opnsense/nginx-basic.yaml) |
+
+---
+
 ## Nginx Executor
 
 ArxSentinel writes threat IPs to an nginx-compatible blocklist file and triggers a reload.
@@ -181,6 +206,21 @@ No external dependencies — pure nginx geo + map.
 |------|---------|
 | [nginx-executor/docker/config.yaml](nginx-executor/docker/config.yaml) | ArxSentinel config for Docker + nginx executor |
 | [nginx-executor/docker/docker-compose.yml](nginx-executor/docker/docker-compose.yml) | Compose stack: arxsentinel with nginx blocklist reload |
+
+---
+
+## Observability
+
+ArxSentinel forwards threat events to an external log/SIEM platform (Grafana Loki,
+Splunk HEC, or Datadog Logs API) rather than performing any ban action. Use these
+sinks when you want centralised log aggregation, long-term retention, alerting
+rules, or correlation with other log sources in your existing observability stack.
+
+| Recipe | Description | File |
+|--------|-------------|------|
+| Loki basic | Single nginx site + Grafana Loki Push API | [observability/loki-basic.yaml](observability/loki-basic.yaml) |
+| Splunk basic | Single nginx site + Splunk HEC | [observability/splunk-basic.yaml](observability/splunk-basic.yaml) |
+| Datadog basic | Single nginx site + Datadog Logs API v2 | [observability/datadog-basic.yaml](observability/datadog-basic.yaml) |
 
 ---
 

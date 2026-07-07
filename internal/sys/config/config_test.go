@@ -1538,3 +1538,153 @@ executors:
 		t.Errorf("want error about transport.enabled (executor source queue), got: %v", err)
 	}
 }
+
+// ++++++++++++++++++++++++++ Flow 097: validateSinks for new SIEM sink types +++++++++++++++++
+//   Required-field sanity checks for type=loki / type=splunk / type=datadog
+//   (Flow 097 Decision 9). Mirrors the existing type=file/Path pattern:
+//   validateSinks rejects the config at LoadConfig time so the operator
+//   never gets an empty payload to arx-core's sink.New.
+
+// TestValidateConfig_Sinks_Loki_MissingURL verifies that a type=loki sink
+// without loki_url is rejected with a message naming the YAML key.
+func TestValidateConfig_Sinks_Loki_MissingURL(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+outputs:
+  - type: loki
+    loki_labels:
+      job: arxsentinel
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "loki_url") {
+		t.Errorf("want error mentioning loki_url, got: %v", err)
+	}
+}
+
+// TestValidateConfig_Sinks_Loki_MissingLabels verifies that a type=loki sink
+// without loki_labels (absent or empty) is rejected — Loki rejects streams
+// with zero labels, so the fail-fast must happen here, not at runtime.
+func TestValidateConfig_Sinks_Loki_MissingLabels(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+outputs:
+  - type: loki
+    loki_url: "https://loki.example.com:3100"
+    loki_labels: {}
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "loki_labels") {
+		t.Errorf("want error mentioning loki_labels, got: %v", err)
+	}
+}
+
+// TestValidateConfig_Sinks_Loki_Valid verifies that a type=loki sink with
+// both required fields present loads without error.
+func TestValidateConfig_Sinks_Loki_Valid(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+outputs:
+  - type: loki
+    loki_url: "https://loki.example.com:3100"
+    loki_labels:
+      job: arxsentinel
+`)
+	if _, err := LoadConfig(path); err != nil {
+		t.Errorf("LoadConfig with valid loki sink: %v, want nil", err)
+	}
+}
+
+// TestValidateConfig_Sinks_Splunk_MissingURL verifies splunk_url is required.
+func TestValidateConfig_Sinks_Splunk_MissingURL(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+outputs:
+  - type: splunk
+    splunk_token: "abcd-1234"
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "splunk_url") {
+		t.Errorf("want error mentioning splunk_url, got: %v", err)
+	}
+}
+
+// TestValidateConfig_Sinks_Splunk_MissingToken verifies splunk_token is required.
+func TestValidateConfig_Sinks_Splunk_MissingToken(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+outputs:
+  - type: splunk
+    splunk_url: "https://splunk.example.com:8088"
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "splunk_token") {
+		t.Errorf("want error mentioning splunk_token, got: %v", err)
+	}
+}
+
+// TestValidateConfig_Sinks_Splunk_Valid verifies a type=splunk sink with
+// both required fields present loads without error.
+func TestValidateConfig_Sinks_Splunk_Valid(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+outputs:
+  - type: splunk
+    splunk_url: "https://splunk.example.com:8088"
+    splunk_token: "abcd-1234"
+`)
+	if _, err := LoadConfig(path); err != nil {
+		t.Errorf("LoadConfig with valid splunk sink: %v, want nil", err)
+	}
+}
+
+// TestValidateConfig_Sinks_Datadog_MissingURL verifies datadog_url is required.
+func TestValidateConfig_Sinks_Datadog_MissingURL(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+outputs:
+  - type: datadog
+    datadog_api_key: "0000000000000000000000000000abcd"
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "datadog_url") {
+		t.Errorf("want error mentioning datadog_url, got: %v", err)
+	}
+}
+
+// TestValidateConfig_Sinks_Datadog_MissingAPIKey verifies datadog_api_key is required.
+func TestValidateConfig_Sinks_Datadog_MissingAPIKey(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+outputs:
+  - type: datadog
+    datadog_url: "https://http-intake.logs.datadoghq.com"
+`)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "datadog_api_key") {
+		t.Errorf("want error mentioning datadog_api_key, got: %v", err)
+	}
+}
+
+// TestValidateConfig_Sinks_Datadog_Valid verifies a type=datadog sink with
+// both required fields present loads without error.
+func TestValidateConfig_Sinks_Datadog_Valid(t *testing.T) {
+	path := writeTempYAML(t, `
+general:
+  log_file: /var/log/nginx/access.log
+outputs:
+  - type: datadog
+    datadog_url: "https://http-intake.logs.datadoghq.com"
+    datadog_api_key: "0000000000000000000000000000abcd"
+`)
+	if _, err := LoadConfig(path); err != nil {
+		t.Errorf("LoadConfig with valid datadog sink: %v, want nil", err)
+	}
+}

@@ -23,7 +23,7 @@
 > живуть у [`arx-core/docs/`](https://github.com/mr-addams/arx-core/tree/v0.1.0/docs)
 > (`architecture.md`, `contract.md`, `plugin-development.md`). Цей README описує
 > продуктовий шар ArxSentinel: детектори безпеки, скоринг загроз, розводку NCS та
-> Cloudflare/MikroTik/nginx-екзекутори. Див. [Архітектура](docs/ARCHITECTURE.md) для розділення.
+> Cloudflare/MikroTik/OpenWrt/OPNsense/nginx-екзекутори. Див. [Архітектура](docs/ARCHITECTURE.md) для розділення.
 
 ```
   ╔══════════════════════════════════════════════════════════════════╗
@@ -56,6 +56,7 @@
   ╔═══════════════════════════╧══════════════════════════════════════╗
   ║  SINKS  (пасивне логування)                                      ║
   ║  file (формат fail2ban) · stdout JSON · exec+JSON plugin         ║
+  ║  Grafana Loki · Splunk HEC · Datadog Logs API  (форвардинг у SIEM)║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ sentinel-threat sink → AttachWriter()
   ╔═══════════════════════════╧══════════════════════════════════════╗
@@ -63,10 +64,10 @@
   ║  memory │ bbolt (file) │ redis │ transport (QUIC-мережа вузлів)  ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ ncs://<channel-name> → AttachReader()
-  ╔═══════════════════════════╧══════════════════════════════════════╗
-  ║  EXECUTORS  (активна відповідь — опціонально)                    ║
-  ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
-  ╚══════════════════════════════════════════════════════════════════╝
+  ╔═══════════════════════════╧═══════════════════════════════════════════════════════════════════════╗
+  ║  EXECUTORS  (активна відповідь — опціонально)                                                     ║
+  ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist · OpenWrt ipset · OPNsense alias   ║
+  ╚═══════════════════════════════════════════════════════════════════════════════════════════════════╝
 ```
 
 ## Сценарії використання
@@ -157,7 +158,30 @@ sinks:
     exec: /opt/plugins/send-to-siem.sh
 ```
 
-### 8. Розподілений конвеєр — збирай будь-де, детектуй централізовано, бань на межі
+### 8. Observability — форвардинг у Loki / Splunk / Datadog
+
+Надсилайте скорані події загроз напряму у вашу log-платформу як sink
+першого класу — зручно, коли у вас вже є SIEM і ArxSentinel потрібен як
+фід поруч (або замість) Fail2Ban/executor-респондерів. JSON-конверт
+рекомендується для читабельності в log-платформі:
+
+```yaml
+sinks:
+  - type: loki
+    format: json
+    loki_url: https://loki.example.com:3100
+    loki_labels:
+      job: arxsentinel
+```
+
+Та сама форма працює для `type: splunk` (HEC JSON-ендпоінт — потрібні
+`splunk_url` + `splunk_token`) та `type: datadog` (Logs API v2 — потрібен
+`datadog_url` з регіоном, наприклад `https://http-intake.logs.datadoghq.com`,
+плюс `datadog_api_key`). TLS, mTLS, батчинг, gzip і поля мульти-tenantності
+доступні per sink — див. [docs/providers/observability/](docs/providers/observability/).
+Quick-start рецепти: [cookbook/observability/](cookbook/observability/).
+
+### 9. Розподілений конвеєр — збирай будь-де, детектуй централізовано, бань на межі
 
 Той самий бінарник стає **колектором**, **детектором** чи **респондером**
 лише через конфіг, з'єднуючись вбудованою взаємно автентифікованою
@@ -166,10 +190,10 @@ QUIC-мережею — без брокера повідомлень, без log
 ```
   Pi / VPS / NAS колектори           машина детекції              enforcement
  ┌────────────┐
- │ логи nginx  │──┐   "edge-raw"   ┌───────────────┐  "scored"  ┌─────────────────┐
- └────────────┘  ├──────────────▶│ 8 детекторів · │──────────▶│ MikroTik · nginx │
- ┌────────────┐  │  QUIC/TLS 1.3  │ WAF · скоринг  │            │ CF WAF · SIEM    │
- │ логи API    │──┘   Ed25519+TOFU └───────────────┘            └─────────────────┘
+ │ логи nginx  │──┐   "edge-raw"   ┌───────────────┐  "scored"  ┌───────────────────────────────────────┐
+ └────────────┘  ├──────────────▶│ 8 детекторів · │──────────▶│ MikroTik · OpenWrt · OPNsense · nginx │
+ ┌────────────┐  │  QUIC/TLS 1.3  │ WAF · скоринг  │            │ CF WAF · SIEM                         │
+ │ логи API    │──┘   Ed25519+TOFU └───────────────┘            └───────────────────────────────────────┘
  └────────────┘
 ```
 
@@ -445,6 +469,7 @@ deploy/examples/
 - **Chain Guard:** виявляє IP-адреси Cloudflare/CDN і bogon/RFC 1918/CGNAT у позиції client IP — сигналізує про неправильно налаштований ланцюжок проксі до того, як детектори ArxSentinel втратять здатність визначати справжніх зловмисників
 - **DNS-верифікація ботів:** Googlebot, Bingbot, Yandex, DuckDuckGo та інші верифікуються через rDNS/fDNS — легітимні краулери не потрапляють у бан
 - **Multi-stream + Multi-pipeline:** декілька лог-файлів в одному процесі; всередині кожного потоку — незалежні pipeline з власними детекторами, джерелами, sink'ами та трекером IP-стану (або спільний трекер через `tracker_group`)
+- **Observability-sink'и:** прокидайте події загроз у Grafana Loki, Splunk HEC або Datadog Logs API — форвардинг у SIEM як альтернатива (або доповнення) до респондерів Fail2Ban/executor
 - **Розподілений конвеєр (Distributed NCS):** розтягніть pipeline на кілька машин через вбудовану шифровану мережу вузлів (QUIC · TLS 1.3 · Ed25519-ідентичність · TOFU-пінінг) — прокидайте сирі розпарсені записи на центральний детектор або скоровані вердикти на віддалені респондери; без брокера, без log shipper'а, без VPN. Див. [docs/DISTRIBUTED.uk.md](docs/DISTRIBUTED.uk.md)
 - **Whitelist:** IP, CIDR, UA-підрядки — конфігуровані списки винятків
 - **Лінійний decay score:** очки затухають за `observation_window`, немає хибних банів від старого трафіку
@@ -610,11 +635,15 @@ Helm-чарт з довідкою values: [Helm README](deploy/container/k8s/arx
 
 Виконавці — це плагіни зі станом, що виконуються після оцінки загроз. На відміну від Sink (пасивний запис у лог), виконавці активно керують зовнішніми ресурсами: ведуть локальний dedup-словник, застосовують TTL-закінчення та збирають статистику.
 
+> **Примітка про термінологію:** «Executor» / «Виконавець» — термін рівня плагіна/конфігу (`executors:` у YAML, `pkg/executorplugins/*` у коді) — використовується у всьому README та коді. У топології [Distributed NCS](docs/DISTRIBUTED.uk.md) вузол, що запускає виконавці, називається **Responder** (у парі з **Collector** і **Detector** — три ролі вузлів). Це ті самі плагіни, просто інша термінологія для опису *де* вони виконуються у multi-node розгортанні.
+
 | Виконавець | Пакет | Опис |
 |---|---|---|
 | **cloudflare** | `pkg/executor/cloudflare` | Додає IP-загрози до Cloudflare IP List; автоматично видаляє застарілі записи через TTL sweep |
 | **nginx** | `pkg/executor/nginx` | Записує заблоковані IP до простого файлу блокування (TTL автовиходу, атомарні записи, опційна команда перезавантаження); ви включаєте файл до nginx як вам зручно |
 | **mikrotik** | `pkg/executor/mikrotik` | Керує list адрес файервола RouterOS v7 через REST API; TTL-автороззабиття, видаляє лише записи, створені arxsentinel, сумісний з CHR/ARM |
+| **openwrt** | `pkg/executor/openwrt` | Керує nftables ipset через ubus-ендпоінт роутера (uhttpd-mod-ubus) за допомогою стандартних rpcd-об'єктів `uci`/`rc`; пакетна правка UCI + один reload за цикл, TTL рахує сам плагін (не native nftables) |
+| **opnsense** | `pkg/executor/opnsense` | Керує аліасом файервола через REST API OPNsense (`alias_util` add/delete/list); незалежний point add/delete на подію (без пакетування — API застосовує зміни негайно), TTL рахує сам плагін через активний sweep |
 
 Детальніше: [docs/executors.md](docs/executors.md) — огляд фреймворку та додавання власних виконавців.
 Детальніше: [docs/executor-cloudflare.md](docs/executor-cloudflare.md) — конфігурація та усунення несправностей Cloudflare.
@@ -896,8 +925,9 @@ ArxSentinel підтримує три режими форматів: **combined*
 
 В активній розробці для v2.x:
 
-- **Alert sinks** — надсилання загроз до Telegram, Slack та PagerDuty з дедуплікацією та rate-limiting
 - **AWS WAF executor** — оновлення IP-наборів для AWS WAF rule-груп
+- **SSH-джерело + детектори** — парсинг auth-логів `sshd` (syslog/journald) і скоринг brute-force/credential-stuffing патернів виділеними детекторами, з перевикористанням того самого pipeline скорингу та executor'ів, що й для HTTP
+- **Alert sinks** — надсилання загроз до Telegram, Slack та PagerDuty з дедуплікацією та rate-limiting
 
 ---
 

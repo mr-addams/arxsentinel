@@ -1,29 +1,29 @@
 // ========================== Module whitelist/matcher ====================================
-//   UA matching against legitimate bot patterns and custom whitelist by IP/CIDR/UA.
 //
-//   WHAT IS HERE:
-//     - Matcher — struct, initialized once from config
-//     - MatchBot(ua) → (botName, botCfg, matched) — Task 3.1
-//     - IsWhitelistedIP(ip) bool   — custom whitelist by IP and CIDR — Task 3.4
-//     - IsWhitelistedUA(ua) bool   — custom whitelist by UA substring — Task 3.4
-//     - IsWhitelistedPath(path) bool — custom whitelist by URL path prefix — Flow 049
+//	UA matching against legitimate bot patterns and custom whitelist by IP/CIDR/UA.
 //
-//   WHAT IS NOT HERE:
-//     - DNS verification → verifier.go (Tasks 3.2, 3.5)
-//     - Result cache → ipcache.go (Task 3.3)
+//	WHAT IS HERE:
+//	  - Matcher — struct, initialized once from config
+//	  - MatchBot(ua) → (botName, botCfg, matched) — Task 3.1
+//	  - IsWhitelistedIP(ip) bool   — custom whitelist by IP and CIDR — Task 3.4
+//	  - IsWhitelistedUA(ua) bool   — custom whitelist by UA substring — Task 3.4
+//	  - IsWhitelistedPath(path) bool — custom whitelist by URL path prefix — Flow 049
 //
-//   MatchBot ALGORITHM:
-//     Iterate over bots from config; for each — iterate over UAPatterns.
-//     strings.Contains — case-sensitive (bot UAs have a fixed casing).
-//     First match wins — bot order in config sets priority.
+//	WHAT IS NOT HERE:
+//	  - DNS verification → verifier.go (Tasks 3.2, 3.5)
+//	  - Result cache → ipcache.go (Task 3.3)
 //
-//   IsWhitelistedIP ALGORITHM:
-//     1. Exact match in map[string]struct{} — O(1)
-//     2. Iterate over pre-compiled *net.IPNet — O(n) by number of CIDRs
-//     Pre-compilation in NewMatcher: net.ParseCIDR is called once at startup.
+//	MatchBot ALGORITHM:
+//	  Iterate over bots from config; for each — iterate over UAPatterns.
+//	  strings.Contains — case-sensitive (bot UAs have a fixed casing).
+//	  First match wins — bot order in config sets priority.
 //
-//   Implements: Task 3.1 (MatchBot) + Task 3.4 (IsWhitelistedIP, IsWhitelistedUA).
-
+//	IsWhitelistedIP ALGORITHM:
+//	  1. Exact match in map[string]struct{} — O(1)
+//	  2. Iterate over pre-compiled *net.IPNet — O(n) by number of CIDRs
+//	  Pre-compilation in NewMatcher: net.ParseCIDR is called once at startup.
+//
+//	Implements: Task 3.1 (MatchBot) + Task 3.4 (IsWhitelistedIP, IsWhitelistedUA).
 package whitelist
 
 import (

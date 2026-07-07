@@ -1,15 +1,15 @@
 // ========================== pkg/processor/chaincheck — Registration ========================
-//   Self-registration via init() so the pipeline can instantiate this processor by name.
-
+//
+//	Self-registration via init() so the pipeline can instantiate this processor by name.
 package chaincheck
 
 import (
 	"context"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/mr-addams/arx-core/pkg/processor"
+	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 )
 
 func init() {
