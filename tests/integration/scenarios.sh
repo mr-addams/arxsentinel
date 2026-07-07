@@ -493,6 +493,32 @@ run_executor_openwrt_ban_scenario() {
     echo "$result" > "$INT_DIR/logs/executor-openwrt-ban.json"
 }
 run_executor_openwrt_ban_scenario
+run_executor_opnsense_ban_scenario() {
+    echo "[scenarios] running: executor-opnsense-ban"
+
+    mkdir -p "$INT_DIR/logs/threats"
+
+    # Use a different attack IP to avoid cross-contamination with CF/ROS/OpenWrt/nginx scenarios.
+    # Per DECISIONS.md Decision 8 (Flow 096): opnsense executor does not batch — each event
+    # triggers an immediate alias_util/add call, so the integration check only needs to
+    # confirm the IP ends up in the recorded entries, not the exact call count.
+    local attack_ip="25.26.27.28"
+    local attack_line="${attack_ip} - - [01/Jan/2026:00:00:00 +0000] \"GET /.env HTTP/1.1\" 404 0 \"-\" \"curl/7.88\" \"${attack_ip}\""
+
+    # Write 5 probe attack lines — enough to exceed alert_threshold=50 with score=60/hit.
+    for i in $(seq 1 5); do
+        echo "$attack_line" >> "$INT_DIR/logs/nginx/access.log"
+    done
+
+    # Wait for opnsense-executor sentinel to detect + send add call to opnsense-api-mock.
+    sleep 5
+
+    # Query opnsense-api-mock for recorded items (from host, port 8095 exposed).
+    local result
+    result=$(curl -sf http://localhost:8095/recorded-items 2>/dev/null || true)
+    echo "$result" > "$INT_DIR/logs/executor-opnsense-ban.json"
+}
+run_executor_opnsense_ban_scenario
 
 # ── executor-nginx-ban: verify that nginx executor writes attacker IP to blocklist file ──
 # Appends probe attack lines to nginx access log; the nginx-executor sentinel (started in

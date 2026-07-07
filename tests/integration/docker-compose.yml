@@ -232,6 +232,23 @@ services:
     networks:
       - default
 
+  # opnsense-api-mock: simulates OPNsense REST API for integration test of the opnsense
+  # executor. Exposes POST /api/firewall/alias_util/{add,delete}/{alias} and
+  # GET /api/firewall/alias_util/list/{alias}, with HTTP Basic Auth (ENV-driven
+  # credentials, defaults testkey/testsecret). Test helpers: GET /recorded-items,
+  # POST /reset. Port 8095 — next free slot after ubus-api-mock's 8094.
+  opnsense-api-mock:
+    build:
+      context: ./opnsense-api-mock
+      dockerfile: Dockerfile
+    ports:
+      - "8095:8080"
+    environment:
+      OPNSENSE_MOCK_API_KEY: testkey
+      OPNSENSE_MOCK_API_SECRET: testsecret
+    networks:
+      - default
+
   # nginx-bare: nginx without real_ip extraction — logs the proxy IP, not the attacker IP.
   # Used for the "broken chain" test: cloudflare-sim IP appears as client in access log.
   # The chain_guard cloudflare-leak check must fire on these entries.
