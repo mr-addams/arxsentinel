@@ -1,8 +1,8 @@
 // ====== Module: ubus-api-mock ======
-//   uhttpd-mod-ubus mock server for integration tests.
-//   Emulates the JSON-RPC 2.0 /ubus endpoint used by the openwrt executor
-//   (session.login, uci.add_list/del_list/commit/get, rc.init).
-
+//
+//	uhttpd-mod-ubus mock server for integration tests.
+//	Emulates the JSON-RPC 2.0 /ubus endpoint used by the openwrt executor
+//	(session.login, uci.add_list/del_list/commit/get, rc.init).
 package main
 
 import (

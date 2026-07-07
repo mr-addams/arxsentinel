@@ -1,18 +1,18 @@
 // ========================== Helpers =====================================================
-//   Вспомогательные функции, не содержащие основной логики pipeline.
 //
-//   ЧТО ЗДЕСЬ:
-//     - resolveTrackerGroup()           — определяет группу трекера для pipeline
-//     - pipelineLogTag()                — форматирует лог-префикс stream/pipeline
-//     - findPipelineCfg()               — находит конфиг pipeline по имени или индексу
-//     - sinkTypeFromName()              — извлекает тип синка из Name()
-//     - streamSourceLabel()             — краткое описание источника для startup-лога
-//     - parseFlagInputs() / parseFlagOutputs() — разбор --input/--output CLI-флагов
-//     - writePID() / removePID()        — управление PID-файлом
-//     - sdNotify()                      — systemd readiness-нотификация
-//     - metricsHandler()                — Prometheus metrics-endpoint с bcrypt-авторизацией
-//     - activeEnvOverrides()            — диагностика ARXSENTIL_* переменных
-
+//	Helper functions that do not contain core pipeline logic.
+//
+//	CONTENTS:
+//	  - resolveTrackerGroup()           — determines the tracker group for a pipeline
+//	  - pipelineLogTag()                — formats the stream/pipeline log prefix
+//	  - findPipelineCfg()               — locates a pipeline config by name or index
+//	  - sinkTypeFromName()              — extracts the sink type from Name()
+//	  - streamSourceLabel()             — short source description for the startup log
+//	  - parseFlagInputs() / parseFlagOutputs() — parses --input/--output CLI flags
+//	  - writePID() / removePID()        — PID file management
+//	  - sdNotify()                      — systemd readiness notification
+//	  - metricsHandler()                — Prometheus metrics endpoint with bcrypt auth
+//	  - activeEnvOverrides()            — diagnostics for ARXSENTINEL_* environment variables
 package main
 
 import (

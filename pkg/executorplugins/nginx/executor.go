@@ -1,21 +1,21 @@
 // ========================== Package nginx ==========================
-//   NginxExecutor — manages an IP blocklist file for nginx: writes banned
-//   IPs as "<ip> 1;" entries, supports TTL-based auto-sweep, dedup,
-//   and optional nginx reload via external command.
 //
-//   WHAT IS HERE:
-//     - NginxExecutor struct with Run loop, flush, sweep, syncExisting
-//     - Atomic file write via .tmp + os.Rename
-//     - Optional JSON state file for TTL persistence across restarts
+//	NginxExecutor — manages an IP blocklist file for nginx: writes banned
+//	IPs as "<ip> 1;" entries, supports TTL-based auto-sweep, dedup,
+//	and optional nginx reload via external command.
 //
-//   WHAT IS NOT HERE:
-//     - Configuration parsing (see config.go)
-//     - Registration (see register.go)
+//	WHAT IS HERE:
+//	  - NginxExecutor struct with Run loop, flush, sweep, syncExisting
+//	  - Atomic file write via .tmp + os.Rename
+//	  - Optional JSON state file for TTL persistence across restarts
 //
-//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
-//   product namespace cmd/arxsentinel/internal/threat; the executor
-//   type-asserts Event.Payload to *threat.ThreatEvent.
-
+//	WHAT IS NOT HERE:
+//	  - Configuration parsing (see config.go)
+//	  - Registration (see register.go)
+//
+//	Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
+//	product namespace cmd/arxsentinel/internal/threat; the executor
+//	type-asserts Event.Payload to *threat.ThreatEvent.
 package nginx
 
 import (
@@ -148,7 +148,7 @@ func writeFile(path, data string) error {
 		return fmt.Errorf("writeFile: write tmp: %w", err)
 	}
 
-	// H4: fsync перед rename — гарантия, что данные на диске.
+	// H4: fsync before rename — guarantees that the data is on disk.
 	if err := f.Sync(); err != nil {
 		f.Close()
 		return fmt.Errorf("writeFile: sync tmp: %w", err)
@@ -315,8 +315,8 @@ func (e *NginxExecutor) runReload(ctx context.Context) {
 // The file header is the same for both formats — it only marks the file as
 // managed-by-arxsentinel, it does not declare a syntax.
 func (e *NginxExecutor) flush(ctx context.Context, banned map[string]time.Time) {
-	// L4: проверка отмены контекста перед началом flush — не начинаем запись
-	// если pipeline уже завершается. Избегаем лишней IO и reload при shutdown.
+	// L4: check for context cancellation before starting the flush — do not start writing
+	// if the pipeline is already shutting down. Avoids unnecessary I/O and reload during shutdown.
 	select {
 	case <-ctx.Done():
 		return

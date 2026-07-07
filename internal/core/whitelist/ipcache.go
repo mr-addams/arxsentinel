@@ -1,23 +1,23 @@
 // ========================== Module whitelist/ipcache ====================================
-//   Cache of DNS verification results with separate TTLs for positive/negative results.
-//   Prevents repeated DNS lookups for already-verified IPs.
 //
-//   WHAT IS HERE:
-//     - IPCache — in-memory cache with TTL expiry
-//     - Positive TTL (verified=true) >> Negative TTL (verified=false)
-//     - Lazy expiry: expired entries are removed on Get, not by a background goroutine
+//	Cache of DNS verification results with separate TTLs for positive/negative results.
+//	Prevents repeated DNS lookups for already-verified IPs.
 //
-//   WHAT IS NOT HERE:
-//     - DNS lookups → verifier.go
-//     - UA/IP matching → matcher.go
+//	WHAT IS HERE:
+//	  - IPCache — in-memory cache with TTL expiry
+//	  - Positive TTL (verified=true) >> Negative TTL (verified=false)
+//	  - Lazy expiry: expired entries are removed on Get, not by a background goroutine
 //
-//   LAZY EXPIRY vs background GC:
-//     IPCache stores only bots — hundreds of IPs, not thousands.
-//     A background goroutine adds complexity (shutdown, sync) without meaningful benefit.
-//     Expired entries are evicted on the next Get — sufficient at this scale.
+//	WHAT IS NOT HERE:
+//	  - DNS lookups → verifier.go
+//	  - UA/IP matching → matcher.go
 //
-//   Implements: Task 3.3.
-
+//	LAZY EXPIRY vs background GC:
+//	  IPCache stores only bots — hundreds of IPs, not thousands.
+//	  A background goroutine adds complexity (shutdown, sync) without meaningful benefit.
+//	  Expired entries are evicted on the next Get — sufficient at this scale.
+//
+//	Implements: Task 3.3.
 package whitelist
 
 import (

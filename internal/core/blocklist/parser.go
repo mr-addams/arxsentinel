@@ -1,19 +1,19 @@
 // ========================== blocklist/parser ==========================================
-//   Pattern list parsers for blocklist sources.
 //
-//   WHAT IS HERE:
-//     Parser       — interface: Parse(data []byte) ([]string, error)
-//     PlainTextParser — one pattern per line, # comments and blank lines skipped
-//     NginxMapParser  — extracts names from nginx map format (?:\b)...(?:\b)
-//     NewParser    — factory by format name ("plain_text", "nginx_map")
+//	Pattern list parsers for blocklist sources.
 //
-//   WHAT IS NOT HERE:
-//     HTTP fetch logic (Manager fetches, Parser only parses bytes)
-//     Storage (bbolt) — that is Manager's concern
+//	WHAT IS HERE:
+//	  Parser       — interface: Parse(data []byte) ([]string, error)
+//	  PlainTextParser — one pattern per line, # comments and blank lines skipped
+//	  NginxMapParser  — extracts names from nginx map format (?:\b)...(?:\b)
+//	  NewParser    — factory by format name ("plain_text", "nginx_map")
 //
-//   Migrated from internal/core/detector/badbot.go (parseList, parseNginxMap).
-//   Implemented: Flow #025, Task 1.
-
+//	WHAT IS NOT HERE:
+//	  HTTP fetch logic (Manager fetches, Parser only parses bytes)
+//	  Storage (bbolt) — that is Manager's concern
+//
+//	Migrated from internal/core/detector/badbot.go (parseList, parseNginxMap).
+//	Implemented: Flow #025, Task 1.
 package blocklist
 
 import (
@@ -28,44 +28,44 @@ import (
 //	"~*(?:\b)AhrefsBot(?:\b)"    3;
 var nginxPatternRe = regexp.MustCompile(`\(\?:\\b\)(.+?)\(\?:\\b\)`)
 
-// unescapeRegexRe снимает regex-эскейпы вида `\X`, где X — не алфавитно-цифровой
-// символ. Например, `\.` → `.`, `\/` → `/`, `\\` → `\`. Применяется на стадии
-// нормализации — паттерны из upstream-списков часто приходят в regex-форме, а
-// детектор матчит substring'ом через Aho-Corasick.
+// unescapeRegexRe strips regex escapes of the form `\X` where X is a non-alphanumeric
+// character. For example, `\.` → `.`, `\/` → `/`, `\\` → `\`. Applied during
+// normalization — patterns from upstream sources often arrive in regex form, while
+// the detector matches via substring through Aho-Corasick.
 var unescapeRegexRe = regexp.MustCompile(`\\([^A-Za-z0-9])`)
 
-// normalizePatternForSubstring приводит regex-паттерн из upstream-источника к
-// чистому substring-литералу, пригодному для матчинга Aho-Corasick.
+// normalizePatternForSubstring converts a regex pattern from an upstream source into
+// a clean substring literal suitable for Aho-Corasick matching.
 //
-// Зачем это нужно: upstream-списки вроде mitchellkrogza/nginx-ultimate-bad-bot-blocker
-// хранят шаблоны в regex-форме (с экранированием и якорями). Blocklist-детектор
-// выполняет substring-матч (Aho-Corasick, см. Manager.Match/MatchResult), а не
-// regex. Без нормализации паттерн `1h4x\.com` (с экранированной точкой) никогда
-// не совпадёт с реальным UA `1h4x.com` — ни в виде regex, ни в виде literal.
+// Why this is needed: upstream lists such as mitchellkrogza/nginx-ultimate-bad-bot-blocker
+// store patterns in regex form (with escaping and anchors). The blocklist detector
+// performs substring matching (Aho-Corasick, see Manager.Match/MatchResult), not
+// regex. Without normalization, the pattern `1h4x\.com` (with an escaped dot) will
+// never match the real UA `1h4x.com` — neither as regex nor as literal.
 //
-// Трансформации (порядок важен):
-//  1. Снять regex-эскейпы бэкслэшем: `\X` → `X` для X не [A-Za-z0-9].
-//  2. Убрать ведущие/трейлинговые якоря: `^` в начале, `$` в конце.
-//  3. Убрать wildcards `.*` и `.+` (включая посередине — простая эвристика,
-//     приемлемая для типичных bot-листов, которые редко используют `.*` осмысленно
-//     в середине; сложные конструкции типа `(?:a|b).*c` не разбираются глубоко).
-//  4. Финальный trim пробелов и wildcards на концах.
+// Transformations (order matters):
+//  1. Strip backslash regex escapes: `\X` → `X` for X not in [A-Za-z0-9].
+//  2. Remove leading/trailing anchors: leading `^`, trailing `$`.
+//  3. Remove wildcards `.*` and `.+` (including in the middle — a simple heuristic
+//     acceptable for typical bot lists, which rarely use `.*` meaningfully in the
+//     middle; complex constructs like `(?:a|b).*c` are not deeply parsed).
+//  4. Final trim of spaces and wildcards at the ends.
 //
-// Функция чистая, детерминированная, без логирования. Не отбрасывает паттерны —
-// даже нераспознанные regex-фрагменты остаются в виде, пригодном для substring-match
-// (например, `prefix.*suffix` → `prefixsuffix`).
+// The function is pure, deterministic, and does not log. It does not drop patterns —
+// even unrecognised regex fragments remain in a form suitable for substring matching
+// (e.g. `prefix.*suffix` → `prefixsuffix`).
 //
-// Не вызывается для пустой строки (вызывающий код фильтрует пустые строки раньше).
+// Not called for an empty string (the caller filters empty strings earlier).
 func normalizePatternForSubstring(p string) string {
-	// Шаг 1: снять regex-эскейпы.
+	// Step 1: strip regex escapes.
 	p = unescapeRegexRe.ReplaceAllString(p, "$1")
 
-	// Шаг 2: убрать leading `^` и trailing `$` (substring не нуждается в якорях).
+	// Step 2: remove leading `^` and trailing `$` (substring does not need anchors).
 	p = strings.TrimLeft(p, "^")
 	p = strings.TrimRight(p, "$")
 
-	// Шаг 3: убрать wildcards `.*` и `.+` (включая в середине).
-	// Допускаем жадную замену — простая эвристика лучше, чем сложный парсер.
+	// Step 3: remove wildcards `.*` and `.+` (including in the middle).
+	// Allow greedy replacement — a simple heuristic is better than a complex parser.
 	for {
 		prev := p
 		p = strings.ReplaceAll(p, ".*", "")
@@ -75,9 +75,9 @@ func normalizePatternForSubstring(p string) string {
 		}
 	}
 
-	// Шаг 4: trim пробелов и остаточных якорей на концах.
-	// Точки/звёздочки/плюсы/вопросы намеренно НЕ триммим — они могут быть
-	// легитимной частью литерала после снятия эскейпов (например, `1.0`).
+	// Step 4: trim spaces and residual anchors at the ends.
+	// Dots, asterisks, pluses, and question marks are intentionally NOT trimmed — they may be
+	// a legitimate part of the literal after escape removal (e.g. `1.0`).
 	p = strings.TrimSpace(p)
 	p = strings.Trim(p, "^$")
 
@@ -118,9 +118,9 @@ type PlainTextParser struct{}
 
 // Parse splits data by newline and returns all valid patterns, lowercased.
 //
-// Перед lowercase применяется normalizePatternForSubstring: upstream plain_text-
-// списки часто содержат regex-паттерны (с экранированием и якорями), а детектор
-// выполняет substring-матч.
+// Before lowercasing, normalizePatternForSubstring is applied: upstream plain_text
+// lists often contain regex patterns (with escaping and anchors), while the
+// detector performs substring matching.
 //
 // Called from: fetchAndUpdate (manager.go).
 // Non-blocking.
@@ -131,7 +131,7 @@ func (PlainTextParser) Parse(data []byte) ([]string, error) {
 		if s == "" || strings.HasPrefix(s, "#") {
 			continue
 		}
-		// Нормализуем regex→literal до lowercase, чтобы Aho-Corasick получил чистые литералы.
+		// Normalize regex→literal before lowercasing so Aho-Corasick receives clean literals.
 		s = normalizePatternForSubstring(s)
 		if s == "" {
 			continue
@@ -154,8 +154,8 @@ type NginxMapParser struct{}
 
 // Parse extracts all (?:\b)..(?:\b) captures and returns them lowercased.
 //
-// Перед lowercase применяется normalizePatternForSubstring: даже в nginx-map
-// формате группа может содержать regex-эскейпленные символы.
+// Before lowercasing, normalizePatternForSubstring is applied: even in the nginx-map
+// format the group may contain regex-escaped characters.
 //
 // Called from: fetchAndUpdate (manager.go).
 // Non-blocking.

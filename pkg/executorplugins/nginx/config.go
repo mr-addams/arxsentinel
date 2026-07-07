@@ -1,15 +1,15 @@
 // ========================== Package nginx ==========================
-//   Configuration for nginx blocklist executor — parses from YAML/JSON
-//   with validation of required fields and time.Duration handling.
 //
-//   WHAT IS HERE:
-//     - Config — configuration struct with json and yaml tags
-//     - parseConfig — parsing from map[string]any with defaults and validation
+//	Configuration for nginx blocklist executor — parses from YAML/JSON
+//	with validation of required fields and time.Duration handling.
 //
-//   WHAT IS NOT HERE:
-//     - Executor implementation (see executor.go)
-//     - Registration (see register.go)
-
+//	WHAT IS HERE:
+//	  - Config — configuration struct with json and yaml tags
+//	  - parseConfig — parsing from map[string]any with defaults and validation
+//
+//	WHAT IS NOT HERE:
+//	  - Executor implementation (see executor.go)
+//	  - Registration (see register.go)
 package nginx
 
 import (

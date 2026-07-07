@@ -1,24 +1,24 @@
 // ====== Module: opnsense — config =================================================
-//   Configuration for the OPNsense firewall REST API executor — parses from
-//   YAML/JSON with validation and time.Duration handling.
 //
-//   WHAT IS HERE:
-//     Config struct, threatLevel enum, parseConfig function, parseDurationAny
-//     helper.
+//	Configuration for the OPNsense firewall REST API executor — parses from
+//	YAML/JSON with validation and time.Duration handling.
 //
-//   WHAT IS NOT HERE:
-//     REST client (client.go, Task 3), executor logic (executor.go, Task 4),
-//     registration (register.go, Task 5).
+//	WHAT IS HERE:
+//	  Config struct, threatLevel enum, parseConfig function, parseDurationAny
+//	  helper.
 //
-//   Architectural note — see DECISIONS.md Decision 8 (Flow 096): the Config
-//   struct intentionally has NO `batch_size` or `flush_interval` fields.
-//   OPNsense `alias_util/add` and `alias_util/delete` apply immediately
-//   (pfctl table updates per-call), so per-event point add/delete is the
-//   natural model — the executor flushes nothing, every scored event becomes
-//   one REST call right away. The sweep timer is derived from TTL/4 inside
-//   executor.go (Task 4) with a 15m floor; it is intentionally NOT a config
-//   field — see DECISIONS.md Decision 8 for the rationale.
-
+//	WHAT IS NOT HERE:
+//	  REST client (client.go, Task 3), executor logic (executor.go, Task 4),
+//	  registration (register.go, Task 5).
+//
+//	Architectural note — see DECISIONS.md Decision 8 (Flow 096): the Config
+//	struct intentionally has NO `batch_size` or `flush_interval` fields.
+//	OPNsense `alias_util/add` and `alias_util/delete` apply immediately
+//	(pfctl table updates per-call), so per-event point add/delete is the
+//	natural model — the executor flushes nothing, every scored event becomes
+//	one REST call right away. The sweep timer is derived from TTL/4 inside
+//	executor.go (Task 4) with a 15m floor; it is intentionally NOT a config
+//	field — see DECISIONS.md Decision 8 for the rationale.
 package opnsense
 
 import (

@@ -1,19 +1,19 @@
 // ========================== Probe detector ==============================================
-//   Detects requests to sensitive paths: .env, .git, wp-config, aws-exports, etc.
-//   A single matched path = a fixed score penalty for the IP.
 //
-//   ALGORITHM:
-//     1. Exact match in map[string]struct{} — O(1), covers static paths (.env, wp-config.php)
-//     2. Prefix match — catches /wp-admin/page.php, /actuator/env, etc.
-//     Paths ending with "/" in config → prefix check.
-//     All others → exact-match map.
+//	Detects requests to sensitive paths: .env, .git, wp-config, aws-exports, etc.
+//	A single matched path = a fixed score penalty for the IP.
 //
-//   Params (DetectorConfig.Params):
-//     score  int      — threat score per match (default: 25)
-//     paths  []string — list of paths and prefixes to watch (default: defaultProbePaths)
+//	ALGORITHM:
+//	  1. Exact match in map[string]struct{} — O(1), covers static paths (.env, wp-config.php)
+//	  2. Prefix match — catches /wp-admin/page.php, /actuator/env, etc.
+//	  Paths ending with "/" in config → prefix check.
+//	  All others → exact-match map.
 //
-//   Registered as "probe" via init() in sub-package probe.
-
+//	Params (DetectorConfig.Params):
+//	  score  int      — threat score per match (default: 25)
+//	  paths  []string — list of paths and prefixes to watch (default: defaultProbePaths)
+//
+//	Registered as "probe" via init() in sub-package probe.
 package probe
 
 import (

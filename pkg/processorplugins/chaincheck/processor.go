@@ -1,24 +1,24 @@
 // ========================== pkg/processor/chaincheck — Processor ===========================
-//   ChainCheckProcessor wraps internal/core/chaincheck.Checker as a plugin.Processor.
-//   It enriches LogEntry with ChainIssue when the client IP is a Cloudflare range
-//   or a bogon address — indicating a broken proxy chain.
 //
-//   WHAT IS HERE:
-//     ChainCheckProcessor   — plugin.Processor implementation
-//     NewChainCheckProcessor — constructor (accepts ctx for the background refresh loop)
+//	ChainCheckProcessor wraps internal/core/chaincheck.Checker as a plugin.Processor.
+//	It enriches LogEntry with ChainIssue when the client IP is a Cloudflare range
+//	or a bogon address — indicating a broken proxy chain.
 //
-//   WHAT IS NOT HERE:
-//     Manifest              — manifest.go
-//     Registration          — register.go
-
+//	WHAT IS HERE:
+//	  ChainCheckProcessor   — plugin.Processor implementation
+//	  NewChainCheckProcessor — constructor (accepts ctx for the background refresh loop)
+//
+//	WHAT IS NOT HERE:
+//	  Manifest              — manifest.go
+//	  Registration          — register.go
 package chaincheck
 
 import (
 	"context"
 
 	"github.com/mr-addams/arx-core/pkg/parser"
-	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 )
 
 // ChainCheckProcessor enriches LogEntry with chain integrity findings.

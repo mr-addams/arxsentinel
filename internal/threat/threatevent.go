@@ -1,31 +1,31 @@
 // ========================== internal/threat — ThreatEvent ===============
-//   Product-owned threat event model. This type carries the scored result of a
-//   pipeline evaluation: source IP, accumulated score, triggered detector
-//   modules, human-readable reason, plus the transport metadata that travels
-//   alongside it (timestamp, level, stream, source, source_type).
 //
-//   OWNERSHIP:
-//     internal/threat/ — product namespace, per Flow 083 principle P2:
-//     models belong to the plugin that emits them. The core runtime has no
-//     business knowing the ThreatEvent shape — it sees a generic *plugin.Event
-//     and reads Envelope fields for metrics only.
+//	Product-owned threat event model. This type carries the scored result of a
+//	pipeline evaluation: source IP, accumulated score, triggered detector
+//	modules, human-readable reason, plus the transport metadata that travels
+//	alongside it (timestamp, level, stream, source, source_type).
 //
-//     Placed at the module-root internal/threat/ (not cmd/arxsentinel/internal/threat/)
-//     so that pkg/executorplugins/* (in particular the product-side executors
-//     cloudflare/mikrotik/nginx) can import it. Go's internal-package rule
-//     restricts internal/ visibility to the immediate parent subtree — the
-//     cmd/ subtree cannot be imported from pkg/.
+//	OWNERSHIP:
+//	  internal/threat/ — product namespace, per Flow 083 principle P2:
+//	  models belong to the plugin that emits them. The core runtime has no
+//	  business knowing the ThreatEvent shape — it sees a generic *plugin.Event
+//	  and reads Envelope fields for metrics only.
 //
-//   MIGRATION (Flow 083, Gate B, RESOLVED-D strategy II):
-//     Moved verbatim from arx-core/pkg/plugin/sink.go as part of Task 3.3.
-//     Field order is byte-identical to the pre-Gate-B definition so JSON
-//     wire-format bytes are preserved (semantic compat per RESOLVED-Q8).
+//	  Placed at the module-root internal/threat/ (not cmd/arxsentinel/internal/threat/)
+//	  so that pkg/executorplugins/* (in particular the product-side executors
+//	  cloudflare/mikrotik/nginx) can import it. Go's internal-package rule
+//	  restricts internal/ visibility to the immediate parent subtree — the
+//	  cmd/ subtree cannot be imported from pkg/.
 //
-//   DEPENDENCY RULE:
-//     imports only stdlib (time). The pkg/plugin.Event envelope lives in
-//     arx-core and is composed by callers — this type itself does not
-//     reference pkg/plugin (zero coupling in either direction).
-
+//	MIGRATION (Flow 083, Gate B, RESOLVED-D strategy II):
+//	  Moved verbatim from arx-core/pkg/plugin/sink.go as part of Task 3.3.
+//	  Field order is byte-identical to the pre-Gate-B definition so JSON
+//	  wire-format bytes are preserved (semantic compat per RESOLVED-Q8).
+//
+//	DEPENDENCY RULE:
+//	  imports only stdlib (time). The pkg/plugin.Event envelope lives in
+//	  arx-core and is composed by callers — this type itself does not
+//	  reference pkg/plugin (zero coupling in either direction).
 package threat
 
 import "time"

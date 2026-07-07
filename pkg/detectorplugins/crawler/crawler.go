@@ -1,28 +1,28 @@
 // ========================== Crawler detector ============================================
-//   Detects sequential URL traversal by numeric pattern.
-//   Indicator of an automated content scanner.
 //
-//   ALGORITHM:
-//     1. For each path in RecentPaths extract (prefix, num) via numericSuffixRE:
-//        /page/5     → prefix="/page/",  num=5
-//        /product/42 → prefix="/product/", num=42
-//     2. Group numbers by prefix.
-//     3. If a group contains min_sequential consecutive integers → score.
+//	Detects sequential URL traversal by numeric pattern.
+//	Indicator of an automated content scanner.
 //
-//   WHY NUMERIC SEQUENCE:
-//     Legitimate users rarely traverse 5+ pages in strict numeric order within
-//     a short time window. /page/1→/page/2→...→/page/5 is an automation pattern.
+//	ALGORITHM:
+//	  1. For each path in RecentPaths extract (prefix, num) via numericSuffixRE:
+//	     /page/5     → prefix="/page/",  num=5
+//	     /product/42 → prefix="/product/", num=42
+//	  2. Group numbers by prefix.
+//	  3. If a group contains min_sequential consecutive integers → score.
 //
-//   LIMITATION:
-//     Only the last 64 paths are analyzed (ring buffer in state.IPState).
-//     Crawlers with windows > 64 unique URLs are not detected — caught by rate detector.
+//	WHY NUMERIC SEQUENCE:
+//	  Legitimate users rarely traverse 5+ pages in strict numeric order within
+//	  a short time window. /page/1→/page/2→...→/page/5 is an automation pattern.
 //
-//   Params (DetectorConfig.Params):
-//     min_sequential  int — consecutive numeric URLs needed to trigger (default: 5)
-//     score           int — threat score on trigger (default: 20)
+//	LIMITATION:
+//	  Only the last 64 paths are analyzed (ring buffer in state.IPState).
+//	  Crawlers with windows > 64 unique URLs are not detected — caught by rate detector.
 //
-//   Registered as "crawler" via init().
-
+//	Params (DetectorConfig.Params):
+//	  min_sequential  int — consecutive numeric URLs needed to trigger (default: 5)
+//	  score           int — threat score on trigger (default: 20)
+//
+//	Registered as "crawler" via init().
 package crawler
 
 import (

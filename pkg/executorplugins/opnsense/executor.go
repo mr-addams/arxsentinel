@@ -1,34 +1,34 @@
 // ====== Module: opnsense — executor ===============================================
-//   OPNsenseExecutor manages a single firewall alias via OPNsense's REST API
-//   (alias_util/add, alias_util/delete, alias_util/list). ThreatEvents arrive,
-//   pass min-level + dedup filtering, and are applied IMMEDIATELY — one event
-//   equals one REST call. There is no pending buffer, no flush ticker, and no
-//   final flush on shutdown.
 //
-//   WHAT IS HERE:
-//     Constructor NewOpnsenseExecutor, Run loop, per-event add, TTL sweep,
-//     min-level filter, dedup check, Stats snapshot, syncExisting.
+//	OPNsenseExecutor manages a single firewall alias via OPNsense's REST API
+//	(alias_util/add, alias_util/delete, alias_util/list). ThreatEvents arrive,
+//	pass min-level + dedup filtering, and are applied IMMEDIATELY — one event
+//	equals one REST call. There is no pending buffer, no flush ticker, and no
+//	final flush on shutdown.
 //
-//   WHAT IS NOT HERE:
-//     REST client (client.go), config parsing (config.go), registration
-//     (register.go).
+//	WHAT IS HERE:
+//	  Constructor NewOpnsenseExecutor, Run loop, per-event add, TTL sweep,
+//	  min-level filter, dedup check, Stats snapshot, syncExisting.
 //
-//   ARCHITECTURAL MODEL — MIKROTIK-STYLE, NOT OPENWRT-STYLE:
-//     Unlike OpenWrt, which batches add_list/del_list changes behind a single
-//     uci.commit + rc.init reload, OPNsense's alias_util endpoints apply the
-//     underlying pfctl table update per-call. There is no expensive reload
-//     to amortize, so batching would add latency and complexity without a
-//     corresponding firewall benefit. Therefore the executor issues an
-//     independent alias_util/add for every accepted event and an independent
-//     alias_util/delete for every expired IP in the sweep. See DECISIONS.md
-//     Decision 1 (mikrotik-style point updates for APIs with native per-entry
-//     semantics) and Decision 8 (OPNsense intentionally has no batch_size or
-//     flush_interval config fields).
+//	WHAT IS NOT HERE:
+//	  REST client (client.go), config parsing (config.go), registration
+//	  (register.go).
 //
-//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
-//   product namespace internal/threat; the executor type-asserts Event.Payload
-//   to *threat.ThreatEvent. Core has no knowledge of the payload shape.
-
+//	ARCHITECTURAL MODEL — MIKROTIK-STYLE, NOT OPENWRT-STYLE:
+//	  Unlike OpenWrt, which batches add_list/del_list changes behind a single
+//	  uci.commit + rc.init reload, OPNsense's alias_util endpoints apply the
+//	  underlying pfctl table update per-call. There is no expensive reload
+//	  to amortize, so batching would add latency and complexity without a
+//	  corresponding firewall benefit. Therefore the executor issues an
+//	  independent alias_util/add for every accepted event and an independent
+//	  alias_util/delete for every expired IP in the sweep. See DECISIONS.md
+//	  Decision 1 (mikrotik-style point updates for APIs with native per-entry
+//	  semantics) and Decision 8 (OPNsense intentionally has no batch_size or
+//	  flush_interval config fields).
+//
+//	Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
+//	product namespace internal/threat; the executor type-asserts Event.Payload
+//	to *threat.ThreatEvent. Core has no knowledge of the payload shape.
 package opnsense
 
 import (

@@ -1,27 +1,30 @@
 // ========================== Security processor — implements runtime.LineProcessor =========
-//   Этот файл — VERBATIM PORT processLine (раньше в pipeline.go) в реализацию
-//   runtime.LineProcessor для arx-core/pkg/runtime.
 //
-//   ЧТО ЗДЕСЬ:
-//     - securityState      — opaque-состояние pipeline, передаётся в Process;
-//                           живёт от Build() до Reload() (или до конца pipeline).
-//     - securityProcessor  — тип-обёртка над state с импортируемым процессором;
-//                           реализует runtime.LineProcessor (фабрика reuses).
-//     - Process()          — verbatim port processLine; одна строка за один вызов.
+//	This file is a VERBATIM PORT of processLine (previously in pipeline.go) into
+//	the runtime.LineProcessor implementation for arx-core/pkg/runtime.
 //
-//   КРИТИЧЕСКИ ВАЖНО: логика обработки байт-в-байт соответствует оригиналу.
-//   Никаких улучшений/оптимизаций security-домена. integration 135/0 — gate.
+//	WHAT IS HERE:
+//	  - securityState      — opaque pipeline state, passed into Process;
+//	                        lives from Build() until Reload() (or pipeline end).
+//	  - securityProcessor  — wrapper type around state with an importable
+//	                        processor; implements runtime.LineProcessor (the
+//	                        factory reuses it).
+//	  - Process()          — verbatim port of processLine; one line per call.
 //
-//   ЧЕГО ЗДЕСЬ НЕТ:
-//     - sinks: ими владеет engine через StreamSpec.Pipelines[i].Sinks.
-//     - sources: то же.
-//     - tracker-GC: запускается фабрикой один раз на группу.
+//	CRITICAL: the byte-for-byte processing logic matches the original. No
+//	security-domain improvements or optimizations. The 135/0 integration test
+//	is the gate.
 //
-//   СВЯЗЬ С DECISIONS.md (Flow 081):
-//     - state.Scorer/Tracker/Matcher/Verifier — Product-side (DECISION Q1/Q2).
-//     - Engine сам пишет в sinks и считает eventCount (engine.go Phase 2).
-//     - SourceName/SourceType — engine передаёт через EventContext.
-
+//	WHAT IS NOT HERE:
+//	  - sinks: owned by the engine via StreamSpec.Pipelines[i].Sinks.
+//	  - sources: same.
+//	  - tracker-GC: started by the factory once per group.
+//
+//	CONNECTION TO DECISIONS.md (Flow 081):
+//	  - state.Scorer/Tracker/Matcher/Verifier live on the Product side
+//	    (DECISION Q1/Q2).
+//	  - The engine itself writes to sinks and counts events (engine.go Phase 2).
+//	  - SourceName/SourceType — the engine delivers them through EventContext.
 package main
 
 import (
@@ -43,15 +46,16 @@ import (
 	"github.com/mr-addams/arxsentinel/pkg/processorplugins/waf"
 )
 
-// ── securityState — opaque ProcessorState, передаваемый из factory.Build в Process ++++++++
+// ── securityState — opaque ProcessorState passed from factory.Build into Process ++++++++
 
-// securityState хранит долгоживущие зависимости, разделяемые Process().
-// Пересоздаётся при SIGHUP-reload (factory.Reload): Scorer и Matcher заменяются;
-// Tracker и Verifier переживают reload (общий по группе).
-// FakeBotScore и DNSVerifyTimeout отражают текущий конфиг.
+// securityState holds the long-lived dependencies shared by Process().
+// It is recreated on SIGHUP-reload (factory.Reload): Scorer and Matcher are
+// replaced; Tracker and Verifier survive reload (shared per group).
+// FakeBotScore and DNSVerifyTimeout reflect the current config.
 //
-// Sinks и SourceName/SourceType НЕ хранятся: sinks живут в engine.StreamSpec;
-// SourceName/SourceType engine передаёт через EventContext.
+// Sinks and SourceName/SourceType are NOT stored: sinks live in
+// engine.StreamSpec; SourceName/SourceType are delivered by the engine
+// through EventContext.
 type securityState struct {
 	StreamName   string
 	PipelineName string
@@ -60,9 +64,9 @@ type securityState struct {
 	Scorer       *scorer.Scorer
 	Matcher      *whitelist.Matcher
 	Verifier     *whitelist.Verifier
-	// Waf — optional rule-engine plugin. nil → WAF gate is skipped (default
-	// behaviour for pipelines without a `processors:` block). Built once in
-	// securityFactory.Build; rebuilt on Reload (mirrors Scorer rebuild).
+	// Waf is an optional rule-engine plugin. nil → WAF gate is skipped
+	// (default behaviour for pipelines without a `processors:` block). Built
+	// once in securityFactory.Build; rebuilt on Reload (mirrors Scorer rebuild).
 	Waf              *waf.WafProcessor
 	FakeBotScore     int
 	DNSVerifyTimeout time.Duration
@@ -70,42 +74,43 @@ type securityState struct {
 	// Process bypasses detection/scoring entirely and forwards every line
 	// as-is (see the RawForward branch near the top of Process).
 	RawForward bool
-	// shared (runtime.SharedResources any) — читается через processor.shared, не в state.
+	// shared (runtime.SharedResources any) — read via processor.shared, not stored on the state.
 }
 
-// Compile-time гарантия: securityProcessor удовлетворяет runtime.LineProcessor.
+// Compile-time guarantee: securityProcessor satisfies runtime.LineProcessor.
 var _ coreruntime.LineProcessor = (*securityProcessor)(nil)
 
-// ── securityProcessor — реализация runtime.LineProcessor +++++++++++++++++++++++++++++++++++
+// ── securityProcessor — implementation of runtime.LineProcessor +++++++++++++++++++++++++++++++++++
 
-// securityProcessor реализует runtime.LineProcessor. Process() — verbatim port
-// processLine. Состояние читает из processor-полей + переданного securityState +
-// processor.shared (для ChainChecker / WarningsWriter type-assert).
+// securityProcessor implements runtime.LineProcessor. Process() is a verbatim port
+// of processLine. State is read from processor fields + the passed-in securityState +
+// processor.shared (for ChainChecker / WarningsWriter type-asserts).
 //
-// metrics callbacks берутся из processor.shared.MetricsCallbacks (nil-safe).
+// metrics callbacks are taken from processor.shared.MetricsCallbacks (nil-safe).
 type securityProcessor struct {
 	shared coreruntime.SharedResources
 }
 
-// Process — VERBATIM PORT processLine из старого pipeline.go (строки 374–500).
-// Структура шагов и порядок идентичны оригиналу; правки — только замены
-// pipe.X → st.X / processor.shared.X (см. DECISIONS.md).
+// Process — VERBATIM PORT of processLine from the old pipeline.go (lines 374–500).
+// Step structure and order are identical to the original; the only edits are the
+// pipe.X → st.X / processor.shared.X substitutions (see DECISIONS.md).
 //
-// Контракт runtime.LineProcessor:
-//   - action.Skip=true → строка отбрасывается (не наш случай);
-//   - action.Payload != nil → engine пишет в sinks и считает eventCount
-//     (engine делает это сам, см. dispatchEntry).
-//   - action.Payload == nil → строка прошла штатно, событий нет.
+// runtime.LineProcessor contract:
+//   - action.Skip=true → line is dropped (not our case);
+//   - action.Payload != nil → engine writes to sinks and increments eventCount
+//     (engine does this itself, see dispatchEntry).
+//   - action.Payload == nil → line passed through normally, no events.
 //
-// Метрики (RecordLine / RecordInputLine) engine вызывает сам ДО Process.
-// Наш долг — RecordThreat + RecordDetectorHit, которые Process знает семантически.
+// Metrics (RecordLine / RecordInputLine) are called by the engine itself BEFORE
+// Process. Our job is RecordThreat + RecordDetectorHit, which Process knows
+// semantically.
 func (p *securityProcessor) Process(
 	ctx context.Context,
 	event *plugin.Event,
 	ps coreruntime.ProcessorState,
 	evctx coreruntime.EventContext,
 ) coreruntime.Action {
-	// Defensive type-assert: должен всегда проходить, т.к. factory.Build возвращает *securityState.
+	// Defensive type-assert: must always succeed, because factory.Build returns *securityState.
 	st, ok := ps.(*securityState)
 	if !ok {
 		return coreruntime.Action{Skip: true}
@@ -116,8 +121,8 @@ func (p *securityProcessor) Process(
 	// throughout the existing verbatim port.
 	entry := parser.UnwrapLogEntry(event)
 
-	// Снимаем копии полей чтобы избежать data race при Reload (engine подменяет ps).
-	// Использование локальных копий в Process — стандартный приём для in-place reload.
+	// Take copies of fields to avoid data races on Reload (engine swaps ps).
+	// Using local copies in Process is a standard trick for in-place reload.
 	streamName := st.StreamName
 	pipelineName := st.PipelineName
 	fakeBotScore := st.FakeBotScore
@@ -149,7 +154,7 @@ func (p *securityProcessor) Process(
 		}
 	}
 
-	// Метрики callbacks — снимок структуры (atomic-чтение pointer-поля через copy).
+	// Metrics callbacks — a snapshot of the struct (atomic read of the pointer field via copy).
 	mc := p.shared.MetricsCallbacks
 
 	utils.Log("PARSER", fmt.Sprintf("%s %s %s %d",
@@ -157,8 +162,8 @@ func (p *securityProcessor) Process(
 	), "debug")
 
 	// ── Chain integrity check ─────────────────────────────────────────────────────────
-	// Engine-ассерт ChainChecker / WarningsWriter из processor.shared (any → concrete).
-	// nil → chain_guard disabled, пропускаем шаг.
+	// Engine-asserts ChainChecker / WarningsWriter from processor.shared (any → concrete).
+	// nil → chain_guard disabled, skip the step.
 	if cc, ok := p.shared.ChainChecker.(*corechaincheck.Checker); cc != nil && ok {
 		if ww, ok := p.shared.WarningsWriter.(*output.WarningsWriter); ww != nil && ok {
 			if result := cc.Check(entry.RemoteAddr); result != nil {
@@ -233,7 +238,7 @@ func (p *securityProcessor) Process(
 		return coreruntime.Action{}
 	}
 
-	// Метрика RecordThreat (nil-safe).
+	// RecordThreat metric (nil-safe).
 	if mc != nil && mc.RecordThreat != nil {
 		mc.RecordThreat(streamName, pipelineName, level)
 	}
@@ -257,8 +262,8 @@ func (p *securityProcessor) Process(
 	utils.Log("THREAT", fmt.Sprintf("%s score=%d modules=%s reason=%q",
 		entry.RealIP, score, strings.Join(modules, ","), reason), "warning")
 
-	// Engine (dispatchEntry) сам сделает sink.Write + RecordOutputEvent;
-	// eventCount.Add(1) engine выполнит только если level == "THREAT".
+	// Engine (dispatchEntry) does sink.Write + RecordOutputEvent itself;
+	// eventCount.Add(1) is performed by the engine only when level == "THREAT".
 	// Gate B (Flow 083): Action carries a generic *plugin.Event whose
 	// Payload is the product-owned *threat.ThreatEvent (live in
 	// internal/threat). The engine reads Payload.Envelope.Level for
@@ -277,10 +282,12 @@ func (p *securityProcessor) Process(
 	}
 }
 
-// Метрика RecordLine (на КАЖДОЙ строке, до Process) — engine зовёт сам (см.
-// engine.go dispatchEntry). Здесь мы лишь сигналим, что эти метрики в
-// коллбэке RecordLine уже покрывают product-вызовы metrics.RecordLine +
-// metrics.RecordInputLine — это main.go в MetricsCallbacks-адаптере делает.
+// RecordLine metric (on EVERY line, before Process) — the engine calls it
+// itself (see engine.go dispatchEntry). Here we only note that these metrics
+// in the RecordLine callback already cover the product-level calls of
+// metrics.RecordLine + metrics.RecordInputLine — main.go does this in the
+// MetricsCallbacks adapter.
 //
-// RecordOutputEvent engine зовёт по факту sink.Write — main.go-адаптер внутри
-// callback'а вызывает sinkTypeFromName(sink.Name) чтобы вычислить sinkType.
+// RecordOutputEvent is called by the engine upon sink.Write — the main.go
+// adapter inside the callback invokes sinkTypeFromName(sink.Name) to compute
+// sinkType.

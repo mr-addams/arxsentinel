@@ -1,18 +1,18 @@
 // ========================== pkg/processor/waf — Registration ===============================
-//   Self-registration of WafProcessor in the processor registry (Flow 001, Task H1/H3).
 //
-//   The factory extracts dependencies from ProcessorConfig.Params:
-//     "waf_config" → waf.Config  (the parsed WAF rules: name + expression + action)
+//	Self-registration of WafProcessor in the processor registry (Flow 001, Task H1/H3).
 //
-//   The pipeline bootstrapper (main.go or wire-up code) sets these keys before calling
-//   processor.Build("waf", cfg).
+//	The factory extracts dependencies from ProcessorConfig.Params:
+//	  "waf_config" → waf.Config  (the parsed WAF rules: name + expression + action)
 //
-//   No panic recovery is needed: the type assertion below uses comma-ok and
-//   never panics on a missing or wrong-type param, and NewWafProcessor returns
-//   errors rather than panicking on bad rule expressions. The factory is also
-//   invoked at wire-up time (not from init()), so a failure here surfaces as
-//   an ordinary error to the caller that wired the plugin.
-
+//	The pipeline bootstrapper (main.go or wire-up code) sets these keys before calling
+//	processor.Build("waf", cfg).
+//
+//	No panic recovery is needed: the type assertion below uses comma-ok and
+//	never panics on a missing or wrong-type param, and NewWafProcessor returns
+//	errors rather than panicking on bad rule expressions. The factory is also
+//	invoked at wire-up time (not from init()), so a failure here surfaces as
+//	an ordinary error to the caller that wired the plugin.
 package waf
 
 import (

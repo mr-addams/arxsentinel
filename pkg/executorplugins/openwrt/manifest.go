@@ -1,15 +1,15 @@
 // ====== Module: openwrt — manifest ===============================================
-//   Plugin identity and data contract for the OpenWrt executor.
-//   Declares: Role=Executor, Input=TypeScoredEvent, Output=TypeNone.
 //
-//   WHAT IS HERE:
-//     OpenwrtExecutor struct (storage and collaborators needed by the
-//     Run / flush / sweep logic in Task 3.1), Name/Type/Manifest methods.
+//	Plugin identity and data contract for the OpenWrt executor.
+//	Declares: Role=Executor, Input=TypeScoredEvent, Output=TypeNone.
 //
-//   WHAT IS NOT HERE:
-//     Run/flush implementation (executor.go, Task 3.1), ubus client
-//     (client.go, Task 2.2), registration (register.go, Task 3.2).
-
+//	WHAT IS HERE:
+//	  OpenwrtExecutor struct (storage and collaborators needed by the
+//	  Run / flush / sweep logic in Task 3.1), Name/Type/Manifest methods.
+//
+//	WHAT IS NOT HERE:
+//	  Run/flush implementation (executor.go, Task 3.1), ubus client
+//	  (client.go, Task 2.2), registration (register.go, Task 3.2).
 package openwrt
 
 import (

@@ -1,13 +1,13 @@
 // ====== Module: mikrotik — registration ==========================================
-//   Self-registration of MikroTikExecutor in pkg/executor registry.
-//   Uses init() to register the executor factory, enabling discovery
-//   without a central import list.
 //
-//   FLOW 073 TASK 1.3.1 — Configuration decoupling:
-//     - factory no longer builds a config.ExecutorItem; NewMikroTikExecutor
-//       now accepts executor.ExecutorConfig directly (Phase 1.3 prep for ADR-002).
-//     - logger is forwarded from Build() (was logger.Nop before F1 closure).
-
+//	Self-registration of MikroTikExecutor in pkg/executor registry.
+//	Uses init() to register the executor factory, enabling discovery
+//	without a central import list.
+//
+//	FLOW 073 TASK 1.3.1 — Configuration decoupling:
+//	  - factory no longer builds a config.ExecutorItem; NewMikroTikExecutor
+//	    now accepts executor.ExecutorConfig directly (Phase 1.3 prep for ADR-002).
+//	  - logger is forwarded from Build() (was logger.Nop before F1 closure).
 package mikrotik
 
 import (

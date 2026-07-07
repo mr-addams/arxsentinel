@@ -1,25 +1,25 @@
 // ========================== NoAsset detector ============================================
-//   Detects bots that request HTML pages without loading static assets (CSS/JS/images).
-//   A legitimate browser always loads page resources — a bot does not.
 //
-//   ALGORITHM:
-//     For each path in RecentPaths:
-//       asset: extension in asset_extensions set
-//       page:  everything else
-//     If pageCount >= min_page_requests && assetCount/total < asset_ratio_threshold → score.
+//	Detects bots that request HTML pages without loading static assets (CSS/JS/images).
+//	A legitimate browser always loads page resources — a bot does not.
 //
-//   WHY EXTENSION AND NOT CONTENT-TYPE:
-//     LogEntry has no response Content-Type — nginx writes only request lines.
-//     Path extension is a reliable proxy for asset vs. page distinction.
+//	ALGORITHM:
+//	  For each path in RecentPaths:
+//	    asset: extension in asset_extensions set
+//	    page:  everything else
+//	  If pageCount >= min_page_requests && assetCount/total < asset_ratio_threshold → score.
 //
-//   Params (DetectorConfig.Params):
-//     min_page_requests      int      — min pages before triggering (default: 3)
-//     asset_ratio_threshold  float64  — minimum asset ratio for clean traffic (default: 0.1)
-//     score                  int      — threat score on trigger (default: 20)
-//     asset_extensions       []string — extensions treated as assets (default: see below)
+//	WHY EXTENSION AND NOT CONTENT-TYPE:
+//	  LogEntry has no response Content-Type — nginx writes only request lines.
+//	  Path extension is a reliable proxy for asset vs. page distinction.
 //
-//   Registered as "noasset" via init().
-
+//	Params (DetectorConfig.Params):
+//	  min_page_requests      int      — min pages before triggering (default: 3)
+//	  asset_ratio_threshold  float64  — minimum asset ratio for clean traffic (default: 0.1)
+//	  score                  int      — threat score on trigger (default: 20)
+//	  asset_extensions       []string — extensions treated as assets (default: see below)
+//
+//	Registered as "noasset" via init().
 package noasset
 
 import (

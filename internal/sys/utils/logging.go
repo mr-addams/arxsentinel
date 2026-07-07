@@ -1,26 +1,26 @@
 // ========================== Module utils/logging ========================================
-//   Three logging streams: console (colored stdout), operational (sentinel.log),
-//   threat (threats.log). Tagged output following patterns from the telegram-bot logging.go.
 //
-//   WHAT IS HERE:
-//     - Init() — initializes file loggers
-//     - Log(tag, msg, level) — console + sentinel.log
-//     - LogThreat() — writes to threats.log (format for Fail2Ban)
-//     - Close() — closes file descriptors
+//	Three logging streams: console (colored stdout), operational (sentinel.log),
+//	threat (threats.log). Tagged output following patterns from the telegram-bot logging.go.
 //
-//   WHAT IS NOT HERE:
-//     - Business logic (core/)
-//     - Configuration structures (sys/config)
+//	WHAT IS HERE:
+//	  - Init() — initializes file loggers
+//	  - Log(tag, msg, level) — console + sentinel.log
+//	  - LogThreat() — writes to threats.log (format for Fail2Ban)
+//	  - Close() — closes file descriptors
 //
-//   OUTER TAGS: STARTUP, SHUTDOWN, CONFIG, PARSER, DETECTOR, SCORER,
-//               WHITELIST, THREAT, STATS, GC, TAIL, ERROR, WARN, INFO, DEBUG
-//   INNER TAGS: PROBE, RATE, UA, BRUTEFORCE, CRAWLER, NOASSET,
-//               OVERFLOW, DNS, GC
+//	WHAT IS NOT HERE:
+//	  - Business logic (core/)
+//	  - Configuration structures (sys/config)
 //
-//   FILTERING:
-//     debugOnlyTags — visible only when DebugEnabled=true
-//     quietTags     — show only error/warning without debug mode
-
+//	OUTER TAGS: STARTUP, SHUTDOWN, CONFIG, PARSER, DETECTOR, SCORER,
+//	            WHITELIST, THREAT, STATS, GC, TAIL, ERROR, WARN, INFO, DEBUG
+//	INNER TAGS: PROBE, RATE, UA, BRUTEFORCE, CRAWLER, NOASSET,
+//	            OVERFLOW, DNS, GC
+//
+//	FILTERING:
+//	  debugOnlyTags — visible only when DebugEnabled=true
+//	  quietTags     — show only error/warning without debug mode
 package utils
 
 import (

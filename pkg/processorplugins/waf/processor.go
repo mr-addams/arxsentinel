@@ -1,25 +1,25 @@
 // ========================== pkg/processor/waf — Processor =================================
-//   WafProcessor evaluates a pre-compiled rule set against the http.* fields of each
-//   pipeline event and routes the verdict through a per-rule action policy (drop / tag /
-//   pass). The plugin is the canonical Flow 001 example of "engine returns predicate,
-//   plugin decides action" (DECISION D12).
 //
-//   WHAT IS HERE:
-//     - WafProcessor       — plugin.Processor implementation owning the RuleSet and
-//                            resolver pair.
-//     - NewWafProcessor    — constructor: compiles cfg.Rules at Init time
-//                            (fail-fast on bad expression), stores the action map.
-//     - Name / Manifest    — plugin identity surface.
-//     - Process            — ctx-respecting → RuleSet.Match → action dispatch
-//                            (drop → (nil, nil), tag → set Level="THREAT", pass →
-//                            pass-through).
+//	WafProcessor evaluates a pre-compiled rule set against the http.* fields of each
+//	pipeline event and routes the verdict through a per-rule action policy (drop / tag /
+//	pass). The plugin is the canonical Flow 001 example of "engine returns predicate,
+//	plugin decides action" (DECISION D12).
 //
-//   WHAT IS NOT HERE:
-//     - Manifest var      — manifest.go
-//     - HttpResolver      — resolver.go
-//     - Registration      — register.go
-//     - Scheme / RuleSet  — ruleset.go
-
+//	WHAT IS HERE:
+//	  - WafProcessor       — plugin.Processor implementation owning the RuleSet and
+//	                         resolver pair.
+//	  - NewWafProcessor    — constructor: compiles cfg.Rules at Init time
+//	                         (fail-fast on bad expression), stores the action map.
+//	  - Name / Manifest    — plugin identity surface.
+//	  - Process            — ctx-respecting → RuleSet.Match → action dispatch
+//	                         (drop → (nil, nil), tag → set Level="THREAT", pass →
+//	                         pass-through).
+//
+//	WHAT IS NOT HERE:
+//	  - Manifest var      — manifest.go
+//	  - HttpResolver      — resolver.go
+//	  - Registration      — register.go
+//	  - Scheme / RuleSet  — ruleset.go
 package waf
 
 import (

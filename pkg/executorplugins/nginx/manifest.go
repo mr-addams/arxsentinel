@@ -1,5 +1,4 @@
 // ========================== pkg/nginx — Manifest ========================================
-
 package nginx
 
 import "github.com/mr-addams/arx-core/pkg/plugin"

@@ -1,22 +1,22 @@
 // ========================== Module pkg/processor/whitelist/register =======================
-//   Self-registration of WhitelistProcessor in the processor registry.
 //
-//   The factory extracts dependencies from ProcessorConfig.Params:
-//     "whitelist_config" → config.WhitelistConfig  (the parsed whitelist YAML section)
-//     "resolver"         → whitelist.Resolver      (DNS resolver for bot verification)
+//	Self-registration of WhitelistProcessor in the processor registry.
 //
-//   The pipeline bootstrapper (main.go or wire-up code) sets these keys before calling
-//   processor.Build("whitelist", cfg).
-
+//	The factory extracts dependencies from ProcessorConfig.Params:
+//	  "whitelist_config" → config.WhitelistConfig  (the parsed whitelist YAML section)
+//	  "resolver"         → whitelist.Resolver      (DNS resolver for bot verification)
+//
+//	The pipeline bootstrapper (main.go or wire-up code) sets these keys before calling
+//	processor.Build("whitelist", cfg).
 package whitelist
 
 import (
 	"fmt"
 
-	corewhitelist "github.com/mr-addams/arxsentinel/internal/core/whitelist"
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	"github.com/mr-addams/arx-core/pkg/processor"
+	corewhitelist "github.com/mr-addams/arxsentinel/internal/core/whitelist"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 const (

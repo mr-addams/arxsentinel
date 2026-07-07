@@ -1,13 +1,13 @@
 // ====== Module: openwrt — config =================================================
-//   Configuration for the OpenWrt ubus executor — parses from YAML/JSON with
-//   validation and time.Duration handling.
 //
-//   WHAT IS HERE:
-//     Config struct, threatLevel enum, parseConfig function
+//	Configuration for the OpenWrt ubus executor — parses from YAML/JSON with
+//	validation and time.Duration handling.
 //
-//   WHAT IS NOT HERE:
-//     ubus client (client.go), executor logic (executor.go), registration (register.go)
-
+//	WHAT IS HERE:
+//	  Config struct, threatLevel enum, parseConfig function
+//
+//	WHAT IS NOT HERE:
+//	  ubus client (client.go), executor logic (executor.go), registration (register.go)
 package openwrt
 
 import (

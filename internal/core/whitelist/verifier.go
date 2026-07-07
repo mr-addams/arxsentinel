@@ -1,41 +1,41 @@
 // ========================== Module whitelist/verifier ===================================
-//   rDNS + fDNS verification of legitimate bots (Googlebot, Bingbot, etc.).
-//   Fake bot detection: UA matched a bot pattern, but DNS verification failed.
 //
-//   WHAT IS HERE:
-//     - Resolver — interface for DNS lookups (injected for testability)
-//     - Verifier — struct with cache and injected Resolver
-//     - Verify(ctx, ip, botCfg) → (verified, isFakeBot) — Task 3.2
-//     - isFakeBot=true → caller adds FakeBotScore — Task 3.5
+//	rDNS + fDNS verification of legitimate bots (Googlebot, Bingbot, etc.).
+//	Fake bot detection: UA matched a bot pattern, but DNS verification failed.
 //
-//   WHAT IS NOT HERE:
-//     - UA matching → matcher.go
-//     - Cache TTL → ipcache.go
+//	WHAT IS HERE:
+//	  - Resolver — interface for DNS lookups (injected for testability)
+//	  - Verifier — struct with cache and injected Resolver
+//	  - Verify(ctx, ip, botCfg) → (verified, isFakeBot) — Task 3.2
+//	  - isFakeBot=true → caller adds FakeBotScore — Task 3.5
 //
-//   VERIFY ALGORITHM (method "rdns" and "rdns_ipjson"):
-//     1. Cache hit? → return immediately
-//     2. PTR lookup (rDNS): ip → hostname
-//     3. Check hostname suffix against botCfg.RDNSDomains
-//     4. A/AAAA lookup (fDNS): hostname → IPs
-//     5. Confirm the original IP is among the A/AAAA responses
-//     6. Store result in cache, return
+//	WHAT IS NOT HERE:
+//	  - UA matching → matcher.go
+//	  - Cache TTL → ipcache.go
 //
-//   METHOD "ip_ranges":
-//     Stub: returns verified=true without DNS.
-//     Facebook/Twitter/Telegram publish IP ranges — implementation in v0.2+.
+//	VERIFY ALGORITHM (method "rdns" and "rdns_ipjson"):
+//	  1. Cache hit? → return immediately
+//	  2. PTR lookup (rDNS): ip → hostname
+//	  3. Check hostname suffix against botCfg.RDNSDomains
+//	  4. A/AAAA lookup (fDNS): hostname → IPs
+//	  5. Confirm the original IP is among the A/AAAA responses
+//	  6. Store result in cache, return
 //
-//   METHOD "ua_only":
-//     No DNS verification possible — UA accepted at face value.
-//     verified=false keeps the IP in the scoring pipeline.
-//     isFakeBot=false — no penalty: bot legitimately cannot provide rDNS.
+//	METHOD "ip_ranges":
+//	  Stub: returns verified=true without DNS.
+//	  Facebook/Twitter/Telegram publish IP ranges — implementation in v0.2+.
 //
-//   FAKE BOT (Task 3.5):
-//     Verify is called only when MatchBot returned matched=true.
-//     If verified=false — this is a fake bot: UA matched, DNS failed.
-//     isFakeBot=true signals the pipeline to add cfg.Whitelist.FakeBotScore to the IP score.
+//	METHOD "ua_only":
+//	  No DNS verification possible — UA accepted at face value.
+//	  verified=false keeps the IP in the scoring pipeline.
+//	  isFakeBot=false — no penalty: bot legitimately cannot provide rDNS.
 //
-//   Implements: Task 3.2 (Verify) + Task 3.5 (isFakeBot).
-
+//	FAKE BOT (Task 3.5):
+//	  Verify is called only when MatchBot returned matched=true.
+//	  If verified=false — this is a fake bot: UA matched, DNS failed.
+//	  isFakeBot=true signals the pipeline to add cfg.Whitelist.FakeBotScore to the IP score.
+//
+//	Implements: Task 3.2 (Verify) + Task 3.5 (isFakeBot).
 package whitelist
 
 import (

@@ -1,7 +1,7 @@
 // ====== Module: mikrotik — manifest ===============================================
-//   Plugin identity and data contract for the MikroTik executor.
-//   Declares: Role=Executor, Input=TypeScoredEvent, Output=TypeNone.
-
+//
+//	Plugin identity and data contract for the MikroTik executor.
+//	Declares: Role=Executor, Input=TypeScoredEvent, Output=TypeNone.
 package mikrotik
 
 import (
@@ -32,9 +32,9 @@ type MikroTikExecutor struct {
 	// non-nil in practice (constructor replaces nil with logger.Nop).
 	logger logger.Logger
 
-	// dedupWin — окно дедупликации поверх banned-map.
-	// TTL = cfg.DedupWindow: 0 → отключено, > 0 → запрещает повторный
-	// Add для одного IP в течение TTL после успешного добавления.
+	// dedupWin — deduplication window layered on top of the banned map.
+	// TTL = cfg.DedupWindow: 0 → disabled, > 0 → forbids a second
+	// Add for the same IP within TTL after a successful add.
 	dedupWin *dedup.Window
 }
 

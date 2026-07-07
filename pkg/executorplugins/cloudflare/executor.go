@@ -1,19 +1,19 @@
 // ====== Module: cloudflare — executor =============================================
-//   CloudflareExecutor manages a Cloudflare IP banlist via the Lists API.
-//   Receives ThreatEvents, accumulates them in a buffer, and flushes to the
-//   Cloudflare API (with 429 retry, pending operation polling, TTL-based sweep).
 //
-//   WHAT IS HERE:
-//     CloudflareExecutor struct, Run loop, flush, sweep, retry, polling logic
+//	CloudflareExecutor manages a Cloudflare IP banlist via the Lists API.
+//	Receives ThreatEvents, accumulates them in a buffer, and flushes to the
+//	Cloudflare API (with 429 retry, pending operation polling, TTL-based sweep).
 //
-//   WHAT IS NOT HERE:
-//     CF API client (client.go), config parsing (config.go), registration (register.go)
+//	WHAT IS HERE:
+//	  CloudflareExecutor struct, Run loop, flush, sweep, retry, polling logic
 //
-//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
-//   product namespace cmd/arxsentinel/internal/threat; the executor
-//   type-asserts Event.Payload to *threat.ThreatEvent to extract the IP
-//   and level fields. Core has no knowledge of the payload shape.
-
+//	WHAT IS NOT HERE:
+//	  CF API client (client.go), config parsing (config.go), registration (register.go)
+//
+//	Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
+//	product namespace cmd/arxsentinel/internal/threat; the executor
+//	type-asserts Event.Payload to *threat.ThreatEvent to extract the IP
+//	and level fields. Core has no knowledge of the payload shape.
 package cloudflare
 
 import (
@@ -87,18 +87,19 @@ type CloudflareExecutor struct {
 		executed atomic.Int64
 		skipped  atomic.Int64
 		errors   atomic.Int64
-		swept    atomic.Int64 // M7: отдельный счётчик снятых банов (sweep)
+		swept    atomic.Int64 // M7: separate counter for bans removed by sweep
 	}
 
 	pendingMu   sync.Mutex
 	pendingOpID string
 	pendingOpAt time.Time
 
-	// dedupWin — окно дедупликации поверх banned-map.
-	// TTL = cfg.DedupWindow: 0 → отключено (nil-логика IsDuplicate),
-	// > 0 → запрещает повторный бан одного IP в течение TTL после
-	// первого успешного бана (даже если IP уже удалён из banned по TTL sweep).
-	// Нужен чтобы не "долбить" CF API при активной атаке с одного IP.
+	// dedupWin — deduplication window layered on top of the banned map.
+	// TTL = cfg.DedupWindow: 0 → disabled (nil-typed IsDuplicate logic),
+	// > 0 → forbids re-banning the same IP within TTL after the first
+	// successful ban (even if the IP has already been removed from banned
+	// by a TTL sweep). Needed to avoid hammering the CF API during an
+	// active attack from a single IP.
 	dedupWin *dedup.Window
 }
 
@@ -216,7 +217,7 @@ func (e *CloudflareExecutor) Run(ctx context.Context, source plugin.EventSource)
 	// Pop is not a channel — feed events into an internal channel for select.
 	// Gate B (Flow 083 / Task 3.3): Pop returns generic *plugin.Event;
 	// extract the *threat.ThreatEvent payload and forward ThreatEvent values.
-	events := make(chan threat.ThreatEvent, 64) // L5: буфер 64 — снижает блокировки Pop при всплесках
+	events := make(chan threat.ThreatEvent, 64) // L5: buffer 64 — reduces Pop back-pressure during bursts
 	go func() {
 		defer close(events)
 		for {
@@ -258,9 +259,9 @@ func (e *CloudflareExecutor) Run(ctx context.Context, source plugin.EventSource)
 				continue
 			}
 			// Pre-register in banned so duplicate events in the same batch are caught.
-			// dedup-окно НЕ помечаем здесь — это делает flush() после успешного
-			// AddItems. Это flaky-safe: при ошибке CF API IP не отравляет окно,
-			// и повторный event снова дойдёт до попытки.
+			// The dedup window is NOT marked here — that is done by flush() after a
+			// successful AddItems. This is flaky-safe: if the CF API errors, the IP
+			// does not poison the window, and the next event will reach the attempt again.
 			e.mu.Lock()
 			e.banned[event.IP] = banRecord{addedAt: time.Now(), addedByExecutor: true}
 			e.mu.Unlock()
@@ -414,10 +415,11 @@ func (e *CloudflareExecutor) flush(ctx context.Context, events []threat.ThreatEv
 	}
 	e.mu.Unlock()
 
-	// Помечаем IP в dedup-окне только после успешного AddItems — это
-	// "flaky-safe" семантика из Task 4: при ошибке CF (429, poll timeout,
-	// network) IP не отравляет окно, и повторные events снова дойдут до
-	// попытки. MarkBatch берёт один mutex вместо N — симметрично mikrotik flush.
+	// Mark IPs in the dedup window only after a successful AddItems — this is
+	// the "flaky-safe" semantics from Task 4: on CF error (429, poll timeout,
+	// network) the IP does not poison the window, and subsequent events reach
+	// the attempt again. MarkBatch takes a single mutex instead of N — symmetric
+	// to the mikrotik flush.
 	markedIPs := make([]string, len(events))
 	for i, ev := range events {
 		markedIPs[i] = ev.IP

@@ -1,14 +1,14 @@
 // ====== Module: openwrt — registration ===========================================
-//   Self-registration of OpenwrtExecutor in pkg/executor registry.
-//   Uses init() to register the executor factory, enabling discovery
-//   without a central import list.
 //
-//   FLOW 095 TASK 3.2 — Registration:
-//     Mirrors the mikrotik register.go pattern: same factory signature,
-//     same init() shape, same Register + RegisterManifest pair. The factory
-//     is a thin wrapper that forwards cfg + log to NewOpenwrtExecutor
-//     (implemented in Task 3.1).
-
+//	Self-registration of OpenwrtExecutor in pkg/executor registry.
+//	Uses init() to register the executor factory, enabling discovery
+//	without a central import list.
+//
+//	FLOW 095 TASK 3.2 — Registration:
+//	  Mirrors the mikrotik register.go pattern: same factory signature,
+//	  same init() shape, same Register + RegisterManifest pair. The factory
+//	  is a thin wrapper that forwards cfg + log to NewOpenwrtExecutor
+//	  (implemented in Task 3.1).
 package openwrt
 
 import (

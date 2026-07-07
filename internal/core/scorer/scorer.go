@@ -1,30 +1,30 @@
 // ========================== Module scorer ===============================================
-//   Aggregation of scores from detectors, verdict determination, linear decay.
 //
-//   WHAT IS HERE:
-//     - Scorer — aggregator of all detector results per IP
-//     - Evaluate() — run detectors + decay + issue verdict
-//     - applyDecay() — linear decay of accumulated score over the window
+//	Aggregation of scores from detectors, verdict determination, linear decay.
 //
-//   VERDICT:
-//     ""      → score < alert_threshold   (normal activity)
-//     "WARN"  → score ∈ [alert, ban)      (suspicious activity)
-//     "THREAT"→ score ≥ ban_threshold     (Fail2Ban should block)
+//	WHAT IS HERE:
+//	  - Scorer — aggregator of all detector results per IP
+//	  - Evaluate() — run detectors + decay + issue verdict
+//	  - applyDecay() — linear decay of accumulated score over the window
 //
-//   DECAY (linear):
-//     decayed = currentScore × max(0, 1 − elapsed/window)
-//     When elapsed = 0       → score unchanged
-//     When elapsed = window/2 → score halved
-//     When elapsed ≥ window  → score zeroed
+//	VERDICT:
+//	  ""      → score < alert_threshold   (normal activity)
+//	  "WARN"  → score ∈ [alert, ban)      (suspicious activity)
+//	  "THREAT"→ score ≥ ban_threshold     (Fail2Ban should block)
 //
-//   ISOLATION:
-//     Scorer does not import core/state — works through detector.ScoreAccess.
-//     *state.IPState implements this interface implicitly (Go duck typing).
+//	DECAY (linear):
+//	  decayed = currentScore × max(0, 1 − elapsed/window)
+//	  When elapsed = 0       → score unchanged
+//	  When elapsed = window/2 → score halved
+//	  When elapsed ≥ window  → score zeroed
 //
-//   core/ IMPORTS:
-//     scorer/ → detector/ (ScoreAccess, Detector, DetectResult)
-//     scorer/ → parser/ (LogEntry as DTO)
-
+//	ISOLATION:
+//	  Scorer does not import core/state — works through detector.ScoreAccess.
+//	  *state.IPState implements this interface implicitly (Go duck typing).
+//
+//	core/ IMPORTS:
+//	  scorer/ → detector/ (ScoreAccess, Detector, DetectResult)
+//	  scorer/ → parser/ (LogEntry as DTO)
 package scorer
 
 import (
@@ -32,10 +32,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mr-addams/arxsentinel/internal/core/detector"
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+	"github.com/mr-addams/arxsentinel/internal/core/detector"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 // ========================== Scorer ====================================================

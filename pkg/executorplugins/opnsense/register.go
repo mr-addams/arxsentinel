@@ -1,14 +1,14 @@
 // ====== Module: opnsense — registration ===========================================
-//   Self-registration of OpnsenseExecutor in pkg/executor registry.
-//   Uses init() to register the executor factory, enabling discovery
-//   without a central import list.
 //
-//   FLOW 096 TASK 5 — Registration:
-//     Mirrors the openwrt register.go pattern (Flow 095 Task 3.2):
-//     same factory signature, same init() shape, same Register +
-//     RegisterManifest pair. The factory is a thin wrapper that forwards
-//     cfg + log to NewOpnsenseExecutor (implemented in Task 4).
-
+//	Self-registration of OpnsenseExecutor in pkg/executor registry.
+//	Uses init() to register the executor factory, enabling discovery
+//	without a central import list.
+//
+//	FLOW 096 TASK 5 — Registration:
+//	  Mirrors the openwrt register.go pattern (Flow 095 Task 3.2):
+//	  same factory signature, same init() shape, same Register +
+//	  RegisterManifest pair. The factory is a thin wrapper that forwards
+//	  cfg + log to NewOpnsenseExecutor (implemented in Task 4).
 package opnsense
 
 import (

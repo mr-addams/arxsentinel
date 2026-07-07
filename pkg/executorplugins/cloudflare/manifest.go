@@ -1,7 +1,7 @@
 // ====== Module: cloudflare — manifest =============================================
-//   Plugin identity and data contract for the Cloudflare executor.
-//   Declares: Role=Executor, Input=TypeScoredEvent, Output=TypeNone.
-
+//
+//	Plugin identity and data contract for the Cloudflare executor.
+//	Declares: Role=Executor, Input=TypeScoredEvent, Output=TypeNone.
 package cloudflare
 
 import "github.com/mr-addams/arx-core/pkg/plugin"
