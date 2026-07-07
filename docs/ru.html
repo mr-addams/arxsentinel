@@ -581,7 +581,7 @@
             один бинарник, нулевые накладные расходы
         </h1>
         <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Распределённый движок обработки событий безопасности для любого HTTP-сервера — и не только</p>
-        <p>Восемь поведенческих детекторов анализируют HTTP access-логи в реальном времени и направляют подтверждённых атакующих на любой вывод — Fail2Ban, Cloudflare WAF, MikroTik RouterOS, OpenWrt ubus firewall или собственный exec+JSON-sink на любом языке. Собирайте события на одной машине, скорируйте на другой, баньте на третьей — через встроенную шифрованную сетку узлов.</p>
+        <p>Восемь поведенческих детекторов анализируют HTTP access-логи в реальном времени и направляют подтверждённых атакующих на любой вывод — Fail2Ban, Cloudflare WAF, MikroTik RouterOS, OpenWrt ubus firewall, OPNsense REST API или собственный exec+JSON-sink на любом языке. Собирайте события на одной машине, скорируйте на другой, баньте на третьей — через встроенную шифрованную сетку узлов.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Установить</a>
             <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">GitHub</a>
@@ -935,6 +935,10 @@ service arxsentinel start</span></pre>
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> Файервол OpenWrt через ubus</h3>
                 <p>Блокировка IP на роутере OpenWrt через ubus (uhttpd-mod-ubus) — без SSH, без exec. Батчевая правка UCI + один reload файервола за цикл; TTL считает сам плагин, а не nftables-таймауты.</p>
             </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6.657 18c-2.572 0 -4.657 -2.007 -4.657 -4.483c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99c1.913 0 3.464 1.56 3.464 3.486c0 1.927 -1.551 3.487 -3.465 3.487h-11.878" /></svg></span> REST API OPNsense</h3>
+                <p>Блокировка IP на файерволе OPNsense через нативный REST API (alias_util) — без батчинга, изменения применяются немедленно к pfctl-таблице. Независимый point add/delete на событие, активный TTL-sweep.</p>
+            </div>
         </div>
     </section>
 
@@ -998,7 +1002,7 @@ service arxsentinel start</span></pre>
                 <div class="pipeline-node">QUIC / TLS 1.3 · Ed25519-идентичность узла · TOFU-пиннинг (как в SSH)</div>
                 <div class="pipeline-node">Узел-детектор — 8 детекторов · WAF · whitelist · один общий IP-score по всем источникам</div>
                 <div class="pipeline-node">Скорированные вердикты маршрутизируются дальше — per pipeline, на разные узлы</div>
-                <div class="pipeline-node final">Респондеры → роутер MikroTik · файервол OpenWrt · nginx blocklist · Cloudflare WAF · поток в SIEM (сырой + скорированный JSON)</div>
+                <div class="pipeline-node final">Респондеры → роутер MikroTik · файервол OpenWrt · файервол OPNsense · nginx blocklist · Cloudflare WAF · поток в SIEM (сырой + скорированный JSON)</div>
             </div>
         </div>
         <div class="whitelist-grid">
@@ -1016,7 +1020,7 @@ service arxsentinel start</span></pre>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 12l2 2l4 -4" /><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> Доказано CI, а не обещано</h3>
-                <p>Каждая документированная топология — агрегация edge-флота, смешанная маршрутизация на nginx + MikroTik/OpenWrt респондеры — прогоняется как реальный мультиконтейнерный тест при каждом merge. Диаграммы в доках исполняемы.</p>
+                <p>Каждая документированная топология — агрегация edge-флота, смешанная маршрутизация на nginx + MikroTik/OpenWrt/OPNsense респондеры — прогоняется как реальный мультиконтейнерный тест при каждом merge. Диаграммы в доках исполняемы.</p>
             </div>
         </div>
         <div style="text-align: center; margin-top: 2rem;">
@@ -1082,6 +1086,7 @@ service arxsentinel start</span></pre>
                     <span class="integration-tag">Cloudflare WAF</span>
                     <span class="integration-tag">MikroTik RouterOS</span>
                     <span class="integration-tag">OpenWrt ubus</span>
+                    <span class="integration-tag">OPNsense REST</span>
                     <span class="integration-tag">nginx blocklist</span>
                     <span class="integration-tag">exec+JSON</span>
                     <span class="integration-tag">stdout&nbsp;JSON</span>
