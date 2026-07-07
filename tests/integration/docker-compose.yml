@@ -220,6 +220,18 @@ services:
     networks:
       - default
 
+  # ubus-api-mock: simulates OpenWrt uhttpd-mod-ubus JSON-RPC endpoint for integration
+  # test of the openwrt executor. Exposes POST /ubus (session.login, uci.*, rc.init),
+  # GET /recorded-items (recorded entries + call counters) and POST /reset.
+  ubus-api-mock:
+    build:
+      context: ./ubus-api-mock
+      dockerfile: Dockerfile
+    ports:
+      - "8094:8080"
+    networks:
+      - default
+
   # nginx-bare: nginx without real_ip extraction — logs the proxy IP, not the attacker IP.
   # Used for the "broken chain" test: cloudflare-sim IP appears as client in access log.
   # The chain_guard cloudflare-leak check must fire on these entries.
