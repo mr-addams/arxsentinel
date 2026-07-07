@@ -29,7 +29,7 @@ telemetry pipeline. Граница core/product зафиксирована в а
   product-форматтерами для sentinel-bridge, product-детекторами
   (`pkg/detectorplugins/*` — probe, rate, useragent, bruteforce, crawler,
   noasset, overflow, badbot), whitelist/chaincheck/blocklist, всеми
-  product-исполнителями (executors: cloudflare, mikrotik, nginx).
+  product-исполнителями (executors: cloudflare, mikrotik, openwrt, nginx).
 
 `pkg/runtime` импортирует **только** stdlib + `github.com/mr-addams/arx-core/pkg/{plugin,input}`.
 Никаких `arxsentinel/...` импортов внутри `github.com/mr-addams/arx-core/pkg/runtime/` — это
@@ -194,11 +194,11 @@ product-side `Formatter` (`internal/threat/format`) для JSON-сериализ
    (fail2ban)       (JSON line)   (NCS queue: ncs://threats)   (subprocess)
                                             │
                                             ▼ Executor-impl
-                                    ┌───────────────┬──────────────┐
-                                    ▼               ▼              ▼
-                              Cloudflare     MikroTik         nginx
-                              IP Lists API   firewall add     blocklist file
-                              (TTL sweep)    (TTL sweep)      (atomic write)
+                                    ┌─────────────────┬─────────────────┬─────────────────┬─────────────────┐
+                                    ▼                 ▼                 ▼                 ▼
+                                    Cloudflare        MikroTik          nginx             OpenWrt
+                                    IP Lists API      firewall add      blocklist file    UCI add_list
+                                    (TTL sweep)       (TTL sweep)       (atomic write)    (local sweep)
 ```
 
 ### Whitelist Matching (early exit)
@@ -279,7 +279,7 @@ Window-конфиг: `scoring.observation_window` (default 300s).
 NCS — generic queue-fanout primitive в `github.com/mr-addams/arx-core/pkg/ncs/`. **Не дёргается
 из `pkg/runtime`** — это product-infrastructure. ArxSentinel использует
 NCS, чтобы отделить детектор-pipeline (читает access.log, скоры) от
-executor-pipeline (Cloudflare API call, MikroTik block, nginx blocklist).
+executor-pipeline (Cloudflare API call, MikroTik block, OpenWrt ipset, nginx blocklist).
 Один pipeline пишет, другой читает; они могут жить в разных процессах
 и даже в разных k8s-replicas (с `bbolt` или `redis` backend).
 
@@ -325,6 +325,7 @@ Executors читают `*plugin.Event` из NCS-очереди (`EventSource.Pop
 |----------|----------|-----|
 | **cloudflare** | `POST /accounts/{id}/rules/lists` — IP в IP List | config `ttl` (auto sweep) |
 | **mikrotik** | RouterOS v7 REST `/rest/ip/firewall/address-list/add` | config `ttl` (auto unban) |
+| **openwrt** | ubus JSON-RPC (`uci.add_list`/`del_list`/`commit` + `rc.init` reload) | config `ttl` (plugin-owned expiry, active sweep) |
 | **nginx** | atomic write в blocklist файл, опционально reload команда | config `ttl` |
 
 Каждый executor реализует `plugin.Executor` из arx-core, держит:
@@ -336,6 +337,7 @@ Executors читают `*plugin.Event` из NCS-очереди (`EventSource.Pop
 Полные API детали каждого — в:
 - `pkg/executorplugins/cloudflare/README.md` + `docs/executor-cloudflare.md`
 - `pkg/executorplugins/mikrotik/README.md` + `docs/providers/mikrotik/`
+- `pkg/executorplugins/openwrt/README.md` + `docs/providers/openwrt/`
 - `pkg/executorplugins/nginx/README.md` + `docs/executor-nginx.md`
 
 ### Executor data flow
@@ -402,7 +404,7 @@ Plugins регистрируются через `init()` + `Register(name, facto
 Всегда подключённые транспорты:
 - **Sources**: `file`, `stdin`, `syslog`, `http`, `exec`, `sentinel` (`ncs://`)
 - **Sinks**: `file`, `stdout`, `exec`, `sentinel-threat`
-- **Executors**: `cloudflare`, `mikrotik`, `nginx`
+- **Executors**: `cloudflare`, `mikrotik`, `openwrt`, `nginx`
 - **Detectors** (always-linked, per build profile design): 8 built-in
 - **Processors**: `whitelist`, `chaincheck` (direct call, not registry)
 
@@ -572,13 +574,13 @@ Backward-compatible: legacy metrics с `pipeline=""` продолжают раб
 Все Source/Sink/Detector/Processor/Executor интерфейсы живут в
 `github.com/mr-addams/arx-core/pkg/plugin/`. Контракт, лайфцикл, init+blank-import pattern —
 в [`arx-core/docs/plugin-development.md`](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/plugin-development.md).
-Product-специфика (sentinel source/sink, security-детекторы, cloudflare/mikrotik
+Product-специфика (sentinel source/sink, security-детекторы, cloudflare/mikrotik/openwrt
 executors) — в `docs/PLUGIN_DEV.md` (этот документ) и `docs/executors.md`.
 
 Продуктовые регистрации:
 - `pkg/detectorplugins/{probe,rate,useragent,bruteforce,crawler,noasset,overflow,badbot}`
 - `pkg/processorplugins/{whitelist,chaincheck}` (direct call, not registry)
-- `pkg/executorplugins/{cloudflare,mikrotik,nginx}`
+- `pkg/executorplugins/{cloudflare,mikrotik,openwrt,nginx}`
 - Built-in sources/sinks — в `github.com/mr-addams/arx-core/pkg/source/`, `github.com/mr-addams/arx-core/pkg/sink/`.
 
 ---
@@ -731,7 +733,7 @@ debug/color flags, log paths.
 ### Почему NCS + отдельные executor-pipelines
 
 Sink-и passive — write event to file/stdout. External API calls
-(Cloudflare block, MikroTik firewall rule) требуют state: dedup,
+(Cloudflare block, MikroTik firewall rule, OpenWrt ipset entry) требуют state: dedup,
 TTL expiry, retry, circuit-breaker. Если впихнуть это в Sink,
 каждый Sink должен реализовать всё это. NCS + Executor разделяет
 ответственности:
@@ -848,7 +850,7 @@ kill -HUP $(cat /var/run/arxsentinel.pid)
 - [`docs/developer/build-profiles.md`](developer/build-profiles.md) — build-time tree-shaking, arx_tag sentinel.
 - [arx-core contract](https://github.com/mr-addams/arx-core/blob/v0.1.0/docs/contract.md) — symbol-level core/product boundary.
 - [`docs/architecture/pipeline.md`](architecture/pipeline.md) — product-pipeline specifics (securityProcessor wiring).
-- [`docs/executor-cloudflare.md`](executor-cloudflare.md), [`docs/executor-nginx.md`](executor-nginx.md), [`docs/providers/mikrotik/`](providers/mikrotik/) — per-executor config & troubleshooting.
+- [`docs/executor-cloudflare.md`](executor-cloudflare.md), [`docs/executor-nginx.md`](executor-nginx.md), [`docs/providers/mikrotik/`](providers/mikrotik/), [`docs/providers/openwrt/`](providers/openwrt/) — per-executor config & troubleshooting.
 
 ---
 
