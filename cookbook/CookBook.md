@@ -29,6 +29,7 @@ Sources → Processors → Sinks → Executors
 - [HTTP source (push/pull log receiver)](#http)
 - [Cloudflare Executor (automated IP banning)](#cloudflare)
 - [MikroTik Executor (RouterOS address-list)](#mikrotik)
+- [OpenWrt Executor (ubus/UCI firewall)](#openwrt)
 - [Nginx Executor (blocklist file + reload)](#nginx-executor)
 - [Distributed NCS (multi-node raw-forward)](#distributed-ncs)
 - [Infrastructure: Server Configs](#server-configs)
@@ -163,6 +164,17 @@ Requires RouterOS 7.x with REST API enabled.
 |------|---------|
 | [mikrotik/docker/config.yaml](mikrotik/docker/config.yaml) | ArxSentinel config for Docker + MikroTik |
 | [mikrotik/docker/docker-compose.yml](mikrotik/docker/docker-compose.yml) | Compose stack: arxsentinel with MikroTik executor |
+
+---
+
+## OpenWrt
+
+ArxSentinel sends THREAT events to an OpenWrt router's ubus/UCI firewall to add IPs to a named ipset.
+Requires `uhttpd-mod-ubus`, the `rpcd` core plugins (`uci`, `rc`), and a user-declared ipset UCI section.
+
+| Recipe | Description | File |
+|--------|-------------|------|
+| nginx basic | Single nginx site + OpenWrt ipset | [openwrt/nginx-basic.yaml](openwrt/nginx-basic.yaml) |
 
 ---
 
