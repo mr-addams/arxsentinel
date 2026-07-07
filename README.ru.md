@@ -23,7 +23,7 @@
 > живут в [`arx-core/docs/`](https://github.com/mr-addams/arx-core/tree/v0.1.0/docs)
 > (`architecture.md`, `contract.md`, `plugin-development.md`). Этот README описывает
 > продуктовый слой ArxSentinel: детекторы безопасности, скоринг угроз, разводку NCS и
-> Cloudflare/MikroTik/nginx-экзекуторы. См. [Архитектура](docs/ARCHITECTURE.md) для разделения.
+> Cloudflare/MikroTik/OpenWrt/nginx-экзекуторы. См. [Архитектура](docs/ARCHITECTURE.md) для разделения.
 
 ```
   ╔══════════════════════════════════════════════════════════════════╗
@@ -63,10 +63,10 @@
   ║  memory │ bbolt (file) │ redis │ transport (QUIC-сетка узлов)    ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ ncs://<channel-name> → AttachReader()
-  ╔═══════════════════════════╧══════════════════════════════════════╗
-  ║  EXECUTORS  (активный ответ — опционально)                       ║
-  ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
-  ╚══════════════════════════════════════════════════════════════════╝
+  ╔═══════════════════════════╧══════════════════════════════════════════════════════╗
+  ║  EXECUTORS  (активный ответ — опционально)                                       ║
+  ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist · OpenWrt ipset   ║
+  ╚══════════════════════════════════════════════════════════════════════════════════╝
 ```
 
 ## Сценарии использования
@@ -167,10 +167,10 @@ sinks:
 ```
   Pi / VPS / NAS коллекторы          машина детекции              enforcement
  ┌────────────┐
- │ логи nginx  │──┐   "edge-raw"   ┌───────────────┐  "scored"  ┌─────────────────┐
- └────────────┘  ├──────────────▶│ 8 детекторов · │──────────▶│ MikroTik · nginx │
- ┌────────────┐  │  QUIC/TLS 1.3  │ WAF · скоринг  │            │ CF WAF · SIEM    │
- │ логи API    │──┘   Ed25519+TOFU └───────────────┘            └─────────────────┘
+ │ логи nginx  │──┐   "edge-raw"   ┌───────────────┐  "scored"  ┌────────────────────────────┐
+ └────────────┘  ├──────────────▶│ 8 детекторов · │──────────▶│ MikroTik · OpenWrt · nginx │
+ ┌────────────┐  │  QUIC/TLS 1.3  │ WAF · скоринг  │            │ CF WAF · SIEM              │
+ │ логи API    │──┘   Ed25519+TOFU └───────────────┘            └────────────────────────────┘
  └────────────┘
 ```
 
@@ -618,6 +618,7 @@ Helm-чарт с описанием values: [Helm README](deploy/container/k8s/a
 | **cloudflare** | `pkg/executor/cloudflare` | Добавляет угрожающие IP в Cloudflare IP List; автоматически удаляет устаревшие записи через TTL sweep |
 | **nginx** | `pkg/executor/nginx` | Записывает заблокированные IP в обычный файл блокировки (TTL автовыпадения, атомарные записи, опциональная команда перезагрузки); вы подключаете файл в nginx как вам удобнее |
 | **mikrotik** | `pkg/executor/mikrotik` | Управляет list адресов файервола RouterOS v7 через REST API; TTL-автоответ, удаляет только записи, созданные arxsentinel, совместим с CHR/ARM |
+| **openwrt** | `pkg/executor/openwrt` | Управляет nftables ipset через ubus-эндпоинт роутера (uhttpd-mod-ubus) с использованием стандартных rpcd-объектов `uci`/`rc`; батч-правка UCI + один reload за цикл, TTL считает сам плагин (не native nftables) |
 
 Подробнее: [docs/executors.md](docs/executors.md) — обзор фреймворка и добавление собственных исполнителей.
 Подробнее: [docs/executor-cloudflare.md](docs/executor-cloudflare.md) — конфигурация и устранение неполадок Cloudflare.
