@@ -1295,11 +1295,17 @@ service arxsentinel start</span></pre>
             </div>
         </div>
         <div style="text-align: center; margin-top: 2rem;">
+            <p style="color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem;">Example input configs</p>
             <div style="display:flex;flex-direction:column;gap:0.5rem;align-items:center;">
                 <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: file &nbsp;·&nbsp; path: /var/log/nginx/access.log</code>
                 <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: syslog &nbsp;·&nbsp; addr: udp://0.0.0.0:5514 &nbsp;·&nbsp; no shared volume</code>
                 <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: http &nbsp;·&nbsp; protocol: plain|cloudflare|firehose|pubsub|loki|otlp|azure|splunk|ndjson</code>
             </div>
+            <p style="color: var(--text-muted); font-size: 0.75rem; max-width: 560px; margin: 0.75rem auto 0;">
+                <code>protocol: loki</code> and <code>protocol: splunk</code> here mean <em>receiving</em> logs already
+                shaped like Loki's push API or Splunk HEC — unrelated to the Grafana Loki / Splunk HEC <em>outputs</em>
+                listed above, which <em>send</em> events out to those platforms instead.
+            </p>
         </div>
     </section>
 
