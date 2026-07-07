@@ -30,6 +30,7 @@ Sources → Processors → Sinks → Executors
 - [Cloudflare Executor (automated IP banning)](#cloudflare)
 - [MikroTik Executor (RouterOS address-list)](#mikrotik)
 - [OpenWrt Executor (ubus/UCI firewall)](#openwrt)
+- [OPNsense Executor (REST API alias)](#opnsense)
 - [Nginx Executor (blocklist file + reload)](#nginx-executor)
 - [Distributed NCS (multi-node raw-forward)](#distributed-ncs)
 - [Infrastructure: Server Configs](#server-configs)
@@ -175,6 +176,17 @@ Requires `uhttpd-mod-ubus`, the `rpcd` core plugins (`uci`, `rc`), and a user-de
 | Recipe | Description | File |
 |--------|-------------|------|
 | nginx basic | Single nginx site + OpenWrt ipset | [openwrt/nginx-basic.yaml](openwrt/nginx-basic.yaml) |
+
+---
+
+## OPNsense
+
+ArxSentinel sends THREAT events to an OPNsense firewall's REST API to add IPs to a pre-existing alias.
+Requires a user-declared alias of type `Host`, `Network`, or `External` (Firewall → Aliases) and an API credential pair generated in System → Access → Users → API keys.
+
+| Recipe | Description | File |
+|--------|-------------|------|
+| nginx basic | Single nginx site + OPNsense alias | [opnsense/nginx-basic.yaml](opnsense/nginx-basic.yaml) |
 
 ---
 
