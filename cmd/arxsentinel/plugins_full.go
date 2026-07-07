@@ -37,8 +37,11 @@ import (
 	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/rate"
 	_ "github.com/mr-addams/arxsentinel/pkg/detectorplugins/useragent" // registry name: "ua"
 
+	_ "github.com/mr-addams/arx-core/pkg/sink/datadog"
 	_ "github.com/mr-addams/arx-core/pkg/sink/exec"
+	_ "github.com/mr-addams/arx-core/pkg/sink/loki"
 	_ "github.com/mr-addams/arx-core/pkg/sink/sentinel"
+	_ "github.com/mr-addams/arx-core/pkg/sink/splunk"
 	_ "github.com/mr-addams/arx-core/pkg/sink/stdout"
 	_ "github.com/mr-addams/arx-core/pkg/source/exec"
 	_ "github.com/mr-addams/arx-core/pkg/source/file"

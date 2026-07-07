@@ -35,10 +35,16 @@ plugins:
     - name: whitelist
       module: arxsentinel
   sinks:
+    - name: datadog
+      module: arx-core
     - name: exec
+      module: arx-core
+    - name: loki
       module: arx-core
     - name: sentinel-threat
       module: arxsentinel
+    - name: splunk
+      module: arx-core
     - name: stdout
       module: arx-core
   sources:
