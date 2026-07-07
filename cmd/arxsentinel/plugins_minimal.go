@@ -3,10 +3,10 @@
 //go:build arx_tag && minimal
 
 // ========================== Plugin blank-imports — minimal profile =======================
-//   Side-effect registration of plugins declared in profiles/minimal.yaml.
-//   Active only under build tags: -tags "arx_tag minimal".
-//   See docs/architecture/adr/003-build-modularity.md and DECISIONS.md Flow 075.
-
+//
+//	Side-effect registration of plugins declared in profiles/minimal.yaml.
+//	Active only under build tags: -tags "arx_tag minimal".
+//	See docs/architecture/adr/003-build-modularity.md and DECISIONS.md Flow 075.
 package main
 
 import (

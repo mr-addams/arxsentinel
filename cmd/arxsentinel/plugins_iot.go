@@ -3,10 +3,10 @@
 //go:build arx_tag && iot
 
 // ========================== Plugin blank-imports — iot profile =======================
-//   Side-effect registration of plugins declared in profiles/iot.yaml.
-//   Active only under build tags: -tags "arx_tag iot".
-//   See docs/architecture/adr/003-build-modularity.md and DECISIONS.md Flow 075.
-
+//
+//	Side-effect registration of plugins declared in profiles/iot.yaml.
+//	Active only under build tags: -tags "arx_tag iot".
+//	See docs/architecture/adr/003-build-modularity.md and DECISIONS.md Flow 075.
 package main
 
 import (
