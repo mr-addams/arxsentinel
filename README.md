@@ -21,7 +21,7 @@ Collect events on one machine, score them on another, ban on a third — over a 
 > Engine lifecycle, runtime contract, and core plugin interfaces live in
 > [`arx-core/docs/`](https://github.com/mr-addams/arx-core/tree/v0.1.0/docs) (`architecture.md`, `contract.md`,
 > `plugin-development.md`). This README documents the ArxSentinel product layer:
-> security detectors, threat scoring, NCS wiring, and Cloudflare/MikroTik/nginx
+> security detectors, threat scoring, NCS wiring, and Cloudflare/MikroTik/OpenWrt/nginx
 > executors. See [Architecture](docs/ARCHITECTURE.md) for the split.
 
 ```
@@ -62,10 +62,10 @@ Collect events on one machine, score them on another, ban on a third — over a 
   ║  memory │ bbolt (file) │ redis │ transport (QUIC node mesh)      ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ ncs://<channel-name> → AttachReader()
-  ╔═══════════════════════════╧══════════════════════════════════════╗
-  ║  EXECUTORS  (Stateful Active Response — optional)                ║
-  ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist   ║
-  ╚══════════════════════════════════════════════════════════════════╝
+  ╔═══════════════════════════╧══════════════════════════════════════════════════════╗
+  ║  EXECUTORS  (Stateful Active Response — optional)                                ║
+  ║  Cloudflare IP Lists · MikroTik address-list · nginx blocklist · OpenWrt ipset   ║
+  ╚══════════════════════════════════════════════════════════════════════════════════╝
 ```
 
 ## Use Cases
@@ -171,10 +171,10 @@ no message broker, no log shipper, no VPN:
 ```
   Pi / VPS / NAS collectors          detection box               enforcement
  ┌────────────┐
- │ nginx logs  │──┐   "edge-raw"   ┌───────────────┐  "scored"  ┌─────────────────┐
- └────────────┘  ├──────────────▶│ 8 detectors ·  │──────────▶│ MikroTik · nginx │
- ┌────────────┐  │  QUIC/TLS 1.3  │ WAF · scoring  │            │ CF WAF · SIEM    │
- │ API logs    │──┘   Ed25519+TOFU └───────────────┘            └─────────────────┘
+ │ nginx logs  │──┐   "edge-raw"   ┌───────────────┐  "scored"  ┌────────────────────────────┐
+ └────────────┘  ├──────────────▶│ 8 detectors ·  │──────────▶│ MikroTik · OpenWrt · nginx │
+ ┌────────────┐  │  QUIC/TLS 1.3  │ WAF · scoring  │            │ CF WAF · SIEM              │
+ │ API logs    │──┘   Ed25519+TOFU └───────────────┘            └────────────────────────────┘
  └────────────┘
 ```
 
@@ -631,6 +631,7 @@ Executors are stateful action plugins that run after threat scoring. Unlike Sink
 | **cloudflare** | `pkg/executor/cloudflare` | Adds threat IPs to a Cloudflare IP List; auto-removes expired entries via TTL sweep |
 | **nginx** | `pkg/executor/nginx` | Writes banned IPs to a plain blocklist file (TTL auto-expiry, atomic writes, optional reload command); you include the file into nginx however suits your setup |
 | **mikrotik** | `pkg/executor/mikrotik` | Manages a RouterOS v7 firewall address-list over the REST API; TTL-based auto-unban, removes only arxsentinel-owned entries, CHR/ARM compatible |
+| **openwrt** | `pkg/executor/openwrt` | Manages an nftables ipset via a router's ubus (uhttpd-mod-ubus) endpoint using the standard `uci`/`rc` rpcd objects; batched UCI edit + single reload per cycle, TTL owned by the plugin (not nftables-native) |
 
 > **⚠️ NCS routing: Point-to-Point, not Broadcast.**
 > Executors receive events through the Named Channel Switch (NCS) — a Work Queue,
@@ -644,6 +645,8 @@ Executors are stateful action plugins that run after threat scoring. Unlike Sink
 >     name: cf-threats      # Cloudflare executor reads this
 >   - type: sentinel-threat
 >     name: mtk-threats     # MikroTik executor reads this
+>   - type: sentinel-threat
+>     name: owrt-threats    # OpenWrt executor reads this
 > ```
 
 See [docs/executors.md](docs/executors.md) for the framework overview and how to add custom executors.
@@ -710,6 +713,7 @@ See [README.whitelist.md](deploy/examples/README.whitelist.md) for configuration
                             ║  EXECUTORS  (Stateful)          ║
                             ║  ├─ Cloudflare IP Lists API     ║
                             ║  ├─ MikroTik REST address-list  ║
+                            ║  ├─ OpenWrt UCI ipset (ubus)    ║
                             ║  └─ nginx blocklist file        ║
                             ╚═════════════════════════════════╝
                             (dedup map · TTL expiry · auto-unban)

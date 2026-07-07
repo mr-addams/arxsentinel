@@ -465,6 +465,35 @@ run_executor_ros_ban_scenario() {
     }
 run_executor_ros_ban_scenario
 
+# ── executor-openwrt-ban: verify that OpenWrt executor sends THREAT IP to ubus-api-mock ──
+# Appends probe attack lines to nginx access log; the openwrt-executor sentinel (started in
+# run.sh) picks them up, detects THREAT, and flushes to ubus-api-mock.
+# Records result to logs/executor-openwrt-ban.json for verify.sh.
+
+run_executor_openwrt_ban_scenario() {
+    echo "[scenarios] running: executor-openwrt-ban"
+
+    mkdir -p "$INT_DIR/logs/threats"
+
+    # Use a different attack IP to avoid cross-contamination with CF/ROS/nginx scenarios.
+    local attack_ip="13.14.15.16"
+    local attack_line="${attack_ip} - - [01/Jan/2026:00:00:00 +0000] \"GET /.env HTTP/1.1\" 404 0 \"-\" \"curl/7.88\" \"${attack_ip}\""
+
+    # Write 5 probe attack lines — enough to exceed alert_threshold=50 with score=60/hit.
+    for i in $(seq 1 5); do
+        echo "$attack_line" >> "$INT_DIR/logs/nginx/access.log"
+    done
+
+    # Wait for openwrt-executor sentinel to detect + flush batch to ubus-api-mock.
+    sleep 5
+
+    # Query ubus-api-mock for recorded items (from host, port 8094 exposed).
+    local result
+    result=$(curl -sf http://localhost:8094/recorded-items 2>/dev/null || true)
+    echo "$result" > "$INT_DIR/logs/executor-openwrt-ban.json"
+}
+run_executor_openwrt_ban_scenario
+
 # ── executor-nginx-ban: verify that nginx executor writes attacker IP to blocklist file ──
 # Appends probe attack lines to nginx access log; the nginx-executor sentinel (started in
 # run.sh) picks them up, detects THREAT, and writes the IP to nginx-blocklist.conf.

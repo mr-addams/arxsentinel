@@ -22,6 +22,7 @@ import (
 	_ "github.com/mr-addams/arxsentinel/pkg/executorplugins/cloudflare"
 	_ "github.com/mr-addams/arxsentinel/pkg/executorplugins/mikrotik"
 	_ "github.com/mr-addams/arxsentinel/pkg/executorplugins/nginx"
+	_ "github.com/mr-addams/arxsentinel/pkg/executorplugins/openwrt"
 	_ "github.com/mr-addams/arxsentinel/pkg/processorplugins/chaincheck"
 	_ "github.com/mr-addams/arxsentinel/pkg/processorplugins/whitelist"
 

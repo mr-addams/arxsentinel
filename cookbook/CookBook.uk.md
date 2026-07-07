@@ -31,6 +31,7 @@ Sources → Processors → Sinks → Executors
 - [HTTP-джерело (push/pull приймач логів)](#http)
 - [Cloudflare Executor (автоматичне блокування IP)](#cloudflare)
 - [MikroTik Executor (address-list на RouterOS)](#mikrotik)
+- [OpenWrt Executor (ubus/UCI firewall)](#openwrt)
 - [Nginx Executor (файл блокування + перезавантаження)](#nginx-executor)
 - [Інфраструктура: Конфігурації серверів](#server-configs)
 - [Інфраструктура: Зворотній проксі / Real-IP](#reverse-proxy)
@@ -164,6 +165,17 @@ ArxSentinel надсилає події THREAT до MikroTik RouterOS REST API �
 |------|-------------|
 | [mikrotik/docker/config.yaml](mikrotik/docker/config.yaml) | Конфігурація ArxSentinel для Docker + MikroTik |
 | [mikrotik/docker/docker-compose.yml](mikrotik/docker/docker-compose.yml) | Compose stack: arxsentinel з MikroTik executor |
+
+---
+
+## OpenWrt
+
+ArxSentinel надсилає події THREAT до ubus/UCI firewall роутера OpenWrt для додавання IP до іменованого ipset.
+Потрібні `uhttpd-mod-ubus`, core-плагіни `rpcd` (`uci`, `rc`) та заздалегідь оголошена секція ipset в UCI.
+
+| Рецепт | Опис | Файл |
+|--------|------|------|
+| nginx basic | Один сайт nginx + OpenWrt ipset | [openwrt/nginx-basic.yaml](openwrt/nginx-basic.yaml) |
 
 ---
 
