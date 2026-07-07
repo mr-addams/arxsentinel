@@ -582,7 +582,7 @@
             один бінарник, нульові накладні витрати
         </h1>
         <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Розподілений двигун обробки подій безпеки для будь-якого HTTP-сервера — і не тільки</p>
-        <p>Вісім поведінкових детекторів аналізують HTTP access-логи в реальному часі та спрямовують підтверджених зловмисників на будь-який вивід — Fail2Ban, Cloudflare WAF, MikroTik RouterOS, OpenWrt ubus firewall, OPNsense REST API або власний exec+JSON-sink на будь-якій мові. Збирайте події на одній машині, скоруйте на іншій, баньте на третій — через вбудовану шифровану мережу вузлів. Bare-metal, Docker Compose або Kubernetes DaemonSet.</p>
+        <p>Розумний, універсальний, розподілений рушій безпеки: поведінкова детекція замість статичних правил, будь-яке джерело логів на вході, будь-який пункт призначення на виході, будь-яка мова для власних плагінів. Масштабуйтесь від одного VPS до розподіленого флоту — збирайте події на одній машині, скоруйте на іншій, баньте на третій — через вбудовану шифровану мережу вузлів. Bare-metal, Docker Compose або Kubernetes DaemonSet.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Встановити</a>
             <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">GitHub</a>
@@ -989,6 +989,27 @@ service arxsentinel start</span></pre>
         </div>
     </section>
 
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Multi-Pipeline</span>
+            <h2 class="section-title">Один процес. Багато потоків. Власна детекція у кожного.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Ізоляція мультипотоків</h3>
+                <p>Один процес стежить за <strong>N незалежними джерелами логів</strong> через <code>streams:</code> — кожен має власний трекер, scorer, стан whitelist та threat-лог. Падіння чи повільне сканування в одному потоці не зачіпає інші. <strong>Зворотна сумісність</strong>: класичний конфіг з одним файлом (<code>general.log_file</code>) автоматично обгортається в один безіменний потік (<code>stream=""</code> у метриках), міграція не потрібна.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Незалежні pipeline всередині потоку</h3>
+                <p>Один потік може визначати <strong>кілька pipeline</strong>, кожен із власними inputs, процесорами rule-engine / WAF, детекторами та sink'ами — наприклад, один pipeline стежить за <code>/api/*</code> із суворим WAF-шлюзом, інший — за <code>/admin/*</code> з іншими порогами детекторів, обидва всередині одного конфіга потоку. Prometheus отримує лейбл <code>pipeline</code> на всіх векторах.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M15 7m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /><path d="M10.495 10.495l-7.779 7.779a1 1 0 0 0 0 1.414l1.596 1.596a1 1 0 0 0 1.414 0l7.779 -7.779" /><path d="M18.5 5.5l1.5 -1.5" /><path d="M20 6l-1 -1" /></svg></span> Кореляція pipeline через <code>tracker_group</code></h3>
+                <p>Pipeline'и з однаковим значенням <code>tracker_group</code> <strong>ділять один IP-state трекер</strong>: зловмисник, що промацує ваш API та адмін-панель, накопичує один спільний score замість двох окремих, перетинаючи поріг бану швидше, ніж будь-який pipeline спіймав би сам. Опустіть <code>tracker_group</code> (або залиште порожнім) — і буде повна ізоляція.</p>
+            </div>
+        </div>
+    </section>
+
 <section class="whitelist-section">
         <div class="section-header">
             <span class="section-tag">Можливості v2.2.4</span>
@@ -998,10 +1019,6 @@ service arxsentinel start</span></pre>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M17 3l4 4l-14 14l-4 -4z" /><path d="M16 7l-1.5 -1.5" /><path d="M13 10l-1.5 -1.5" /><path d="M10 13l-1.5 -1.5" /><path d="M7 16l-1.5 -1.5" /></svg></span> Довільний формат логів</h3>
                 <p>Немає підходящого профілю? Опишіть власний regex з іменованими групами або переключіться на JSON-парсинг — без перекомпіляції. Будь-який формат, що захоплює IP, timestamp, метод, шлях, статус і байти, підключається до повного пайплайну виявлення.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" /><path d="M4 7c-1.1 0 -2 .9 -2 2v9c0 1.1 .9 2 2 2h14" /></svg></span> Мультипотік та pipeline-маршрутизація</h3>
-                <p>Стеження за кількома файлами логу в одному процесі. Всередині кожного потоку — незалежні pipeline з власними детекторами, джерелами та sink'ами. Спільний IP-стан через <code>tracker_group</code> для корельованого аналізу кількох логів.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> Профілі серверів</h3>

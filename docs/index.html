@@ -736,7 +736,7 @@
             one binary, zero overhead
         </h1>
         <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Distributed security event processing engine for any HTTP server — and far beyond</p>
-        <p>Eight behavioural detectors analyse every HTTP access log in real time and route confirmed attackers to any output — Fail2Ban, Cloudflare WAF, MikroTik RouterOS, OpenWrt ubus firewall, OPNsense REST API, or your own exec+JSON sink in any language. Collect events on one machine, score them on another, ban on a third — over a built-in encrypted node mesh. Bare-metal, Docker Compose, or Kubernetes DaemonSet.</p>
+        <p>A smart, universal, distributed security engine: behavioural detection instead of static rules, any log source in, any destination out, any language for your own plugins. Scale from a single VPS to a distributed fleet — collect events on one machine, score them on another, ban on a third — over a built-in encrypted node mesh. Bare-metal, Docker Compose, or Kubernetes DaemonSet.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Install</a>
             <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">View on GitHub</a>
@@ -1147,6 +1147,27 @@ service arxsentinel start</span></pre>
         </div>
     </section>
 
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Multi-Pipeline</span>
+            <h2 class="section-title">One process. Many streams. Independent detection per source.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Multi-stream isolation</h3>
+                <p>One process watches <strong>N independent log sources</strong> via <code>streams:</code> — each gets its own tracker, scorer, whitelist state, and threat log. A crash or slow scan on one stream never touches another. <strong>Backward compatible</strong>: a classic single-file config (<code>general.log_file</code>) is silently wrapped into one unnamed stream (<code>stream=""</code> on metrics), no migration needed.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Independent pipelines within a stream</h3>
+                <p>A single stream can define <strong>multiple pipelines</strong>, each with its own inputs, rule-engine / WAF processors, detectors, and sinks — e.g. one pipeline watching <code>/api/*</code> with a strict WAF gate, another watching <code>/admin/*</code> with different detector thresholds, both inside the same stream config. Prometheus gains a <code>pipeline</code> label on every vector.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M15 7m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /><path d="M10.495 10.495l-7.779 7.779a1 1 0 0 0 0 1.414l1.596 1.596a1 1 0 0 0 1.414 0l7.779 -7.779" /><path d="M18.5 5.5l1.5 -1.5" /><path d="M20 6l-1 -1" /></svg></span> Correlate pipelines with <code>tracker_group</code></h3>
+                <p>Pipelines that share a <code>tracker_group</code> value <strong>share one IP-state tracker</strong>: an attacker probing your API and your admin panel accumulates one combined score instead of two separate ones, crossing the ban threshold sooner than either pipeline would catch alone. Omit <code>tracker_group</code> (or leave it empty) for full isolation instead.</p>
+            </div>
+        </div>
+    </section>
+
 <section class="whitelist-section">
         <div class="section-header">
             <span class="section-tag">v2.2.4 Capabilities</span>
@@ -1156,10 +1177,6 @@ service arxsentinel start</span></pre>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M17 3l4 4l-14 14l-4 -4z" /><path d="M16 7l-1.5 -1.5" /><path d="M13 10l-1.5 -1.5" /><path d="M10 13l-1.5 -1.5" /><path d="M7 16l-1.5 -1.5" /></svg></span> Custom log format</h3>
                 <p>Not using a built-in profile? Define your own regex with named capture groups, or switch to JSON log parsing — both work without recompilation. Any format that captures IP, timestamp, method, path, status and bytes maps to the full detection pipeline.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" /><path d="M4 7c-1.1 0 -2 .9 -2 2v9c0 1.1 .9 2 2 2h14" /></svg></span> Multi-stream & pipeline routing</h3>
-                <p>Watch multiple log files in one process. Within each stream, define independent pipelines — each with its own detectors, sources, sinks and IP state. Share IP state between pipelines via <code>tracker_group</code> for correlated multi-log analysis.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> Server profiles</h3>

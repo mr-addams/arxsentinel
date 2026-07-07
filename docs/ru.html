@@ -583,7 +583,7 @@
             один бинарник, нулевые накладные расходы
         </h1>
         <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Распределённый движок обработки событий безопасности для любого HTTP-сервера — и не только</p>
-        <p>Восемь поведенческих детекторов анализируют HTTP access-логи в реальном времени и направляют подтверждённых атакующих на любой вывод — Fail2Ban, Cloudflare WAF, MikroTik RouterOS, OpenWrt ubus firewall, OPNsense REST API или собственный exec+JSON-sink на любом языке. Собирайте события на одной машине, скорируйте на другой, баньте на третьей — через встроенную шифрованную сетку узлов.</p>
+        <p>Умный, универсальный, распределённый движок безопасности: поведенческая детекция вместо статических правил, любой источник логов на входе, любой пункт назначения на выходе, любой язык для собственных плагинов. Масштабируйтесь от одного VPS до распределённого флота — собирайте события на одной машине, скорируйте на другой, баньте на третьей — через встроенную шифрованную сетку узлов. Bare-metal, Docker Compose или Kubernetes DaemonSet.</p>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Установить</a>
             <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">GitHub</a>
@@ -990,6 +990,27 @@ service arxsentinel start</span></pre>
         </div>
     </section>
 
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Multi-Pipeline</span>
+            <h2 class="section-title">Один процесс. Много потоков. Своя детекция у каждого.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Изоляция мультипотоков</h3>
+                <p>Один процесс следит за <strong>N независимыми источниками логов</strong> через <code>streams:</code> — у каждого свой трекер, scorer, состояние whitelist и threat-лог. Падение или медленное сканирование в одном потоке не трогает остальные. <strong>Обратная совместимость</strong>: классический конфиг с одним файлом (<code>general.log_file</code>) автоматически оборачивается в один безымянный поток (<code>stream=""</code> в метриках), миграция не нужна.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Независимые pipeline внутри потока</h3>
+                <p>Один поток может определять <strong>несколько pipeline</strong>, у каждого свои inputs, процессоры rule-engine / WAF, детекторы и sink'и — например, один pipeline следит за <code>/api/*</code> со строгим WAF-шлюзом, другой за <code>/admin/*</code> с другими порогами детекторов, оба внутри одного конфига потока. Prometheus получает лейбл <code>pipeline</code> на всех векторах.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M15 7m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /><path d="M10.495 10.495l-7.779 7.779a1 1 0 0 0 0 1.414l1.596 1.596a1 1 0 0 0 1.414 0l7.779 -7.779" /><path d="M18.5 5.5l1.5 -1.5" /><path d="M20 6l-1 -1" /></svg></span> Корреляция pipeline через <code>tracker_group</code></h3>
+                <p>Pipeline'ы с одинаковым значением <code>tracker_group</code> <strong>разделяют один IP-state трекер</strong>: атакующий, щупающий ваш API и админ-панель, копит один общий score вместо двух раздельных, пересекая порог бана быстрее, чем поймал бы любой pipeline по отдельности. Опустите <code>tracker_group</code> (или оставьте пустым) — и будет полная изоляция.</p>
+            </div>
+        </div>
+    </section>
+
 <section class="whitelist-section">
         <div class="section-header">
             <span class="section-tag">Возможности v2.2.4</span>
@@ -999,10 +1020,6 @@ service arxsentinel start</span></pre>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M17 3l4 4l-14 14l-4 -4z" /><path d="M16 7l-1.5 -1.5" /><path d="M13 10l-1.5 -1.5" /><path d="M10 13l-1.5 -1.5" /><path d="M7 16l-1.5 -1.5" /></svg></span> Произвольный формат логов</h3>
                 <p>Нет подходящего профиля? Опишите свой regex с именованными группами или переключитесь на JSON-парсинг — без перекомпиляции. Любой формат, который захватывает IP, timestamp, метод, путь, статус и байты, подключается к полному пайплайну обнаружения.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" /><path d="M4 7c-1.1 0 -2 .9 -2 2v9c0 1.1 .9 2 2 2h14" /></svg></span> Мультипоток и pipeline-маршрутизация</h3>
-                <p>Слежение за несколькими файлами лога в одном процессе. Внутри каждого потока — независимые pipeline со своими детекторами, источниками и sink'ами. Совместное IP-состояние через <code>tracker_group</code> для коррелированного анализа нескольких логов.</p>
             </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> Профили серверов</h3>
