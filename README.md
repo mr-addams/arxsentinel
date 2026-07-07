@@ -55,6 +55,7 @@ Collect events on one machine, score them on another, ban on a third — over a 
   ╔═══════════════════════════╧══════════════════════════════════════╗
   ║  SINKS  (Passive Logging)                                        ║
   ║  file (fail2ban format) · stdout JSON · exec+JSON plugin         ║
+  ║  Grafana Loki · Splunk HEC · Datadog Logs API  (SIEM forwarding)  ║
   ╚═══════════════════════════╤══════════════════════════════════════╝
                               │ sentinel-threat sink → AttachWriter()
   ╔═══════════════════════════╧══════════════════════════════════════╗
@@ -162,7 +163,30 @@ sinks:
     exec: /opt/plugins/send-to-siem.sh
 ```
 
-### 8. Distributed pipeline — collect anywhere, detect centrally, ban at the edge
+### 8. Observability — forward to Loki / Splunk / Datadog
+
+Send scored threat events straight into your log platform as a first-class
+sink — useful when you already operate a SIEM and want ArxSentinel as a feed
+alongside (or instead of) Fail2Ban/executor responders. JSON envelope is
+recommended for log-platform readability:
+
+```yaml
+sinks:
+  - type: loki
+    format: json
+    loki_url: https://loki.example.com:3100
+    loki_labels:
+      job: arxsentinel
+```
+
+The same shape works for `type: splunk` (HEC JSON endpoint — needs
+`splunk_url` + `splunk_token`) and `type: datadog` (Logs API v2 — needs
+`datadog_url` with region, e.g. `https://http-intake.logs.datadoghq.com`,
+plus `datadog_api_key`). TLS, mTLS, batching, gzip and multi-tenant fields
+are available per sink — see [docs/providers/observability/](docs/providers/observability/).
+Quick-start recipes: [cookbook/observability/](cookbook/observability/).
+
+### 9. Distributed pipeline — collect anywhere, detect centrally, ban at the edge
 
 The same binary becomes a **collector**, **detector**, or **responder** by
 config alone, connected over a built-in mutually-authenticated QUIC mesh —
@@ -461,6 +485,7 @@ deploy/examples/
 - **Chain Guard:** detects Cloudflare/CDN edge IPs and bogon/RFC 1918/CGNAT addresses appearing as client IPs — signals a misconfigured proxy chain before ArxSentinel's detectors go blind
 - **Bot DNS verification:** Googlebot, Bingbot, Yandex, DuckDuckGo and others are verified via rDNS/fDNS — legitimate crawlers are never banned
 - **Multi-stream + Multi-pipeline:** watch multiple log files in one process; within each stream, define independent pipelines with their own detectors, sources, sinks and IP-state tracker (or share state via `tracker_group`)
+- **Observability sinks:** forward threat events to Grafana Loki, Splunk HEC, or Datadog Logs API — SIEM forwarding as an alternative (or addition) to Fail2Ban/executor responders
 - **Distributed pipeline (Distributed NCS):** span the pipeline across machines over a built-in encrypted node mesh (QUIC · TLS 1.3 · Ed25519 identity · TOFU pinning) — forward raw parsed entries to a central detector, or scored verdicts to remote responders; no broker, no log shipper, no VPN. See [docs/DISTRIBUTED.md](docs/DISTRIBUTED.md)
 - **Whitelist:** IPs, CIDRs, UA substrings — configurable exclusion lists
 - **Linear score decay:** points decay over `observation_window`, no false bans from old traffic
@@ -625,6 +650,8 @@ Helm chart with values reference: [Kubernetes README](deploy/container/k8s/arxse
 ## Executors
 
 Executors are stateful action plugins that run after threat scoring. Unlike Sinks (passive log writers), Executors actively manage external resources: they maintain a local dedup map, apply TTL-based expiry, and track execution statistics.
+
+> **Terminology note:** "Executor" is the plugin/config term (`executors:` in YAML, `pkg/executorplugins/*` in code) — used throughout this README and the codebase. In a [Distributed NCS](docs/DISTRIBUTED.md) topology, the node that runs executors is called a **Responder** (paired with **Collector** and **Detector** as the three node roles) — same plugins, different vocabulary for describing *where* they run in a multi-machine deployment.
 
 | Executor | Package | Description |
 |---|---|---|
@@ -949,8 +976,9 @@ Full guide: [`deploy/grafana/README.md`](deploy/grafana/README.md)
 
 In active development for v2.x:
 
-- **Alert sinks** — push threats to Telegram, Slack and PagerDuty with deduplication and rate-limiting
 - **AWS WAF executor** — IP set updates for AWS WAF rule groups
+- **SSH source + detectors** — parse `sshd` auth logs (syslog/journald) and score brute-force/credential-stuffing patterns with dedicated detectors, reusing the same scoring/executor pipeline as HTTP
+- **Alert sinks** — push threats to Telegram, Slack and PagerDuty with deduplication and rate-limiting
 
 ---
 

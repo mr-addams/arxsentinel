@@ -136,6 +136,23 @@
         }
         @keyframes shine { to { background-position: 200% center; } }
         .hero p { font-size: 1.25rem; color: var(--text-muted); max-width: 700px; margin: 0 auto 3rem; }
+
+        /* ── Hero pillars (expandable "smart/universal/scalable/distributed" detail) ── */
+        .hero-pillars { max-width: 760px; margin: -1.5rem auto 3rem; text-align: left; }
+        .hero-pillars summary {
+            cursor: pointer; text-align: center; color: var(--accent-blue); font-size: 0.85rem;
+            font-family: var(--font-cyber); letter-spacing: 0.06em; list-style: none;
+        }
+        .hero-pillars summary::-webkit-details-marker { display: none; }
+        .hero-pillars summary::after { content: ' ▾'; }
+        .hero-pillars[open] summary::after { content: ' ▴'; }
+        .hero-pillars-grid {
+            display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem;
+            margin-top: 1.5rem; padding: 1.5rem; border-radius: 8px;
+            background: rgba(13, 13, 31, 0.4); border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .hero-pillars-grid h4 { color: var(--accent-blue); font-size: 0.95rem; margin-bottom: 0.4rem; }
+        .hero-pillars-grid p { font-size: 0.85rem; color: var(--text-muted); margin: 0; max-width: none; }
         .cta-buttons { display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap; }
         .btn {
             font-family: var(--font-cyber); font-weight: 700; padding: 1rem 2rem; border-radius: 4px;
@@ -416,6 +433,9 @@
 
         .whitelist-section { max-width: 1200px; margin: 6rem auto; }
         .whitelist-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; padding: 0 2rem; }
+        /* Fixed 3-column grid — used where card count is a multiple of 3 and rows
+           should never leave an orphan card (Enforcement section: 6 cards, 2 rows). */
+        .enforcement-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.5rem; padding: 0 2rem; }
         .whitelist-card {
             flex: 0 1 260px;
             background: rgba(13, 13, 31, 0.4); border: 1px solid rgba(255, 255, 255, 0.03);
@@ -492,6 +512,7 @@
             .hero { padding: 4rem 1.5rem 3rem; }
             .hero h1 { font-size: 2rem; }
             .hero p { font-size: 1rem; }
+            .hero-pillars-grid { grid-template-columns: 1fr; padding: 1.25rem; }
             .badge-container { flex-wrap: wrap; gap: 0.5rem; }
             .cta-buttons { flex-direction: column; width: 100%; max-width: 300px; margin: 0 auto; }
             .btn { width: 100%; text-align: center; }
@@ -542,6 +563,7 @@
             /* ── Whitelist ── */
             .whitelist-section { margin: 3rem auto; }
             .whitelist-grid { padding: 0 1rem; gap: 1rem; }
+            .enforcement-grid { grid-template-columns: 1fr; padding: 0 1rem; gap: 1rem; }
             .whitelist-card { flex: 1 1 100%; }
 
             /* ── Footer ── */
@@ -723,8 +745,8 @@
             <span class="badge badge-version">v2.2.4</span>
             <span class="badge">Source Available</span>
             <span class="badge">Go</span>
-            <span class="badge">Linux</span>
-            <span class="badge">FreeBSD</span>
+            <span class="badge">Linux/FreeBSD</span>
+            <span class="badge">Daemon/Docker/K8s</span>
         </div>
         <h1>
             <span class="shimmer-text">From a single VPS</span><br>
@@ -732,7 +754,28 @@
             one binary, zero overhead
         </h1>
         <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Distributed security event processing engine for any HTTP server — and far beyond</p>
-        <p>Eight behavioural detectors analyse every HTTP access log in real time and route confirmed attackers to any output — Fail2Ban, Cloudflare WAF, MikroTik RouterOS, OpenWrt ubus firewall, OPNsense REST API, or your own exec+JSON sink in any language. Collect events on one machine, score them on another, ban on a third — over a built-in encrypted node mesh. Bare-metal, Docker Compose, or Kubernetes DaemonSet.</p>
+        <p>A smart, universal, distributed security engine: behavioural detection instead of static rules, any log source in, any destination out, any language for your own plugins. Scale from a single VPS to a distributed fleet — collect events on one machine, score them on another, ban on a third — over a built-in encrypted node mesh. Bare-metal, Docker Compose, or Kubernetes DaemonSet.</p>
+        <details class="hero-pillars">
+            <summary>What "smart, universal, scalable, distributed" means</summary>
+            <div class="hero-pillars-grid">
+                <div>
+                    <h4>Smart</h4>
+                    <p>Eight behavioural detectors score patterns — probing, rate anomalies, bruteforce ratios, sequential crawling — instead of matching static signatures. Legitimate crawlers are verified via rDNS/fDNS and never scored.</p>
+                </div>
+                <div>
+                    <h4>Universal</h4>
+                    <p>Any log source in (file, stdin, syslog, HTTP push/pull across 9 vendor formats), any destination out (Fail2Ban, Cloudflare WAF, MikroTik/OpenWrt/OPNsense firewalls, Loki/Splunk/Datadog), any language for your own plugin via exec+JSON.</p>
+                </div>
+                <div>
+                    <h4>Scalable</h4>
+                    <p>One process handles N independent log streams, each with its own pipeline of sources, detectors, and sinks — from a single nginx vhost to a fleet of edge nodes, without spinning up separate processes per site.</p>
+                </div>
+                <div>
+                    <h4>Distributed</h4>
+                    <p>Collect on one machine, score on another, ban on a third — over a built-in encrypted QUIC/TLS 1.3 node mesh with Ed25519 identity and TOFU pinning. No message broker, no log shipper, no VPN required.</p>
+                </div>
+            </div>
+        </details>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Install</a>
             <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">View on GitHub</a>
@@ -853,7 +896,32 @@
         </div>
     </section>
 
-    <section id="detectors" class="detectors-section">
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">WAF</span>
+            <h2 class="section-title">Block known attacks before they reach your detectors</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">✓</span> pass — explicit allowlist</h3>
+                <p>Rules evaluated first. A matching pass rule short-circuits the entire pipeline — health checks, internal IPs and known-good bots bypass all further processing with zero overhead.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⊘</span> drop — hard block</h3>
+                <p>SQLi, path traversal, scanner signatures — matched requests are gated out at line rate and never reach the scorer. No state allocated, no detector CPU spent on known-bad traffic.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">◈</span> tag — score and continue</h3>
+                <p>Suspicious but ambiguous traffic gets a label and a score delta, then flows into the regular detection pipeline. Combine WAF signals with behavioural detectors for correlated ban decisions.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)">⚙</span> Custom fields</h3>
+                <p>Extend the rule namespace with your own <code>http.*</code> fields — two Go changes, no recompilation of core logic. Add TLS version, request body length, or any field your log source exposes.</p>
+            </div>
+        </div>
+    </section>
+
+        <section id="detectors" class="detectors-section">
         <div class="section-header">
             <span class="section-tag">Threat Detection</span>
             <h2 class="section-title">8 detectors, one score</h2>
@@ -915,6 +983,285 @@
                     <p class="detector-desc">Matches User-Agent (and optionally Referer) against a community-maintained blocklist of ~685 known bad bots — scrapers, SEO crawlers, spam bots, vulnerability probes. Updated daily. Powered by <a href="https://github.com/mitchellkrogza/nginx-ultimate-bad-bot-blocker" target="_blank" rel="noopener noreferrer" style="color:var(--accent-blue)">nginx-ultimate-bad-bot-blocker</a> by <strong>Mitchell Krog</strong>.</p>
                 </div>
                 <span class="detector-score">+60</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">False-Positive Prevention</span>
+            <h2 class="section-title">Legitimate traffic is never banned</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 21l6 0" /><path d="M9 21l0 -9" /><path d="M8 5l2 0" /><path d="M7 7l4 0" /><path d="M14 5a2 2 0 0 1 2 2v3l-3.6 5.4a1 1 0 0 0 .6 1.6h3a1 1 0 0 0 .894 -1.447l-3.528 -7.053" /><path d="M9 5a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v5h-4z" /></svg></span> Automatic verification</h3>
+                <p>Googlebot, Bingbot, Yandex, DuckDuckBot, GPTBot and 6 others are verified via reverse + forward DNS. Legitimate crawlers are never scored. Fakes get a penalty instead. Trusted crawlers can be matched by User-Agent only (`ua_only`, no DNS) and given per-bot detector exemptions (`exempt_detectors`) so legitimate automation is never penalised.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" /><path d="M15 19l2 2l4 -4" /></svg></span> Custom exclusions</h3>
+                <p>Add your office IPs, VPN subnets (CIDR), monitoring services, SEO tools by User-Agent substring, or URL paths. Changes apply instantly on SIGHUP.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg></span> Live reload</h3>
+                <p>All config changes — whitelist, detector scores, thresholds — apply instantly on SIGHUP. No restart. IP state and DNS cache are preserved.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Enforcement</span>
+            <h2 class="section-title">Ban at the layer that fits your stack</h2>
+        </div>
+        <div class="enforcement-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z" /><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0" /><path d="M8 11v-4a4 4 0 1 1 8 0v4" /></svg></span> Fail2Ban</h3>
+                <p>Write threat events to a log file in the classic Fail2Ban format. No new infrastructure — the default output, and still the fastest path to a working ban on any Linux box.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6.657 18c-2.572 0 -4.657 -2.007 -4.657 -4.483c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99c1.913 0 3.464 1.56 3.464 3.486c0 1.927 -1.551 3.487 -3.465 3.487h-11.878" /></svg></span> Cloudflare WAF</h3>
+                <p>Add threat IPs to a Cloudflare IP List and ban them at the network edge — no iptables, no host firewall. Batch operations, async polling, automatic TTL expiry and cross-instance dedup.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> nginx</h3>
+                <p>Write banned IPs to a plain blocklist file with TTL auto-expiry and atomic writes. arxsentinel only writes the file; you include it into nginx however suits you. Optional reload command.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12l-8 -8l8 -2l2 8z" /><path d="M12 12l4 8l4 -8z" /><path d="M12 12l8 -4l-2 -8z" /><path d="M12 12l-4 -8l-4 8z" /></svg></span> MikroTik RouterOS v7</h3>
+                <p>Manage a RouterOS firewall address-list over the REST API. TTL-based auto-unban, safe removal of only arxsentinel-owned entries, works on CHR and ARM-based routers.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> OpenWrt ubus firewall</h3>
+                <p>Ban IPs on an OpenWrt router via ubus (uhttpd-mod-ubus) — no SSH, no exec. Batched UCI edit + a single firewall reload per cycle; TTL is owned by the plugin, not left to nftables timeouts.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6.657 18c-2.572 0 -4.657 -2.007 -4.657 -4.483c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99c1.913 0 3.464 1.56 3.464 3.486c0 1.927 -1.551 3.487 -3.465 3.487h-11.878" /></svg></span> OPNsense REST API</h3>
+                <p>Ban IPs on an OPNsense firewall via its native REST API (alias_util) — no batching needed, changes apply immediately to the underlying pfctl table. Independent point add/delete per event, active TTL sweep.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Observability</span>
+            <h2 class="section-title">Ship straight into the SIEM you already run</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" /><path d="M4 7c-1.1 0 -2 .9 -2 2v9c0 1.1 .9 2 2 2h14" /></svg></span> Grafana Loki</h3>
+                <p>Push raw and scored events straight into Grafana Loki over the Push API. Stream-label any field (job, severity, stream), batch with gzip, optional mTLS — JSON envelope is recommended for log-platform readability.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Splunk HEC</h3>
+                <p>Forward to a Splunk HTTP Event Collector endpoint with token auth. JSON mode, multi-index, gzip batching, optional mTLS. Events get indexed the moment a verdict crosses the threshold — no separate log shipper required.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Datadog Logs API</h3>
+                <p>Send to Datadog's Logs API v2 over HTTPS — pick the regional intake URL (US, EU, AP1, AP2, UK1, US3, US5, US2 Gov) and tag with arbitrary ddtags. Gzip batching, optional mTLS, works alongside your existing Datadog log pipelines.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Open Plugin Architecture</span>
+            <h2 class="section-title">Five interfaces. Write yours in any language.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg></span> Five typed plugin roles</h3>
+                <p><strong>Source / Sink / Detector / Processor / Executor</strong> — each a small Go interface in <code>pkg/plugin/</code>. Plugins register themselves in <code>init()</code>: no central factory list, the framework discovers them by name. Compose the pipeline from roles, not from internal hooks.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg></span> Any language, no Go required</h3>
+                <p>The <strong>exec+JSON</strong> protocol: a subprocess that reads a JSON object per event from stdin and writes a JSON response to stdout. Extend detection, add a sink, write an executor in Python, Bash, or anything that can speak a byte stream — ArxSentinel owns the subprocess lifecycle (spawn, stdin/stdout wiring, shutdown).</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l5 5l10 -10" /></svg></span> Proven, not theoretical</h3>
+                <p>Five shipped executor plugins — <strong>Cloudflare, MikroTik, OpenWrt, OPNsense, nginx</strong> — and the three observability sinks just added (<strong>Loki, Splunk, Datadog</strong>) all use the same public plugin interfaces you would. No internal fast path, no privileged access: if it works for the bundled plugins, it works for yours.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Multi-Pipeline</span>
+            <h2 class="section-title">One process. Many streams. Independent detection per source.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Multi-stream isolation</h3>
+                <p>One process watches <strong>N independent log sources</strong> via <code>streams:</code> — each gets its own tracker, scorer, whitelist state, and threat log. A crash or slow scan on one stream never touches another. <strong>Backward compatible</strong>: a classic single-file config (<code>general.log_file</code>) is silently wrapped into one unnamed stream (<code>stream=""</code> on metrics), no migration needed.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Independent pipelines within a stream</h3>
+                <p>A single stream can define <strong>multiple pipelines</strong>, each with its own inputs, rule-engine / WAF processors, detectors, and sinks — e.g. one pipeline watching <code>/api/*</code> with a strict WAF gate, another watching <code>/admin/*</code> with different detector thresholds, both inside the same stream config. Prometheus gains a <code>pipeline</code> label on every vector.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M15 7m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /><path d="M10.495 10.495l-7.779 7.779a1 1 0 0 0 0 1.414l1.596 1.596a1 1 0 0 0 1.414 0l7.779 -7.779" /><path d="M18.5 5.5l1.5 -1.5" /><path d="M20 6l-1 -1" /></svg></span> Correlate pipelines with <code>tracker_group</code></h3>
+                <p>Pipelines that share a <code>tracker_group</code> value <strong>share one IP-state tracker</strong>: an attacker probing your API and your admin panel accumulates one combined score instead of two separate ones, crossing the ban threshold sooner than either pipeline would catch alone. Omit <code>tracker_group</code> (or leave it empty) for full isolation instead.</p>
+            </div>
+        </div>
+    </section>
+
+<section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">v2.2.4 Capabilities</span>
+            <h2 class="section-title">Fits how you already deploy.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M17 3l4 4l-14 14l-4 -4z" /><path d="M16 7l-1.5 -1.5" /><path d="M13 10l-1.5 -1.5" /><path d="M10 13l-1.5 -1.5" /><path d="M7 16l-1.5 -1.5" /></svg></span> Custom log format</h3>
+                <p>Not using a built-in profile? Define your own regex with named capture groups, or switch to JSON log parsing — both work without recompilation. Any format that captures IP, timestamp, method, path, status and bytes maps to the full detection pipeline.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> Server profiles</h3>
+                <p>Ship-ready profiles for popular servers. Override field positions, date formats and delimiter rules per log source without touching core logic.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M22 12.54c-1.804 -.345 -2.701 -1.08 -3.523 -2.94c-.487 .696 -1.54 1.4 -2.477 1.4h-5c-2.21 0 -4 1.79 -4 4v1.06c0 1.062 .107 1.84 .806 2.5c1.828 1.735 4.494 1.44 6.194 1.44h8c1.1 0 2 -.9 2 -2v-2c0 -1.1 -.9 -2 -2 -2h-.5" /><path d="M6 12h1" /><path d="M10 12h1" /><path d="M6 8h1" /><path d="M10 8h1" /><path d="M14 8h1" /><path d="M10 4h1" /><path d="M14 4h1" /><path d="M18.5 15.5m-0.5 0a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0" /></svg></span> Docker Compose sidecar</h3>
+                <p>Deploy alongside any containerised HTTP server via a shared log volume — no changes to your app container. Ready-to-use <code>docker-compose.yml</code> and config in <code>deploy/examples/docker/</code>. Prometheus metrics exposed on <code>:9117</code> for scraping.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg></span> Kubernetes DaemonSet</h3>
+                <p>One pod per node reads host access logs via <code>hostPath</code>. Helm chart included with values reference and Prometheus Operator integration. Sidecar topology also supported for managed clusters without host log access.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l5 5l10 -10" /></svg></span> Offline config validation</h3>
+                <p>Run `arxsentinel validate` to check your whole config before deploy. A topology-aware validator models the real data flow and catches broken wiring using static plugin manifests — no live traffic needed.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Pluggable queue backends</h3>
+                <p>Buffer executor events through an in-memory, file-based (bbolt), Redis — or <strong>transport</strong> queue that spans machines over the encrypted node mesh. Pick per executor to fit bare-metal, single-host, Kubernetes, or multi-node setups.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Named Channel Switch</h3>
+                <p>Route events between independent pipelines by name — one pipeline detects while another enforces, fully decoupled. And the same named queue can now terminate on a <strong>different machine</strong>: Distributed NCS.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag" style="color: var(--accent-green); border-color: rgba(0,255,136,0.35); background: rgba(0,255,136,0.08);">NEW · Distributed NCS</span>
+            <h2 class="section-title">Collect anywhere. Detect centrally. Ban at the edge.</h2>
+            <p style="color: var(--text-muted); max-width: 720px; margin: 0 auto;">
+                The same binary becomes a <strong>collector</strong>, a <strong>detector</strong>, or a <strong>responder</strong> —
+                by config alone, connected over a built-in encrypted event mesh.
+                The only tool in its class with node-to-node security event transport inside the engine itself:
+                no message broker, no log shipper, no agent-server hierarchy, no VPN.
+            </p>
+        </div>
+        <div class="pipeline-box" style="margin-bottom: 2rem;">
+            <div class="box-scanline"></div>
+            <div class="pipeline-flow">
+                <div class="flow-line"></div>
+                <div class="pipeline-node">Collectors — Pi · VPS · NAS · branch office (12 MB each, parse only)</div>
+                <div class="pipeline-node">QUIC / TLS 1.3 · Ed25519 node identity · TOFU pinning (like SSH)</div>
+                <div class="pipeline-node">Detector node — 8 detectors · WAF · whitelist · one shared IP score across all sources</div>
+                <div class="pipeline-node">Scored verdicts routed onward — per pipeline, to different nodes</div>
+                <div class="pipeline-node final">Responders → MikroTik router · OpenWrt firewall · OPNsense firewall · nginx blocklist · Cloudflare WAF · Grafana Loki · Splunk HEC · Datadog Logs API (raw + scored JSON)</div>
+            </div>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /><path d="M12 11m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M12 12l0 2.5" /></svg></span> Encrypted mesh built in</h3>
+                <p>QUIC over one UDP port, TLS 1.3 always on, Ed25519 node keys generated on first start, TOFU fingerprint pinning like SSH. Mutual authentication before a single event flows — a stranger on your port gets nothing.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M18 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M7.5 7.5l3 7" /><path d="M16.5 7.5l-3 7" /><path d="M8 6h8" /></svg></span> Cross-service correlation</h3>
+                <p>Every collector forwards into one shared per-IP score. An attacker probing your web tier, API and auth service accumulates one combined score on the detector — and crosses the ban threshold sooner than any single service would catch alone.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" /><path d="M4 10h16" /><path d="M10 4v16" /></svg></span> Raw or scored — you route both</h3>
+                <p>Forward raw parsed entries inward for central detection, scored verdicts outward for enforcement — or both into your SIEM. Pre-filter at the edge and let threats, not traffic volume, drive your ingest bill.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 12l2 2l4 -4" /><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> Proven by CI, not promised</h3>
+                <p>Every documented topology — edge fleet aggregation, mixed routing to nginx + MikroTik/OpenWrt/OPNsense responders — runs as a real multi-container test on every merge. The diagrams in the docs are executable.</p>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 2rem;">
+            <a href="https://github.com/mr-addams/arxsentinel/blob/main/docs/DISTRIBUTED.md" target="_blank" rel="noopener noreferrer" class="btn btn-primary">Distributed Processing Guide</a>
+            <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="margin-left: 0.75rem;">Ready topologies</a>
+        </div>
+    </section>
+
+    <section class="integrations-section">
+        <div class="section-header">
+            <span class="section-tag">Universal I/O</span>
+            <h2 class="section-title">Works with your stack</h2>
+            <p style="color: var(--text-muted); max-width: 600px; margin: 0 auto;">
+                Read from any log source. Write threats to any destination.
+                Fail2Ban remains the default — now one option among many.
+            </p>
+        </div>
+        <div class="integrations-grid">
+            <div class="integrations-col">
+                <h3 style="color: var(--accent-blue); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Inputs</h3>
+                <div class="integrations-list">
+                    <span class="integration-tag">nginx</span>
+                    <span class="integration-tag">Apache</span>
+                    <span class="integration-tag">Traefik</span>
+                    <span class="integration-tag">Caddy</span>
+                    <span class="integration-tag">HAProxy</span>
+                    <span class="integration-tag">LiteSpeed</span>
+                    <span class="integration-tag">any log file</span>
+                    <span class="integration-tag">stdin pipe</span>
+                    <span class="integration-tag">syslog receiver</span>
+                    <span class="integration-tag">HTTP (push/pull)</span>
+                </div>
+            </div>
+            <div class="integrations-col">
+                <h3 style="color: var(--accent-green); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Outputs</h3>
+                <div class="integrations-list">
+                    <span class="integration-tag">Fail2Ban</span>
+                    <span class="integration-tag">Cloudflare WAF</span>
+                    <span class="integration-tag">MikroTik RouterOS</span>
+                    <span class="integration-tag">OpenWrt ubus</span>
+                    <span class="integration-tag">OPNsense REST</span>
+                    <span class="integration-tag">nginx blocklist</span>
+                    <span class="integration-tag">exec+JSON</span>
+                    <span class="integration-tag">stdout&nbsp;JSON</span>
+                    <span class="integration-tag">Grafana Loki</span>
+                    <span class="integration-tag">Splunk HEC</span>
+                    <span class="integration-tag">Datadog</span>
+                    <span class="integration-tag muted">Telegram (soon)</span>
+                </div>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 2rem;">
+            <p style="color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem;">Example input configs</p>
+            <div style="display:flex;flex-direction:column;gap:0.5rem;align-items:center;">
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: file &nbsp;·&nbsp; path: /var/log/nginx/access.log</code>
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: syslog &nbsp;·&nbsp; addr: udp://0.0.0.0:5514 &nbsp;·&nbsp; no shared volume</code>
+                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: http &nbsp;·&nbsp; protocol: plain|cloudflare|firehose|pubsub|loki|otlp|azure|splunk|ndjson</code>
+            </div>
+            <p style="color: var(--text-muted); font-size: 0.75rem; max-width: 560px; margin: 0.75rem auto 0;">
+                <code>protocol: loki</code> and <code>protocol: splunk</code> here mean <em>receiving</em> logs already
+                shaped like Loki's push API or Splunk HEC — unrelated to the Grafana Loki / Splunk HEC <em>outputs</em>
+                listed above, which <em>send</em> events out to those platforms instead.
+            </p>
+        </div>
+    </section>
+
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Cookbook</span>
+            <h2 class="section-title">40+ recipes. Copy. Fill in. Run.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" /><path d="M4 7c-1.1 0 -2 .9 -2 2v9c0 1.1 .9 2 2 2h14" /></svg></span> Copy, fill in, run</h3>
+                <p><strong>40+ ready-to-use recipes</strong> across <strong>14 categories</strong>: every supported server (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed), every executor (Cloudflare, MikroTik, OpenWrt, OPNsense), every observability sink (Loki, Splunk, Datadog), CMS-specific probe paths (WordPress, Laravel, Drupal), and more. Browse the index in <a href="https://github.com/mr-addams/arxsentinel/blob/main/cookbook/CookBook.md" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);"><code>cookbook/CookBook.md</code></a> — every row links straight to a working <code>*.yaml</code>.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 3h9a2 2 0 0 1 2 2v9m-1.165 3.849a2 2 0 0 1 -.835 .151h-12a2 2 0 0 1 -2 -2v-12c0 -.337 .082 -.656 .226 -.935" /><path d="M4.219 7.729a2 2 0 0 0 -.219 .895" /><path d="M5 17l3.5 -4.5" /></svg></span> Docker &amp; Kubernetes included</h3>
+                <p><strong>5 recipe categories</strong> ship a full Docker Compose stack — <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/cloudflare" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">Cloudflare</a>, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/nginx-executor" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">nginx executor</a>, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/syslog" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">syslog</a>, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/mikrotik" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">MikroTik</a>, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/fail2ban" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">Fail2Ban</a> — plus a full <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/kubernetes" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">Kubernetes</a> directory. Not just the ArxSentinel config, the whole reference deployment.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11" /></svg></span> Distributed topologies, not just single-node</h3>
+                <p><strong>3 full working multi-node Distributed NCS examples</strong> in <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);"><code>cookbook/distributed-ncs/</code></a> — base, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs/aggregation" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">edge aggregation</a>, and <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs/mixed-routing" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">mixed routing</a>. The same topologies documented in the guide above, <strong>proven by real multi-container CI runs on every merge</strong>.</p>
             </div>
         </div>
     </section>
@@ -1043,225 +1390,7 @@ service arxsentinel start</span></pre>
         </div>
     </section>
 
-        <section class="whitelist-section">
-        <div class="section-header">
-            <span class="section-tag">WAF</span>
-            <h2 class="section-title">Block known attacks before they reach your detectors</h2>
-        </div>
-        <div class="whitelist-grid">
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">✓</span> pass — explicit allowlist</h3>
-                <p>Rules evaluated first. A matching pass rule short-circuits the entire pipeline — health checks, internal IPs and known-good bots bypass all further processing with zero overhead.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">⊘</span> drop — hard block</h3>
-                <p>SQLi, path traversal, scanner signatures — matched requests are gated out at line rate and never reach the scorer. No state allocated, no detector CPU spent on known-bad traffic.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">◈</span> tag — score and continue</h3>
-                <p>Suspicious but ambiguous traffic gets a label and a score delta, then flows into the regular detection pipeline. Combine WAF signals with behavioural detectors for correlated ban decisions.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)">⚙</span> Custom fields</h3>
-                <p>Extend the rule namespace with your own <code>http.*</code> fields — two Go changes, no recompilation of core logic. Add TLS version, request body length, or any field your log source exposes.</p>
-            </div>
-        </div>
-    </section>
-
-        <section class="whitelist-section">
-        <div class="section-header">
-            <span class="section-tag">Enforcement</span>
-            <h2 class="section-title">Ban at the layer that fits your stack</h2>
-        </div>
-        <div class="whitelist-grid">
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6.657 18c-2.572 0 -4.657 -2.007 -4.657 -4.483c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99c1.913 0 3.464 1.56 3.464 3.486c0 1.927 -1.551 3.487 -3.465 3.487h-11.878" /></svg></span> Cloudflare WAF</h3>
-                <p>Add threat IPs to a Cloudflare IP List and ban them at the network edge — no iptables, no host firewall. Batch operations, async polling, automatic TTL expiry and cross-instance dedup.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> nginx</h3>
-                <p>Write banned IPs to a plain blocklist file with TTL auto-expiry and atomic writes. arxsentinel only writes the file; you include it into nginx however suits you. Optional reload command.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 12l-8 -8l8 -2l2 8z" /><path d="M12 12l4 8l4 -8z" /><path d="M12 12l8 -4l-2 -8z" /><path d="M12 12l-4 -8l-4 8z" /></svg></span> MikroTik RouterOS v7</h3>
-                <p>Manage a RouterOS firewall address-list over the REST API. TTL-based auto-unban, safe removal of only arxsentinel-owned entries, works on CHR and ARM-based routers.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> OpenWrt ubus firewall</h3>
-                <p>Ban IPs on an OpenWrt router via ubus (uhttpd-mod-ubus) — no SSH, no exec. Batched UCI edit + a single firewall reload per cycle; TTL is owned by the plugin, not left to nftables timeouts.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6.657 18c-2.572 0 -4.657 -2.007 -4.657 -4.483c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99c1.913 0 3.464 1.56 3.464 3.486c0 1.927 -1.551 3.487 -3.465 3.487h-11.878" /></svg></span> OPNsense REST API</h3>
-                <p>Ban IPs on an OPNsense firewall via its native REST API (alias_util) — no batching needed, changes apply immediately to the underlying pfctl table. Independent point add/delete per event, active TTL sweep.</p>
-            </div>
-        </div>
-    </section>
-
-<section class="whitelist-section">
-        <div class="section-header">
-            <span class="section-tag">v2.2.4 Capabilities</span>
-            <h2 class="section-title">One process. Any topology.</h2>
-        </div>
-        <div class="whitelist-grid">
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M17 3l4 4l-14 14l-4 -4z" /><path d="M16 7l-1.5 -1.5" /><path d="M13 10l-1.5 -1.5" /><path d="M10 13l-1.5 -1.5" /><path d="M7 16l-1.5 -1.5" /></svg></span> Custom log format</h3>
-                <p>Not using a built-in profile? Define your own regex with named capture groups, or switch to JSON log parsing — both work without recompilation. Any format that captures IP, timestamp, method, path, status and bytes maps to the full detection pipeline.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" /><path d="M4 7c-1.1 0 -2 .9 -2 2v9c0 1.1 .9 2 2 2h14" /></svg></span> Multi-stream & pipeline routing</h3>
-                <p>Watch multiple log files in one process. Within each stream, define independent pipelines — each with its own detectors, sources, sinks and IP state. Share IP state between pipelines via <code>tracker_group</code> for correlated multi-log analysis.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5" /></svg></span> Server profiles</h3>
-                <p>Ship-ready profiles for popular servers. Override field positions, date formats and delimiter rules per log source without touching core logic.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M22 12.54c-1.804 -.345 -2.701 -1.08 -3.523 -2.94c-.487 .696 -1.54 1.4 -2.477 1.4h-5c-2.21 0 -4 1.79 -4 4v1.06c0 1.062 .107 1.84 .806 2.5c1.828 1.735 4.494 1.44 6.194 1.44h8c1.1 0 2 -.9 2 -2v-2c0 -1.1 -.9 -2 -2 -2h-.5" /><path d="M6 12h1" /><path d="M10 12h1" /><path d="M6 8h1" /><path d="M10 8h1" /><path d="M14 8h1" /><path d="M10 4h1" /><path d="M14 4h1" /><path d="M18.5 15.5m-0.5 0a0.5 0.5 0 1 0 1 0a0.5 0.5 0 1 0 -1 0" /></svg></span> Docker Compose sidecar</h3>
-                <p>Deploy alongside any containerised HTTP server via a shared log volume — no changes to your app container. Ready-to-use <code>docker-compose.yml</code> and config in <code>deploy/examples/docker/</code>. Prometheus metrics exposed on <code>:9117</code> for scraping.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg></span> Kubernetes DaemonSet</h3>
-                <p>One pod per node reads host access logs via <code>hostPath</code>. Helm chart included with values reference and Prometheus Operator integration. Sidecar topology also supported for managed clusters without host log access.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l5 5l10 -10" /></svg></span> Offline config validation</h3>
-                <p>Run `arxsentinel validate` to check your whole config before deploy. A topology-aware validator models the real data flow and catches broken wiring using static plugin manifests — no live traffic needed.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0" /><path d="M4 6v6a8 3 0 0 0 16 0v-6" /><path d="M4 12v6a8 3 0 0 0 16 0v-6" /></svg></span> Pluggable queue backends</h3>
-                <p>Buffer executor events through an in-memory, file-based (bbolt), Redis — or <strong>transport</strong> queue that spans machines over the encrypted node mesh. Pick per executor to fit bare-metal, single-host, Kubernetes, or multi-node setups.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 4l3 3l-3 3" /><path d="M18 20l3 -3l-3 -3" /><path d="M3 7h3a5 5 0 0 1 5 5a5 5 0 0 0 5 5h5" /><path d="M21 7h-5a5 5 0 0 0 -4.957 4.448" /><path d="M10.793 15.673a5 5 0 0 1 -3.793 1.827h-4" /></svg></span> Named Channel Switch</h3>
-                <p>Route events between independent pipelines by name — one pipeline detects while another enforces, fully decoupled. And the same named queue can now terminate on a <strong>different machine</strong>: Distributed NCS.</p>
-            </div>
-        </div>
-    </section>
-
-    <section class="whitelist-section">
-        <div class="section-header">
-            <span class="section-tag" style="color: var(--accent-green); border-color: rgba(0,255,136,0.35); background: rgba(0,255,136,0.08);">NEW · Distributed NCS</span>
-            <h2 class="section-title">Collect anywhere. Detect centrally. Ban at the edge.</h2>
-            <p style="color: var(--text-muted); max-width: 720px; margin: 0 auto;">
-                The same binary becomes a <strong>collector</strong>, a <strong>detector</strong>, or a <strong>responder</strong> —
-                by config alone, connected over a built-in encrypted event mesh.
-                The only tool in its class with node-to-node security event transport inside the engine itself:
-                no message broker, no log shipper, no agent-server hierarchy, no VPN.
-            </p>
-        </div>
-        <div class="pipeline-box" style="margin-bottom: 2rem;">
-            <div class="box-scanline"></div>
-            <div class="pipeline-flow">
-                <div class="flow-line"></div>
-                <div class="pipeline-node">Collectors — Pi · VPS · NAS · branch office (12 MB each, parse only)</div>
-                <div class="pipeline-node">QUIC / TLS 1.3 · Ed25519 node identity · TOFU pinning (like SSH)</div>
-                <div class="pipeline-node">Detector node — 8 detectors · WAF · whitelist · one shared IP score across all sources</div>
-                <div class="pipeline-node">Scored verdicts routed onward — per pipeline, to different nodes</div>
-                <div class="pipeline-node final">Responders → MikroTik router · OpenWrt firewall · OPNsense firewall · nginx blocklist · Cloudflare WAF · SIEM feed (raw + scored JSON)</div>
-            </div>
-        </div>
-        <div class="whitelist-grid">
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /><path d="M12 11m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M12 12l0 2.5" /></svg></span> Encrypted mesh built in</h3>
-                <p>QUIC over one UDP port, TLS 1.3 always on, Ed25519 node keys generated on first start, TOFU fingerprint pinning like SSH. Mutual authentication before a single event flows — a stranger on your port gets nothing.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M18 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M7.5 7.5l3 7" /><path d="M16.5 7.5l-3 7" /><path d="M8 6h8" /></svg></span> Cross-service correlation</h3>
-                <p>Every collector forwards into one shared per-IP score. An attacker probing your web tier, API and auth service accumulates one combined score on the detector — and crosses the ban threshold sooner than any single service would catch alone.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" /><path d="M4 10h16" /><path d="M10 4v16" /></svg></span> Raw or scored — you route both</h3>
-                <p>Forward raw parsed entries inward for central detection, scored verdicts outward for enforcement — or both into your SIEM. Pre-filter at the edge and let threats, not traffic volume, drive your ingest bill.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 12l2 2l4 -4" /><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> Proven by CI, not promised</h3>
-                <p>Every documented topology — edge fleet aggregation, mixed routing to nginx + MikroTik/OpenWrt/OPNsense responders — runs as a real multi-container test on every merge. The diagrams in the docs are executable.</p>
-            </div>
-        </div>
-        <div style="text-align: center; margin-top: 2rem;">
-            <a href="https://github.com/mr-addams/arxsentinel/blob/main/docs/DISTRIBUTED.md" target="_blank" rel="noopener noreferrer" class="btn btn-primary">Distributed Processing Guide</a>
-            <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="margin-left: 0.75rem;">Ready topologies</a>
-        </div>
-    </section>
-
-    <section class="whitelist-section">
-        <div class="section-header">
-            <span class="section-tag">Defense Mechanisms</span>
-            <h2 class="section-title">Legitimate traffic is never banned</h2>
-        </div>
-        <div class="whitelist-grid">
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 21l6 0" /><path d="M9 21l0 -9" /><path d="M8 5l2 0" /><path d="M7 7l4 0" /><path d="M14 5a2 2 0 0 1 2 2v3l-3.6 5.4a1 1 0 0 0 .6 1.6h3a1 1 0 0 0 .894 -1.447l-3.528 -7.053" /><path d="M9 5a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v5h-4z" /></svg></span> Automatic verification</h3>
-                <p>Googlebot, Bingbot, Yandex, DuckDuckBot, GPTBot and 6 others are verified via reverse + forward DNS. Legitimate crawlers are never scored. Fakes get a penalty instead. Trusted crawlers can be matched by User-Agent only (`ua_only`, no DNS) and given per-bot detector exemptions (`exempt_detectors`) so legitimate automation is never penalised.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11.46 20.846a12 12 0 0 1 -7.96 -14.846a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.09 7.06" /><path d="M15 19l2 2l4 -4" /></svg></span> Custom exclusions</h3>
-                <p>Add your office IPs, VPN subnets (CIDR), monitoring services, SEO tools by User-Agent substring, or URL paths. Changes apply instantly on SIGHUP.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" /></svg></span> Live reload</h3>
-                <p>All config changes — whitelist, detector scores, thresholds — apply instantly on SIGHUP. No restart. IP state and DNS cache are preserved.</p>
-            </div>
-            <div class="whitelist-card">
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg></span> Cloudflare support</h3>
-                <p>Detectors always score the real attacker — never Cloudflare or your load balancer. Supports CF-Connecting-IP, X-Forwarded-For chains, and trusted proxy CIDR ranges out of the box.</p>
-            </div>
-        </div>
-    </section>
-
-    <section class="integrations-section">
-        <div class="section-header">
-            <span class="section-tag">Universal I/O</span>
-            <h2 class="section-title">Works with your stack</h2>
-            <p style="color: var(--text-muted); max-width: 600px; margin: 0 auto;">
-                Read from any log source. Write threats to any destination.
-                Fail2Ban remains the default — now one option among many.
-            </p>
-        </div>
-        <div class="integrations-grid">
-            <div class="integrations-col">
-                <h3 style="color: var(--accent-blue); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Inputs</h3>
-                <div class="integrations-list">
-                    <span class="integration-tag">nginx</span>
-                    <span class="integration-tag">Apache</span>
-                    <span class="integration-tag">Traefik</span>
-                    <span class="integration-tag">Caddy</span>
-                    <span class="integration-tag">HAProxy</span>
-                    <span class="integration-tag">LiteSpeed</span>
-                    <span class="integration-tag">any log file</span>
-                    <span class="integration-tag">stdin pipe</span>
-                    <span class="integration-tag">syslog receiver</span>
-                    <span class="integration-tag">HTTP (push/pull)</span>
-                </div>
-            </div>
-            <div class="integrations-col">
-                <h3 style="color: var(--accent-green); margin-bottom: 1rem; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase;">Outputs</h3>
-                <div class="integrations-list">
-                    <span class="integration-tag">Fail2Ban</span>
-                    <span class="integration-tag">Cloudflare WAF</span>
-                    <span class="integration-tag">MikroTik RouterOS</span>
-                    <span class="integration-tag">OpenWrt ubus</span>
-                    <span class="integration-tag">OPNsense REST</span>
-                    <span class="integration-tag">nginx blocklist</span>
-                    <span class="integration-tag">exec+JSON</span>
-                    <span class="integration-tag">stdout&nbsp;JSON</span>
-                    <span class="integration-tag muted">Grafana Loki (soon)</span>
-                    <span class="integration-tag muted">Splunk HEC (soon)</span>
-                    <span class="integration-tag muted">Datadog (soon)</span>
-                    <span class="integration-tag muted">Telegram (soon)</span>
-                </div>
-            </div>
-        </div>
-        <div style="text-align: center; margin-top: 2rem;">
-            <div style="display:flex;flex-direction:column;gap:0.5rem;align-items:center;">
-                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: file &nbsp;·&nbsp; path: /var/log/nginx/access.log</code>
-                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: syslog &nbsp;·&nbsp; addr: udp://0.0.0.0:5514 &nbsp;·&nbsp; no shared volume</code>
-                <code style="background:var(--bg-card);padding:0.6rem 1.5rem;border-radius:6px;font-size:0.875rem;color:var(--text-muted);">type: http &nbsp;·&nbsp; protocol: plain|cloudflare|firehose|pubsub|loki|otlp|azure|splunk|ndjson</code>
-            </div>
-        </div>
-    </section>
-
-    <section class="roadmap-section">
+        <section class="roadmap-section">
         <div class="section-header">
             <span class="section-tag" style="color: var(--accent-purple); border-color: rgba(189,0,255,0.3); background: rgba(189,0,255,0.08);">Roadmap</span>
             <h2 class="section-title">What's coming in v2.x</h2>
@@ -1269,13 +1398,18 @@ service arxsentinel start</span></pre>
         <div class="roadmap-grid">
         <div class="roadmap-card">
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-green);border:1px solid rgba(0,255,136,0.35);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">NEXT</span>
-                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 18h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v7.5" /><path d="M3 6l9 6l9 -6" /><path d="M15 18h6" /><path d="M18 15l3 3l-3 3" /></svg></span> Alert sinks</h3>
-                <p>Push threats to Telegram, Slack and PagerDuty — with built-in deduplication and rate-limiting so a burst never floods your channel.</p>
+                <h3><span style="color: var(--accent-purple)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> AWS WAF executor</h3>
+                <p>Push threat IPs directly into AWS WAF IP set rules. Integrates with existing WAF rule groups — no Lambda or custom infrastructure required.</p>
             </div>
             <div class="roadmap-card">
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
-                <h3><span style="color: var(--accent-purple)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> AWS WAF executor</h3>
-                <p>Push threat IPs directly into AWS WAF IP set rules. Integrates with existing WAF rule groups — no Lambda or custom infrastructure required.</p>
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 4l-2.5 2.5" /><path d="M13.5 10.5m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 12l-8.5 8.5" /><path d="M16 16l-4 4" /><path d="M20 4l-3.5 -1l-1 3.5l-1.5 1.5l3 3l1.5 -1.5l3.5 -1z" /></svg></span> SSH source + detectors</h3>
+                <p>Parse <code>sshd</code> auth logs (syslog/journald) and score brute-force / credential-stuffing patterns with dedicated detectors — the same scoring and executor pipeline you already use for HTTP.</p>
+            </div>
+            <div class="roadmap-card">
+                <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 18h-7a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v7.5" /><path d="M3 6l9 6l9 -6" /><path d="M15 18h6" /><path d="M18 15l3 3l-3 3" /></svg></span> Alert sinks</h3>
+                <p>Push threats to Telegram, Slack and PagerDuty — with built-in deduplication and rate-limiting so a burst never floods your channel.</p>
             </div>
         </div>
     </section>

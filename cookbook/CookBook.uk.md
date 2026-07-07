@@ -34,6 +34,7 @@ Sources → Processors → Sinks → Executors
 - [OpenWrt Executor (ubus/UCI firewall)](#openwrt)
 - [OPNsense Executor (REST API alias)](#opnsense)
 - [Nginx Executor (файл блокування + перезавантаження)](#nginx-executor)
+- [Обсервабільність (SIEM/log forwarders)](#обсервабільність)
 - [Інфраструктура: Конфігурації серверів](#server-configs)
 - [Інфраструктура: Зворотній проксі / Real-IP](#reverse-proxy)
 - [Інфраструктура: Kubernetes](#kubernetes)
@@ -206,6 +207,22 @@ ArxSentinel записує IP загроз у файл блокування су
 |------|-------------|
 | [nginx-executor/docker/config.yaml](nginx-executor/docker/config.yaml) | Конфігурація ArxSentinel для Docker + nginx executor |
 | [nginx-executor/docker/docker-compose.yml](nginx-executor/docker/docker-compose.yml) | Compose stack: arxsentinel з nginx blocklist reload |
+
+---
+
+## Обсервабільність
+
+ArxSentinel пересилає події загроз до зовнішньої платформи логування/SIEM
+(Grafana Loki, Splunk HEC або Datadog Logs API) замість виконання будь-яких
+блокувальних дій. Використовуйте ці sink'и, коли потрібна централізована
+агрегація логів, довгострокове зберігання, алертинг або кореляція з іншими
+джерелами в наявному стеці обсервабільності.
+
+| Рецепт | Опис | Файл |
+|--------|------|------|
+| Loki basic | Один сайт nginx + Grafana Loki Push API | [observability/loki-basic.yaml](observability/loki-basic.yaml) |
+| Splunk basic | Один сайт nginx + Splunk HEC | [observability/splunk-basic.yaml](observability/splunk-basic.yaml) |
+| Datadog basic | Один сайт nginx + Datadog Logs API v2 | [observability/datadog-basic.yaml](observability/datadog-basic.yaml) |
 
 ---
 

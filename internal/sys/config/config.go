@@ -172,6 +172,56 @@ type SinkConfig struct {
 	// own AttachWriter call runs, so AttachWriter becomes a no-op fan-in
 	// join onto the already-registered transport-backed queue.
 	Queue *queue.QueueConfig `yaml:"queue,omitempty"` // YAML: queue — optional backend for type=sentinel-threat outputs; nil = existing AttachWriter behaviour unchanged
+
+	// Loki-sink fields (Flow 097). Populated by host-side YAML for
+	// type="loki" sinks. Used only by pkg/sink/loki; ignored by other
+	// sinks. Mirror arx-core's pkgsink.SinkConfig 1:1 by name and type;
+	// YAML keys are snake_case derivations of the Go field names.
+	LokiURL           string            `yaml:"loki_url"`            // YAML: base URL of Loki push endpoint, e.g. "https://loki.example.com:3100". Required for type="loki".
+	LokiLabels        map[string]string `yaml:"loki_labels"`         // YAML: static set of stream labels, e.g. {job: arxsentinel}. Required (non-empty) for type="loki" — Loki rejects streams without at least one label.
+	LokiBatchSize     int               `yaml:"loki_batch_size"`     // YAML: max number of log lines per push request. No default here; pkg/sink/loki applies its own default if zero.
+	LokiFlushInterval string            `yaml:"loki_flush_interval"` // YAML: max time between flushes (e.g. "5s"); parsed via time.ParseDuration in pkg/sink/loki/config.go. No default here; pkg/sink/loki applies its own default if empty.
+	LokiTenantID      string            `yaml:"loki_tenant_id"`      // YAML: optional value for the X-Scope-OrgID header (multi-tenant Loki).
+	LokiUsername      string            `yaml:"loki_username"`       // YAML: optional HTTP Basic Auth username (Grafana Cloud convention: instance ID). LokiPassword must also be set.
+	LokiPassword      string            `yaml:"loki_password"`       // YAML: optional HTTP Basic Auth password (Grafana Cloud convention: API key). LokiUsername must also be set.
+	LokiGzip          bool              `yaml:"loki_gzip"`           // YAML: optional; if true, request body is gzipped and Content-Encoding: gzip is set.
+	LokiTLSCert       string            `yaml:"loki_tls_cert"`       // YAML: path to client TLS certificate (PEM). Optional; mTLS-style wiring.
+	LokiTLSKey        string            `yaml:"loki_tls_key"`        // YAML: path to client TLS private key (PEM). Optional.
+	LokiCACert        string            `yaml:"loki_ca_cert"`        // YAML: path to CA certificate (PEM) used to verify Loki. Optional.
+
+	// Splunk-sink fields (Flow 097). Populated by host-side YAML for
+	// type="splunk" sinks. Used only by pkg/sink/splunk; ignored by
+	// other sinks. Mirror arx-core's pkgsink.SinkConfig 1:1 by name and
+	// type; YAML keys are snake_case derivations of the Go field names.
+	SplunkURL           string `yaml:"splunk_url"`            // YAML: base URL of the Splunk HEC endpoint, e.g. "https://splunk-host:8088". Required for type="splunk".
+	SplunkToken         string `yaml:"splunk_token"`          // YAML: HEC token, sent as "Authorization: Splunk <token>". Required for type="splunk".
+	SplunkSourceType    string `yaml:"splunk_source_type"`    // YAML: optional static sourcetype value applied to every event.
+	SplunkSource        string `yaml:"splunk_source"`         // YAML: optional static source value applied to every event.
+	SplunkIndex         string `yaml:"splunk_index"`          // YAML: optional static index name applied to every event.
+	SplunkHost          string `yaml:"splunk_host"`           // YAML: optional static host value applied to every event.
+	SplunkBatchSize     int    `yaml:"splunk_batch_size"`     // YAML: max number of events per push request. No default here; pkg/sink/splunk applies its own default if zero.
+	SplunkFlushInterval string `yaml:"splunk_flush_interval"` // YAML: max time between flushes (e.g. "5s"); parsed via time.ParseDuration in pkg/sink/splunk/config.go. No default here.
+	SplunkGzip          bool   `yaml:"splunk_gzip"`           // YAML: optional; if true, request body is gzipped and Content-Encoding: gzip is set. HEC's JSON-mode endpoint supports this.
+	SplunkTLSCert       string `yaml:"splunk_tls_cert"`       // YAML: path to client TLS certificate (PEM). Optional; mTLS-style wiring.
+	SplunkTLSKey        string `yaml:"splunk_tls_key"`        // YAML: path to client TLS private key (PEM). Optional.
+	SplunkCACert        string `yaml:"splunk_ca_cert"`        // YAML: path to CA certificate (PEM) used to verify Splunk (HEC is commonly deployed with a self-signed cert). Optional.
+
+	// Datadog-sink fields (Flow 097). Populated by host-side YAML for
+	// type="datadog" sinks. Used only by pkg/sink/datadog; ignored by
+	// other sinks. Mirror arx-core's pkgsink.SinkConfig 1:1 by name and
+	// type; YAML keys are snake_case derivations of the Go field names.
+	DatadogURL           string `yaml:"datadog_url"`            // YAML: full base URL of the Datadog Logs intake endpoint, including region, e.g. "https://http-intake.logs.datadoghq.com". Required for type="datadog".
+	DatadogAPIKey        string `yaml:"datadog_api_key"`        // YAML: Datadog API key, sent as "DD-API-KEY: <key>" header. Required for type="datadog".
+	DatadogSource        string `yaml:"datadog_source"`         // YAML: optional static ddsource value applied to every log.
+	DatadogTags          string `yaml:"datadog_tags"`           // YAML: optional static ddtags value applied to every log; single comma-separated string (e.g. "env:prod,team:sre"), not a map — Datadog's own wire format.
+	DatadogHostname      string `yaml:"datadog_hostname"`       // YAML: optional static hostname value applied to every log.
+	DatadogService       string `yaml:"datadog_service"`        // YAML: optional static service value applied to every log.
+	DatadogBatchSize     int    `yaml:"datadog_batch_size"`     // YAML: max number of logs per push request; must be <= 1000 (Datadog's hard limit — pkg/sink/datadog/config.go rejects values above it). No default here; pkg/sink/datadog applies its own default if zero.
+	DatadogFlushInterval string `yaml:"datadog_flush_interval"` // YAML: max time between flushes (e.g. "5s"); parsed via time.ParseDuration in pkg/sink/datadog/config.go. No default here.
+	DatadogGzip          bool   `yaml:"datadog_gzip"`           // YAML: optional; if true, request body is gzipped and Content-Encoding: gzip is set. Datadog recommends this for production; default is operator opt-in (false).
+	DatadogTLSCert       string `yaml:"datadog_tls_cert"`       // YAML: path to client TLS certificate (PEM). Optional; mTLS-style wiring — uncommon for Datadog's public endpoints.
+	DatadogTLSKey        string `yaml:"datadog_tls_key"`        // YAML: path to client TLS private key (PEM). Optional.
+	DatadogCACert        string `yaml:"datadog_ca_cert"`        // YAML: path to CA certificate (PEM) used to verify Datadog. Optional — Datadog's public endpoints use publicly-trusted certs; this is for corporate TLS-inspecting proxies.
 }
 
 // ExecutorItem — configuration for a single executor instance (legacy).
@@ -1400,6 +1450,22 @@ func validateSinks(sinks []SinkConfig) error {
 		seen[key] = true
 		if s.Type == "file" && s.Path == "" {
 			return fmt.Errorf("outputs[%d]: type=file requires path", i)
+		}
+		// Observability/SIEM-forwarding sinks (Flow 097 Decision 9): fail-fast
+		// on missing required fields so misconfigurations surface at config
+		// load time, not when arx-core's sink.New rejects the empty payload.
+		// Coupled-field pairs (TLSCert/TLSKey, Username/Password) and deep
+		// schema validation (batch size limits, scheme prefix) remain
+		// arx-core's parseConfig responsibility — these checks are only a
+		// required-field sanity gate.
+		if s.Type == "loki" && (s.LokiURL == "" || len(s.LokiLabels) == 0) {
+			return fmt.Errorf("outputs[%d]: type=loki requires loki_url and loki_labels", i)
+		}
+		if s.Type == "splunk" && (s.SplunkURL == "" || s.SplunkToken == "") {
+			return fmt.Errorf("outputs[%d]: type=splunk requires splunk_url and splunk_token", i)
+		}
+		if s.Type == "datadog" && (s.DatadogURL == "" || s.DatadogAPIKey == "") {
+			return fmt.Errorf("outputs[%d]: type=datadog requires datadog_url and datadog_api_key", i)
 		}
 		if s.Format != "" && s.Format != "fail2ban" && s.Format != "json" && s.Format != "sentinel-threat" && s.Format != "raw-line" {
 			return fmt.Errorf("outputs[%d]: unknown format %q (want fail2ban, json, sentinel-threat, or raw-line)", i, s.Format)

@@ -1,0 +1,114 @@
+# ====================== cookbook/observability/datadog-basic.yaml ========================
+#
+#   nginx combined log + Datadog Logs API v2.
+#   Forwards WARN/THREAT events to Datadog for centralised log indexing,
+#   dashboards, and monitors. Single source, single sink.
+#
+#   Datadog regional endpoints:
+#     US1:  https://http-intake.logs.datadoghq.com
+#     US3:  https://http-intake.logs.us3.datadoghq.com
+#     US5:  https://http-intake.logs.us5.datadoghq.com
+#     EU1:  https://http-intake.logs.datadoghq.eu
+#     AP1:  https://http-intake.logs.ap1.datadoghq.com
+#   See arx-core's pkg/sink/datadog/README.md for the current list.
+#
+# ========================================================================================
+
+# ── SOURCES ──────────────────────────────────────────────────────────────────────────────
+streams:
+  - name: main
+    inputs:
+      - type: file
+        path: /var/log/nginx/access.log   # adjust to your nginx access log path
+        parser: combined
+    outputs:
+      - type: datadog
+        datadog_url: "https://http-intake.logs.datadoghq.com"   # full base URL of the Datadog Logs intake
+        datadog_api_key: "YOUR_DATADOG_API_KEY"                 # Datadog API key (Organisation Settings → API Keys)
+        format: json                                             # JSON envelope; consumed cleanly by Datadog log explorer
+
+# ── PROCESSORS: Scoring ─────────────────────────────────────────────────────────────────
+scoring:
+  alert_threshold: 50     # score ≥ N → WARN event; int, 1..(ban_threshold-1), default: 50
+  ban_threshold: 75       # score ≥ N → THREAT + executor action; int, >(alert_threshold), default: 80
+  observation_window: "300s" # score accumulation window; duration: "60s"|"5m"|"1h", default: "300s"
+  decay: "0"              # score decay toward end of window; "linear" | "0" (no decay), default: "linear"
+
+# ── PROCESSORS: Detectors ───────────────────────────────────────────────────────────────
+detectors:
+
+  probe:
+    enabled: true           # enable/disable; bool, default: true
+    score: 25               # points added per probe request; int, 1..100+, default: 25
+
+  bruteforce:
+    enabled: true           # enable/disable; bool, default: true
+    min_requests: 10        # minimum total requests before activating; int, ≥1, default: 10
+    ratio_threshold: 0.6    # fraction of 404 responses to trigger; float, 0.0..1.0, default: 0.6
+    score: 30               # points added on trigger; int, 1..100+, default: 30
+
+  crawler:
+    enabled: true           # enable/disable; bool, default: true
+    min_sequential: 5       # min sequential numeric URLs to trigger; int, ≥2, default: 5
+    score: 20               # points added on trigger; int, 1..100+, default: 20
+
+  noasset:
+    enabled: true           # enable/disable; bool, default: true
+    min_page_requests: 3    # min HTML page requests before activating; int, ≥1, default: 3
+    asset_ratio_threshold: 0.1 # max fraction of asset requests to still trigger; float, 0.0..1.0, default: 0.1
+    score: 20               # points added on trigger; int, 1..100+, default: 20
+
+  rate:
+    enabled: true           # enable/disable; bool, default: true
+    window: "60s"           # time window for counting requests; duration: "30s"|"60s"|"5m", default: "60s"
+    threshold: 100          # max requests per window before trigger; int, ≥1, default: 100
+    score: 25               # points added on trigger; int, 1..100+, default: 25
+
+  useragent:
+    enabled: true           # enable/disable; bool, default: true
+    scanner_score: 40       # points for scanner UA (Nuclei, sqlmap, Nikto...); int, 1..100+, default: 40
+    grabber_score: 20       # points for grabber UA (HTTrack, wget, Scrapy...); int, 1..100+, default: 20
+    automation_score: 15    # points for automation UA (python-requests, aiohttp...); int, 1..100+, default: 15
+    empty_ua_score: 30      # points for missing User-Agent header; int, 1..100+, default: 30
+    extra_scanner_patterns: []    # additional scanner UA substrings (case-insensitive); list of strings
+    extra_grabber_patterns: []    # additional grabber UA substrings; list of strings
+    extra_automation_patterns: [] # additional automation UA substrings; list of strings
+
+  overflow:
+    enabled: true           # enable/disable; bool, default: true
+    max_url_length: 2048    # URL length limit; int, ≥64, default: 2048
+    score: 30               # points added on trigger; int, 1..100+, default: 30
+
+  badbot:
+    enabled: true           # enable/disable community bad-bot blocklist matching; bool, default: true
+    score: 60               # points added on match; int, 1..100+, default: 60
+    check_ua: true          # match against bad-bot UA list; bool, default: true
+    check_referrer: false   # match against bad referrer list; bool, default: false
+
+# ── PROCESSORS: Whitelist ───────────────────────────────────────────────────────────────
+whitelist:
+  custom:
+    ips: []      # trusted individual IPs; list of strings: ["1.2.3.4", "5.6.7.8"]
+    cidrs: []    # trusted IP ranges; list of strings: ["10.0.0.0/8", "192.168.0.0/16"]
+    ua_substrings: []  # trusted UA substrings (case-insensitive); list of strings: ["MyMonitor/", "healthcheck"]
+    paths: []  # skip scoring for these URL prefixes; example: ["/ws", "/health", "/api/internal"]
+
+# ── chain_guard: proxy chain integrity check (disabled by default) ──────────────────────
+# chain_guard:
+#   enabled: true
+#   warnings_log: /var/log/arxsentinel/warnings.log
+
+# Optional Datadog tuning — comment out to accept defaults. See
+# cookbook/config.reference.yaml for the full field list and arx-core's
+# pkg/sink/datadog/README.md for wire-format details and regional URLs.
+#
+#   datadog_source:   "nginx"          # ddsource — service emitting the log
+#   datadog_service:  "arxsentinel"    # service tag
+#   datadog_hostname: "edge-01"        # hostname tag; overrides per-event hostname
+#   datadog_tags:     "env:prod,team:security"  # comma-separated ddtags
+#   datadog_batch_size: 500            # max logs per push; int, ≤1000, default 500
+#   datadog_flush_interval: "5s"       # max time between flushes; duration, default "5s"
+#   datadog_gzip:     true             # gzip-encode request bodies; bool, default false
+#   datadog_tls_cert: /etc/ssl/datadog/client.crt
+#   datadog_tls_key:  /etc/ssl/datadog/client.key
+#   datadog_ca_cert:  /etc/ssl/datadog/ca.crt
