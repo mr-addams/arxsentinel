@@ -651,6 +651,8 @@ Helm chart with values reference: [Kubernetes README](deploy/container/k8s/arxse
 
 Executors are stateful action plugins that run after threat scoring. Unlike Sinks (passive log writers), Executors actively manage external resources: they maintain a local dedup map, apply TTL-based expiry, and track execution statistics.
 
+> **Terminology note:** "Executor" is the plugin/config term (`executors:` in YAML, `pkg/executorplugins/*` in code) — used throughout this README and the codebase. In a [Distributed NCS](docs/DISTRIBUTED.md) topology, the node that runs executors is called a **Responder** (paired with **Collector** and **Detector** as the three node roles) — same plugins, different vocabulary for describing *where* they run in a multi-machine deployment.
+
 | Executor | Package | Description |
 |---|---|---|
 | **cloudflare** | `pkg/executor/cloudflare` | Adds threat IPs to a Cloudflare IP List; auto-removes expired entries via TTL sweep |
