@@ -927,6 +927,7 @@ ArxSentinel підтримує три режими форматів: **combined*
 
 - **Alert sinks** — надсилання загроз до Telegram, Slack та PagerDuty з дедуплікацією та rate-limiting
 - **AWS WAF executor** — оновлення IP-наборів для AWS WAF rule-груп
+- **SSH-джерело + детектори** — парсинг auth-логів `sshd` (syslog/journald) і скоринг brute-force/credential-stuffing патернів виділеними детекторами, з перевикористанням того самого pipeline скорингу та executor'ів, що й для HTTP
 
 ---
 

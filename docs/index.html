@@ -1118,6 +1118,27 @@ service arxsentinel start</span></pre>
         </div>
     </section>
 
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Open Plugin Architecture</span>
+            <h2 class="section-title">Five interfaces. Write yours in any language.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg></span> Five typed plugin roles</h3>
+                <p><strong>Source / Sink / Detector / Processor / Executor</strong> — each a small Go interface in <code>pkg/plugin/</code>. Plugins register themselves in <code>init()</code>: no central factory list, the framework discovers them by name. Compose the pipeline from roles, not from internal hooks.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg></span> Any language, no Go required</h3>
+                <p>The <strong>exec+JSON</strong> protocol: a subprocess that reads a JSON object per event from stdin and writes a JSON response to stdout. Extend detection, add a sink, write an executor in Python, Bash, or anything that can speak a byte stream — ArxSentinel owns the subprocess lifecycle (spawn, stdin/stdout wiring, shutdown).</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12l5 5l10 -10" /></svg></span> Proven, not theoretical</h3>
+                <p>Five shipped executor plugins — <strong>Cloudflare, MikroTik, OpenWrt, OPNsense, nginx</strong> — and the three observability sinks just added (<strong>Loki, Splunk, Datadog</strong>) all use the same public plugin interfaces you would. No internal fast path, no privileged access: if it works for the bundled plugins, it works for yours.</p>
+            </div>
+        </div>
+    </section>
+
 <section class="whitelist-section">
         <div class="section-header">
             <span class="section-tag">v2.2.4 Capabilities</span>
@@ -1297,6 +1318,11 @@ service arxsentinel start</span></pre>
                 <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
                 <h3><span style="color: var(--accent-purple)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg></span> AWS WAF executor</h3>
                 <p>Push threat IPs directly into AWS WAF IP set rules. Integrates with existing WAF rule groups — no Lambda or custom infrastructure required.</p>
+            </div>
+            <div class="roadmap-card">
+                <span style="display:inline-block;font-size:0.7rem;font-family:var(--font-cyber);color:var(--accent-blue);border:1px solid rgba(0,170,255,0.3);border-radius:3px;padding:0.1rem 0.5rem;margin-bottom:0.75rem;letter-spacing:0.08em;">PLANNED</span>
+                <h3><span style="color: var(--accent-green)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M20 4l-2.5 2.5" /><path d="M13.5 10.5m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 12l-8.5 8.5" /><path d="M16 16l-4 4" /><path d="M20 4l-3.5 -1l-1 3.5l-1.5 1.5l3 3l1.5 -1.5l3.5 -1z" /></svg></span> SSH source + detectors</h3>
+                <p>Parse <code>sshd</code> auth logs (syslog/journald) and score brute-force / credential-stuffing patterns with dedicated detectors — the same scoring and executor pipeline you already use for HTTP.</p>
             </div>
         </div>
     </section>

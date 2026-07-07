@@ -978,6 +978,7 @@ In active development for v2.x:
 
 - **Alert sinks** — push threats to Telegram, Slack and PagerDuty with deduplication and rate-limiting
 - **AWS WAF executor** — IP set updates for AWS WAF rule groups
+- **SSH source + detectors** — parse `sshd` auth logs (syslog/journald) and score brute-force/credential-stuffing patterns with dedicated detectors, reusing the same scoring/executor pipeline as HTTP
 
 ---
 
