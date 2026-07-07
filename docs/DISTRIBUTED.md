@@ -341,10 +341,13 @@ Key properties for a corporate evaluation:
   every topology in this guide is exercised by CI with real containers on
   every merge.
 
-**Today's SIEM paths**: `exec+JSON` sink (any script/binary — HEC uploader,
-Kafka producer, S3 writer), `file` sink in JSON format (picked up by any
-existing forwarder), `stdout` JSON (container log pipelines). Native Splunk
-HEC / Loki / Datadog sinks are on the [roadmap](https://mr-addams.github.io/arxsentinel/#roadmap).
+**SIEM paths today**: native **Splunk HEC**, **Loki**, and **Datadog** sinks
+(quick-start recipes in [`cookbook/observability/`](../cookbook/observability/))
+cover the three most common corporate targets out of the box. For anything
+else — Kafka, S3, a custom HEC uploader, an in-house bus — the generic
+`exec+JSON` sink wraps any script or binary, the `file` sink drops JSON for
+an existing forwarder to pick up, and `stdout` JSON feeds container log
+pipelines.
 
 ## Operations
 
