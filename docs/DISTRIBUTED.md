@@ -68,7 +68,7 @@ the pipeline you enable:
 |------|--------------|-----------|
 | **Collector** | Tails/receives logs, parses them, forwards **unscored** entries. Cheap: no tracker state, no detector work. Runs happily on a Raspberry Pi or a 128 MB VPS. | `raw_forward: true` + transport sink (`mode: send`) |
 | **Detector** | Receives entries from any number of collectors, runs the full detector chain (8 behavioural detectors, WAF rules, whitelist, scoring), forwards **scored verdicts** onward. One place to tune thresholds for the whole fleet. | transport source (`mode: raw`, queue `mode: recv`) + transport sink for verdicts |
-| **Responder** | Receives scored verdicts and enforces: nginx blocklist, MikroTik address-list, OpenWrt ipset, Cloudflare WAF, or your own exec+JSON executor. Lives next to the enforcement point — credentials never leave that node. | `executors:` with a transport-backed source (queue `mode: recv`) |
+| **Responder** | Receives scored verdicts and enforces: nginx blocklist, MikroTik address-list, OpenWrt ipset, OPNsense alias, Cloudflare WAF, or your own exec+JSON executor. Lives next to the enforcement point — credentials never leave that node. | `executors:` with a transport-backed source (queue `mode: recv`) |
 
 Roles combine freely: a node can detect **and** respond, collect **and**
 detect locally while forwarding only high-severity verdicts, and so on. A
