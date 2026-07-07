@@ -18,6 +18,8 @@ plugins:
       module: arxsentinel
     - name: openwrt
       module: arxsentinel
+    - name: opnsense
+      module: arxsentinel
   detectors:
     - name: probe
     - name: rate
