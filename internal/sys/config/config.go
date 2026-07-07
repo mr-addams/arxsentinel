@@ -1451,6 +1451,22 @@ func validateSinks(sinks []SinkConfig) error {
 		if s.Type == "file" && s.Path == "" {
 			return fmt.Errorf("outputs[%d]: type=file requires path", i)
 		}
+		// Observability/SIEM-forwarding sinks (Flow 097 Decision 9): fail-fast
+		// on missing required fields so misconfigurations surface at config
+		// load time, not when arx-core's sink.New rejects the empty payload.
+		// Coupled-field pairs (TLSCert/TLSKey, Username/Password) and deep
+		// schema validation (batch size limits, scheme prefix) remain
+		// arx-core's parseConfig responsibility — these checks are only a
+		// required-field sanity gate.
+		if s.Type == "loki" && (s.LokiURL == "" || len(s.LokiLabels) == 0) {
+			return fmt.Errorf("outputs[%d]: type=loki requires loki_url and loki_labels", i)
+		}
+		if s.Type == "splunk" && (s.SplunkURL == "" || s.SplunkToken == "") {
+			return fmt.Errorf("outputs[%d]: type=splunk requires splunk_url and splunk_token", i)
+		}
+		if s.Type == "datadog" && (s.DatadogURL == "" || s.DatadogAPIKey == "") {
+			return fmt.Errorf("outputs[%d]: type=datadog requires datadog_url and datadog_api_key", i)
+		}
 		if s.Format != "" && s.Format != "fail2ban" && s.Format != "json" && s.Format != "sentinel-threat" && s.Format != "raw-line" {
 			return fmt.Errorf("outputs[%d]: unknown format %q (want fail2ban, json, sentinel-threat, or raw-line)", i, s.Format)
 		}
