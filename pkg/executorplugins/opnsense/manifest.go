@@ -4,9 +4,9 @@
 //
 //   WHAT IS HERE:
 //     OpnsenseExecutor struct (storage and collaborators needed by the
-//     Run / sweep logic in Task 4), Name/Type/Manifest methods, and a
-//     TEMPORARY Client stub interface (replaced in Task 3 by the real
-//     client.go surface).
+//     Run / sweep logic in Task 4), Name/Type/Manifest methods. The
+//     Client interface (used by the `client` field below) is defined
+//     in client.go (Task 3) and resolved via same-package lookup.
 //
 //   WHAT IS NOT HERE:
 //     Run/sweep implementation (executor.go, Task 4), REST client
@@ -23,20 +23,6 @@ import (
 	"github.com/mr-addams/arx-core/pkg/logger"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 )
-
-// Client is a TEMPORARY stub interface declaring the surface area of the
-// OPNsense REST client that OpnsenseExecutor depends on.
-//
-// TASK 3 WILL REPLACE THIS STUB. The real interface (with
-// AddEntry / DeleteEntry / ListEntries / SearchAlias methods, etc.) will
-// be defined in client.go and this stub deleted. Keeping the stub here
-// (rather than referencing a non-existent type) is what allows the package
-// to compile in Task 2 — the field on OpnsenseExecutor is needed today so
-// the struct can be sized and the per-IP ban map and sweep logic can be
-// planned in the next task.
-type Client interface {
-	// Placeholder — no methods. Real interface defined in client.go (Task 3).
-}
 
 // OpnsenseExecutor manages a single OPNsense alias (alias_util) and bans /
 // unbans IPs over the firewall's REST API.
