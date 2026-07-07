@@ -416,6 +416,9 @@
 
         .whitelist-section { max-width: 1200px; margin: 6rem auto; }
         .whitelist-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; padding: 0 2rem; }
+        /* Fixed 3-column grid — used where card count is a multiple of 3 and rows
+           should never leave an orphan card (Enforcement section: 6 cards, 2 rows). */
+        .enforcement-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.5rem; padding: 0 2rem; }
         .whitelist-card {
             flex: 0 1 260px;
             background: rgba(13, 13, 31, 0.4); border: 1px solid rgba(255, 255, 255, 0.03);
@@ -542,6 +545,7 @@
             /* ── Whitelist ── */
             .whitelist-section { margin: 3rem auto; }
             .whitelist-grid { padding: 0 1rem; gap: 1rem; }
+            .enforcement-grid { grid-template-columns: 1fr; padding: 0 1rem; gap: 1rem; }
             .whitelist-card { flex: 1 1 100%; }
 
             /* ── Footer ── */
@@ -1073,7 +1077,11 @@ service arxsentinel start</span></pre>
             <span class="section-tag">Enforcement</span>
             <h2 class="section-title">Ban at the layer that fits your stack</h2>
         </div>
-        <div class="whitelist-grid">
+        <div class="enforcement-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z" /><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0 -2 0" /><path d="M8 11v-4a4 4 0 1 1 8 0v4" /></svg></span> Fail2Ban</h3>
+                <p>Write threat events to a log file in the classic Fail2Ban format. No new infrastructure — the default output, and still the fastest path to a working ban on any Linux box.</p>
+            </div>
             <div class="whitelist-card">
                 <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6.657 18c-2.572 0 -4.657 -2.007 -4.657 -4.483c0 -2.475 2.085 -4.482 4.657 -4.482c.393 -1.762 1.794 -3.2 3.675 -3.773c1.88 -.572 3.956 -.193 5.444 1c1.488 1.19 2.162 3.007 1.77 4.769h.99c1.913 0 3.464 1.56 3.464 3.486c0 1.927 -1.551 3.487 -3.465 3.487h-11.878" /></svg></span> Cloudflare WAF</h3>
                 <p>Add threat IPs to a Cloudflare IP List and ban them at the network edge — no iptables, no host firewall. Batch operations, async polling, automatic TTL expiry and cross-instance dedup.</p>
