@@ -1,24 +1,24 @@
 // ====== Module: opnsense — client ===============================================
-//   HTTP client for OPNsense firewall REST API (alias_util operations).
-//   Supports: AddEntry, DeleteEntry, ListEntries on a single pre-existing alias.
 //
-//   WHAT IS HERE:
-//     Client interface, HTTPClient implementation, request/response helpers,
-//     response-parsing for the `alias_util/list` payload.
+//	HTTP client for OPNsense firewall REST API (alias_util operations).
+//	Supports: AddEntry, DeleteEntry, ListEntries on a single pre-existing alias.
 //
-//   WHAT IS NOT HERE:
-//     Executor business logic (executor.go, Task 4), config parsing
-//     (config.go, Task 2), registration (register.go, Task 5).
+//	WHAT IS HERE:
+//	  Client interface, HTTPClient implementation, request/response helpers,
+//	  response-parsing for the `alias_util/list` payload.
 //
-//   API surface (verified through opnsense-expert, see DECISIONS.md
-//   Decision 2):
-//     POST /api/firewall/alias_util/add/{alias_name}    {"address":"1.2.3.4"}
-//     POST /api/firewall/alias_util/delete/{alias_name} {"address":"1.2.3.4"}
-//     GET  /api/firewall/alias_util/list/{alias_name}
-//   Authentication: HTTP Basic Auth — username=cfg.APIKey, password=cfg.APISecret.
-//   Success bodies: {"result":"saved"} or {"result":"ok"}.
-//   Error bodies:   {"result":"failed","message":"..."}.
-
+//	WHAT IS NOT HERE:
+//	  Executor business logic (executor.go, Task 4), config parsing
+//	  (config.go, Task 2), registration (register.go, Task 5).
+//
+//	API surface (verified through opnsense-expert, see DECISIONS.md
+//	Decision 2):
+//	  POST /api/firewall/alias_util/add/{alias_name}    {"address":"1.2.3.4"}
+//	  POST /api/firewall/alias_util/delete/{alias_name} {"address":"1.2.3.4"}
+//	  GET  /api/firewall/alias_util/list/{alias_name}
+//	Authentication: HTTP Basic Auth — username=cfg.APIKey, password=cfg.APISecret.
+//	Success bodies: {"result":"saved"} or {"result":"ok"}.
+//	Error bodies:   {"result":"failed","message":"..."}.
 package opnsense
 
 import (

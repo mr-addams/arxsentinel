@@ -1,24 +1,24 @@
 // ========================== Overflow detector ============================================
-//   Detects buffer overflow attempts and WAF bypass:
-//   anomalous URL length, suspicious keywords in path/parameters.
 //
-//   ALGORITHM:
-//     1. Build full URL: Path + "?" + Query (if Query is not empty).
-//     2. If len(fullURL) > max_url_length → buffer overflow attempt, score.
-//     3. Otherwise: if fullURL contains any suspicious_params (case-insensitive) → WAF bypass, score.
+//	Detects buffer overflow attempts and WAF bypass:
+//	anomalous URL length, suspicious keywords in path/parameters.
 //
-//   WHY ONE SCORE FOR BOTH CONDITIONS:
-//     Both indicators imply the same threat class — an attempt to bypass protection
-//     or trigger a vulnerability. Splitting score would require two separate detectors.
+//	ALGORITHM:
+//	  1. Build full URL: Path + "?" + Query (if Query is not empty).
+//	  2. If len(fullURL) > max_url_length → buffer overflow attempt, score.
+//	  3. Otherwise: if fullURL contains any suspicious_params (case-insensitive) → WAF bypass, score.
 //
-//   Params (DetectorConfig.Params):
-//     max_url_length     int      — max URL byte length before trigger (default: 2048)
-//     suspicious_params  []string — keywords triggering WAF bypass detection
-//                                   (default: bypass, shell, cmd, exec, eval, system, passthru)
-//     score              int      — threat score on trigger (default: 30)
+//	WHY ONE SCORE FOR BOTH CONDITIONS:
+//	  Both indicators imply the same threat class — an attempt to bypass protection
+//	  or trigger a vulnerability. Splitting score would require two separate detectors.
 //
-//   Registered as "overflow" via init().
-
+//	Params (DetectorConfig.Params):
+//	  max_url_length     int      — max URL byte length before trigger (default: 2048)
+//	  suspicious_params  []string — keywords triggering WAF bypass detection
+//	                                (default: bypass, shell, cmd, exec, eval, system, passthru)
+//	  score              int      — threat score on trigger (default: 30)
+//
+//	Registered as "overflow" via init().
 package overflow
 
 import (

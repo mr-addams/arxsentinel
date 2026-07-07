@@ -1,12 +1,12 @@
 // ========================== Healthcheck — TCP + HTTP probe ============================
-//   Tiny healthcheck binary for distroless Docker images (no curl or shell).
-//   Checks: TCP connect to localhost:9117 + HTTP GET /health → {"status":"ok"}.
 //
-//   Built alongside arxsentinel in the Dockerfile multi-stage build.
-//   Exit code 0 = healthy, 1 = unhealthy.
+//	Tiny healthcheck binary for distroless Docker images (no curl or shell).
+//	Checks: TCP connect to localhost:9117 + HTTP GET /health → {"status":"ok"}.
+//
+//	Built alongside arxsentinel in the Dockerfile multi-stage build.
+//	Exit code 0 = healthy, 1 = unhealthy.
 //
 // =========================================================================================
-
 package main
 
 import (

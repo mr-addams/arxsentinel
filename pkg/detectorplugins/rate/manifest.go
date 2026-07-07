@@ -1,7 +1,7 @@
 // ========================== Rate detector manifest ======================================
-//   Manifest for the rate detector. Moved to sub-package to keep package detector
-//   free of plugin-specific metadata once all detectors are migrated (Flow 076).
-
+//
+//	Manifest for the rate detector. Moved to sub-package to keep package detector
+//	free of plugin-specific metadata once all detectors are migrated (Flow 076).
 package rate
 
 import "github.com/mr-addams/arx-core/pkg/plugin"

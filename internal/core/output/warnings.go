@@ -1,25 +1,25 @@
 // ========================== Module output/warnings ======================================
-//   Writing chain-integrity infrastructure warnings to a dedicated file.
 //
-//   WHAT IS HERE:
-//     WarningsWriter   — thread-safe file writer for CHAIN_WARN events
-//     WriteChainWarning — formats and appends one warning line per CheckResult
-//     Reopen           — closes and reopens the file descriptor (logrotate support)
+//	Writing chain-integrity infrastructure warnings to a dedicated file.
 //
-//   LINE FORMAT (machine-readable, space-separated key=value):
-//     2026-05-20T12:34:56Z CHAIN_WARN cloudflare-ip-as-client ip=1.2.3.4 cidr=104.16.0.0/13 log=/var/log/nginx/access.log
-//     2026-05-20T12:34:56Z CHAIN_WARN bogon-ip-as-client ip=10.0.0.1 cidr=10.0.0.0/8 log=/var/log/apache/access.log
+//	WHAT IS HERE:
+//	  WarningsWriter   — thread-safe file writer for CHAIN_WARN events
+//	  WriteChainWarning — formats and appends one warning line per CheckResult
+//	  Reopen           — closes and reopens the file descriptor (logrotate support)
 //
-//   DISTINCTION FROM ThreatLogger:
-//     ThreatLogger reports attacker activity (scored events, Fail2Ban-compatible).
-//     WarningsWriter reports infrastructure misconfiguration — not an attack,
-//     but a broken proxy chain that prevents ArxSentinel from seeing the real attacker IP.
+//	LINE FORMAT (machine-readable, space-separated key=value):
+//	  2026-05-20T12:34:56Z CHAIN_WARN cloudflare-ip-as-client ip=1.2.3.4 cidr=104.16.0.0/13 log=/var/log/nginx/access.log
+//	  2026-05-20T12:34:56Z CHAIN_WARN bogon-ip-as-client ip=10.0.0.1 cidr=10.0.0.0/8 log=/var/log/apache/access.log
 //
-//   WHAT IS NOT HERE:
-//     Threat events (output/logger.go)
-//     Console logging (sys/utils)
-//     Score aggregation (scorer/)
-
+//	DISTINCTION FROM ThreatLogger:
+//	  ThreatLogger reports attacker activity (scored events, Fail2Ban-compatible).
+//	  WarningsWriter reports infrastructure misconfiguration — not an attack,
+//	  but a broken proxy chain that prevents ArxSentinel from seeing the real attacker IP.
+//
+//	WHAT IS NOT HERE:
+//	  Threat events (output/logger.go)
+//	  Console logging (sys/utils)
+//	  Score aggregation (scorer/)
 package output
 
 import (

@@ -1,19 +1,19 @@
 // ========================== Rate detector ===============================================
-//   Detects anomalous request rate spikes: N requests over a sliding window.
-//   The ApproxRate algorithm (two-counter sliding window) is implemented in state.IPState.
 //
-//   ALGORITHM:
-//     thresholdRPS = Threshold / window.Seconds()
-//     If IP.ApproxRate(window) > thresholdRPS → score.
-//     Conversion done once in factory — hot path is a single float64 comparison.
+//	Detects anomalous request rate spikes: N requests over a sliding window.
+//	The ApproxRate algorithm (two-counter sliding window) is implemented in state.IPState.
 //
-//   Params (DetectorConfig.Params):
-//     threshold  int    — max requests per window (default: 100)
-//     window     string — sliding window duration, e.g. "60s" (default: "60s")
-//     score      int    — threat score on trigger (default: 25)
+//	ALGORITHM:
+//	  thresholdRPS = Threshold / window.Seconds()
+//	  If IP.ApproxRate(window) > thresholdRPS → score.
+//	  Conversion done once in factory — hot path is a single float64 comparison.
 //
-//   Registered as "rate" via init() in sub-package rate.
-
+//	Params (DetectorConfig.Params):
+//	  threshold  int    — max requests per window (default: 100)
+//	  window     string — sliding window duration, e.g. "60s" (default: "60s")
+//	  score      int    — threat score on trigger (default: 25)
+//
+//	Registered as "rate" via init() in sub-package rate.
 package rate
 
 import (

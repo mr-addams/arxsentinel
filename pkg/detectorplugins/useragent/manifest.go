@@ -1,6 +1,6 @@
 // ========================== UserAgent manifest =========================================
-//   Identity and data contract for the useragent detector plugin.
-
+//
+//	Identity and data contract for the useragent detector plugin.
 package useragent
 
 import "github.com/mr-addams/arx-core/pkg/plugin"

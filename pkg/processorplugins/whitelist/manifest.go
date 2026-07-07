@@ -1,7 +1,7 @@
 // ====== Module: whitelist — manifest ==========================================
-//   Plugin identity and data contract for the whitelist processor.
-//   Declares: Role=Processor, Input=TypeStructured, Output=TypeStructured.
-
+//
+//	Plugin identity and data contract for the whitelist processor.
+//	Declares: Role=Processor, Input=TypeStructured, Output=TypeStructured.
 package whitelist
 
 import "github.com/mr-addams/arx-core/pkg/plugin"

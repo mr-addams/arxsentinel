@@ -1,17 +1,17 @@
 // ========================== Profile plugin-file generator ===========================
-//   Reads profiles/*.yaml and emits cmd/arxsentinel/plugins_<name>.go for each
-//   non-full profile. Generated files carry `//go:build arx_tag && <name>` and
-//   register the profile's transports via blank-imports.
 //
-//   Phase 1: the `module` field is parsed but ignored — import paths are derived
-//   from the single monorepo path `github.com/mr-addams/arxsentinel/pkg/<kind>/<name>`.
-//   Phase 2.1.4 will activate `module` when the physical arx-core split happens.
+//	Reads profiles/*.yaml and emits cmd/arxsentinel/plugins_<name>.go for each
+//	non-full profile. Generated files carry `//go:build arx_tag && <name>` and
+//	register the profile's transports via blank-imports.
 //
-//   Driven by the `//go:generate` directive in cmd/arxsentinel/main.go:
-//     //go:generate go run ./tools/gen-plugins -profiles ../../profiles -out .
+//	Phase 1: the `module` field is parsed but ignored — import paths are derived
+//	from the single monorepo path `github.com/mr-addams/arxsentinel/pkg/<kind>/<name>`.
+//	Phase 2.1.4 will activate `module` when the physical arx-core split happens.
 //
-//   See: docs/architecture/adr/003-build-modularity.md, DECISIONS.md Flow 075.
-
+//	Driven by the `//go:generate` directive in cmd/arxsentinel/main.go:
+//	  //go:generate go run ./tools/gen-plugins -profiles ../../profiles -out .
+//
+//	See: docs/architecture/adr/003-build-modularity.md, DECISIONS.md Flow 075.
 package main
 
 import (
@@ -161,7 +161,7 @@ func emit(path, name string, p profileSchema) error {
 	fmt.Fprintf(&b, "// ========================== Plugin blank-imports — %s profile =======================\n", name)
 	fmt.Fprintf(&b, "//   Side-effect registration of plugins declared in profiles/%s.yaml.\n", name)
 	fmt.Fprintf(&b, "//   Active only under build tags: -tags \"arx_tag %s\".\n", name)
-	fmt.Fprintf(&b, "//   See docs/architecture/adr/003-build-modularity.md and DECISIONS.md Flow 075.\n\n")
+	fmt.Fprintf(&b, "//   See docs/architecture/adr/003-build-modularity.md and DECISIONS.md Flow 075.\n")
 	fmt.Fprintf(&b, "package main\n\n")
 	fmt.Fprintf(&b, "import (\n")
 	for _, imp := range imports {

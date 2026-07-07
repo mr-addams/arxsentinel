@@ -1,17 +1,17 @@
 // ====== Module: openwrt — client ===============================================
-//   HTTP client for the OpenWrt ubus JSON-RPC 2.0 endpoint (uhttpd-mod-ubus).
-//   Handles session.login, automatic re-authentication, and UCI / rc.init calls
-//   used by the executor to manage an nftables ipset via UCI edits and a
-//   firewall reload — see DECISIONS.md Decision 3 and Decision 4.
 //
-//   WHAT IS HERE:
-//     Client interface, HTTPClient implementation, session lifecycle, low-level
-//     JSON-RPC envelope plumbing.
+//	HTTP client for the OpenWrt ubus JSON-RPC 2.0 endpoint (uhttpd-mod-ubus).
+//	Handles session.login, automatic re-authentication, and UCI / rc.init calls
+//	used by the executor to manage an nftables ipset via UCI edits and a
+//	firewall reload — see DECISIONS.md Decision 3 and Decision 4.
 //
-//   WHAT IS NOT HERE:
-//     Executor business logic (executor.go), config parsing (config.go),
-//     registration (register.go).
-
+//	WHAT IS HERE:
+//	  Client interface, HTTPClient implementation, session lifecycle, low-level
+//	  JSON-RPC envelope plumbing.
+//
+//	WHAT IS NOT HERE:
+//	  Executor business logic (executor.go), config parsing (config.go),
+//	  registration (register.go).
 package openwrt
 
 import (

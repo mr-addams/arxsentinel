@@ -1,20 +1,20 @@
 // ========================== Module chaincheck ============================================
-//   Chain integrity detection: identifies Cloudflare or bogon IPs appearing as the
-//   client IP in access logs, which signals infrastructure misconfiguration.
-//   When a proxy chain is broken (e.g. real_ip_header not configured), all IP-based
-//   detectors in ArxSentinel become blind — they score the wrong address.
 //
-//   WHAT IS HERE:
-//     Checker       — orchestrates CloudflareChecker and BogonChecker per log entry
-//     Config        — top-level configuration (Cloudflare + Bogon sub-sections)
-//     BogonConfig   — enable/disable flag for bogon detection
-//     CheckResult   — what was found: kind, ip, matched_cidr
+//	Chain integrity detection: identifies Cloudflare or bogon IPs appearing as the
+//	client IP in access logs, which signals infrastructure misconfiguration.
+//	When a proxy chain is broken (e.g. real_ip_header not configured), all IP-based
+//	detectors in ArxSentinel become blind — they score the wrong address.
 //
-//   WHAT IS NOT HERE:
-//     Output writing — handled by the caller in the stream processing loop (main.go)
-//     Detector pipeline — Checker does not implement detector.Detector;
-//       it runs before the detector pipeline, not inside it
-
+//	WHAT IS HERE:
+//	  Checker       — orchestrates CloudflareChecker and BogonChecker per log entry
+//	  Config        — top-level configuration (Cloudflare + Bogon sub-sections)
+//	  BogonConfig   — enable/disable flag for bogon detection
+//	  CheckResult   — what was found: kind, ip, matched_cidr
+//
+//	WHAT IS NOT HERE:
+//	  Output writing — handled by the caller in the stream processing loop (main.go)
+//	  Detector pipeline — Checker does not implement detector.Detector;
+//	    it runs before the detector pipeline, not inside it
 package chaincheck
 
 import (

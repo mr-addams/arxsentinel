@@ -1,21 +1,21 @@
 // ========================== Pipeline builders =========================================
-//   Функции построения компонентов pipeline: detectors, sources, sinks, parser.
 //
-//   ЧТО ЗДЕСЬ:
-//     - buildPipelineDetectors()        — собирает список детекторов из registry (pkg/detector)
-//     - globalDetectorSpecs()           — конвертирует глобальный cfg.Detectors в registry-формат
-//     - bridgeShared()                  — адаптирует SharedResources → pkgdetector.SharedResources
-//     - detectorShared                  — реализация pkgdetector.SharedResources
-//     - buildParserForInput()           — выбор парсера по profile/input-конфигурации
-//     - buildSources() / buildSinks()   — построение списка плагинов из pipeline-конфига
-//     - formatterForFormat()            — мост format-string → concrete format.Formatter
-//                                         (Gate B / Flow 083 RESOLVED-Q5b).
+//	Functions that build pipeline components: detectors, sources, sinks, parser.
 //
-//   Gate B (Flow 083 / Task 3.3): the product-side Formatter impls (Failban /
-//   JSON / Sentinel) live in internal/threat/format. Core
-//   exposes only the Formatter interface in arx-core/pkg/sink/format.
-//   This wiring maps the YAML `format` hint onto a concrete Formatter.
-
+//	CONTENTS:
+//	  - buildPipelineDetectors()        — builds the detector list from the registry (pkg/detector)
+//	  - globalDetectorSpecs()           — converts the global cfg.Detectors into the registry format
+//	  - bridgeShared()                  — adapts SharedResources → pkgdetector.SharedResources
+//	  - detectorShared                  — implementation of pkgdetector.SharedResources
+//	  - buildParserForInput()           — selects a parser based on profile/input configuration
+//	  - buildSources() / buildSinks()   — builds the plugin list from the pipeline config
+//	  - formatterForFormat()            — bridge from format-string → concrete format.Formatter
+//	                                      (Gate B / Flow 083 RESOLVED-Q5b).
+//
+//	Gate B (Flow 083 / Task 3.3): the product-side Formatter impls (Failban /
+//	JSON / Sentinel) live in internal/threat/format. Core
+//	exposes only the Formatter interface in arx-core/pkg/sink/format.
+//	This wiring maps the YAML `format` hint onto a concrete Formatter.
 package main
 
 import (
@@ -32,9 +32,9 @@ import (
 	sinkformat "github.com/mr-addams/arx-core/pkg/sink/format"
 	pkgsource "github.com/mr-addams/arx-core/pkg/source"
 
-	threatformat "github.com/mr-addams/arxsentinel/internal/threat/format"
 	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arxsentinel/internal/sys/utils"
+	threatformat "github.com/mr-addams/arxsentinel/internal/threat/format"
 
 	// Blank-import built-in sink plugins so their init() registers them with
 	// the global sink registry before buildSinks() looks them up by name
@@ -45,19 +45,19 @@ import (
 	_ "github.com/mr-addams/arx-core/pkg/sink/file"
 )
 
-// detectorShared адаптирует main.go's SharedResources к pkgdetector.SharedResources.
-// *blocklist.Manager удовлетворяет pkgdetector.Matcher неявно (имеет Match(list, text) bool).
+// detectorShared adapts main.go's SharedResources to pkgdetector.SharedResources.
+// *blocklist.Manager satisfies pkgdetector.Matcher implicitly (it has Match(list, text) bool).
 type detectorShared struct {
 	blocklist pkgdetector.Matcher
 }
 
-// Blocklist реализует pkgdetector.SharedResources.
+// Blocklist implements pkgdetector.SharedResources.
 func (s detectorShared) Blocklist() pkgdetector.Matcher { return s.blocklist }
 
-// bridgeShared оборачивает SharedResources в интерфейс pkgdetector.SharedResources.
-// Возвращает nil когда shared.BlocklistManager равен nil — тогда фабрики детекторов (badbot)
-// получают nil SharedResources и используют noopMatcher вместо non-nil интерфейса,
-// оборачивающего nil *blocklist.Manager (который вызвал бы panic на MatchResult).
+// bridgeShared wraps SharedResources in the pkgdetector.SharedResources interface.
+// Returns nil when shared.BlocklistManager is nil — in that case detector factories
+// (badbot) receive nil SharedResources and use a noopMatcher instead of a non-nil
+// interface wrapping a nil *blocklist.Manager (which would panic on MatchResult).
 func bridgeShared(shared SharedResources) pkgdetector.SharedResources {
 	if shared.BlocklistManager == nil {
 		return nil
@@ -96,9 +96,9 @@ func buildPipelineDetectors(ctx context.Context, cfg config.Config, pipeCfg conf
 		}
 	}
 
-	// Детерминированный порядок: сортируем ключи map перед итерацией.
-	// Без сортировки порядок детекторов в Scorer менялся между запусками,
-	// что затрудняет отладку и нарушает детерминизм тестов.
+	// Deterministic order: sort map keys before iterating.
+	// Without sorting, the detector order in Scorer changed between runs,
+	// which made debugging harder and broke test determinism.
 	sortedNames := make([]string, 0, len(specs))
 	for name := range specs {
 		sortedNames = append(sortedNames, name)

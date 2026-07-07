@@ -1,29 +1,29 @@
 // ====== Module: opnsense-api-mock ======
-//   OPNsense REST API mock server for integration tests.
-//   Emulates the /api/firewall/alias_util/{add,delete,list} endpoints
-//   used by the opnsense executor (pkg/executorplugins/opnsense/client.go).
-//   HTTP Basic Auth is enforced; credentials are read from ENV variables
-//   OPNSENSE_MOCK_API_KEY / OPNSENSE_MOCK_API_SECRET with sensible
-//   test defaults ("testkey" / "testsecret").
 //
-//   Wire format (must match HTTPClient.doRequest / parseListEntries):
-//     POST /api/firewall/alias_util/add/{alias}    body {"address":"1.2.3.4"}
-//       -> 200 {"result":"saved"}      on success
-//       -> 401                          on bad Basic Auth
-//       -> 400                          on missing/invalid address
-//     POST /api/firewall/alias_util/delete/{alias} body {"address":"1.2.3.4"}
-//       -> 200 {"result":"saved"}      on success (no error if absent)
-//       -> 401                          on bad Basic Auth
-//       -> 400                          on missing/invalid address
-//     GET  /api/firewall/alias_util/list/{alias}
-//       -> 200 {"content":"ip1\nip2\n..."}  (newline-joined, exact match for
-//                                            the dominant OPNsense shape that
-//                                            parseListEntries splits on \n)
+//	OPNsense REST API mock server for integration tests.
+//	Emulates the /api/firewall/alias_util/{add,delete,list} endpoints
+//	used by the opnsense executor (pkg/executorplugins/opnsense/client.go).
+//	HTTP Basic Auth is enforced; credentials are read from ENV variables
+//	OPNSENSE_MOCK_API_KEY / OPNSENSE_MOCK_API_SECRET with sensible
+//	test defaults ("testkey" / "testsecret").
 //
-//   Test helpers (NOT part of the real OPNsense API):
-//     GET  /recorded-items -> {entries, add_calls, del_calls, list_calls}
-//     POST /reset          -> clears in-memory alias state and call counters.
-
+//	Wire format (must match HTTPClient.doRequest / parseListEntries):
+//	  POST /api/firewall/alias_util/add/{alias}    body {"address":"1.2.3.4"}
+//	    -> 200 {"result":"saved"}      on success
+//	    -> 401                          on bad Basic Auth
+//	    -> 400                          on missing/invalid address
+//	  POST /api/firewall/alias_util/delete/{alias} body {"address":"1.2.3.4"}
+//	    -> 200 {"result":"saved"}      on success (no error if absent)
+//	    -> 401                          on bad Basic Auth
+//	    -> 400                          on missing/invalid address
+//	  GET  /api/firewall/alias_util/list/{alias}
+//	    -> 200 {"content":"ip1\nip2\n..."}  (newline-joined, exact match for
+//	                                         the dominant OPNsense shape that
+//	                                         parseListEntries splits on \n)
+//
+//	Test helpers (NOT part of the real OPNsense API):
+//	  GET  /recorded-items -> {entries, add_calls, del_calls, list_calls}
+//	  POST /reset          -> clears in-memory alias state and call counters.
 package main
 
 import (
@@ -58,13 +58,13 @@ const (
 // unnecessary — alias_util in the real product is itself a single
 // endpoint surface.
 type MockServer struct {
-	mu         sync.Mutex
-	entries    []string
-	addCalls   atomic.Int64
-	delCalls   atomic.Int64
-	listCalls  atomic.Int64
-	apiKey     string
-	apiSecret  string
+	mu        sync.Mutex
+	entries   []string
+	addCalls  atomic.Int64
+	delCalls  atomic.Int64
+	listCalls atomic.Int64
+	apiKey    string
+	apiSecret string
 }
 
 // newMockServer resolves the Basic Auth credentials from ENV
@@ -159,11 +159,12 @@ func aliasFromPath(w http.ResponseWriter, prefix, path string) string {
 // ========================== Handlers ==========================
 
 // handleAdd — POST /api/firewall/alias_util/add/{alias}.
-//   Decode {"address":"1.2.3.4"}, append to s.entries (idempotent —
-//   the real OPNsense deduplicates via the alias' unique-content
-//   constraint; we mirror that with a membership check to keep
-//   recorded-items output stable for repeated add calls), reply
-//   {"result":"saved"}.
+//
+//	Decode {"address":"1.2.3.4"}, append to s.entries (idempotent —
+//	the real OPNsense deduplicates via the alias' unique-content
+//	constraint; we mirror that with a membership check to keep
+//	recorded-items output stable for repeated add calls), reply
+//	{"result":"saved"}.
 func (s *MockServer) handleAdd(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -205,9 +206,10 @@ func (s *MockServer) handleAdd(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDelete — POST /api/firewall/alias_util/delete/{alias}.
-//   Decode {"address":"1.2.3.4"}, remove from s.entries. The real
-//   OPNsense does not error when the address is already absent; we
-//   mirror that — delete is idempotent. Reply {"result":"saved"}.
+//
+//	Decode {"address":"1.2.3.4"}, remove from s.entries. The real
+//	OPNsense does not error when the address is already absent; we
+//	mirror that — delete is idempotent. Reply {"result":"saved"}.
 func (s *MockServer) handleDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -247,10 +249,11 @@ func (s *MockServer) handleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleList — GET /api/firewall/alias_util/list/{alias}.
-//   Return {"content":"ip1\nip2\n..."} — exactly the shape that
-//   parseListEntries in pkg/executorplugins/opnsense/client.go splits
-//   on '\n'. Empty alias -> empty content (not missing field) so the
-//   parser's `resp.Content == ""` branch is exercised correctly.
+//
+//	Return {"content":"ip1\nip2\n..."} — exactly the shape that
+//	parseListEntries in pkg/executorplugins/opnsense/client.go splits
+//	on '\n'. Empty alias -> empty content (not missing field) so the
+//	parser's `resp.Content == ""` branch is exercised correctly.
 func (s *MockServer) handleList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

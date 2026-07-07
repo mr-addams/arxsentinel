@@ -1,24 +1,24 @@
 // ========================== Module config ==============================================
-//   Single source of truth for all behavioral parameters of the project.
-//   LoadConfig() — parses config.yaml with defaults, returns a populated Config.
 //
-//   WHAT IS HERE:
-//     - Config struct with nested sections per module
-//     - LoadConfig(path string) (Config, error) — the only public function
-//     - Duration — wrapper type for parsing strings like "300s", "24h" from YAML
-//     - defaultConfig() + defaultProbePaths() + defaultBots() — internal defaults
+//	Single source of truth for all behavioral parameters of the project.
+//	LoadConfig() — parses config.yaml with defaults, returns a populated Config.
 //
-//   WHAT IS NOT HERE:
-//     - Business logic (core/)
-//     - Logging (sys/utils)
+//	WHAT IS HERE:
+//	  - Config struct with nested sections per module
+//	  - LoadConfig(path string) (Config, error) — the only public function
+//	  - Duration — wrapper type for parsing strings like "300s", "24h" from YAML
+//	  - defaultConfig() + defaultProbePaths() + defaultBots() — internal defaults
 //
-//   YAML PARSING:
-//     yaml.v3 overlays the YAML document on top of Go defaults field-by-field.
-//     Fields present in the file → set from YAML.
-//     Fields absent from the file (even inside a present section) → retain Go defaults.
-//     Sections absent from the file entirely → retain Go defaults unchanged.
-//     Verified empirically: partial sections are safe; omitted fields are never zeroed.
-
+//	WHAT IS NOT HERE:
+//	  - Business logic (core/)
+//	  - Logging (sys/utils)
+//
+//	YAML PARSING:
+//	  yaml.v3 overlays the YAML document on top of Go defaults field-by-field.
+//	  Fields present in the file → set from YAML.
+//	  Fields absent from the file (even inside a present section) → retain Go defaults.
+//	  Sections absent from the file entirely → retain Go defaults unchanged.
+//	  Verified empirically: partial sections are safe; omitted fields are never zeroed.
 package config
 
 import (
@@ -31,10 +31,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
-	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	"github.com/mr-addams/arx-core/pkg/parser"
+	"github.com/mr-addams/arxsentinel/internal/core/blocklist"
+	"github.com/mr-addams/arxsentinel/internal/core/chaincheck"
 )
 
 // ========================== Duration helper type =======================================
@@ -265,11 +265,11 @@ type StreamConfig struct {
 
 	// Single-pipeline I/O syntax (Flow #030): used when pipelines: is not specified.
 	// Migrate() wraps these into Pipelines[0] before runStream() is called.
-	Inputs    []InputConfig         `yaml:"inputs"`    // YAML: streams[].inputs — Deprecated in favour of pipelines[].inputs; auto-wrapped by Migrate()
-	Outputs   []SinkConfig          `yaml:"outputs"`   // YAML: streams[].outputs — Deprecated in favour of pipelines[].outputs; auto-wrapped by Migrate()
-	Executors []ExecutorItem        `yaml:"executors"` // YAML: streams[].executors — shorthand; Migrate() propagates to pipelines with Executors==nil. Consumer: config.Migrate
-	Processors []ProcessorConfig    `yaml:"processors"` // YAML: streams[].processors — stream-level processor list; Migrate() propagates to pipelines with nil Processors. Consumer: config.Migrate
-	Pipeline  PipelineRuntimeConfig `yaml:"pipeline"`  // YAML: streams[].pipeline — per-stream pipeline tuning; overrides top-level
+	Inputs     []InputConfig         `yaml:"inputs"`     // YAML: streams[].inputs — Deprecated in favour of pipelines[].inputs; auto-wrapped by Migrate()
+	Outputs    []SinkConfig          `yaml:"outputs"`    // YAML: streams[].outputs — Deprecated in favour of pipelines[].outputs; auto-wrapped by Migrate()
+	Executors  []ExecutorItem        `yaml:"executors"`  // YAML: streams[].executors — shorthand; Migrate() propagates to pipelines with Executors==nil. Consumer: config.Migrate
+	Processors []ProcessorConfig     `yaml:"processors"` // YAML: streams[].processors — stream-level processor list; Migrate() propagates to pipelines with nil Processors. Consumer: config.Migrate
+	Pipeline   PipelineRuntimeConfig `yaml:"pipeline"`   // YAML: streams[].pipeline — per-stream pipeline tuning; overrides top-level
 
 	// Deprecated: use inputs/outputs instead. Kept for backward compatibility and
 	// auto-migration via config.Migrate(). Will be removed in a future major version.
@@ -595,8 +595,8 @@ func LoadConfig(path string) (Config, error) {
 		return cfg, fmt.Errorf("invalid config %q: %w", path, err)
 	}
 
-	// Предупреждение при высоком max_tracked_ips: каждый IP ведёт к аллокации
-	// entry в трекере + записи в bbolt. >1_000_000 IP может занять >1GB RSS.
+	// Warning for high max_tracked_ips: each IP allocates an entry in the tracker
+	// and a record in bbolt. >1,000,000 IPs can occupy >1GB RSS.
 	if cfg.State.MaxTrackedIPs > 1_000_000 {
 		fmt.Fprintf(os.Stderr, "[CONFIG] warning: state.max_tracked_ips=%d exceeds 1,000,000 — memory usage may exceed 1GB RSS\n", cfg.State.MaxTrackedIPs)
 	}
@@ -672,8 +672,8 @@ func applyEnvOverrides(cfg *Config) error {
 	}
 
 	// ── source ────────────────────────────────────────────────────────────────────────
-	// ARXSENTINEL_SYSLOG_MAX_CONNECTIONS — глобальный дефолт для всех syslog inputs.
-	// Применяем ко всем input-ам с type=syslog, у которых max_connections не задан (==0).
+	// ARXSENTINEL_SYSLOG_MAX_CONNECTIONS — global default for all syslog inputs.
+	// Applied to every input with type=syslog that does not have max_connections set (==0).
 	if v, ok := os.LookupEnv("ARXSENTINEL_SYSLOG_MAX_CONNECTIONS"); ok && v != "" {
 		val, err := strconv.Atoi(v)
 		if err != nil {
@@ -1320,8 +1320,8 @@ func validateTransportWiring(cfg *Config) error {
 func validateInputs(inputs []InputConfig) error {
 	seen := make(map[string]bool)
 	for i, in := range inputs {
-		// Изменение (Flow 083): добавлен "sentinel" — легитимный top-level input,
-		// зарегистрированный в plugins_full (pkg/source/sentinel), читает из NCS.
+		// Change (Flow 083): added "sentinel" — a legitimate top-level input,
+		// registered in plugins_full (pkg/source/sentinel), reads from NCS.
 		if in.Type != "file" && in.Type != "stdin" && in.Type != "exec" && in.Type != "syslog" && in.Type != "http" && in.Type != "sentinel" {
 			return fmt.Errorf("inputs[%d]: unknown type %q (want file, stdin, exec, syslog, http, or sentinel)", i, in.Type)
 		}

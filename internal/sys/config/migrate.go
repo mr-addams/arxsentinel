@@ -1,20 +1,20 @@
 // ========================== Module config/migrate ======================================
-//   Auto-migration of deprecated I/O config fields to the new inputs/outputs syntax.
-//   Migrate() is called by LoadConfig() after YAML parsing, before validation.
 //
-//   MIGRATION RULES (D9 in DECISIONS.md):
-//     general.log_file + output.threat_log → top-level inputs[] / outputs[]
-//     streams[i].log_file                  → streams[i].inputs[]
-//     streams[i].threat_log                → streams[i].outputs[]
-//     No I/O sections at all               → apply defaults
+//	Auto-migration of deprecated I/O config fields to the new inputs/outputs syntax.
+//	Migrate() is called by LoadConfig() after YAML parsing, before validation.
 //
-//   PRIORITY: new syntax (inputs/outputs) wins over legacy fields.
-//   If inputs: is already set in YAML, general.log_file is silently ignored.
+//	MIGRATION RULES (D9 in DECISIONS.md):
+//	  general.log_file + output.threat_log → top-level inputs[] / outputs[]
+//	  streams[i].log_file                  → streams[i].inputs[]
+//	  streams[i].threat_log                → streams[i].outputs[]
+//	  No I/O sections at all               → apply defaults
 //
-//   WHAT IS NOT HERE:
-//     - Pipeline assembly (cmd/arxsentinel/main.go — Task 5)
-//     - Validation (config.go validateInputs / validateSinks)
-
+//	PRIORITY: new syntax (inputs/outputs) wins over legacy fields.
+//	If inputs: is already set in YAML, general.log_file is silently ignored.
+//
+//	WHAT IS NOT HERE:
+//	  - Pipeline assembly (cmd/arxsentinel/main.go — Task 5)
+//	  - Validation (config.go validateInputs / validateSinks)
 package config
 
 import (

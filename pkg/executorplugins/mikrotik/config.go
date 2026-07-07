@@ -1,13 +1,13 @@
 // ====== Module: mikrotik — config ===============================================
-//   Configuration for MikroTik RouterOS REST API executor — parses from
-//   YAML/JSON with validation and time.Duration handling.
 //
-//   WHAT IS HERE:
-//     Config struct, threatLevel enum, parseConfig function
+//	Configuration for MikroTik RouterOS REST API executor — parses from
+//	YAML/JSON with validation and time.Duration handling.
 //
-//   WHAT IS NOT HERE:
-//     HTTP client (client.go), executor logic (executor.go), registration (register.go)
-
+//	WHAT IS HERE:
+//	  Config struct, threatLevel enum, parseConfig function
+//
+//	WHAT IS NOT HERE:
+//	  HTTP client (client.go), executor logic (executor.go), registration (register.go)
 package mikrotik
 
 import (
@@ -119,8 +119,8 @@ func parseConfig(raw map[string]any) (Config, error) {
 	}
 
 	// DedupWindow: optional, default 0 (disabled).
-	// Парсим так же, как flush_interval — отдельная ветка до JSON round-trip,
-	// потому что time.Duration не сериализуется нативно.
+	// Parsed the same way as flush_interval — a separate branch before the JSON round-trip,
+	// because time.Duration does not serialise natively.
 	if dwVal, ok := rawCopy["dedup_window"]; ok {
 		delete(rawCopy, "dedup_window")
 		switch v := dwVal.(type) {

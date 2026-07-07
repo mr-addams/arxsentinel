@@ -1,6 +1,6 @@
 // ========================== BadBot manifest ==============================================
-//   Identity and data contract for the badbot detector plugin.
-
+//
+//	Identity and data contract for the badbot detector plugin.
 package badbot
 
 import "github.com/mr-addams/arx-core/pkg/plugin"

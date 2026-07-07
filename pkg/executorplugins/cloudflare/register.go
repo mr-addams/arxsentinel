@@ -1,13 +1,13 @@
 // ========================== Package cloudflare ==========================
-//   Self-registration of CloudflareExecutor in pkg/executor registry.
-//   Uses init() to register the executor factory, enabling discovery
-//   without a central import list — same pattern as pkg/detector.
 //
-//   FLOW 073 TASK 1.3.1 — Configuration decoupling:
-//     - factory no longer builds a config.ExecutorItem; NewCloudflareExecutor
-//       now accepts executor.ExecutorConfig directly (Phase 1.3 prep for ADR-002).
-//     - logger is forwarded from Build() (was logger.Nop before F1 closure).
-
+//	Self-registration of CloudflareExecutor in pkg/executor registry.
+//	Uses init() to register the executor factory, enabling discovery
+//	without a central import list — same pattern as pkg/detector.
+//
+//	FLOW 073 TASK 1.3.1 — Configuration decoupling:
+//	  - factory no longer builds a config.ExecutorItem; NewCloudflareExecutor
+//	    now accepts executor.ExecutorConfig directly (Phase 1.3 prep for ADR-002).
+//	  - logger is forwarded from Build() (was logger.Nop before F1 closure).
 package cloudflare
 
 import (

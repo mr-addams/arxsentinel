@@ -1,10 +1,10 @@
 // ========================== validate subcommand ==========================================
-//   Pipeline semantic validation: checks that adjacent plugins agree on DataType.
-//   Runs in two modes:
-//     - arxsentinel validate [--config=path] : static check, exit 0/1
-//     - daemon startup                        : fail-fast before Hub initialisation
-//   Entry point: runValidateSubcommand. Called from: main (line 163).
-
+//
+//	Pipeline semantic validation: checks that adjacent plugins agree on DataType.
+//	Runs in two modes:
+//	  - arxsentinel validate [--config=path] : static check, exit 0/1
+//	  - daemon startup                        : fail-fast before Hub initialisation
+//	Entry point: runValidateSubcommand. Called from: main (line 163).
 package main
 
 import (
@@ -12,14 +12,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	pkgdetector "github.com/mr-addams/arx-core/pkg/detector"
-	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	pkgexecutor "github.com/mr-addams/arx-core/pkg/executor"
+	"github.com/mr-addams/arx-core/pkg/executor/queue"
 	"github.com/mr-addams/arx-core/pkg/pipeline"
 	"github.com/mr-addams/arx-core/pkg/plugin"
 	pkgsink "github.com/mr-addams/arx-core/pkg/sink"
 	pkgsource "github.com/mr-addams/arx-core/pkg/source"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 // runValidateSubcommand handles "arxsentinel validate [--config=path]".

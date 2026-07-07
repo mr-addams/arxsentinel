@@ -1,19 +1,19 @@
 // ========================== Runtime adapter — config → StreamSpec ========================
-//   Этот файл — мост между Product-конфигом (config.Config) и runtime-контрактом
-//   (StreamSpec / PipelineSpec). Здесь НЕТ security-логики — только построение
-//   аргументов runtime.Run из YAML-конфига.
 //
-//   ЧТО ЗДЕСЬ:
-//     - adaptConfigToStreams() — построить []runtime.StreamSpec (по одному на стрим)
-//       + []chan struct{} (reload-каналы для SIGHUP-fanout, индексы = cfg.Streams).
+//	This file is the bridge between the Product config (config.Config) and the
+//	runtime contract (StreamSpec / PipelineSpec). There is NO security logic
+//	here — only the construction of runtime.Run arguments from the YAML config.
 //
-//   СВЯЗЬ С DECISIONS.md:
-//     - Sources/Sinks строятся здесь через buildSources/buildSinks и кладутся
-//       в PipelineSpec.Sources/Sinks — engine их не строит (DECISION Q2).
-//     - Detectors НЕ кладутся в PipelineSpec — они передаются через замыкание
-//       factory.Build (Q1: scorer→Product).
-//     - ShutdownTimeout = 5s по умолчанию; конфиг-поля пока нет (Phase 4+).
-
+//	WHAT IS HERE:
+//	  - adaptConfigToStreams() — build []runtime.StreamSpec (one per stream)
+//	    + []chan struct{} (reload channels for SIGHUP fan-out, indices = cfg.Streams).
+//
+//	CONNECTION TO DECISIONS.md:
+//	  - Sources/Sinks are built here via buildSources/buildSinks and placed
+//	    into PipelineSpec.Sources/Sinks — the engine does not build them (DECISION Q2).
+//	  - Detectors are NOT placed into PipelineSpec — they are passed via the
+//	    factory.Build closure (Q1: scorer→Product).
+//	  - ShutdownTimeout = 5s by default; no config field yet (Phase 4+).
 package main
 
 import (
@@ -27,28 +27,28 @@ import (
 
 // ++++++++++++++++++++++++++ adaptConfigToStreams ++++++++++++++++++++++++++++++++++++++++++
 
-// adaptConfigToStreams строит один runtime.StreamSpec на каждый cfg.Streams[i].
-// Возвращает:
+// adaptConfigToStreams builds one runtime.StreamSpec for each cfg.Streams[i].
+// Returns:
 //
-//	streams    — слайс готовых к runtime.Run спецификаций;
-//	reloadChs  — слайс SIGHUP-каналов, индексы соответствуют cfg.Streams (main.go
-//	             подменяет существующие reloadChs на возвращённые — SIGHUP-fanout
-//	             пробрасывается в engine через factory.Reload).
+//	streams    — slice of specs ready for runtime.Run;
+//	reloadChs  — slice of SIGHUP channels, indices match cfg.Streams (main.go
+//	             replaces existing reloadChs with the returned ones — SIGHUP
+//	             fan-out is forwarded into the engine via factory.Reload).
 //
-// На ошибке построения sources/sinks — возвращается частичный результат + ошибка;
-// engine ещё не стартовал, ошибка fatal в main.go.
+// On sources/sinks build error — partial result + error is returned;
+// the engine has not started yet, the error is fatal in main.go.
 //
-// ctx — app context для buildSinks (sink.Reload открывает файлы).
+// ctx — app context for buildSinks (sink.Reload opens files).
 func adaptConfigToStreams(ctx context.Context, cfg config.Config) ([]coreruntime.StreamSpec, []chan struct{}, error) {
 	streams := make([]coreruntime.StreamSpec, 0, len(cfg.Streams))
 	reloadChs := make([]chan struct{}, 0, len(cfg.Streams))
 
 	for _, streamCfg := range cfg.Streams {
-		// PipelineSpec'ы для одного стрима.
+		// PipelineSpecs for a single stream.
 		pipelines := make([]coreruntime.PipelineSpec, 0, len(streamCfg.Pipelines))
 		for j, pipeCfg := range streamCfg.Pipelines {
-			// Sources/Sinks строятся здесь (а не в factory) — engine не знает
-			// о config-домене Product'а.
+			// Sources/Sinks are built here (not in factory) — the engine is
+			// unaware of the Product's config domain.
 			sources, err := buildSources(cfg, pipeCfg.Inputs)
 			if err != nil {
 				return nil, nil, fmt.Errorf("stream %q pipeline %d sources: %w", streamCfg.Name, j, err)
@@ -66,16 +66,16 @@ func adaptConfigToStreams(ctx context.Context, cfg config.Config) ([]coreruntime
 			})
 		}
 
-		// BufferSize: per-pipeline override → дефолт stream'а → engine fallback (1000).
-		// Адаптер берёт первый pipeline override; если 0 — engine применит defaultBufferSize.
+		// BufferSize: per-pipeline override → stream default → engine fallback (1000).
+		// The adapter takes the first pipeline override; if 0 — engine applies defaultBufferSize.
 		bufSize := int(cfg.Pipeline.BufferSize)
 		if len(streamCfg.Pipelines) > 0 && streamCfg.Pipelines[0].Pipeline.BufferSize > 0 {
 			bufSize = int(streamCfg.Pipelines[0].Pipeline.BufferSize)
 		}
 
-		// TrackerGroup: берём resolver из первой pipeline (для логов engine).
-		// Сам runtime не использует это поле — оставлено для совместимости с
-		// оригинальной конфигурацией pool'а; engine игнорирует (DECISIONS.md).
+		// TrackerGroup: take the resolver from the first pipeline (for engine logs).
+		// The runtime itself does not use this field — kept for compatibility with
+		// the original pool config; the engine ignores it (DECISIONS.md).
 		tg := ""
 		if len(streamCfg.Pipelines) > 0 {
 			tg = resolveTrackerGroup(streamCfg.Pipelines[0])

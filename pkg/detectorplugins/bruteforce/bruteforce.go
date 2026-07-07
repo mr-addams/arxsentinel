@@ -1,23 +1,23 @@
 // ========================== Bruteforce detector =======================================
-//   Detects anomalous 404-response ratio from a single IP.
-//   Symptom of scanning non-existent paths / directory brute-forcing.
 //
-//   ALGORITHM:
-//     ratio = Requests404 / TotalRequests
-//     If TotalRequests >= min_requests && ratio >= ratio_threshold → score.
-//     min_requests guards against false positives on low request counts.
+//	Detects anomalous 404-response ratio from a single IP.
+//	Symptom of scanning non-existent paths / directory brute-forcing.
 //
-//   WHY RATIO INSTEAD OF ABSOLUTE 404 COUNT:
-//     Absolute counter ignores traffic intensity — 40/60 (67%) is more suspicious
-//     than 40/200 (20%). Ratio gives a normalized signal.
+//	ALGORITHM:
+//	  ratio = Requests404 / TotalRequests
+//	  If TotalRequests >= min_requests && ratio >= ratio_threshold → score.
+//	  min_requests guards against false positives on low request counts.
 //
-//   Params (DetectorConfig.Params):
-//     min_requests     int     — minimum requests before triggering (default: 10)
-//     ratio_threshold  float64 — 404 ratio threshold, 0.0–1.0 (default: 0.6)
-//     score            int     — threat score on trigger (default: 30)
+//	WHY RATIO INSTEAD OF ABSOLUTE 404 COUNT:
+//	  Absolute counter ignores traffic intensity — 40/60 (67%) is more suspicious
+//	  than 40/200 (20%). Ratio gives a normalized signal.
 //
-//   Registered as "bruteforce" via init().
-
+//	Params (DetectorConfig.Params):
+//	  min_requests     int     — minimum requests before triggering (default: 10)
+//	  ratio_threshold  float64 — 404 ratio threshold, 0.0–1.0 (default: 0.6)
+//	  score            int     — threat score on trigger (default: 30)
+//
+//	Registered as "bruteforce" via init().
 package bruteforce
 
 import (

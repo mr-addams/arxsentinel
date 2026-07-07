@@ -1,22 +1,22 @@
 // ========================== Module pkg/processor/whitelist ================================
-//   WhitelistProcessor wraps internal/core/whitelist (Matcher + Verifier) as a plugin.Processor.
-//   Drops whitelisted IPs/UAs, verifies legitimate bot UAs via rDNS+fDNS, and passes
-//   identified fake bots to the scoring pipeline.
 //
-//   WHAT IS HERE:
-//     - WhitelistProcessor — plugin.Processor implementation
-//     - NewWhitelistProcessor — constructor from config
+//	WhitelistProcessor wraps internal/core/whitelist (Matcher + Verifier) as a plugin.Processor.
+//	Drops whitelisted IPs/UAs, verifies legitimate bot UAs via rDNS+fDNS, and passes
+//	identified fake bots to the scoring pipeline.
 //
-//   WHAT IS NOT HERE:
-//     - Matcher / Verifier / IPCache — internal/core/whitelist/ (unchanged, not moved)
-//     - main.go integration — the processor replaces inline whitelist calls
+//	WHAT IS HERE:
+//	  - WhitelistProcessor — plugin.Processor implementation
+//	  - NewWhitelistProcessor — constructor from config
 //
-//   PIPELINE SEMANTICS:
-//     - Process returns (nil, nil) → drop entry (custom whitelist hit)
-//     - Process returns (*LogEntry, nil) → pass through (bot verified or no match)
-//     - Process returns (nil, ctx.Err()) → cancellation honored
-//     - Fake bots pass through so detectors can add FakeBotScore
-
+//	WHAT IS NOT HERE:
+//	  - Matcher / Verifier / IPCache — internal/core/whitelist/ (unchanged, not moved)
+//	  - main.go integration — the processor replaces inline whitelist calls
+//
+//	PIPELINE SEMANTICS:
+//	  - Process returns (nil, nil) → drop entry (custom whitelist hit)
+//	  - Process returns (*LogEntry, nil) → pass through (bot verified or no match)
+//	  - Process returns (nil, ctx.Err()) → cancellation honored
+//	  - Fake bots pass through so detectors can add FakeBotScore
 package whitelist
 
 import (
@@ -24,10 +24,10 @@ import (
 	"fmt"
 	"time"
 
-	corewhitelist "github.com/mr-addams/arxsentinel/internal/core/whitelist"
-	"github.com/mr-addams/arxsentinel/internal/sys/config"
 	"github.com/mr-addams/arx-core/pkg/parser"
 	"github.com/mr-addams/arx-core/pkg/plugin"
+	corewhitelist "github.com/mr-addams/arxsentinel/internal/core/whitelist"
+	"github.com/mr-addams/arxsentinel/internal/sys/config"
 )
 
 // WhitelistProcessor is a plugin.Processor that wraps Matcher + Verifier.

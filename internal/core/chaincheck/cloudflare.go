@@ -1,26 +1,26 @@
 // ========================== Module chaincheck/cloudflare =================================
-//   CloudflareChecker: dynamic detection of Cloudflare IP ranges.
-//   Loads fallback CIDRs synchronously at construction, then refreshes from upstream
-//   sources on a ticker. Uses sync.RWMutex because reads (Contains) are frequent and
-//   concurrent while writes (refresh) are rare and happen in a single background goroutine.
 //
-//   WHAT IS HERE:
-//     CloudflareChecker — dynamic CIDR list with background refresh
-//     NewCloudflareChecker() — synchronous fallback load + goroutine start
-//     Contains()  — concurrent-safe range lookup
-//     IsLoaded()  — reports whether at least fallback CIDRs are available
-//     Update()    — hot-reload on SIGHUP: replaces config and restarts goroutine
-//     Close()     — stops the refresh goroutine
+//	CloudflareChecker: dynamic detection of Cloudflare IP ranges.
+//	Loads fallback CIDRs synchronously at construction, then refreshes from upstream
+//	sources on a ticker. Uses sync.RWMutex because reads (Contains) are frequent and
+//	concurrent while writes (refresh) are rare and happen in a single background goroutine.
 //
-//   WHAT IS NOT HERE:
-//     Bogon detection (bogon.go)
-//     Orchestration / caller logic (checker.go)
+//	WHAT IS HERE:
+//	  CloudflareChecker — dynamic CIDR list with background refresh
+//	  NewCloudflareChecker() — synchronous fallback load + goroutine start
+//	  Contains()  — concurrent-safe range lookup
+//	  IsLoaded()  — reports whether at least fallback CIDRs are available
+//	  Update()    — hot-reload on SIGHUP: replaces config and restarts goroutine
+//	  Close()     — stops the refresh goroutine
 //
-//   HTTP CONSTRAINTS:
-//     - io.LimitReader 64 KB per response — prevents memory exhaustion from a rogue source
-//     - 30s HTTP timeout — avoids blocking the refresh goroutine indefinitely
-//     - On fetch error: old nets are preserved, error is logged via utils.Log
-
+//	WHAT IS NOT HERE:
+//	  Bogon detection (bogon.go)
+//	  Orchestration / caller logic (checker.go)
+//
+//	HTTP CONSTRAINTS:
+//	  - io.LimitReader 64 KB per response — prevents memory exhaustion from a rogue source
+//	  - 30s HTTP timeout — avoids blocking the refresh goroutine indefinitely
+//	  - On fetch error: old nets are preserved, error is logged via utils.Log
 package chaincheck
 
 import (

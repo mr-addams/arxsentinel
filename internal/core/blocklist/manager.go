@@ -1,33 +1,33 @@
 // ========================== blocklist/manager ==========================================
-//   Manager is the sole owner of all blocklist patterns, refresh goroutines,
-//   and the optional bbolt database. Detectors call Match() — they never fetch
-//   or store patterns themselves.
 //
-//   WHAT IS HERE:
-//     Config / ListConfig / SourceConfig  — configuration structs
-//     Manager       — singleton per application; created once in main()
-//     NewManager    — creates Manager and starts per-list refresh goroutines
-//     Update        — SIGHUP: replaces goroutines with new config, same *Manager pointer
-//     Match         — thread-safe O(text_len) lookup via Aho-Corasick
-//     Close         — cancels all goroutines; bbolt closed if open
+//	Manager is the sole owner of all blocklist patterns, refresh goroutines,
+//	and the optional bbolt database. Detectors call Match() — they never fetch
+//	or store patterns themselves.
 //
-//   GOROUTINE LIFECYCLE (per list):
-//     startList() starts one goroutine per ListConfig.
-//     Goroutine: load bbolt cache → fetch from network → ticker refresh.
-//     Update() cancels all per-list goroutines and starts new ones.
-//     Close() cancels all per-list goroutines.
+//	WHAT IS HERE:
+//	  Config / ListConfig / SourceConfig  — configuration structs
+//	  Manager       — singleton per application; created once in main()
+//	  NewManager    — creates Manager and starts per-list refresh goroutines
+//	  Update        — SIGHUP: replaces goroutines with new config, same *Manager pointer
+//	  Match         — thread-safe O(text_len) lookup via Aho-Corasick
+//	  Close         — cancels all goroutines; bbolt closed if open
 //
-//   THREAD SAFETY:
-//     Manager.mu (RWMutex) protects the lists map.
-//     listState.mu (RWMutex) protects the matcher inside each list.
-//     Match() holds Manager.mu.RLock + listState.mu.RLock — safe for concurrent use.
+//	GOROUTINE LIFECYCLE (per list):
+//	  startList() starts one goroutine per ListConfig.
+//	  Goroutine: load bbolt cache → fetch from network → ticker refresh.
+//	  Update() cancels all per-list goroutines and starts new ones.
+//	  Close() cancels all per-list goroutines.
 //
-//   BBOLT:
-//     One DB file. One bucket per list name. Key "patterns" → newline-joined strings.
-//     If storage path is empty (""), bbolt is not used (in-memory only).
+//	THREAD SAFETY:
+//	  Manager.mu (RWMutex) protects the lists map.
+//	  listState.mu (RWMutex) protects the matcher inside each list.
+//	  Match() holds Manager.mu.RLock + listState.mu.RLock — safe for concurrent use.
 //
-//   Implemented: Flow #025, Task 2.
-
+//	BBOLT:
+//	  One DB file. One bucket per list name. Key "patterns" → newline-joined strings.
+//	  If storage path is empty (""), bbolt is not used (in-memory only).
+//
+//	Implemented: Flow #025, Task 2.
 package blocklist
 
 import (

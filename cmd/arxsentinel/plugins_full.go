@@ -1,21 +1,21 @@
 //go:build !arx_tag
 
 // ========================== Plugin blank-imports — full profile ==========================
-//   Side-effect registration of all 12 blank-import transports for the default (full)
-//   build. Excluded when the sentinel `arx_tag` build tag is set, in which case
-//   generated `plugins_<profile>.go` files (under `//go:build arx_tag && <profile>`)
-//   provide a profile-specific subset instead.
 //
-//   WHAT IS HERE:
-//     - 14 blank imports matching profiles/full.yaml (Decision 11, Flow 075).
-//     - Order is alphabetical by import path for deterministic diff.
+//	Side-effect registration of all 12 blank-import transports for the default (full)
+//	build. Excluded when the sentinel `arx_tag` build tag is set, in which case
+//	generated `plugins_<profile>.go` files (under `//go:build arx_tag && <profile>`)
+//	provide a profile-specific subset instead.
 //
-//   WHAT IS NOT HERE:
-//     - pkg/detector — named-import in validate.go/builders.go (always-linked, Decision 12).
-//     - pkg/sink/file — named-import in pipeline.go (always-linked, not a profile transport).
+//	WHAT IS HERE:
+//	  - 14 blank imports matching profiles/full.yaml (Decision 11, Flow 075).
+//	  - Order is alphabetical by import path for deterministic diff.
 //
-//   See: docs/architecture/adr/003-build-modularity.md, ADR-002 (module mapping).
-
+//	WHAT IS NOT HERE:
+//	  - pkg/detector — named-import in validate.go/builders.go (always-linked, Decision 12).
+//	  - pkg/sink/file — named-import in pipeline.go (always-linked, not a profile transport).
+//
+//	See: docs/architecture/adr/003-build-modularity.md, ADR-002 (module mapping).
 package main
 
 import (

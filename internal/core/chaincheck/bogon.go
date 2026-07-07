@@ -1,25 +1,25 @@
 // ========================== Module chaincheck/bogon ======================================
-//   BogonChecker: static detection of non-routable / reserved IP ranges.
-//   No goroutine, no network fetch — the list is immutable after construction.
 //
-//   WHAT IS HERE:
-//     BogonChecker  — compiled list of bogon/RFC1918/CGNAT CIDRs
-//     NewBogonChecker() — builds the checker once
-//     Contains()    — O(n) scan over ~13 entries; acceptable given the small list size
+//	BogonChecker: static detection of non-routable / reserved IP ranges.
+//	No goroutine, no network fetch — the list is immutable after construction.
 //
-//   WHAT IS NOT HERE:
-//     Cloudflare detection (cloudflare.go)
-//     Orchestration / caller logic (checker.go)
+//	WHAT IS HERE:
+//	  BogonChecker  — compiled list of bogon/RFC1918/CGNAT CIDRs
+//	  NewBogonChecker() — builds the checker once
+//	  Contains()    — O(n) scan over ~13 entries; acceptable given the small list size
 //
-//   COVERED RANGES:
-//     RFC 1918         — 10/8, 172.16/12, 192.168/16
-//     CGNAT            — 100.64/10
-//     Loopback         — 127/8, ::1/128
-//     Link-local       — 169.254/16, fe80::/10
-//     Documentation    — 192.0.2/24, 198.51.100/24, 203.0.113/24
-//     Unspecified/reserved — 0/8, 240/4
-//     IPv6 unique local — fc00::/7
-
+//	WHAT IS NOT HERE:
+//	  Cloudflare detection (cloudflare.go)
+//	  Orchestration / caller logic (checker.go)
+//
+//	COVERED RANGES:
+//	  RFC 1918         — 10/8, 172.16/12, 192.168/16
+//	  CGNAT            — 100.64/10
+//	  Loopback         — 127/8, ::1/128
+//	  Link-local       — 169.254/16, fe80::/10
+//	  Documentation    — 192.0.2/24, 198.51.100/24, 203.0.113/24
+//	  Unspecified/reserved — 0/8, 240/4
+//	  IPv6 unique local — fc00::/7
 package chaincheck
 
 import (

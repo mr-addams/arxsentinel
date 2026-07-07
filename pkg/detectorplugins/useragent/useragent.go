@@ -1,28 +1,28 @@
 // ========================== UserAgent detector ==========================================
-//   Detects suspicious User-Agent strings: scanners (Nuclei, sqlmap), grabbers (wget,
-//   scrapy), automation (python-requests, aiohttp), empty UA.
 //
-//   CATEGORIES (check order — most dangerous first):
-//     empty UA     → "" or "-"                                    (default score: 30)
-//     scanner      → Nuclei, sqlmap, nikto, nmap, masscan, ...   (default score: 40)
-//     grabber      → wget, scrapy, python-requests, libwww, ...  (default score: 20)
-//     automation   → aiohttp, Go-http-client, okhttp, ...        (default score: 15)
+//	Detects suspicious User-Agent strings: scanners (Nuclei, sqlmap), grabbers (wget,
+//	scrapy), automation (python-requests, aiohttp), empty UA.
 //
-//   WHY PATTERNS ARE HARDCODED AND NOT IN CONFIG:
-//     The scanner tool list is stable and specific — externalizing to YAML creates risk
-//     of an incomplete list. Scores remain in config and are tunable without deploy.
+//	CATEGORIES (check order — most dangerous first):
+//	  empty UA     → "" or "-"                                    (default score: 30)
+//	  scanner      → Nuclei, sqlmap, nikto, nmap, masscan, ...   (default score: 40)
+//	  grabber      → wget, scrapy, python-requests, libwww, ...  (default score: 20)
+//	  automation   → aiohttp, Go-http-client, okhttp, ...        (default score: 15)
 //
-//   Params (DetectorConfig.Params):
-//     scanner_score              int      — score for scanner UA (default: 40)
-//     grabber_score              int      — score for grabber UA (default: 20)
-//     automation_score           int      — score for automation UA (default: 15)
-//     empty_ua_score             int      — score for empty UA (default: 30)
-//     extra_scanner_patterns     []string — appended to built-in scanners
-//     extra_grabber_patterns     []string — appended to built-in grabbers
-//     extra_automation_patterns  []string — appended to built-in automation
+//	WHY PATTERNS ARE HARDCODED AND NOT IN CONFIG:
+//	  The scanner tool list is stable and specific — externalizing to YAML creates risk
+//	  of an incomplete list. Scores remain in config and are tunable without deploy.
 //
-//   Registered as "ua" via init().
-
+//	Params (DetectorConfig.Params):
+//	  scanner_score              int      — score for scanner UA (default: 40)
+//	  grabber_score              int      — score for grabber UA (default: 20)
+//	  automation_score           int      — score for automation UA (default: 15)
+//	  empty_ua_score             int      — score for empty UA (default: 30)
+//	  extra_scanner_patterns     []string — appended to built-in scanners
+//	  extra_grabber_patterns     []string — appended to built-in grabbers
+//	  extra_automation_patterns  []string — appended to built-in automation
+//
+//	Registered as "ua" via init().
 package useragent
 
 import (

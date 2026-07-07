@@ -1,17 +1,17 @@
 // ====== Module: opnsense — manifest ===============================================
-//   Plugin identity and data contract for the OPNsense executor.
-//   Declares: Role=Executor, Input=TypeScoredEvent, Output=TypeNone.
 //
-//   WHAT IS HERE:
-//     OpnsenseExecutor struct (storage and collaborators needed by the
-//     Run / sweep logic in Task 4), Name/Type/Manifest methods. The
-//     Client interface (used by the `client` field below) is defined
-//     in client.go (Task 3) and resolved via same-package lookup.
+//	Plugin identity and data contract for the OPNsense executor.
+//	Declares: Role=Executor, Input=TypeScoredEvent, Output=TypeNone.
 //
-//   WHAT IS NOT HERE:
-//     Run/sweep implementation (executor.go, Task 4), REST client
-//     (client.go, Task 3), registration (register.go, Task 5).
-
+//	WHAT IS HERE:
+//	  OpnsenseExecutor struct (storage and collaborators needed by the
+//	  Run / sweep logic in Task 4), Name/Type/Manifest methods. The
+//	  Client interface (used by the `client` field below) is defined
+//	  in client.go (Task 3) and resolved via same-package lookup.
+//
+//	WHAT IS NOT HERE:
+//	  Run/sweep implementation (executor.go, Task 4), REST client
+//	  (client.go, Task 3), registration (register.go, Task 5).
 package opnsense
 
 import (

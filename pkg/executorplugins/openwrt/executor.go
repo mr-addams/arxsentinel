@@ -1,33 +1,33 @@
 // ====== Module: openwrt — executor ==============================================
-//   OpenwrtExecutor manages an nftables ipset on a remote OpenWrt router via
-//   ubus (uhttpd-mod-ubus). Receives ThreatEvents, batches them, and flushes
-//   through a single batched UCI transaction per cycle (one add_list for
-//   pending bans + one del_list for locally-expired bans + ONE uci.commit +
-//   ONE rc.init reload) — see DECISIONS.md Decision 3 and Decision 4.
 //
-//   WHAT IS HERE:
-//     Constructor NewOpenwrtExecutor, Run loop, batched flush, syncExisting,
-//     min-level filter, dedup check, periodic sweep, Stats snapshot.
+//	OpenwrtExecutor manages an nftables ipset on a remote OpenWrt router via
+//	ubus (uhttpd-mod-ubus). Receives ThreatEvents, batches them, and flushes
+//	through a single batched UCI transaction per cycle (one add_list for
+//	pending bans + one del_list for locally-expired bans + ONE uci.commit +
+//	ONE rc.init reload) — see DECISIONS.md Decision 3 and Decision 4.
 //
-//   WHAT IS NOT HERE:
-//     ubus client (client.go), config parsing (config.go), registration
-//     (register.go).
+//	WHAT IS HERE:
+//	  Constructor NewOpenwrtExecutor, Run loop, batched flush, syncExisting,
+//	  min-level filter, dedup check, periodic sweep, Stats snapshot.
 //
-//   Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
-//   product namespace cmd/arxsentinel/internal/threat; the executor
-//   type-asserts Event.Payload to *threat.ThreatEvent to extract the IP
-//   and level fields. Core has no knowledge of the payload shape.
+//	WHAT IS NOT HERE:
+//	  ubus client (client.go), config parsing (config.go), registration
+//	  (register.go).
 //
-//   DIFFERENCE FROM MIKROTIK:
-//   The sweep mechanism is integrated into the SAME flush cycle instead of
-//   being a separate method. Reason: OpenWrt requires ONE commit + ONE
-//   reload per cycle (fw4 rebuilds the entire nftables ruleset on reload,
-//   so issuing N reloads for N sweep deletions would be a thundering-herd
-//   problem and would also reset per-entry nftables timers). MikroTik, by
-//   contrast, has a native per-entry timeout and can absorb independent
-//   deletes without reloading the firewall. Here we collapse add + sweep
-//   delete into a single UCI transaction: one commit, one reload.
-
+//	Gate B (Flow 083 / Task 3.3 / RESOLVED-D): ThreatEvent lives in the
+//	product namespace cmd/arxsentinel/internal/threat; the executor
+//	type-asserts Event.Payload to *threat.ThreatEvent to extract the IP
+//	and level fields. Core has no knowledge of the payload shape.
+//
+//	DIFFERENCE FROM MIKROTIK:
+//	The sweep mechanism is integrated into the SAME flush cycle instead of
+//	being a separate method. Reason: OpenWrt requires ONE commit + ONE
+//	reload per cycle (fw4 rebuilds the entire nftables ruleset on reload,
+//	so issuing N reloads for N sweep deletions would be a thundering-herd
+//	problem and would also reset per-entry nftables timers). MikroTik, by
+//	contrast, has a native per-entry timeout and can absorb independent
+//	deletes without reloading the firewall. Here we collapse add + sweep
+//	delete into a single UCI transaction: one commit, one reload.
 package openwrt
 
 import (

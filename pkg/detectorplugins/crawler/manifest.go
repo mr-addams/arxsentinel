@@ -1,6 +1,6 @@
 // ========================== Detector manifest — crawler ===================================
-//   Manifest for the crawler sub-package detector.
-
+//
+//	Manifest for the crawler sub-package detector.
 package crawler
 
 import "github.com/mr-addams/arx-core/pkg/plugin"
