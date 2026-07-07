@@ -32,6 +32,7 @@ Sources → Processors → Sinks → Executors
 - [OpenWrt Executor (ubus/UCI firewall)](#openwrt)
 - [OPNsense Executor (REST API alias)](#opnsense)
 - [Nginx Executor (blocklist file + reload)](#nginx-executor)
+- [Observability (SIEM/log forwarders)](#observability)
 - [Distributed NCS (multi-node raw-forward)](#distributed-ncs)
 - [Infrastructure: Server Configs](#server-configs)
 - [Infrastructure: Reverse Proxy / Real-IP](#reverse-proxy)
@@ -205,6 +206,21 @@ No external dependencies — pure nginx geo + map.
 |------|---------|
 | [nginx-executor/docker/config.yaml](nginx-executor/docker/config.yaml) | ArxSentinel config for Docker + nginx executor |
 | [nginx-executor/docker/docker-compose.yml](nginx-executor/docker/docker-compose.yml) | Compose stack: arxsentinel with nginx blocklist reload |
+
+---
+
+## Observability
+
+ArxSentinel forwards threat events to an external log/SIEM platform (Grafana Loki,
+Splunk HEC, or Datadog Logs API) rather than performing any ban action. Use these
+sinks when you want centralised log aggregation, long-term retention, alerting
+rules, or correlation with other log sources in your existing observability stack.
+
+| Recipe | Description | File |
+|--------|-------------|------|
+| Loki basic | Single nginx site + Grafana Loki Push API | [observability/loki-basic.yaml](observability/loki-basic.yaml) |
+| Splunk basic | Single nginx site + Splunk HEC | [observability/splunk-basic.yaml](observability/splunk-basic.yaml) |
+| Datadog basic | Single nginx site + Datadog Logs API v2 | [observability/datadog-basic.yaml](observability/datadog-basic.yaml) |
 
 ---
 
