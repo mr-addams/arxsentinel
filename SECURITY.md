@@ -1,7 +1,7 @@
 # Security Policy
 
 ArxSentinel parses untrusted input (access logs written by anonymous clients) and
-holds credentials for external APIs (Cloudflare, MikroTik). We treat every report
+holds credentials for external APIs (Cloudflare, MikroTik, OpenWrt, OPNsense). We treat every report
 in that surface seriously.
 
 ## Supported Versions
@@ -43,7 +43,7 @@ In scope (examples):
 
 - Crashes, memory exhaustion, or detection bypass triggered by crafted log lines
 - Path traversal or file overwrite via configuration values
-- Leaking executor credentials (Cloudflare token, MikroTik password) to logs or metrics
+- Leaking executor credentials (Cloudflare token, MikroTik password, OpenWrt/OPNsense API key or secret) to logs or metrics
 - Ban evasion or spoofing that defeats bot DNS verification by design
 
 Out of scope:
