@@ -135,6 +135,23 @@
         }
         @keyframes shine { to { background-position: 200% center; } }
         .hero p { font-size: 1.25rem; color: var(--text-muted); max-width: 700px; margin: 0 auto 3rem; }
+
+        /* ── Hero pillars (розкривне пояснення "розумний/універсальний/масштабований/розподілений") ── */
+        .hero-pillars { max-width: 760px; margin: -1.5rem auto 3rem; text-align: left; }
+        .hero-pillars summary {
+            cursor: pointer; text-align: center; color: var(--accent-blue); font-size: 0.85rem;
+            font-family: var(--font-cyber); letter-spacing: 0.06em; list-style: none;
+        }
+        .hero-pillars summary::-webkit-details-marker { display: none; }
+        .hero-pillars summary::after { content: ' ▾'; }
+        .hero-pillars[open] summary::after { content: ' ▴'; }
+        .hero-pillars-grid {
+            display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem;
+            margin-top: 1.5rem; padding: 1.5rem; border-radius: 8px;
+            background: rgba(13, 13, 31, 0.4); border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .hero-pillars-grid h4 { color: var(--accent-blue); font-size: 0.95rem; margin-bottom: 0.4rem; }
+        .hero-pillars-grid p { font-size: 0.85rem; color: var(--text-muted); margin: 0; max-width: none; }
         .cta-buttons { display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap; }
         .btn {
             font-family: var(--font-cyber); font-weight: 700; padding: 1rem 2rem; border-radius: 4px;
@@ -450,6 +467,7 @@
             .hero { padding: 4rem 1.5rem 3rem; }
             .hero h1 { font-size: 2rem; }
             .hero p { font-size: 1rem; }
+            .hero-pillars-grid { grid-template-columns: 1fr; padding: 1.25rem; }
             .badge-container { flex-wrap: wrap; gap: 0.5rem; }
             .cta-buttons { flex-direction: column; width: 100%; max-width: 300px; margin: 0 auto; }
             .btn { width: 100%; text-align: center; }
@@ -583,6 +601,27 @@
         </h1>
         <p style="font-size:1.1rem; color: var(--accent-blue); margin-bottom: 0.5rem; font-family: var(--font-cyber); letter-spacing: 0.04em;">Розподілений двигун обробки подій безпеки для будь-якого HTTP-сервера — і не тільки</p>
         <p>Розумний, універсальний, розподілений рушій безпеки: поведінкова детекція замість статичних правил, будь-яке джерело логів на вході, будь-який пункт призначення на виході, будь-яка мова для власних плагінів. Масштабуйтесь від одного VPS до розподіленого флоту — збирайте події на одній машині, скоруйте на іншій, баньте на третій — через вбудовану шифровану мережу вузлів. Bare-metal, Docker Compose або Kubernetes DaemonSet.</p>
+        <details class="hero-pillars">
+            <summary>Що означає «розумний, універсальний, масштабований, розподілений»</summary>
+            <div class="hero-pillars-grid">
+                <div>
+                    <h4>Розумний</h4>
+                    <p>Вісім поведінкових детекторів скорують патерни — зондування, аномалії частоти запитів, співвідношення bruteforce, послідовний краулінг — замість звірки зі статичними сигнатурами. Легітимні краулери верифікуються через rDNS/fDNS і ніколи не скоруються.</p>
+                </div>
+                <div>
+                    <h4>Універсальний</h4>
+                    <p>Будь-яке джерело логів на вході (файл, stdin, syslog, HTTP push/pull у 9 форматах вендорів), будь-який пункт призначення на виході (Fail2Ban, Cloudflare WAF, файерволи MikroTik/OpenWrt/OPNsense, Loki/Splunk/Datadog), будь-яка мова для власного плагіна через exec+JSON.</p>
+                </div>
+                <div>
+                    <h4>Масштабований</h4>
+                    <p>Один процес обслуговує N незалежних потоків логів, кожен зі своїм pipeline джерел, детекторів і sink'ів — від одного nginx vhost до флоту edge-вузлів, без запуску окремого процесу на кожен сайт.</p>
+                </div>
+                <div>
+                    <h4>Розподілений</h4>
+                    <p>Збирайте на одній машині, скоруйте на іншій, баньте на третій — через вбудовану шифровану QUIC/TLS 1.3 мережу вузлів з Ed25519-ідентичністю та TOFU-піннінгом. Без брокера повідомлень, без log shipper'а, без VPN.</p>
+                </div>
+            </div>
+        </details>
         <div class="cta-buttons">
             <a href="#install" class="btn btn-primary">↓ Встановити</a>
             <a href="https://github.com/mr-addams/arxsentinel" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">GitHub</a>
