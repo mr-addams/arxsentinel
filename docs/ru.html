@@ -1088,6 +1088,27 @@
         </div>
     </section>
 
+    <section class="whitelist-section">
+        <div class="section-header">
+            <span class="section-tag">Cookbook</span>
+            <h2 class="section-title">40+ рецептов. Скопируй. Заполни. Запусти.</h2>
+        </div>
+        <div class="whitelist-grid">
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 4h3l2 2h5a2 2 0 0 1 2 2v7a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-9a2 2 0 0 1 2 -2" /><path d="M4 7c-1.1 0 -2 .9 -2 2v9c0 1.1 .9 2 2 2h14" /></svg></span> Скопируй, заполни, запусти</h3>
+                <p><strong>40+ готовых рецептов</strong> в <strong>14 категориях</strong>: все поддерживаемые серверы (nginx, Apache, Caddy, Traefik, HAProxy, LiteSpeed), все экзекуторы (Cloudflare, MikroTik, OpenWrt, OPNsense), все observability-приёмники (Loki, Splunk, Datadog), CMS-специфичные probe-пути (WordPress, Laravel, Drupal) и другое. Индекс в <a href="https://github.com/mr-addams/arxsentinel/blob/main/cookbook/CookBook.ru.md" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);"><code>cookbook/CookBook.ru.md</code></a> — каждая строка ведёт прямо к рабочему <code>*.yaml</code>.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 3h9a2 2 0 0 1 2 2v9m-1.165 3.849a2 2 0 0 1 -.835 .151h-12a2 2 0 0 1 -2 -2v-12c0 -.337 .082 -.656 .226 -.935" /><path d="M4.219 7.729a2 2 0 0 0 -.219 .895" /><path d="M5 17l3.5 -4.5" /></svg></span> Docker и Kubernetes в комплекте</h3>
+                <p><strong>5 категорий рецептов</strong> идут с полным Docker Compose-стеком — <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/cloudflare" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">Cloudflare</a>, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/nginx-executor" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">nginx executor</a>, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/syslog" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">syslog</a>, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/mikrotik" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">MikroTik</a>, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/fail2ban" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">Fail2Ban</a> — плюс отдельная директория <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/kubernetes" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">Kubernetes</a>. Не только конфиг ArxSentinel, а весь референсный деплой.</p>
+            </div>
+            <div class="whitelist-card">
+                <h3><span style="color: var(--accent-blue)"><svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11" /></svg></span> Распределённые топологии, а не только один узел</h3>
+                <p><strong>3 полноценных рабочих примера multi-node Distributed NCS</strong> в <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);"><code>cookbook/distributed-ncs/</code></a> — базовый, <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs/aggregation" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">edge aggregation</a> и <a href="https://github.com/mr-addams/arxsentinel/tree/main/cookbook/distributed-ncs/mixed-routing" style="color: var(--accent-blue); text-decoration: none; border-bottom: 1px dotted var(--accent-blue);">mixed routing</a>. Те же топологии, что описаны в гайде выше, <strong>проверены реальными multi-container CI-прогонами при каждом merge</strong>.</p>
+            </div>
+        </div>
+    </section>
+
     <section class="performance-section">
         <div class="section-header">
             <span class="section-tag">Потребление ресурсов</span>
