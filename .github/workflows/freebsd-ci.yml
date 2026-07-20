@@ -51,7 +51,7 @@ jobs:
         # installs its own go via pkg below; both must agree on the version
         # declared in go.mod, hence go-version-file here as a single source
         # of truth.
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
