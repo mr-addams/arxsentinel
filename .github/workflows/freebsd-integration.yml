@@ -223,7 +223,7 @@ jobs:
           ls -l litespeed-arxsentinel.tar
 
       - name: Run litespeed integration smoke inside FreeBSD VM
-        uses: vmactions/freebsd-vm@v1.5.0
+        uses: vmactions/freebsd-vm@v1.5.3
         with:
           release: "14.3"
           usesh: true
@@ -579,7 +579,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run nginx integration smoke inside FreeBSD VM
-        uses: vmactions/freebsd-vm@v1.5.0
+        uses: vmactions/freebsd-vm@v1.5.3
         with:
           release: "14.3"
           usesh: true
@@ -1043,7 +1043,7 @@ jobs:
           ls -la .ci-freebsd-build/
 
       - name: Run caddy integration smoke inside FreeBSD VM
-        uses: vmactions/freebsd-vm@v1.5.0
+        uses: vmactions/freebsd-vm@v1.5.3
         with:
           release: "14.3"
           usesh: true
@@ -1444,7 +1444,7 @@ jobs:
           ls -la .ci-freebsd-build/
 
       - name: Run traefik integration smoke inside FreeBSD VM
-        uses: vmactions/freebsd-vm@v1.5.0
+        uses: vmactions/freebsd-vm@v1.5.3
         with:
           release: "14.3"
           usesh: true
@@ -1817,7 +1817,7 @@ jobs:
           ls -la .ci-freebsd-build/
 
       - name: Run haproxy integration smoke inside FreeBSD VM
-        uses: vmactions/freebsd-vm@v1.5.0
+        uses: vmactions/freebsd-vm@v1.5.3
         with:
           release: "14.3"
           usesh: true
@@ -2230,7 +2230,7 @@ jobs:
           ls -la .ci-freebsd-build/
 
       - name: Run apache integration smoke inside FreeBSD VM
-        uses: vmactions/freebsd-vm@v1.5.0
+        uses: vmactions/freebsd-vm@v1.5.3
         with:
           release: "14.3"
           usesh: true
