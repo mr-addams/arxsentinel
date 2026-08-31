@@ -351,7 +351,7 @@ jobs:
 
       - name: Build FreeBSD image and push to ghcr.io
         id: freebsd_image
-        uses: vmactions/freebsd-vm@v1.5.0
+        uses: vmactions/freebsd-vm@v1.5.5
         with:
           arch: ${{ matrix.vmarch }}
           release: "14.3"
