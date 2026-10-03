@@ -91,7 +91,10 @@
 #     2 badbot) — step 6 below. Per Flow 092 Decision 7.
 #   - P6.3: 12 assertions (THREAT+IP, Mozilla-absent, score/reason-
 #     format, 7 module-name checks, badbot module, blocklist-
-#     automaton-loaded) — step 7.
+#     automaton-loaded) — step 7. The bruteforce check runs against a
+#     dedicated 404-only source IP (second curl container), because
+#     OLS access-log ORDER is not chronological and the shared-stream
+#     404 ratio is order-sensitive.
 #   - P6.3: artifact persistence copy (step 8).
 #   - Flow 092 (P6.7): proxy-chain scenario appended as Steps 10-16
 #     (DECISIONS §1-§5). Same custom litespeed-arxsentinel:local
@@ -615,6 +618,36 @@ podman run --rm --os=linux --network "$NETWORK" \
     || echo "[litespeed] curl attacker exited non-zero (still check the access log)"
 echo "[litespeed] attacks sent"
 
+# Dedicated bruteforce source (separate container => separate CNI IP =>
+# separate per-IP tracker). WHY a second source: the bruteforce
+# detector scores on the CUMULATIVE 404 ratio per IP (>= min_requests,
+# default 10, and ratio >= 0.6, default). In the shared stream above
+# only 28 of 105 requests are 404s, so the ratio is >= 60% only in a
+# narrow early window; OLS writes its access log in a NON-chronological
+# order (live run 37132176217: 200s logged ahead of the 404s, peak
+# ratio ~55%, bruteforce never fired). The earlier "wait until the
+# threat log stops growing" fix addressed log COMPLETENESS, not log
+# ORDER. A source that sends ONLY 404s is order-independent: once
+# total >= 10 the ratio is 100% whatever order the lines are read in.
+# 15 requests (not 10) leave margin for a few lost/late lines.
+# The block-3 requests in the shared stream are kept (battle-suite
+# parity, they also feed other detectors); only the ASSERTION for the
+# bruteforce module moved to this source (see assertion 4 below).
+echo "[litespeed] driving dedicated bruteforce source (15 x 404 from a second curl container)..."
+BF_SCRIPT="
+i=1; while [ \$i -le 15 ]; do
+    curl -sf -o /dev/null http://${LITESPEED_IP}/bf-scan-\$i || true
+    i=\$((i+1))
+done
+"
+podman run --rm --os=linux --network "$NETWORK" \
+    --entrypoint /bin/sh \
+    docker.io/curlimages/curl \
+    -c "$BF_SCRIPT" \
+    >/dev/null 2>&1 \
+    || echo "[litespeed] bruteforce curl source exited non-zero (still check the access log)"
+echo "[litespeed] bruteforce source done"
+
 # ---------------------------------------------------------------------
 # Step 7: poll the threat log until it STOPS GROWING, not just until
 # it first becomes non-empty. Timeout budget 40s (raised from 20s as
@@ -697,6 +730,21 @@ if [ -z "$SQLMAP_IP" ]; then
     exit 1
 fi
 echo "[litespeed] sqlmap request source IP: $SQLMAP_IP"
+
+# Source IP of the dedicated bruteforce container (Step 6): the first
+# field of any access-log line for its unique /bf-scan-N path.
+BF_IP=$(grep -F '/bf-scan-' "$ACCESS_LOG" | awk '{print $1}' | head -1)
+if [ -z "$BF_IP" ]; then
+    echo "[litespeed] FAIL: could not extract bruteforce source IP (no /bf-scan-N request in access log)" >&2
+    echo "[litespeed] access log content:" >&2
+    cat "$ACCESS_LOG" >&2 || true
+    exit 1
+fi
+echo "[litespeed] bruteforce source IP: $BF_IP"
+if [ "$BF_IP" = "$SQLMAP_IP" ]; then
+    echo "[litespeed] FAIL: bruteforce source shares the main attacker's IP ($BF_IP) - not an isolated tracker" >&2
+    exit 1
+fi
 
 # Diagnostic (mirrors apache/integration.sh:617-622, traefik/
 # integration.sh:576-581 — same overflow-assertion failure mode on
@@ -787,12 +835,26 @@ fi
 # not appear in the threat log (e.g. scorer dropped it under the
 # alert threshold), this assertion catches that case explicitly,
 # block by block.
-for module in probe ua bruteforce crawler noasset rate overflow; do
+for module in probe ua crawler noasset rate overflow; do
     if ! printf '%s\n' "$LINES" | grep -qw "$module"; then
         echo "[litespeed] FAIL: assertion - expected module '$module' in threat log (reason=)" >&2
         FAIL=1
     fi
 done
+
+# Assertion 4 (bruteforce): checked on the DEDICATED 404-only source
+# (see Step 6), scoped to that source's IP, not on the shared stream.
+# The bruteforce detector is a cumulative per-IP 404-ratio check, so
+# the shared stream's outcome depends on the order OLS wrote its access
+# log; the isolated source reaches a 100% ratio in any order.
+# `grep -F " <ip> "` matches the IP field of
+# `<ts> THREAT <ip> score=<N> modules=<list> reason="..."` literally
+# (no regex dots); `grep -qw bruteforce` is the same word-boundary
+# module match as the loop above.
+if ! printf '%s\n' "$LINES" | grep -F " $BF_IP " | grep -qw "bruteforce"; then
+    echo "[litespeed] FAIL: assertion 4 - bruteforce module not in threat log for dedicated 404-only source $BF_IP" >&2
+    FAIL=1
+fi
 
 # Assertion 11: the badbot MODULE fired. Checked on the module name
 # (`badbot`), NOT on the upstream pattern string (`$BADBOT_UA`)
