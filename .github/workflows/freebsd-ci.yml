@@ -51,13 +51,13 @@ jobs:
         # installs its own go via pkg below; both must agree on the version
         # declared in go.mod, hence go-version-file here as a single source
         # of truth.
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
       - name: Build and test inside FreeBSD VM
         id: vmtest
-        uses: vmactions/freebsd-vm@v1.5.0
+        uses: vmactions/freebsd-vm@v1.5.8
         with:
           release: "14.3"
           usesh: true
@@ -183,7 +183,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run podman spike inside FreeBSD VM
-        uses: vmactions/freebsd-vm@v1.5.0
+        uses: vmactions/freebsd-vm@v1.5.8
         with:
           release: "14.3"
           usesh: true
@@ -334,7 +334,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Build ArxSentinel FreeBSD image inside FreeBSD VM
-        uses: vmactions/freebsd-vm@v1.5.0
+        uses: vmactions/freebsd-vm@v1.5.8
         with:
           release: "14.3"
           usesh: true
@@ -507,7 +507,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run synthetic-log integration smoke inside FreeBSD VM
-        uses: vmactions/freebsd-vm@v1.5.0
+        uses: vmactions/freebsd-vm@v1.5.8
         with:
           release: "14.3"
           usesh: true
