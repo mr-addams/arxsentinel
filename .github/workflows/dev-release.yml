@@ -106,7 +106,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -212,7 +212,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -257,7 +257,7 @@ jobs:
 
       - name: Build FreeBSD image and push to ghcr.io
         id: freebsd_image
-        uses: vmactions/freebsd-vm@v1.5.0
+        uses: vmactions/freebsd-vm@v1.5.8
         with:
           arch: ${{ matrix.vmarch }}
           release: "14.3"
