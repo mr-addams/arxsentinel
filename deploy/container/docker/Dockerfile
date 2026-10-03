@@ -1,6 +1,6 @@
 # ========================== ArxSentinel — Dockerfile =====================================
 #
-#   Multi-stage build: golang:1.26-alpine → distroless/static-debian12:nonroot
+#   Multi-stage build: golang:1.27-alpine → distroless/static-debian12:nonroot
 #
 #   Stage "builder": compiles a fully-static binary (CGO_ENABLED=0).
 #   Stage "final":   copies only the binary and the bundled container config

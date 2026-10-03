@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/mr-addams/arxsentinel?include_prereleases&label=release)](https://github.com/mr-addams/arxsentinel/releases)
 [![Build](https://github.com/mr-addams/arxsentinel/actions/workflows/release.yml/badge.svg)](https://github.com/mr-addams/arxsentinel/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-Elastic--2.0-blue)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
+[![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go)](go.mod)
 [![Platforms](https://img.shields.io/badge/linux-amd64%20%7C%20arm64%20%7C%20arm%2Fv7%20%7C%20riscv64%20%7C%20i386-lightgrey?logo=linux)](https://github.com/mr-addams/arxsentinel/releases)
 [![FreeBSD](https://img.shields.io/badge/freebsd-386%20%7C%20amd64%20%7C%20arm%20%7C%20arm64-red?logo=freebsd)](https://github.com/mr-addams/arxsentinel/releases)
 [![Packages](https://img.shields.io/badge/packages-deb%20%7C%20rpm%20%7C%20pacman-blue)](https://github.com/mr-addams/arxsentinel/releases)
@@ -387,7 +387,7 @@ setup, container networking gotchas): [FreeBSD Deployment Cookbook](cookbook/fre
 
 ### Build from source
 
-Requires Go 1.26+:
+Requires Go 1.27+:
 
 ```bash
 git clone https://github.com/mr-addams/arxsentinel
