@@ -1,6 +1,6 @@
 # ========================== ArxSentinel — Dockerfile =====================================
 #
-#   Multi-stage build: golang:1.26-alpine → distroless/static-debian12:nonroot
+#   Multi-stage build: golang:1.27-alpine → distroless/static-debian12:nonroot
 #
 #   Stage "builder": compiles a fully-static binary (CGO_ENABLED=0).
 #   Stage "final":   copies only the binary and the bundled container config
@@ -14,7 +14,7 @@
 # --platform=$BUILDPLATFORM: builder runs natively on the build host regardless of TARGETARCH.
 # Without this flag, docker buildx emulates arm64 via QEMU which is 10-20x slower.
 # Cross-compilation is handled by GOOS/GOARCH env vars in the go build step.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 # Build args propagated from docker build / GoReleaser.
 ARG VERSION=dev

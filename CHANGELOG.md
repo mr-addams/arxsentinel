@@ -130,6 +130,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - CF → proxy → product (4 proxies × 6 backends)
   - Broken chain detection: `cloudflare-ip-as-client` and `bogon-ip-as-client` warnings
 
+### Changed
+
+- **Minimum Go version raised to 1.27** — `go.mod` now declares `go 1.27.0`, the production
+  image builds on `golang:1.27-alpine`. Building from source requires Go 1.27+.
+- Dependency updates: `golang.org/x/crypto` 0.57, `moby/moby/client` 0.6,
+  `testcontainers-go` 0.44, `prometheus/client_golang` 1.24.1; CI actions `setup-go` v7,
+  `freebsd-vm` 1.5.8.
+
+### Security
+
+- `github.com/moby/go-archive` bumped to 0.3.3 — fixes a path traversal on tar extraction
+  (affected versions < 0.3.0). Test-only transitive dependency.
+
 ---
 
 ## [1.1.1] — 2026-05-20
