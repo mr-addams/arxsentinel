@@ -4,7 +4,7 @@
 #
 #   This is the FreeBSD analogue of deploy/container/docker/Dockerfile for
 #   Flow 088 (FreeBSD CI harness). The Linux Dockerfile is multi-stage
-#   (golang:1.26-alpine builder → gcr.io/distroless/static-debian12:nonroot
+#   (golang:1.27-alpine builder → gcr.io/distroless/static-debian12:nonroot
 #   final). This Containerfile is intentionally single-stage: it does NOT
 #   rebuild the Go binaries inside the container. The binaries
 #   (cmd/arxsentinel, cmd/healthcheck) are built natively inside the
